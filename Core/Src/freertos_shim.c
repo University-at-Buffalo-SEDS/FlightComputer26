@@ -11,8 +11,7 @@
  * We implement them on top of a ThreadX byte pool.
  */
 
-#define RUST_HEAP_SIZE  (32 * 1024u)  // tune this to whatever you need
-
+#define RUST_HEAP_SIZE  (32 * 1024u)  // this will need to be tuned
 static TX_BYTE_POOL rust_byte_pool;
 static UCHAR rust_heap[RUST_HEAP_SIZE];
 

@@ -20,7 +20,7 @@ static uint64_t stm_now_ms(void *user) {
     return high | (uint64_t)cur32;
 }
 
-uint64_t node_now_since_bus_ms(void *user) {
+uint64_t node_now_since_ms(void *user) {
     (void)user;
     const uint64_t now = stm_now_ms(NULL);
     const RouterState s = g_router;           /* snapshot */
@@ -72,25 +72,18 @@ static inline void UNLOCK(void) {
     }
 }
 
-/* ---------------- TX path (stub/printf/USB) ---------------- */
+/* ---------------- TX path (CANSEND) ---------------- */
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
     (void)user;
     (void)bytes;
     (void)len;
 
-    /* Minimal stub: do nothing and report success.
-       For visibility during bring-up, you can uncomment the printf,
-       but avoid heavy I/O inside the router’s critical path.
-
-    printf("[TX %u]:", (unsigned)len);
-    for (size_t i = 0; i < len; i++) printf(" %02X", bytes[i]);
-    printf("\r\n");
-    */
+    /*TODO: Implement the cansend function*/
 
     return SEDS_OK;
 }
 
-/* ---------------- RX helpers (optional) ---------------- */
+/* ---------------- RX helpers ---------------- */
 void rx_synchronous(const uint8_t *bytes, size_t len) {
     if (!bytes || !len) return;
     if (!g_router.r) {
@@ -111,17 +104,17 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
     UNLOCK();
 }
 
-/* ---------------- Local endpoint handler ---------------- */
-SedsResult on_radio_packet(const SedsPacketView *pkt, void *user) {
+/* ---------------- Local endpoint handler (SD_CARD) ---------------- */
+SedsResult on_sd_packet(const SedsPacketView *pkt, void *user) {
     (void)user;
 
-    /* Keep this lean; avoid big stack buffers. */
+    /* TODO: Implement the saving to SD logic*/
     char buf[seds_pkt_to_string_len(pkt)];
     SedsResult s = seds_pkt_to_string(pkt, buf, sizeof(buf));
     if (s == SEDS_OK) {
-        printf("on_radio_packet: %s\r\n", buf);
+        printf("on_sd_packet: %s\r\n", buf);
     } else {
-        printf("on_radio_packet: seds_pkt_to_string failed (%d)\r\n", s);
+        printf("on_sd_packet: seds_pkt_to_string failed (%d)\r\n", s);
     }
     return s;
 }
@@ -141,14 +134,14 @@ SedsResult init_telemetry_router(void) {
 
     const SedsLocalEndpointDesc locals[] = {
         { .endpoint = SEDS_EP_SD_CARD,
-          .packet_handler = on_radio_packet,
+          .packet_handler = on_sd_packet,
           .user = NULL },
     };
 
     SedsRouter *r = seds_router_new(
         tx_send,               /* tx callback */
         NULL,                  /* tx_user */
-        node_now_since_bus_ms, /* clock */
+        node_now_since_ms, /* clock */
         locals,
         (uint32_t)(sizeof(locals) / sizeof(locals[0]))
     );
@@ -227,7 +220,6 @@ SedsResult dispatch_tx_queue_timeout(uint32_t timeout_ms) {
     if (!g_router.r) {
         if (init_telemetry_router() != SEDS_OK) return SEDS_ERR;
     }
-    (void)timeout_ms; /* If your C API doesn’t use this, just ignore. */
     LOCK();
     SedsResult res = seds_router_process_tx_queue_with_timeout(g_router.r, timeout_ms);
     UNLOCK();
