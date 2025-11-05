@@ -246,6 +246,109 @@ SedsResult process_all_queues_timeout(uint32_t timeout_ms) {
     return res;
 }
 
+SedsResult log_error_asyncronous(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    // First pass: figure out how long the formatted string will be
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int len = vsnprintf(NULL, 0, fmt, args_copy);  // returns length excluding '\0'
+    va_end(args_copy);
+
+    if (len < 0) {
+        // Formatting failed; handle however makes sense.
+        va_end(args);
+        const char empty = '\0';
+        return log_telemetry_asynchronous(
+            SEDS_DT_GENERIC_ERROR,
+            &empty,
+            0,
+            0
+        );
+    }
+
+    // Optional safety cap to avoid huge stack allocations:
+    if (len > 512) len = 512;
+
+    // Second pass: allocate exactly len+1 bytes on the stack (C99 VLA)
+    char data[(size_t)len + 1];
+
+    int written = vsnprintf(data, (size_t)len + 1, fmt, args);
+    va_end(args);
+
+    if (written < 0) {
+        const char empty = '\0';
+        return log_telemetry_asynchronous(
+            SEDS_DT_GENERIC_ERROR,
+            &empty,
+            0,
+            0
+        );
+    }
+
+    // `written` should equal `len`, but we clamp just in case
+    size_t used = (size_t)written;
+
+    return log_telemetry_asynchronous(
+        SEDS_DT_GENERIC_ERROR,
+        data,
+        used,   // number of bytes actually used
+        used    // number of elements (chars)
+    );
+}
+SedsResult log_error_syncronous(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    // First pass: figure out how long the formatted string will be
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int len = vsnprintf(NULL, 0, fmt, args_copy);  // returns length excluding '\0'
+    va_end(args_copy);
+
+    if (len < 0) {
+        // Formatting failed; handle however makes sense.
+        va_end(args);
+        const char empty = '\0';
+        return log_telemetry_synchronous(
+            SEDS_DT_GENERIC_ERROR,
+            &empty,
+            0,
+            0
+        );
+    }
+
+    // Optional safety cap to avoid huge stack allocations:
+    if (len > 512) len = 512;
+
+    // Second pass: allocate exactly len+1 bytes on the stack (C99 VLA)
+    char data[(size_t)len + 1];
+
+    int written = vsnprintf(data, (size_t)len + 1, fmt, args);
+    va_end(args);
+
+    if (written < 0) {
+        const char empty = '\0';
+        return log_telemetry_synchronous(
+            SEDS_DT_GENERIC_ERROR,
+            &empty,
+            0,
+            0
+        );
+    }
+
+    // `written` should equal `len`, but we clamp just in case
+    size_t used = (size_t)written;
+
+    return log_telemetry_synchronous(
+        SEDS_DT_GENERIC_ERROR,
+        data,
+        used,   // number of bytes actually used
+        used    // number of elements (chars)
+    );
+}
+
 /* ---------------- Error printing ---------------- */
 SedsResult print_telemetry_error(const int32_t error_code) {
     /* Use a small fixed buffer to avoid big stack frames. */
@@ -254,7 +357,8 @@ SedsResult print_telemetry_error(const int32_t error_code) {
     if (res == SEDS_OK) {
         printf("Error: %s\r\n", buf);
     } else {
-        printf("Error: seds_error_to_string failed: %d\r\n", res);
+        log_error_asyncronous("Error: seds_error_to_string failed: %d\r\n", res);
+        
     }
     return res;
 }

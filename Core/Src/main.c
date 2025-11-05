@@ -20,6 +20,7 @@
 #include "app_threadx.h"
 #include "main.h"
 #include "telemetry.h"
+#include <sedsprintf.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -118,19 +119,21 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
-
+  if (init_telemetry_router() != SEDS_OK) {
+    Error_Handler();
+  }
+  /* We should never get here as control is now taken by the scheduler */
+  char started_txt[] ="Starting Threadx Scheduler";
+  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA, started_txt, sizeof(started_txt), 1);
+  
   MX_ThreadX_Init();
 
-  init_telemetry_router();
-
-  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     /* USER CODE END WHILE */
-    
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

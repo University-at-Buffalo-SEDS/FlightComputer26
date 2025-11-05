@@ -20,6 +20,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
+#include "tx_api.h"
+#include "telemetry_thread.h"
+#include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -65,6 +68,8 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
+  create_telemetry_thread();
+
   /* USER CODE END App_ThreadX_Init */
 
   return ret;
@@ -78,7 +83,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 void MX_ThreadX_Init(void)
 {
   /* USER CODE BEGIN Before_Kernel_Start */
-
+  
   /* USER CODE END Before_Kernel_Start */
 
   tx_kernel_enter();

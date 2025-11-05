@@ -126,10 +126,9 @@ jobs:
           which arm-none-eabi-gcc
           arm-none-eabi-gcc --version
 
-      # ---------- (Optional) Enable ccache for your build scripts ----------
+      # ---------- Enable ccache for build scripts ----------
       - name: Prime ccache wrappers (optional)
         run: |
-          # If your build scripts honor CC/CXX or CMake uses CMAKE_C_COMPILER_LAUNCHER
           echo "CC='ccache gcc'" >> $GITHUB_ENV
           echo "CXX='ccache g++'" >> $GITHUB_ENV
           ccache --zero-stats || true
