@@ -55,11 +55,11 @@ by creating shims that expose pvPortMalloc and vPortFree.
 - Cmake
 - A C++ compiler
 - A C compiler
-- The thumbv7m-none-eabi target for Rust (if you want to build for ARM Cortex-M)
+- The thumbv8m.main-none-eabihf target for Rust (if you want to build for ARM Cortex-M)
 
   Get it with:
   ```bash
-  rustup target add thumbv7em-none-eabihf
+  rustup target add thumbv8m.main-none-eabihf
   ```
 
 ## Usage
