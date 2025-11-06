@@ -20,7 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "ux_device_cdc_acm.h"
-
+UX_SLAVE_CLASS_CDC_ACM *cdc_acm = UX_NULL;
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -65,7 +65,7 @@
 VOID USBD_CDC_ACM_Activate(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_Activate */
-  UX_PARAMETER_NOT_USED(cdc_acm_instance);
+  cdc_acm = (UX_SLAVE_CLASS_CDC_ACM *)cdc_acm_instance;
   /* USER CODE END USBD_CDC_ACM_Activate */
 
   return;
@@ -80,7 +80,8 @@ VOID USBD_CDC_ACM_Activate(VOID *cdc_acm_instance)
 VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_Deactivate */
-  UX_PARAMETER_NOT_USED(cdc_acm_instance);
+  (void)cdc_acm_instance;
+  cdc_acm = UX_NULL;
   /* USER CODE END USBD_CDC_ACM_Deactivate */
 
   return;
@@ -95,7 +96,8 @@ VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
 VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_ParameterChange */
-  UX_PARAMETER_NOT_USED(cdc_acm_instance);
+  UX_SLAVE_CLASS_CDC_ACM *inst = (UX_SLAVE_CLASS_CDC_ACM *)cdc_acm_instance;
+  (void)inst;
   /* USER CODE END USBD_CDC_ACM_ParameterChange */
 
   return;

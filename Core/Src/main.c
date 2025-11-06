@@ -19,6 +19,16 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 #include "main.h"
+#include "ux_api.h"
+#include "ux_device_class_cdc_acm.h"
+#include <stdint.h>
+#include <stdio.h>
+
+extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
+
+#ifndef MIN
+#define MIN(a,b) (( (a) < (b) ) ? (a) : (b))
+#endif
 
 
 /* Private includes ----------------------------------------------------------*/
@@ -525,6 +535,92 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+static volatile uint8_t cdc_tx_lock = 0;
+
+static void cdc_lock(void) {
+  // very small critical section; simple LDREXB/STREXB loop is fine
+  while (__LDREXB(&cdc_tx_lock)) {
+    // spin while locked
+  }
+  __STREXB(1, &cdc_tx_lock);
+  __DMB();
+}
+
+static void cdc_unlock(void) {
+  __DMB();
+  cdc_tx_lock = 0;
+}
+
+// ---------- Raw USBX CDC write ----------
+
+// Send buffer in 64-byte chunks over USBX CDC-ACM
+static void cdc_write_raw(const uint8_t *buf, uint16_t len) {
+  if (!buf || !len || cdc_acm == UX_NULL)
+    return;
+
+  cdc_lock();
+
+  ULONG sent = 0;
+  while (sent < (ULONG)len) {
+    ULONG chunk = MIN(64u, (ULONG)len - sent);
+
+    ULONG actual = 0;
+    UINT status = ux_device_class_cdc_acm_write(
+        cdc_acm,
+        (UCHAR *)&buf[sent],
+        chunk,
+        &actual);
+
+    if (status != UX_SUCCESS || actual == 0) {
+      // Error or host not ready; bail out to avoid lockup
+      break;
+    }
+
+    sent += actual;
+    // ux_device_class_cdc_acm_write() is synchronous; no extra "wait idle" needed
+  }
+
+  // No explicit ZLP needed; USBX handles packetisation internally.
+  cdc_unlock();
+}
+
+// ---------- printf redirection ----------
+
+#ifdef __GNUC__
+int _write(int file, char *ptr, int len) {
+  (void)file;
+  if (len <= 0)
+    return 0;
+
+  // Convert \n -> \r\n into a small rolling buffer
+  uint8_t buf[128];
+  int i = 0;
+  while (i < len) {
+    int w = 0;
+    while (i < len && w < (int)sizeof(buf) - 1) {
+      uint8_t c = (uint8_t)ptr[i++];
+      if (c == '\n' && w < (int)sizeof(buf) - 2)
+        buf[w++] = '\r';
+      buf[w++] = c;
+    }
+    cdc_write_raw(buf, (uint16_t)w);
+  }
+  return len;
+}
+#else
+int fputc(int ch, FILE *f) {
+  (void)f;
+  uint8_t two[2];
+  uint16_t n = 0;
+  if (ch == '\n')
+    two[n++] = '\r';
+  two[n++] = (uint8_t)ch;
+  cdc_write_raw(two, n);
+  return ch;
+}
+#endif
+
 
 /* USER CODE END 4 */
 
