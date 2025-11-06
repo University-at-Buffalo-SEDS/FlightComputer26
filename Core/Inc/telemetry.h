@@ -1,7 +1,10 @@
 #pragma once
-#include "sedsprintf.h" // must define SedsRouter, SedsResult, SedsPacketView, SedsDataType
+#include "sedsprintf.h"
 #include <stddef.h>
 #include <stdint.h>
+
+/* Define to enable the telemetry subsystem */
+// #define TELEMETRY_ENABLED
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +32,7 @@ SedsResult init_telemetry_router(void);
 // Log a telemetry sample (1+ floats) with the given SedsDataType.
 SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
                                      size_t element_count, size_t element_size);
-                                     
+
 SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
                                       size_t element_count,
                                       size_t element_size);

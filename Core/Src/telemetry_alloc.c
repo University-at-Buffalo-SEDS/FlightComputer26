@@ -1,14 +1,13 @@
-// Core/Src/freertos_shim.c
+// Core/Src/telemetry_alloc.c
 #include "tx_api.h"
 #include <stddef.h>
 
 /*
- * Rust expects these FreeRTOS-style heap functions:
+ * Rust expects these functions to exist for heap allocations:
  *
- *   void *pvPortMalloc(size_t);
- *   void vPortFree(void *);
+ *   void *telemetryMalloc(size_t);
+ *   void telemetryFree(void *);
  *
- * We implement them on top of a ThreadX byte pool.
  */
 
 #define RUST_HEAP_SIZE  (32 * 1024u)  // this will need to be tuned
