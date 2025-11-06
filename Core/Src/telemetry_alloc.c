@@ -34,7 +34,7 @@ void rust_heap_init(void)
     initialized = 1;
 }
 
-void *pvPortMalloc(size_t xSize)
+void *telemetryMalloc(size_t xSize)
 {
     void *ptr = NULL;
 
@@ -49,7 +49,7 @@ void *pvPortMalloc(size_t xSize)
     return ptr;
 }
 
-void vPortFree(void *pv)
+void telemetryFree(void *pv)
 {
     if (pv == NULL) {
         return;
