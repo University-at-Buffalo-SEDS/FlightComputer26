@@ -55,6 +55,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+DCACHE_HandleTypeDef hdcache1;
+
 FDCAN_HandleTypeDef hfdcan1;
 
 DMA_HandleTypeDef handle_GPDMA1_Channel1;
@@ -80,6 +82,7 @@ static void MX_FDCAN1_Init(void);
 static void MX_SDMMC1_SD_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_ICACHE_Init(void);
+static void MX_DCACHE1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -127,6 +130,7 @@ int main(void)
   MX_SDMMC1_SD_Init();
   MX_USB_PCD_Init();
   MX_ICACHE_Init();
+  MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -234,6 +238,33 @@ void PeriphCommonClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief DCACHE1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DCACHE1_Init(void)
+{
+
+  /* USER CODE BEGIN DCACHE1_Init 0 */
+
+  /* USER CODE END DCACHE1_Init 0 */
+
+  /* USER CODE BEGIN DCACHE1_Init 1 */
+
+  /* USER CODE END DCACHE1_Init 1 */
+  hdcache1.Instance = DCACHE1;
+  hdcache1.Init.ReadBurstType = DCACHE_READ_BURST_INCR;
+  if (HAL_DCACHE_Init(&hdcache1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DCACHE1_Init 2 */
+
+  /* USER CODE END DCACHE1_Init 2 */
+
 }
 
 /**
