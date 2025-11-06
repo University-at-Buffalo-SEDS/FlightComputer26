@@ -20,7 +20,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "ux_device_cdc_acm.h"
-UX_SLAVE_CLASS_CDC_ACM *cdc_acm = UX_NULL;
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -53,6 +52,7 @@ UX_SLAVE_CLASS_CDC_ACM *cdc_acm = UX_NULL;
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+UX_SLAVE_CLASS_CDC_ACM *cdc_acm = UX_NULL;
 
 /* USER CODE END 0 */
 

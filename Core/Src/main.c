@@ -18,6 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "app_threadx.h"
 #include "ux_api.h"
 #include "ux_device_class_cdc_acm.h"
@@ -29,10 +33,6 @@ extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,6 +51,8 @@ extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+
+DCACHE_HandleTypeDef hdcache1;
 
 FDCAN_HandleTypeDef hfdcan1;
 
@@ -77,6 +79,7 @@ static void MX_FDCAN1_Init(void);
 static void MX_SDMMC1_SD_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_ICACHE_Init(void);
+static void MX_DCACHE1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -124,6 +127,7 @@ int main(void) {
   MX_SDMMC1_SD_Init();
   MX_USB_PCD_Init();
   MX_ICACHE_Init();
+  MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -226,11 +230,39 @@ void PeriphCommonClock_Config(void) {
 }
 
 /**
- * @brief FDCAN1 Initialization Function
- * @param None
- * @retval None
- */
-static void MX_FDCAN1_Init(void) {
+  * @brief DCACHE1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DCACHE1_Init(void)
+{
+
+  /* USER CODE BEGIN DCACHE1_Init 0 */
+
+  /* USER CODE END DCACHE1_Init 0 */
+
+  /* USER CODE BEGIN DCACHE1_Init 1 */
+
+  /* USER CODE END DCACHE1_Init 1 */
+  hdcache1.Instance = DCACHE1;
+  hdcache1.Init.ReadBurstType = DCACHE_READ_BURST_INCR;
+  if (HAL_DCACHE_Init(&hdcache1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DCACHE1_Init 2 */
+
+  /* USER CODE END DCACHE1_Init 2 */
+
+}
+
+/**
+  * @brief FDCAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_FDCAN1_Init(void)
+{
 
   /* USER CODE BEGIN FDCAN1_Init 0 */
 

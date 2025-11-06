@@ -20,15 +20,15 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
+
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
 #include "main.h"
 #include "sedsprintf.h"
 #include "telemetry.h"
 #include "telemetry_thread.h"
 #include "tx_api.h"
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
