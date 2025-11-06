@@ -38,29 +38,11 @@
 
 // #include <sedsprintf.h>
 // #include "telemetry.h"
-#include "barometer.h"
-#include "gyro.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
-typedef enum {
-  NONE,
-  BAROMETER,
-  GYROSCOPE,
-  ACCELEROMETER,
-} expected_e;
-
-typedef struct {
-  expected_e type;
-  union {
-    baro_data_t baro;
-    gyro_data_t gyro;
-    // accel_data_t accel;
-  } data;
-} payload_t;
 
 /* USER CODE END PTD */
 

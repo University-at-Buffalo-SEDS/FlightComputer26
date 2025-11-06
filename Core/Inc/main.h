@@ -70,9 +70,6 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
-#define RING_SIZE 16
-#define RING_MASK RING_SIZE - 1
-
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -27,6 +27,9 @@
 #define GYRO_CMD_READ(reg) ((uint8_t)((reg) | 0x80u))
 #define GYRO_CMD_WRITE(reg) ((uint8_t)((reg) & ~0x80u))
 
+#define GYRO_CS_LOW()  { HAL_GPIO_WritePin(CS_GYRO_GPIO_Port, CS_GYRO_Pin, GPIO_PIN_RESET); }
+#define GYRO_CS_HIGH() { HAL_GPIO_WritePin(CS_GYRO_GPIO_Port, CS_GYRO_Pin, GPIO_PIN_SET);   }
+
 /* Data buffer size */
 #define GYRO_BUF_SIZE 8
 

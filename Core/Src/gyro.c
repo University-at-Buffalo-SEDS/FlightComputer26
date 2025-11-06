@@ -3,16 +3,13 @@
 #include <math.h>
 #include <string.h>
 
-static inline void gyro_cs_low(void)  { HAL_GPIO_WritePin(CS_GYRO_GPIO_Port, CS_GYRO_Pin, GPIO_PIN_RESET); }
-static inline void gyro_cs_high(void) { HAL_GPIO_WritePin(CS_GYRO_GPIO_Port, CS_GYRO_Pin, GPIO_PIN_SET);   }
-
 /* Single-byte write: [addr(bit7=0)] [data] */
 HAL_StatusTypeDef gyro_write_register(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t value)
 {
     uint8_t tx[2] = { GYRO_CMD_WRITE(reg), value };
-    gyro_cs_low();
+    GYRO_CS_LOW();
     HAL_StatusTypeDef st = HAL_SPI_Transmit(hspi, tx, sizeof(tx), HAL_MAX_DELAY);
-    gyro_cs_high();
+    GYRO_CS_HIGH();
     return st;
 }
 
@@ -21,10 +18,10 @@ HAL_StatusTypeDef gyro_read_register(SPI_HandleTypeDef *hspi, uint8_t reg, uint8
 {
     if (!data) return HAL_ERROR;
     uint8_t cmd = GYRO_CMD_READ(reg);
-    gyro_cs_low();
+    GYRO_CS_LOW();
     HAL_StatusTypeDef st = HAL_SPI_Transmit(hspi, &cmd, 1, HAL_MAX_DELAY);
     if (st == HAL_OK) st = HAL_SPI_Receive(hspi, data, 1, HAL_MAX_DELAY);
-    gyro_cs_high();
+    GYRO_CS_HIGH();
     return st;
 }
 
@@ -33,10 +30,10 @@ HAL_StatusTypeDef gyro_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, u
 {
     if (!dst || !len) return HAL_ERROR;
     uint8_t cmd = GYRO_CMD_READ(start_reg);
-    gyro_cs_low();
+    GYRO_CS_LOW();
     HAL_StatusTypeDef st = HAL_SPI_Transmit(hspi, &cmd, 1, HAL_MAX_DELAY);
     if (st == HAL_OK) st = HAL_SPI_Receive(hspi, dst, len, HAL_MAX_DELAY);
-    gyro_cs_high();
+    GYRO_CS_HIGH();
     return st;
 }
 
