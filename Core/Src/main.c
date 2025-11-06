@@ -32,9 +32,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdarg.h>
-#include <stdatomic.h>
-#include <stdio.h>
-#include <time.h>
 
 // #include <sedsprintf.h>
 // #include "telemetry.h"
