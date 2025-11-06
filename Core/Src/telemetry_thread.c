@@ -12,11 +12,6 @@ void telemetry_thread_entry(ULONG initial_input)
 {
     (void)initial_input;
 
-    // If the router needs explicit init, do it here once:
-    if (init_telemetry_router() != SEDS_OK) {
-        die("Failed to init telemetry router");
-    }
-
     const char started_txt[] = "Telemetry thread starting";
     log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,
                               started_txt,

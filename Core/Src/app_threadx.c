@@ -71,7 +71,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr) {
   /* Log after router is initialized, before threads start */
 
   char started_txt[] = "Starting Threadx Scheduler";
-  _log_telemetry_synchronous_boot(SEDS_DT_MESSAGE_DATA, started_txt,
+  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA, started_txt,
                                   sizeof(started_txt), 1);
 
   /* USER CODE END App_ThreadX_MEM_POOL */

@@ -29,12 +29,7 @@ SedsResult init_telemetry_router(void);
 // Log a telemetry sample (1+ floats) with the given SedsDataType.
 SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
                                      size_t element_count, size_t element_size);
-
-SedsResult _log_telemetry_synchronous_boot(SedsDataType data_type,
-                                                const void *data,
-                                                size_t element_count,
-                                                size_t element_size);
-
+                                     
 SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
                                       size_t element_count,
                                       size_t element_size);
