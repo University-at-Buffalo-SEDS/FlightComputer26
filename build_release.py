@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import subprocess
 from pathlib import Path
+import sys
 
 
 def run(cmd: list[str]) -> None:
@@ -12,13 +13,20 @@ def main() -> None:
     project_dir = Path.cwd()
     build_dir = project_dir / "build" / "Release"
 
+    # Telemetry flag: ON by default, OFF if "no-telemetry" is passed
+    telemetry_flag = "-DENABLE_TELEMETRY=ON"
+    if "no-telemetry" in sys.argv[1:]:
+        telemetry_flag = "-DENABLE_TELEMETRY=OFF"
+
     # 1) Configure with CMake
     run([
         "cmake",
-        f"-DCMAKE_BUILD_TYPE=release",
+        "-DCMAKE_BUILD_TYPE=Release",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
+        "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabihf.cmake"
+        if False else "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",  # keep your original
         "-DCMAKE_COMMAND=cmake",
+        telemetry_flag,
         "-S", str(project_dir),
         "-B", str(build_dir),
         "-G", "Ninja",
