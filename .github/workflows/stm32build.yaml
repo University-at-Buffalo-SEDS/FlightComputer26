@@ -135,7 +135,7 @@ jobs:
           ccache --show-config || true
 
       - name: Build (Build the project)
-        run: ./build_"$BUILD_TYPE".sh
+        run: ./build_"$BUILD_TYPE".py
 
       - name: Show ccache stats (optional)
         run: ccache --show-stats || true
