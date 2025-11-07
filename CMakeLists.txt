@@ -66,3 +66,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
 )
+
+#Telemetry library
+add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
+target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
