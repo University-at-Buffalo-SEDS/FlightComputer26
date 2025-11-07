@@ -4,8 +4,6 @@
 #include <stdint.h>
 
 /* Define to enable the telemetry subsystem */
-// #define TELEMETRY_ENABLED
-
 #ifdef __cplusplus
 extern "C" {
 
