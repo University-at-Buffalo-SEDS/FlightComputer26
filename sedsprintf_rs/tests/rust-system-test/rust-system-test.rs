@@ -11,6 +11,7 @@ mod threaded_system_tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+
     fn zero_clock() -> Box<dyn Clock + Send + Sync> {
         Box::new(|| 0u64)
     }
@@ -62,7 +63,7 @@ mod threaded_system_tests {
             &[DataEndpoint::SdCard, DataEndpoint::GroundStation],
             ts,
         )
-            .unwrap()
+        .unwrap()
     }
 
     /// Threaded system test that mirrors `main.c` but uses the Rust
@@ -247,7 +248,7 @@ mod threaded_system_tests {
                     &[DataEndpoint::SdCard, DataEndpoint::GroundStation],
                     i + 300,
                 )
-                    .unwrap();
+                .unwrap();
                 // Send via router so it goes through TX path and bus.
                 power_router.send(&pkt2).unwrap();
                 thread::sleep(Duration::from_millis(5));
