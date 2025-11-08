@@ -24,7 +24,7 @@ def main() -> None:
         "-DCMAKE_BUILD_TYPE=Debug",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabihf.cmake"
-        if False else "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",  # keep your original
+        if False else "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
         "-DCMAKE_COMMAND=cmake",
         telemetry_flag,
         "-S", str(project_dir),
