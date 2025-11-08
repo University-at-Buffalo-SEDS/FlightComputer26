@@ -187,7 +187,7 @@ SedsResult dispatch_tx_queue(void) {
       return SEDS_ERR;
   }
 
-  SedsResult res = seds_router_process_send_queue(g_router.r);
+  SedsResult res = seds_router_process_tx_queue(g_router.r);
 
   return res;
 }
@@ -201,7 +201,7 @@ SedsResult process_rx_queue(void) {
       return SEDS_ERR;
   }
 
-  SedsResult res = seds_router_process_received_queue(g_router.r);
+  SedsResult res = seds_router_process_rx_queue(g_router.r);
 
   return res;
 }
