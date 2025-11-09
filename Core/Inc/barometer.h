@@ -1,7 +1,4 @@
 #pragma once
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdatomic.h>
 #include <math.h>
 #include "main.h"
 #include "stm32h5xx_hal.h"
