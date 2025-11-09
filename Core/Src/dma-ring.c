@@ -2,8 +2,7 @@
  * Logic related to DMA and ring buffer.
  */
 
-#include <math.h>
-#include <sedsprintf.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -17,7 +16,6 @@
 #include "telemetry.h"
 #include "barometer.h"
 #include "gyro.h"
-#include "accel.h"
 
 // HAL handles from main.c.
 extern SPI_HandleTypeDef hspi1;
@@ -30,13 +28,16 @@ static uint8_t baro_dma_tx[BMP390_BUF_SIZE] = {[0] = (uint8_t)(BARO_DATA_0 | BMP
 static uint8_t baro_dma_rx[BMP390_BUF_SIZE];
 static uint8_t gyro_dma_tx[GYRO_BUF_SIZE] = {[0] = (uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB))};
 static uint8_t gyro_dma_rx[GYRO_BUF_SIZE];
-static uint8_t accel_dma_tx[ACCEL_BUF_SIZE] = {[0] = (uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB))};
-static uint8_t accel_dma_rx[ACCEL_BUF_SIZE];
+// uint8_t accel_dma_tx[ACCEL_BUF_SIZE] = {[0] = (uint8_t)(ACCEL_FIRST_DATA_ADDRESS | ACCEL_SPI_READ_BIT)};
+// uint8_t accel_dma_rx[ACCEL_BUF_SIZE];
 
 // Ring buffer. Producer: ReceiveComplete callback. Consumer: dequeue_and_send_next().
 static volatile payload_t ring[RING_SIZE];
 static volatile atomic_uint_fast16_t head = ATOMIC_VAR_INIT(0);
 static volatile atomic_uint_fast16_t tail = ATOMIC_VAR_INIT(0);
+
+// Producer: dequeue_and_send_next(). Consumer: sedsprintf::log_telemetry_asynchronous.
+static payload_t buf = {.type = NONE, .data = {0}};
 
 // Device to expect next time ReceiveComplete is invoked by HAL.
 static volatile atomic_uint_fast8_t next = ATOMIC_VAR_INIT(NONE);
@@ -47,27 +48,26 @@ static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
  * @param None
  * @retval SedsResult, passed from library to caller.
  */
-static inline SedsResult send_dequeued(payload_t *buf) {
-  switch (buf->type) {
+static inline SedsResult send_dequeued() {
+  switch (buf.type) {
     case BAROMETER:
     {
-      buf->data.baro.temp = compensate_temperature(buf->data.baro.temp);
-      buf->data.baro.pres = compensate_pressure(buf->data.baro.pres);
-      buf->data.baro.alt = compute_relative_altitude(buf->data.baro.pres);
-      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf->data.baro, 3, sizeof(float));
+      buf.data.baro.temp = compensate_temperature(buf.data.baro.temp);
+      buf.data.baro.pres = compensate_pressure(buf.data.baro.pres);
+      buf.data.baro.alt = compute_relative_altitude(buf.data.baro.pres);
+      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data, 3, sizeof(float));
     }
     case GYROSCOPE:
     {
-      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf->data.gyro, 3, sizeof(uint16_t));
+      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data, 3, sizeof(uint16_t));
     }
     case ACCELEROMETER:
     {
-      float conv[3] = {0.0f, 0.0f, 0.0f};
-      convert_raw_accel_to_mg(&buf->data.accel, &conv[0], &conv[1], &conv[2]);
-      return log_telemetry_asynchronous(SEDS_DT_ACCEL_DATA, conv, 3, sizeof(float));
+      // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf.data, 3, sizeof(float));
     }
-    case NONE: return SEDS_INVALID_TYPE;
+    case NONE: return false;
   }
+  return SEDS_ERR; // Assert unreachable
 }
 
 /**
@@ -98,26 +98,10 @@ static inline void enqueue(const expected_e type) {
     }
     case GYROSCOPE:
     {
-      HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)gyro_dma_rx, GYRO_BUF_SIZE); 
-
-      ring[i].type = GYROSCOPE;
-      ring[i].data.gyro.rate_x = (int16_t)((uint16_t)gyro_dma_rx[2] << 8 | gyro_dma_rx[1]);
-      ring[i].data.gyro.rate_y = (int16_t)((uint16_t)gyro_dma_rx[4] << 8 | gyro_dma_rx[3]);
-      ring[i].data.gyro.rate_z = (int16_t)((uint16_t)gyro_dma_rx[6] << 8 | gyro_dma_rx[5]);
-
-      GYRO_CS_HIGH();
       break;
     }
     case ACCELEROMETER:
     {
-      HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)accel_dma_rx, ACCEL_BUF_SIZE);
-
-      ring[i].type = ACCELEROMETER;
-      ring[i].data.accel.x = (int16_t)((uint16_t)accel_dma_rx[2] << 8 | accel_dma_rx[1]);
-      ring[i].data.accel.y = (int16_t)((uint16_t)accel_dma_rx[4] << 8 | accel_dma_rx[3]);
-      ring[i].data.accel.z = (int16_t)((uint16_t)accel_dma_rx[6] << 8 | accel_dma_rx[5]);
-
-      ACCEL_CS_HIGH();
       break;
     }
     case NONE: return;
@@ -139,10 +123,10 @@ inline SedsResult dequeue_and_send_next() {
   if ((h & RING_MASK) == (t & RING_MASK))
     return SEDS_ERR;
 
-  payload_t buf = ring[t & RING_MASK];
+  buf = ring[t & RING_MASK];
 
   atomic_store_explicit(&tail, t + 1, memory_order_release);
-  return send_dequeued(&buf);
+  return send_dequeued();
 }
 
 /**
@@ -185,8 +169,8 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
     }
     case ACCELEROMETER:
     {
-      HAL_DCACHE_CleanByAddr_IT(&hdcache1, (uint32_t *)accel_dma_rx, ACCEL_BUF_SIZE);
-      ACCEL_CS_HIGH();
+      // HAL_DCACHE_CleanByAddr_IT(&hdcache1, (uint32_t *)accel_dma_rx, ACCEL_BUF_SIZE);
+      // ACCEL_CS_HIGH();
       break;
     }
     case NONE: return;
@@ -237,11 +221,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
       if (!atomic_compare_exchange_strong(&next, &expected, ACCELEROMETER))
         return;
 
-      ACCEL_CS_LOW();
-      st = HAL_SPI_TransmitReceive_DMA(&hspi1, accel_dma_tx, accel_dma_rx, ACCEL_BUF_SIZE);
+      // ACCEL_CS_LOW();
+      // st = HAL_SPI_TransmitReceive_DMA(hspi, accel_dma_tx, accel_dma_rx, ACCEL_BUF_SIZE);
 
       if (st != HAL_OK) {
-        ACCEL_CS_HIGH();
+        // ACCEL_CS_HIGH();
         atomic_store_explicit(&next, NONE, memory_order_release);
       }
       break;

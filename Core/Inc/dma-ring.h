@@ -7,7 +7,6 @@
 
 #include "barometer.h"
 #include "gyro.h"
-#include "accel.h"
 
 // DMA interrupt pins for each device
 #define ACCEL_INT_PIN_1 GPIO_PIN_4
@@ -34,7 +33,7 @@ typedef struct {
   union {
     baro_data_t baro;
     gyro_data_t gyro;
-    accel_data_t accel;
+    // accel_data_t accel;
   } data;
 } payload_t;
 
