@@ -1,5 +1,5 @@
 // telemetry_thread.c
-#include "telemetry_thread.h"
+#include "FC-Threads.h"
 #include "tx_api.h"
 #include "telemetry.h"
 

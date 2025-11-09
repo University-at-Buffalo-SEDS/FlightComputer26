@@ -27,7 +27,7 @@
 #include "main.h"
 #include "sedsprintf.h"
 #include "telemetry.h"
-#include "telemetry_thread.h"
+#include "FC-Threads.h"
 #include "tx_api.h"
 /* USER CODE END Includes */
 
