@@ -2,7 +2,7 @@
  * Logic related to DMA and ring buffer.
  */
 
-#include <sedsprintf.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -36,6 +36,9 @@ static volatile payload_t ring[RING_SIZE];
 static volatile atomic_uint_fast16_t head = ATOMIC_VAR_INIT(0);
 static volatile atomic_uint_fast16_t tail = ATOMIC_VAR_INIT(0);
 
+// Producer: dequeue_and_send_next(). Consumer: sedsprintf::log_telemetry_asynchronous.
+static payload_t buf = {.type = NONE, .data = {0}};
+
 // Device to expect next time ReceiveComplete is invoked by HAL.
 static volatile atomic_uint_fast8_t next = ATOMIC_VAR_INIT(NONE);
 static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
@@ -45,26 +48,26 @@ static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
  * @param None
  * @retval SedsResult, passed from library to caller.
  */
-static inline SedsResult send_dequeued(payload_t *buf) {
-  switch (buf->type) {
+static inline SedsResult send_dequeued() {
+  switch (buf.type) {
     case BAROMETER:
     {
-      buf->data.baro.temp = compensate_temperature(buf->data.baro.temp);
-      buf->data.baro.pres = compensate_pressure(buf->data.baro.pres);
-      buf->data.baro.alt = compute_relative_altitude(buf->data.baro.pres);
-      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf->data.baro, 3, sizeof(float));
+      buf.data.baro.temp = compensate_temperature(buf.data.baro.temp);
+      buf.data.baro.pres = compensate_pressure(buf.data.baro.pres);
+      buf.data.baro.alt = compute_relative_altitude(buf.data.baro.pres);
+      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data, 3, sizeof(float));
     }
     case GYROSCOPE:
     {
-      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf->data.gyro, 3, sizeof(uint16_t));
+      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data, 3, sizeof(uint16_t));
     }
     case ACCELEROMETER:
     {
-      // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf->data.accel, 3, sizeof(float));
-      return SEDS_OK; // to avoid errors until accel is ready
+      // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf.data, 3, sizeof(float));
     }
-    case NONE: return SEDS_INVALID_TYPE;
+    case NONE: return false;
   }
+  return SEDS_ERR; // Assert unreachable
 }
 
 /**
@@ -95,14 +98,6 @@ static inline void enqueue(const expected_e type) {
     }
     case GYROSCOPE:
     {
-      HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)gyro_dma_rx, GYRO_BUF_SIZE); 
-
-      ring[i].type = GYROSCOPE;
-      ring[i].data.gyro.rate_x = (int16_t)((uint16_t)gyro_dma_rx[2] << 8 | gyro_dma_rx[1]);
-      ring[i].data.gyro.rate_y = (int16_t)((uint16_t)gyro_dma_rx[4] << 8 | gyro_dma_rx[3]);
-      ring[i].data.gyro.rate_z = (int16_t)((uint16_t)gyro_dma_rx[6] << 8 | gyro_dma_rx[5]);
-
-      GYRO_CS_HIGH();
       break;
     }
     case ACCELEROMETER:
@@ -128,10 +123,10 @@ inline SedsResult dequeue_and_send_next() {
   if ((h & RING_MASK) == (t & RING_MASK))
     return SEDS_ERR;
 
-  payload_t buf = ring[t & RING_MASK];
+  buf = ring[t & RING_MASK];
 
   atomic_store_explicit(&tail, t + 1, memory_order_release);
-  return send_dequeued(&buf);
+  return send_dequeued();
 }
 
 /**
@@ -228,7 +223,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
       // ACCEL_CS_LOW();
       // st = HAL_SPI_TransmitReceive_DMA(hspi, accel_dma_tx, accel_dma_rx, ACCEL_BUF_SIZE);
-      st = HAL_OK; // To avoid errors until accel is ready
+
       if (st != HAL_OK) {
         // ACCEL_CS_HIGH();
         atomic_store_explicit(&next, NONE, memory_order_release);
