@@ -1,12 +1,14 @@
 // Core/Src/telemetry_alloc.c
 #include "tx_api.h"
 #include <stddef.h>
+#include <stdio.h>
 
 /*
  * Rust expects these functions to exist for heap allocations:
  *
  *   void *telemetryMalloc(size_t);
  *   void telemetryFree(void *);
+ *  void seds_println(const char *str, size_t len);
  *
  */
 
@@ -57,4 +59,10 @@ void telemetryFree(void *pv)
     /* If the pool wasn’t created yet, something is badly wrong,
        but tx_byte_release() will fail and we just ignore it. */
     (void)tx_byte_release(pv);
+}
+
+void seds_println(const char *str, size_t len)
+{
+    (void)len;
+    printf("%s\n", str);
 }

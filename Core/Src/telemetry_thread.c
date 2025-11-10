@@ -1,11 +1,11 @@
 // telemetry_thread.c
-#include "telemetry_thread.h"
+#include "FC-Threads.h"
 #include "tx_api.h"
 #include "telemetry.h"
 
 // Stack + TCB for telemetry thread
 TX_THREAD telemetry_thread;
-#define TELEMETRY_THREAD_STACK_SIZE 1024u
+#define TELEMETRY_THREAD_STACK_SIZE (1024u * 8u)
 ULONG telemetry_thread_stack[TELEMETRY_THREAD_STACK_SIZE / sizeof(ULONG)];
 
 void telemetry_thread_entry(ULONG initial_input)
