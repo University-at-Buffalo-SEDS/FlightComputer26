@@ -2,6 +2,7 @@
  * Logic related to DMA and ring buffer.
  */
 
+#include <sedsprintf.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdatomic.h>
@@ -38,6 +39,7 @@ static volatile atomic_uint_fast16_t tail = ATOMIC_VAR_INIT(0);
 
 // Producer: dequeue_and_send_next(). Consumer: sedsprintf::log_telemetry_asynchronous.
 static payload_t buf = {.type = NONE, .data = {0}};
+static volatile atomic_bool lib_busy = ATOMIC_VAR_INIT(false);
 
 // Device to expect next time ReceiveComplete is invoked by HAL.
 static volatile atomic_uint_fast8_t next = ATOMIC_VAR_INIT(NONE);
@@ -49,25 +51,30 @@ static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
  * @retval SedsResult, passed from library to caller.
  */
 static inline SedsResult send_dequeued() {
+  SedsResult st;
+  atomic_store_explicit(&lib_busy, true, memory_order_release);
+
   switch (buf.type) {
     case BAROMETER:
     {
       buf.data.baro.temp = compensate_temperature(buf.data.baro.temp);
       buf.data.baro.pres = compensate_pressure(buf.data.baro.pres);
       buf.data.baro.alt = compute_relative_altitude(buf.data.baro.pres);
-      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data.baro, 3, sizeof(float));
+      st = log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data.baro, 3, sizeof(float));
     }
     case GYROSCOPE:
     {
-      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data.gyro, 3, sizeof(uint16_t));
+      st = log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data.gyro, 3, sizeof(uint16_t));
     }
     case ACCELEROMETER:
     {
       // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf.data, 3, sizeof(float));
     }
-    case NONE: return false;
+    case NONE: st = SEDS_ERR;
   }
-  return SEDS_ERR; // Assert unreachable
+
+  atomic_store_explicit(&lib_busy, false, memory_order_release);
+  return st;
 }
 
 /**
@@ -124,9 +131,10 @@ static inline void enqueue(const expected_e type) {
 inline SedsResult dequeue_and_send_next() {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_relaxed);
+  bool st = atomic_load_explicit(&lib_busy, memory_order_acquire);
 
-  // Check if the ring is empty (head is on tail)
-  if ((h & RING_MASK) == (t & RING_MASK))
+  // Check if the ring is empty (head is on tail), or if library is busy
+  if ((h & RING_MASK) == (t & RING_MASK) || st)
     return SEDS_ERR;
 
   buf = ring[t & RING_MASK];
