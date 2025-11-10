@@ -55,11 +55,11 @@ static inline SedsResult send_dequeued() {
       buf.data.baro.temp = compensate_temperature(buf.data.baro.temp);
       buf.data.baro.pres = compensate_pressure(buf.data.baro.pres);
       buf.data.baro.alt = compute_relative_altitude(buf.data.baro.pres);
-      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data, 3, sizeof(float));
+      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data.baro, 3, sizeof(float));
     }
     case GYROSCOPE:
     {
-      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data, 3, sizeof(uint16_t));
+      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data.gyro, 3, sizeof(uint16_t));
     }
     case ACCELEROMETER:
     {
@@ -98,6 +98,12 @@ static inline void enqueue(const expected_e type) {
     }
     case GYROSCOPE:
     {
+      ring[i].type = GYROSCOPE;
+      ring[i].data.gyro.rate_x = (int16_t)((uint16_t)gyro_dma_rx[2] << 8 | gyro_dma_rx[1]);
+      ring[i].data.gyro.rate_y = (int16_t)((uint16_t)gyro_dma_rx[4] << 8 | gyro_dma_rx[3]);
+      ring[i].data.gyro.rate_z = (int16_t)((uint16_t)gyro_dma_rx[6] << 8 | gyro_dma_rx[5]);
+
+      GYRO_CS_HIGH();
       break;
     }
     case ACCELEROMETER:
