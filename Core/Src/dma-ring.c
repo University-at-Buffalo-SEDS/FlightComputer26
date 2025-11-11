@@ -64,7 +64,7 @@ static inline SedsResult send_dequeued(payload_t *buf) {
       // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf->data.accel, 3, sizeof(float));
       return SEDS_OK; // to avoid errors until accel is ready
     }
-    case NONE: return SEDS_ERR;
+    case NONE: return SEDS_INVALID_TYPE;
   }
 }
 
