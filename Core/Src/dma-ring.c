@@ -37,10 +37,6 @@ static volatile payload_t ring[RING_SIZE];
 static volatile atomic_uint_fast16_t head = ATOMIC_VAR_INIT(0);
 static volatile atomic_uint_fast16_t tail = ATOMIC_VAR_INIT(0);
 
-// Producer: dequeue_and_send_next(). Consumer: sedsprintf::log_telemetry_asynchronous.
-static payload_t buf = {.type = NONE, .data = {0}};
-static volatile atomic_bool lib_busy = ATOMIC_VAR_INIT(false);
-
 // Device to expect next time ReceiveComplete is invoked by HAL.
 static volatile atomic_uint_fast8_t next = ATOMIC_VAR_INIT(NONE);
 static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
@@ -50,31 +46,26 @@ static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE); // Constant to user
  * @param None
  * @retval SedsResult, passed from library to caller.
  */
-static inline SedsResult send_dequeued() {
-  SedsResult st;
-  atomic_store_explicit(&lib_busy, true, memory_order_release);
-
-  switch (buf.type) {
+static inline SedsResult send_dequeued(payload_t *buf) {
+  switch (buf->type) {
     case BAROMETER:
     {
-      buf.data.baro.temp = compensate_temperature(buf.data.baro.temp);
-      buf.data.baro.pres = compensate_pressure(buf.data.baro.pres);
-      buf.data.baro.alt = compute_relative_altitude(buf.data.baro.pres);
-      st = log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf.data.baro, 3, sizeof(float));
+      buf->data.baro.temp = compensate_temperature(buf->data.baro.temp);
+      buf->data.baro.pres = compensate_pressure(buf->data.baro.pres);
+      buf->data.baro.alt = compute_relative_altitude(buf->data.baro.pres);
+      return log_telemetry_asynchronous(SEDS_DT_BAROMETER_DATA, &buf->data.baro, 3, sizeof(float));
     }
     case GYROSCOPE:
     {
-      st = log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf.data.gyro, 3, sizeof(uint16_t));
+      return log_telemetry_asynchronous(SEDS_DT_GYRO_DATA, &buf->data.gyro, 3, sizeof(uint16_t));
     }
     case ACCELEROMETER:
     {
-      // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf.data, 3, sizeof(float));
+      // return log_telemetry_asynchronous(SEDS_DT_ACCELEROMETER_DATA, &buf->data.accel, 3, sizeof(float));
+      return SEDS_OK; // to avoid errors until accel is ready
     }
-    case NONE: st = SEDS_ERR;
+    case NONE: return SEDS_ERR;
   }
-
-  atomic_store_explicit(&lib_busy, false, memory_order_release);
-  return st;
 }
 
 /**
@@ -133,16 +124,15 @@ static inline void enqueue(const expected_e type) {
 inline SedsResult dequeue_and_send_next() {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_relaxed);
-  bool st = atomic_load_explicit(&lib_busy, memory_order_acquire);
 
-  // Check if the ring is empty (head is on tail), or if library is busy
-  if ((h & RING_MASK) == (t & RING_MASK) || st)
+  // Check if the ring is empty (head is on tail)
+  if ((h & RING_MASK) == (t & RING_MASK))
     return SEDS_ERR;
 
-  buf = ring[t & RING_MASK];
+  payload_t buf = ring[t & RING_MASK];
 
   atomic_store_explicit(&tail, t + 1, memory_order_release);
-  return send_dequeued();
+  return send_dequeued(&buf);
 }
 
 /**
@@ -239,7 +229,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
       // ACCEL_CS_LOW();
       // st = HAL_SPI_TransmitReceive_DMA(hspi, accel_dma_tx, accel_dma_rx, ACCEL_BUF_SIZE);
-
+      st = HAL_OK; // To avoid errors until accel is ready
       if (st != HAL_OK) {
         // ACCEL_CS_HIGH();
         atomic_store_explicit(&next, NONE, memory_order_release);
