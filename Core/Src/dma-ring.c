@@ -105,6 +105,8 @@ static inline void enqueue(const expected_e type) {
     }
     case GYROSCOPE:
     {
+      HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)gyro_dma_rx, GYRO_BUF_SIZE); 
+
       ring[i].type = GYROSCOPE;
       ring[i].data.gyro.rate_x = (int16_t)((uint16_t)gyro_dma_rx[2] << 8 | gyro_dma_rx[1]);
       ring[i].data.gyro.rate_y = (int16_t)((uint16_t)gyro_dma_rx[4] << 8 | gyro_dma_rx[3]);
