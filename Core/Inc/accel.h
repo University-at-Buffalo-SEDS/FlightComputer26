@@ -1,26 +1,28 @@
 //REGISTER MAPPING
 #include <stdint.h>
+#include "main.h"
+#include "stm32h5xx_hal_gpio.h"
+
 #define accel_reset_addr    0x7E
 #define accel_chip_id_addr  0x00
 #define accel_conf_addr     0x40
-#define accel_pwr_ctrl      0x00
+#define accel_pwr_ctrl      0x7D
 #define accel_range_addr    0x41    
-
 
 #define accel_z_msb         0x17
 #define accel_z_lsb         0x16
-
 #define accel_y_msb         0x15
 #define accel_y_lsb         0x14
-
 #define accel_x_msb         0x13
 #define accel_x_lsb         0x12
 
-//ACCEL CONFIGS
+// ACCEL CONFIGS
 #define accel_reset_val     0xB6
 #define accel_range_val     0x03
 #define accel_conf_val      0x28
 
+#define ACCEL_CS_LOW()    { HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_RESET); }
+#define ACCEL_CS_HIGH()   { HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_SET);   }
 
 typedef enum {
     POWER_ON = 0x04,
