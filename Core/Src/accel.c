@@ -59,9 +59,9 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 
   uint8_t data = 0;
   /* WHO_AM_I should be 0x1E at 0x00 (Taken directly from Gyro Driver)*/ 
-  status = accel_read_reg(hspi, ACCEL_CHIP_ID, &data);
+  status = accel_read_reg(hspi, ACCEL_CHIP_ADDRESS, &data);
   if (status != HAL_OK) return status;
-  if (data != 0x1E) {
+  if (data != ACCEL_CHIP_ID) {
     printf("Accel WHOAMI mismatch: 0x%02X (exp 0x1E)\n", data);
     return HAL_ERROR;
   }
@@ -73,12 +73,12 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 
 
   //soft reset
-  status = accel_write_reg(hspi, ACCEL_RESET, 0xB6);
+  status = accel_write_reg(hspi, ACCEL_RESET, ACCEL_RESET_VAL);
   if (status != HAL_OK) return status;
   HAL_Delay(2);
 
   //range set to ±24g
-  status = accel_write_reg(hspi, ACCEL_RANGE, 0x03); 
+  status = accel_write_reg(hspi, ACCEL_RANGE, ACCEL_RANGE_VAL);
   if (status != HAL_OK) return status;
   HAL_Delay(1);
 
