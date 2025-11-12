@@ -4,7 +4,7 @@
 #include "stdio.h"
 #include "stm32h5xx_hal_def.h"
 
-//write 1 byte to a register address
+// Write 1 byte to a register address
 HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data){
   uint8_t buffer[2] = {[0] = ACCEL_CMD_WRITE(reg)};
   ACCEL_CS_LOW(); // select accel chip
@@ -83,7 +83,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   HAL_Delay(1);
 
   //Bandwith of low pass filter config to normal and ODR set to 1600hz 
-  status = accel_write_reg(hspi, ACCEL_CONF, ((0x0A << 4) | 0x0C)); //
+  status = accel_write_reg(hspi, ACCEL_CONF, ((0x0A << 4) | 0x0C));
   if (status != HAL_OK) return status;
   HAL_Delay(5);
 
@@ -93,8 +93,8 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 
 //read the accelermoter axis data
 HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accelData_t *accelData){
-  uint8_t rxBuffer[6];
-  HAL_StatusTypeDef status = accel_read_buffer(hspi, 0x12, rxBuffer, 6);
+  uint8_t rxBuffer[ACCEL_BUF_SIZE];
+  HAL_StatusTypeDef status = accel_read_buffer(hspi, ACCEL_X_LSB, rxBuffer, ACCEL_BUF_SIZE);
   if (status != HAL_OK){
     return status;
   }
