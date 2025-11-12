@@ -1,17 +1,14 @@
 #include "main.h"
-#include "stm32g4xx_hal.h"
+#include "stm32h5xx_hal.h"
 #include "accel.h"
 #include "stdio.h"
-
-static inline void accel_cs_low(void) {HAL_GPIO_WritePin(accel_CS_GPIO_Port, accel_CS_Pin, GPIO_PIN_RESET);}
-static inline void accel_cs_high(void) {HAL_GPIO_WritePin(accel_CS_GPIO_Port, accel_CS_Pin, GPIO_PIN_SET);}
 
 //write 1 byte to a register address
 HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data){
   uint8_t buffer[2] = {((reg) & ~0x80u), data};
-  accel_cs_low(); //select accel chip
+  ACCEL_CS_LOW(); //select accel chip
   HAL_StatusTypeDef status = HAL_SPI_Transmit(hspi, buffer, sizeof(buffer), 100);
-  accel_cs_high();
+  ACCEL_CS_HIGH();
   return status;
 }
 
@@ -21,9 +18,9 @@ HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *
   uint8_t reg_addr = reg | 0x80; //adding read bit to register address
   uint8_t tx_buffer[3] = {reg_addr, 0x00, 0x00};
   uint8_t rx_buffer[3];
-  accel_cs_low();
+  ACCEL_CS_LOW();
   HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(hspi, tx_buffer, rx_buffer, 3, 100); 
-  accel_cs_high();
+  ACCEL_CS_HIGH();
   if (status == HAL_ERROR) return status;
   *data = rx_buffer[2]; //Select last byte as actual info, then store it where the parameters point to
   return status;
@@ -34,7 +31,7 @@ HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, 
   if (!dst || !len) return HAL_ERROR;
   uint8_t reg_addr = start_reg | 0x80;
   uint8_t dummy = 0x00;
-  accel_cs_low();
+  ACCEL_CS_LOW();
   HAL_StatusTypeDef status = HAL_SPI_Transmit(hspi, &reg_addr, 1, HAL_MAX_DELAY);
 
   //DUMMY BYTE HANDLING
@@ -43,7 +40,7 @@ HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, 
   }
 
   if (status == HAL_OK) status = HAL_SPI_Receive(hspi, dst, len, HAL_MAX_DELAY);
-  accel_cs_high();
+  ACCEL_CS_HIGH();
   return status;
 }
 
