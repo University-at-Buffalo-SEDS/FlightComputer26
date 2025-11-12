@@ -22,6 +22,8 @@
 #define ACCEL_RANGE_VAL     0x03
 #define ACCEL_CONF_VAL      0x28
 #define ACCEL_BUF_SIZE      6
+#define ACCEL_CONF_VAL      ((0x0A << 4) | 0x0C)
+
 
 #define ACCEL_CMD_READ(reg)  ((uint8_t)((reg) | 0x80u))
 #define ACCEL_CMD_WRITE(reg) ((uint8_t)((reg) & ~0x80u))
