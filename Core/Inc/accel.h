@@ -1,3 +1,4 @@
+#pragma once
 #include <stdint.h>
 #include "main.h"
 #include "stm32h5xx_hal_gpio.h"
