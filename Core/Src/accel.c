@@ -50,11 +50,8 @@ HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, 
 //configure the accelerometer
 HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 {
+  HAL_Delay(30);
   HAL_StatusTypeDef status;
-
-  status = accel_write_reg(hspi, accel_pwr_ctrl, POWER_ON); //power on
-  if (status != HAL_OK) return status;
-  HAL_Delay(30); 
 
   uint8_t data = 0;
   /* WHO_AM_I should be 0x1E at 0x00 (Taken directly from Gyro Driver)*/ 
@@ -65,17 +62,23 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
     return HAL_ERROR;
     }
 
+  status = accel_write_reg(hspi, accel_pwr_ctrl, POWER_ON); //power on
+  if (status != HAL_OK) return status;
+  HAL_Delay(30); 
+
+
+
   //soft reset
   status = accel_write_reg(hspi, accel_reset_addr, 0xB6);
   if (status != HAL_OK) return status;
   HAL_Delay(2);
 
-  //ODR set to 1600hz 
-  status = accel_write_reg(hspi, accel_range_addr, 0x03); //range set to ±24g
+  //range set to ±24g
+  status = accel_write_reg(hspi, accel_range_addr, 0x03); 
   if (status != HAL_OK) return status;
   HAL_Delay(1);
 
-  //Bandwith of low pass filter config to normal
+  //Bandwith of low pass filter config to normal and ODR set to 1600hz 
   status = accel_write_reg(hspi, accel_conf_addr, ((0x0A << 4) | 0x0C)); //
   if (status != HAL_OK) return status;
   HAL_Delay(5);
