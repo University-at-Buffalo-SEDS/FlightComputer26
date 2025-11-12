@@ -4,12 +4,14 @@
 #include "stdio.h"
 #include "stm32h5xx_hal_def.h"
 
-// Write 1 byte to a register address
+/* Write 1 byte to a register address */
 HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data){
   uint8_t buffer[2] = {[0] = ACCEL_CMD_WRITE(reg)};
-  ACCEL_CS_LOW(); // select accel chip
+  
+  ACCEL_CS_LOW();
   HAL_StatusTypeDef status = HAL_SPI_Transmit(hspi, buffer, sizeof(buffer), HAL_MAX_DELAY);
   ACCEL_CS_HIGH();
+
   return status;
 }
 
@@ -22,7 +24,7 @@ HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *
 
   ACCEL_CS_LOW();
   HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(hspi, tx_buffer, rx_buffer,
-                                                     sizeof(rx_buffer), HAL_MAX_DELAY); 
+                                                     sizeof(tx_buffer), HAL_MAX_DELAY); 
   ACCEL_CS_HIGH();
   if (status != HAL_OK) return status;
   
@@ -30,8 +32,9 @@ HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *
   return status;
 }
 
-// Burst read function using auto-increment for BMI-088
-HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, uint8_t *dst, uint16_t len){
+/* Burst read function using auto-increment for BMI-088 */
+HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg,
+                                    uint8_t *dst, uint16_t len) {
   if (!dst || !len) return HAL_ERROR;
 
   uint8_t reg_addr = ACCEL_CMD_READ(start_reg);
@@ -47,52 +50,50 @@ HAL_StatusTypeDef accel_read_buffer(SPI_HandleTypeDef *hspi, uint8_t start_reg, 
   if (status == HAL_OK) {
     status = HAL_SPI_Receive(hspi, dst, len, HAL_MAX_DELAY);
   }
+
   ACCEL_CS_HIGH();
   return status;
 }
 
-// Configure the accelerometer
+/* Configure the accelerometer */
 HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 {
   HAL_Delay(30);
   HAL_StatusTypeDef status;
+  uint8_t id = 0;
 
-  uint8_t data = 0;
-  /* WHO_AM_I should be 0x1E at 0x00 (Taken directly from Gyro Driver)*/ 
-  status = accel_read_reg(hspi, ACCEL_CHIP_ADDRESS, &data);
+  /* WHO_AM_I should be 0x1E at 0x00 (taken directly from Gyro Driver) */ 
+  status = accel_read_reg(hspi, ACCEL_CHIP_ADDR, &id);
   if (status != HAL_OK) return status;
-  if (data != ACCEL_CHIP_ID) {
-    printf("Accel WHOAMI mismatch: 0x%02X (exp 0x1E)\n", data);
+  if (id != ACCEL_CHIP_ID) {
+    printf("Accel WHOAMI mismatch: 0x%02X (exp 0x1E)\n", id);
     return HAL_ERROR;
   }
 
-  status = accel_write_reg(hspi, ACCEL_POWER_CTRL, POWER_ON); //power on
+  /* Soft reset */
+  status = accel_write_reg(hspi, ACCEL_RESET, ACCEL_RESET_VAL);
+  if (status != HAL_OK) return status;
+  HAL_Delay(30);
+  
+  /* Power on */
+  status = accel_write_reg(hspi, ACCEL_POWER_CTRL, POWER_ON);
   if (status != HAL_OK) return status;
   HAL_Delay(30); 
 
-
-
-  //soft reset
-  status = accel_write_reg(hspi, ACCEL_RESET, ACCEL_RESET_VAL);
-  if (status != HAL_OK) return status;
-  HAL_Delay(2);
-
-  //range set to ±24g
+  /* Set range to ±24g */
   status = accel_write_reg(hspi, ACCEL_RANGE, ACCEL_RANGE_VAL);
   if (status != HAL_OK) return status;
-  HAL_Delay(1);
+  HAL_Delay(30);
 
-  //Bandwith of low pass filter config to normal and ODR set to 1600hz 
-  status = accel_write_reg(hspi, ACCEL_CONF, ((0x0A << 4) | 0x0C));
+  /* Bandwith of low pass filter config to normal and ODR set to 1600hz */
+  status = accel_write_reg(hspi, ACCEL_CONF, ACCEL_CONF_VAL);
   if (status != HAL_OK) return status;
-  HAL_Delay(5);
 
   return HAL_OK;
 }
 
-
 //read the accelermoter axis data
-HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accelData_t *accelData){
+HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *accelData){
   uint8_t rxBuffer[ACCEL_BUF_SIZE];
   HAL_StatusTypeDef status = accel_read_buffer(hspi, ACCEL_X_LSB, rxBuffer, ACCEL_BUF_SIZE);
   if (status != HAL_OK){
@@ -117,18 +118,9 @@ static float accel_sensitivity_mg_per_lsb(AccelRange range)
 }
 */
 
-void convert_raw_accel_to_mg(accelData_t *data, float *x, float *y, float *z){
+void convert_raw_accel_to_mg(accel_data_t *data, float *x, float *y, float *z){
   float mg_per_lsb = 24000.0f / 32768.0f;
   *x = data->x * mg_per_lsb;
   *y = data->y * mg_per_lsb;
   *z = data->z * mg_per_lsb;
 }
-
-
-
-//USE CALLBACK INTERRUPT FOR READING DATA FROM ACCEL IN MAIN.c
-//DMA IS FASTER, BYPASSES CPU TO WRITE AND READ DATA FROM MEMORY
-//UART WRITE
-//ADC READ
-//volatile variables for interrupt routines, It means other process like a callback can change the var at anytime.
-//INTERRUPTS ARE STORED OUTSIDE OF MAIN FUNCTION AND NEED SPECIAL VARS TO BE USED^
