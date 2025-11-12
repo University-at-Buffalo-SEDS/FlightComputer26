@@ -4,7 +4,8 @@
 
 // REGISTER MAPPING
 #define ACCEL_RESET         0x7E
-#define ACCEL_CHIP_ID       0x00
+#define ACCEL_CHIP_ADDRESS       0x00
+#define ACCEL_CHIP_ID      0x1E
 #define ACCEL_CONF          0x40
 #define ACCEL_POWER_CTRL    0x7D
 #define ACCEL_RANGE         0x41    
