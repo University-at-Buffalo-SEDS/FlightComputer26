@@ -74,8 +74,8 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   status = accel_write_reg(hspi, ACCEL_RESET, ACCEL_RESET_VAL);
   if (status != HAL_OK) return status;
   HAL_Delay(30);
-  
-  /* Power on */
+
+  /* Power on (enter normal mode) */
   status = accel_write_reg(hspi, ACCEL_POWER_CTRL, POWER_ON);
   if (status != HAL_OK) return status;
   HAL_Delay(30); 
@@ -92,7 +92,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   return HAL_OK;
 }
 
-//read the accelermoter axis data
+/* Read the accelermoter axis data */
 HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *accelData){
   uint8_t rxBuffer[ACCEL_BUF_SIZE];
   HAL_StatusTypeDef status = accel_read_buffer(hspi, ACCEL_X_LSB, rxBuffer, ACCEL_BUF_SIZE);
