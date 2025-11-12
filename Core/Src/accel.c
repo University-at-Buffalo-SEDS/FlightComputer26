@@ -6,7 +6,7 @@
 
 /* Write 1 byte to a register address */
 HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data){
-  uint8_t buffer[2] = {[0] = ACCEL_CMD_WRITE(reg)};
+  uint8_t buffer[2] = {[0] = ACCEL_CMD_WRITE(reg), [1] = data};
   
   ACCEL_CS_LOW();
   HAL_StatusTypeDef status = HAL_SPI_Transmit(hspi, buffer, sizeof(buffer), HAL_MAX_DELAY);
