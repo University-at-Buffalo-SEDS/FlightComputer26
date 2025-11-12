@@ -99,9 +99,11 @@ HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *accelData){
   if (status != HAL_OK){
     return status;
   }
-  accelData->x = (int16_t)((uint16_t)(rxBuffer[1] << 8) | rxBuffer[0]); //set struct values to raw data from accel
-  accelData->y = (int16_t)((uint16_t)(rxBuffer[3] << 8) | rxBuffer[2]);
-  accelData->z = (int16_t)((uint16_t)(rxBuffer[5] << 8) | rxBuffer[4]);
+
+  // Set struct values to raw data from accel
+  accelData->x = (int16_t)((uint16_t)rxBuffer[1] << 8 | rxBuffer[0]);
+  accelData->y = (int16_t)((uint16_t)rxBuffer[3] << 8 | rxBuffer[2]);
+  accelData->z = (int16_t)((uint16_t)rxBuffer[5] << 8 | rxBuffer[4]);
   return HAL_OK;
 }
 
