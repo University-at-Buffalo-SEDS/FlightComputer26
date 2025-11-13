@@ -2,6 +2,7 @@
  * Logic related to DMA and ring buffer.
  */
 
+#include <math.h>
 #include <sedsprintf.h>
 #include <stdint.h>
 #include <stdatomic.h>
@@ -61,8 +62,9 @@ static inline SedsResult send_dequeued(payload_t *buf) {
     }
     case ACCELEROMETER:
     {
-      // Convert raw accel to mg?
-      return log_telemetry_asynchronous(SEDS_DT_ACCEL_DATA, &buf->data.accel, 3, sizeof(uint16_t));
+      float conv[3] = {0.0f, 0.0f, 0.0f};
+      convert_raw_accel_to_mg(&buf->data.accel, &conv[0], &conv[1], &conv[2]);
+      return log_telemetry_asynchronous(SEDS_DT_ACCEL_DATA, conv, 3, sizeof(float));
     }
     case NONE: return SEDS_INVALID_TYPE;
   }
