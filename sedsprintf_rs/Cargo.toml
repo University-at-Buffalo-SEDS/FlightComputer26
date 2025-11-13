@@ -1,5 +1,5 @@
 [package]
-name = "sedsprintf_rs_2026"
+name = "sedsprintf_rs"
 version = "1.0.6"
 edition = "2024"
 build = "build.rs"
