@@ -114,9 +114,9 @@ static inline void enqueue(const expected_e type) {
       HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)accel_dma_rx, ACCEL_BUF_SIZE);
 
       ring[i].type = ACCELEROMETER;
-      ring[i].data.accel.x = (float)(accel_dma_rx[2] << 8 | accel_dma_rx[1]);
-      ring[i].data.accel.y = (float)(accel_dma_rx[4] << 8 | accel_dma_rx[3]);
-      ring[i].data.accel.z = (float)(accel_dma_rx[6] << 8 | accel_dma_rx[5]);
+      ring[i].data.accel.x = (float)((accel_dma_rx[2] << 8) | accel_dma_rx[1]);
+      ring[i].data.accel.y = (float)((accel_dma_rx[4] << 8) | accel_dma_rx[3]);
+      ring[i].data.accel.z = (float)((accel_dma_rx[6] << 8) | accel_dma_rx[5]);
 
       ACCEL_CS_HIGH();
       break;
