@@ -24,7 +24,7 @@
 #define ACCEL_RANGE_VAL     0x03
 #define ACCEL_POWER_VAL     0x00
 #define ACCEL_CONF_VAL      ((0x0A << 4) | 0x0C)
-#define ACCEL_BUF_SIZE      6
+#define ACCEL_BUF_SIZE      8
 
 // Self-testing
 #define ACC_SELF_TEST       0x6D
@@ -34,7 +34,7 @@
 #define ACC_TEST_CONF       0xA7
 #define ACC_TEST_WAIT_MS    50
 
-#define MG ((float)(1u << (ACCEL_RANGE_VAL + 0x01)) / (float)(1 << 15) * 1.5f)
+#define MG ((float)(1 << (ACCEL_RANGE_VAL + 0x01)) / 32768.0f * 1.5f)
 
 #define ACCEL_CMD_READ(reg)  ((uint8_t)((reg) | 0x80u))
 #define ACCEL_CMD_WRITE(reg) ((uint8_t)((reg) & 0x7F))

@@ -30,8 +30,8 @@ static uint8_t baro_dma_tx[BMP390_BUF_SIZE] = {[0] = (uint8_t)(BARO_DATA_0 | BMP
 static uint8_t baro_dma_rx[BMP390_BUF_SIZE];
 static uint8_t gyro_dma_tx[GYRO_BUF_SIZE] = {[0] = (uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB))};
 static uint8_t gyro_dma_rx[GYRO_BUF_SIZE];
-static uint8_t accel_dma_tx[ACCEL_BUF_SIZE + 1] = {[0] = (uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB))};
-static uint8_t accel_dma_rx[ACCEL_BUF_SIZE + 1];
+static uint8_t accel_dma_tx[ACCEL_BUF_SIZE] = {[0] = (uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB))};
+static uint8_t accel_dma_rx[ACCEL_BUF_SIZE];
 
 // Ring buffer. Producer: ReceiveComplete callback. Consumer: dequeue_and_send_next().
 static volatile payload_t ring[RING_SIZE];
@@ -114,9 +114,9 @@ static inline void enqueue(const expected_e type) {
       HAL_DCACHE_InvalidateByAddr_IT(&hdcache1, (uint32_t *)accel_dma_rx, ACCEL_BUF_SIZE);
 
       ring[i].type = ACCELEROMETER;
-      ring[i].data.accel.x = (float)((accel_dma_rx[2] << 8) | accel_dma_rx[1]);
-      ring[i].data.accel.y = (float)((accel_dma_rx[4] << 8) | accel_dma_rx[3]);
-      ring[i].data.accel.z = (float)((accel_dma_rx[6] << 8) | accel_dma_rx[5]);
+      ring[i].data.accel.x = (float)((accel_dma_rx[3] << 8) | accel_dma_rx[2]);
+      ring[i].data.accel.y = (float)((accel_dma_rx[5] << 8) | accel_dma_rx[4]);
+      ring[i].data.accel.z = (float)((accel_dma_rx[7] << 8) | accel_dma_rx[6]);
 
       ACCEL_CS_HIGH();
       break;
