@@ -1,9 +1,13 @@
-#include "stm32h5xx_hal.h"
+/*
+ * Synchronous accelerometer driver over SPI.
+ */
+
+#include <stdint.h>
 #include "accel.h"
 #include "stdio.h"
+#include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_def.h"
 #include "stm32h5xx_hal_spi.h"
-#include <stdint.h>
 
 /* Write 1 byte to a register address */
 static inline HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi,
@@ -15,13 +19,13 @@ static inline HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi,
   return st;
 }
 
-/* Single Byte Read from given register, must ignore dummy byte */
+/* Single byte read from given register, must ignore dummy byte */
 static inline HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi,
                                                uint8_t reg, uint8_t *data) {
   if (!data) return HAL_ERROR;
 
   uint8_t tx[3] = {ACCEL_CMD_READ(reg), 0x00, 0x00};
-  uint8_t rx[3] = {0x00, 0x00, 0x00};
+  uint8_t rx[3];
 
   ACCEL_CS_LOW();
   HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof(tx), HAL_MAX_DELAY);
@@ -47,7 +51,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   if (status != HAL_OK) return status;
   HAL_Delay(50);
 
-  /* Dummy read */ 
+  /* Dummy read (result ignored) */ 
   status = accel_read_reg(hspi, ACCEL_CHIP_ADDR, &id);
 
   /* WHO_AM_I should be 0x1E at 0x00 (taken directly from Gyro Driver) */ 
@@ -59,62 +63,72 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   }
 
   /* Bandwith of low pass filter config to normal and ODR set to 1600hz */
-  status = accel_write_reg(hspi, ACCEL_CONF, ACCEL_CONF_VAL);
+  status = accel_write_reg(hspi, ACCEL_CONF, NORMAL_1600HZ);
   if (status != HAL_OK) return status;
 
   /* Enable active mode */
-  status = accel_write_reg(hspi, ACCEL_POWER_CONF, ACCEL_POWER_VAL);
+  status = accel_write_reg(hspi, ACCEL_PWR_CONF, ACTIVE_MODE);
   if (status != HAL_OK) return status;
   HAL_Delay(50);
 
   /* Power on (enter normal mode) */
-  status = accel_write_reg(hspi, ACCEL_POWER_CTRL, POWER_ON);
+  status = accel_write_reg(hspi, ACCEL_PWR_CTRL, ACCEL_ON);
   if (status != HAL_OK) return status;
   HAL_Delay(450);
 
   /* Set range to ±24g */
-  status = accel_write_reg(hspi, ACCEL_RANGE, ACCEL_RANGE_VAL);
+  status = accel_write_reg(hspi, ACCEL_RANGE, ACCEL_RANGE_24g);
   if (status != HAL_OK) return status;
   HAL_Delay(30);
 
   return HAL_OK;
 }
 
-/* Read the accelermoter axis data */
+/* Read the accelermoter axes data */
 HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *data) {
-  uint8_t tx[ACCEL_BUF_SIZE + 1] = {[0] = ACCEL_CMD_READ(ACCEL_X_LSB),
+  uint8_t tx[ACCEL_BUF_SIZE] = {[0] = ACCEL_CMD_READ(ACCEL_X_LSB),
                                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-  uint8_t rx[ACCEL_BUF_SIZE + 1];
+  uint8_t rx[ACCEL_BUF_SIZE];
 
   ACCEL_CS_LOW();
   HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof(rx), HAL_MAX_DELAY);
   ACCEL_CS_HIGH();
   
   if (st == HAL_OK) {
-    data->x = (float)((rx[2] << 8) | rx[1]) * MG;
-    data->y = (float)((rx[4] << 8) | rx[3]) * MG;
-    data->z = (float)((rx[6] << 8) | rx[5]) * MG;
+    data->x = (float)((rx[3] << 8) | rx[2]) * MG;
+    data->y = (float)((rx[5] << 8) | rx[4]) * MG;
+    data->z = (float)((rx[7] << 8) | rx[6]) * MG;
   }
   return st;
 }
 
-/* Performs self-test, writes raw data to out, and reinitializes the device. */
+/* Perform self-test, write raw data to out, and reinitialize accelerometer */
 HAL_StatusTypeDef accel_selftest(SPI_HandleTypeDef *hspi, accel_data_t *out) {
+  HAL_StatusTypeDef st;
   accel_data_t data_p;
   accel_data_t data_n;
 
-  accel_write_reg(hspi, ACCEL_CONF, ACC_TEST_CONF);
+  st = accel_write_reg(hspi, ACCEL_CONF, ACCEL_TEST_CONF);
+  if (st != HAL_OK) return st;
   HAL_Delay(5);
 
-  accel_write_reg(hspi, ACC_SELF_TEST, ACC_POS_POL);
+  st = accel_write_reg(hspi, ACCEL_SELF_TEST, ACCEL_POS_POL);
+  if (st != HAL_OK) return st;
   HAL_Delay(55);
-  accel_read(hspi, &data_p);
 
-  accel_write_reg(hspi, ACC_SELF_TEST, ACC_NEG_POL);
+  st = accel_read(hspi, &data_p);
+  if (st != HAL_OK) return st;
+
+  st = accel_write_reg(hspi, ACCEL_SELF_TEST, ACCEL_NEG_POL);
+  if (st != HAL_OK) return st;
   HAL_Delay(55);
-  accel_read(hspi, &data_n);
 
-  accel_write_reg(hspi, ACC_SELF_TEST, ACC_TEST_OFF);
+  st = accel_read(hspi, &data_n);
+  if (st != HAL_OK) return st;
+
+  st = accel_write_reg(hspi, ACCEL_SELF_TEST, ACCEL_TEST_OFF);
+  if (st != HAL_OK) return st;
+
   out->x = (float)(data_p.x - data_n.x);
   out->y = (float)(data_p.y - data_n.y);
   out->z = (float)(data_p.z - data_n.z);
