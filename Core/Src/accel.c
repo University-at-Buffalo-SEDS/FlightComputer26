@@ -9,7 +9,7 @@
 #include "stm32h5xx_hal_def.h"
 #include "stm32h5xx_hal_spi.h"
 
-/* Write 1 byte to a register address */
+/* Write 1 byte to a register address (the same as for gyroscope) */
 static inline HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi,
                                                 uint8_t reg, uint8_t data) {
   uint8_t buf[2] = {ACCEL_CMD_WRITE(reg), data};
@@ -19,7 +19,7 @@ static inline HAL_StatusTypeDef accel_write_reg(SPI_HandleTypeDef *hspi,
   return st;
 }
 
-/* Single byte read from given register, must ignore dummy byte */
+/* Single byte read from given register, must ignore dummy byte (datasheet ch. 6.1.2) */
 static inline HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi,
                                                uint8_t reg, uint8_t *data) {
   if (!data) return HAL_ERROR;
@@ -35,7 +35,7 @@ static inline HAL_StatusTypeDef accel_read_reg(SPI_HandleTypeDef *hspi,
   return st;
 }
 
-/* Configure the accelerometer */
+/* Initialize and configure the accelerometer (several datasheet chapters) */
 HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
 {
   HAL_StatusTypeDef status;
@@ -46,7 +46,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   ACCEL_CS_HIGH();
   HAL_Delay(50);
 
-  /* Soft reset */
+  /* Soft reset (datasheet ch. 4.8) */
   status = accel_write_reg(hspi, ACCEL_RESET, ACCEL_RESET_VAL);
   if (status != HAL_OK) return status;
   HAL_Delay(50);
@@ -54,7 +54,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   /* Dummy read (result ignored) */ 
   status = accel_read_reg(hspi, ACCEL_CHIP_ADDR, &id);
 
-  /* WHO_AM_I should be 0x1E at 0x00 (taken directly from Gyro Driver) */ 
+  /* WHO_AM_I should be 0x1E at 0x00 (taken from gyroscope driver) */ 
   status = accel_read_reg(hspi, ACCEL_CHIP_ADDR, &id);
   if (status != HAL_OK) return status;
   if (id != ACCEL_CHIP_ID) {
@@ -62,21 +62,21 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
     return HAL_ERROR;
   }
 
-  /* Bandwith of low pass filter config to normal and ODR set to 1600hz */
+  /* Bandwith of low pass filter config to normal and ODR set to 1600hz (datasheet ch. 5.3.10) */
   status = accel_write_reg(hspi, ACCEL_CONF, NORMAL_1600HZ);
   if (status != HAL_OK) return status;
 
-  /* Enable active mode */
+  /* Enable active mode (datasheet ch. 5.3.20) */
   status = accel_write_reg(hspi, ACCEL_PWR_CONF, ACTIVE_MODE);
   if (status != HAL_OK) return status;
   HAL_Delay(50);
 
-  /* Power on (enter normal mode) */
+  /* Power on (enter normal mode) (datasheet ch. 3 & 4.1.1) */
   status = accel_write_reg(hspi, ACCEL_PWR_CTRL, ACCEL_ON);
   if (status != HAL_OK) return status;
   HAL_Delay(450);
 
-  /* Set range to ±24g */
+  /* Set range to ±24g (datasheet 5.3.11) */
   status = accel_write_reg(hspi, ACCEL_RANGE, ACCEL_RANGE_24g);
   if (status != HAL_OK) return status;
   HAL_Delay(30);
@@ -84,7 +84,7 @@ HAL_StatusTypeDef accel_init(SPI_HandleTypeDef *hspi)
   return HAL_OK;
 }
 
-/* Read the accelermoter axes data */
+/* Read the accelermoter axes data (datasheet ch. 5.3.4 & 6.1.2) */
 HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *data) {
   uint8_t tx[ACCEL_BUF_SIZE] = {[0] = ACCEL_CMD_READ(ACCEL_X_LSB),
                                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -102,7 +102,7 @@ HAL_StatusTypeDef accel_read(SPI_HandleTypeDef *hspi, accel_data_t *data) {
   return st;
 }
 
-/* Perform self-test, write raw data to out, and reinitialize accelerometer */
+/* Perform self-test, write raw data to out, and reinitialize accelerometer (datasheet ch. 4.6.1) */
 HAL_StatusTypeDef accel_selftest(SPI_HandleTypeDef *hspi, accel_data_t *out) {
   HAL_StatusTypeDef st;
   accel_data_t data_p;
