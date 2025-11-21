@@ -32,17 +32,24 @@ typedef enum {
 typedef struct {
   expected_e type;
   union {
-    baro_data_t baro;
-    gyro_data_t gyro;
-    accel_data_t accel;
+    float baro[3];
+    int16_t gyro[3];
+    float accel[3];
   } data;
 } payload_t;
 
 // Global functions
 
 /**
- * @brief Single function to dequeue and pass data to the library.
+ * @brief Dequeue the oldest element of the ring and advance tail.
  * @param None
- * @retval A SedsResult indicating success or specific error.
+ * @retval A boolean indicating success or that the ring is empty.
  */
-inline SedsResult dequeue_and_send_next();
+inline bool dma_ring_dequeue_oldest(payload_t *buf);
+
+/**
+ * @brief Copy but not dequeue the oldest element of the ring.
+ * @param None
+ * @retval A boolean indicating success or that the ring is empty.
+ */
+inline bool dma_ring_copy_oldest(payload_t *buf);
