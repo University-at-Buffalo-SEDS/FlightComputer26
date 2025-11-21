@@ -47,7 +47,7 @@ static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE);
  * @retval None
  */
 static inline void enqueue(const expected_e type) {
-  uint16_t h = atomic_load_explicit(&head, memory_order_relaxed);
+  uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_acquire);
   uint16_t i = h & RING_MASK;
 
@@ -121,7 +121,7 @@ inline bool dma_ring_copy_oldest(payload_t *buf) {
  */
 inline bool dma_ring_dequeue_oldest(payload_t *buf) {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
-  uint16_t t = atomic_load_explicit(&tail, memory_order_relaxed);
+  uint16_t t = atomic_load_explicit(&tail, memory_order_acquire);
   uint16_t i = t & RING_MASK;
 
   // Check if the ring is empty (head is on tail)
