@@ -17,13 +17,6 @@
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
-/* Log helper */
-static inline void send_log(SedsDataType type, const char *msg) {
-    char message[DEPLOYMENT_DEFAULT_LOG_SIZE];
-    memcpy(message, msg, sizeof(message));
-    log_telemetry_synchronous(type, message, sizeof(message), sizeof(char));
-}
-
 /* Performs calculations and necessary checks to infer rocket state.
  * Responsible for invoking parachute deployment and triggering abortion. */
 static inline bool infer_rocket_state() {
@@ -34,16 +27,22 @@ static inline bool infer_rocket_state() {
 void deployment_thread_entry(ULONG input) {
     (void)input;
 
-    send_log(SEDS_DT_MESSAGE_DATA, "Deployment: starting thread");
+    log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA, 
+                              "Deployment: starting thread",
+                              28, sizeof(char));
 
     uint16_t retries = 0;
     for (;;) {
         if (!infer_rocket_state()) {
-            send_log(SEDS_DT_GENERIC_ERROR, "Deployment: state inference failed");
+            log_telemetry_synchronous(SEDS_DT_GENERIC_ERROR, 
+                                      "Deployment: state inference failed",
+                                      35, sizeof(char));
             ++retries;
             
             if (retries >= DEPLOYMENT_THREAD_MAX_RETRIES) {
-                send_log(SEDS_DT_GENERIC_ERROR, "FATAL: aborting deployment");
+                log_telemetry_synchronous(SEDS_DT_GENERIC_ERROR, 
+                                          "FATAL: aborting deployment",
+                                          27, sizeof(char));
                 return;
             }
         } else {
