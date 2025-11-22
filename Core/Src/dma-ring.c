@@ -110,7 +110,10 @@ inline bool dma_ring_copy_oldest(payload_t *buf) {
   if ((h & RING_MASK) == i)
     return false;
 
+  __disable_irq();
   *buf = ring[i];
+  __enable_irq();
+
   return true;
 }
 
@@ -128,7 +131,9 @@ inline bool dma_ring_dequeue_oldest(payload_t *buf) {
   if ((h & RING_MASK) == i)
     return false;
 
+  __disable_irq();
   *buf = ring[i];
+  __enable_irq();
 
   atomic_store_explicit(&tail, t + 1, memory_order_release);
   return true;
