@@ -98,7 +98,7 @@ static inline void enqueue(const expected_e type) {
 }
 
 /**
- * @brief Copy but not dequeue the oldest element of the ring.
+ * @brief Copy and calibrate the oldest element of the ring.
  * @param None
  * @retval A boolean indicating success or that the ring is empty.
  */
@@ -113,6 +113,28 @@ inline bool dma_ring_copy_oldest(payload_t *buf) {
   __disable_irq();
   *buf = ring[i];
   __enable_irq();
+
+  switch (buf->type) {
+    case BAROMETER:
+    {
+      buf->data.baro[0] = compensate_temperature(buf->data.baro[0]);
+      buf->data.baro[1] = compensate_pressure(buf->data.baro[1]);
+      buf->data.baro[2] = compute_relative_altitude(buf->data.baro[1]);
+      break;
+    }
+    case GYROSCOPE:
+    {
+      break;
+    }
+    case ACCELEROMETER:
+    {
+      buf->data.accel[0] *= MG;
+      buf->data.accel[1] *= MG;
+      buf->data.accel[2] *= MG;
+      break;
+    }
+    case NONE: return false;
+  }
 
   return true;
 }
