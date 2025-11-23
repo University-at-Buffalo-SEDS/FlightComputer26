@@ -3,14 +3,49 @@
  */
 
 #pragma once
+#include <stdint.h>
 
-/* Deployment thread configuration */
-#define DEPLOYMENT_THREAD_SLEEP         10
-#define DEPLOYMENT_THREAD_PRIORITY      5
-#define DEPLOYMENT_THREAD_INPUT         0u
-#define DEPLOYMENT_THREAD_STACK_SIZE    8192u
-#define DEPLOYMENT_THREAD_MAX_RETRIES   70
-#define DEPLOYMENT_DEFAULT_LOG_SIZE     36
+/* Threshold configuration */
 
-/* Creates a parachute deployment thread with defined parameters */
-void create_deployment_thread(void);
+#define MIN_BURNOUT 4
+#define MIN_DESCENT 4
+#define MIN_REEF    6
+#define MIN_LANDED  4
+
+/* Type definitions */
+
+typedef enum {
+  IDLE,
+  LAUNCH,
+  ASCENT,
+  BURNOUT,
+  APOGEE,
+  DESCENT,
+  REEF,
+  LANDED
+} state_e;
+
+// Needs clock
+typedef union {
+  uint32_t launch_ms;
+  uint32_t burnout_ms;
+  uint32_t apogee_ms;
+  uint32_t pyro_ms;
+  uint32_t reef_ms;
+  uint32_t landed_ms;
+} time_ex;
+
+typedef union {
+  uint32_t burnout;
+  uint32_t descent;
+  uint32_t reef;
+  uint32_t landed;
+} samples_ex;
+
+typedef struct {
+  state_e state;
+  time_ex time_of;
+  samples_ex samples_of;
+  uint32_t ring_index;
+  uint32_t apogee_height;
+} rocket_t;
