@@ -3,6 +3,8 @@
  */
 
 #pragma once
+
+#include <stdio.h>
 #include <stdint.h>
 
 /* Threshold and timing configuration */
@@ -25,7 +27,7 @@
 #define WAIT_BEFORE_CONFIRM()                               \
   tx_thread_sleep(CONFIRM_INTERVAL_TICKS)
 
-#define LOG_SYNC(msg, size)                                 \
+#define LOG_MSG_SYNC(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
 
@@ -33,11 +35,35 @@
   log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
                              (msg), (size), sizeof(char))
 
-#define LOG_ERR(msg, size)                                  \
-  log_telemetry_asynchronous(SEDS_DT_GENERIC_ERROR,         \
-                             (msg), (size), sizeof(char))
+#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
-/* This can also be used for a manual emergency deployment */
+#define LOG_ERR_SYNC(fmt, ...)                              \
+  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+                           
+#define LOG_ERR(fmt, ...)                                   \
+  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+
+#else
+#ifdef __GNUC__
+
+#define LOG_ERR_SYNC(fmt, ...)                              \
+  log_error_syncronous(fmt, ##__VA_ARGS__)
+
+#define LOG_ERR(fmt, ...)                                   \
+  log_error_asyncronous(fmt, ##__VA_ARGS__)
+
+#else /* Does not support 0 variadic arguments */
+
+#define LOG_ERR_SYNC(fmt, ...)                              \
+  log_error_syncronous(fmt, __VA_ARGS__)
+
+#define LOG_ERR(fmt, ...)                                   \
+  log_error_asyncronous(fmt, __VA_ARGS__)
+
+#endif // GNUC
+#endif // >= C23
+
+/* This can also be used for manual emergency deployment */
 
 #define CO2_LOW()                                           \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
@@ -52,6 +78,12 @@
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Type definitions */
+
+typedef enum {
+  DEPL_OK,
+  DEPL_BAD_DATA,
+  DEPL_EMPTY_RING
+} inference_e;
 
 typedef enum {
   IDLE,

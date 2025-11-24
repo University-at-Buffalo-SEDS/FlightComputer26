@@ -22,6 +22,8 @@ ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
 static rocket_t rock = {0, {0}, {0}, 0, 0};
 
+// TODO add ring and get/validate/median logic once kalman api exposed
+
 static inline bool detect_launch(bool confirm)
 {
   return false;
@@ -56,7 +58,7 @@ static inline bool detect_landed()
  *
  * Timings and amount of checks are configurable in deployment.h.
  */
-static inline bool infer_rocket_state()
+static inline inference_e infer_rocket_state()
 {
 
   // TODO gather filter data
@@ -167,23 +169,24 @@ static inline bool infer_rocket_state()
 void deployment_thread_entry(ULONG input)
 {
   (void)input;
+  uint_fast16_t retries = 0;
+  inference_e last = DEPL_OK;
 
-  LOG_SYNC("Deployment: starting thread", 28);
+  LOG_MSG_SYNC("Deployment: starting thread", 28);
 
   CO2_LOW();
   REEF_LOW();
 
-  uint_fast16_t retries = 0;
   for (;;)
   {
-    if (!infer_rocket_state())
+    if ((last = infer_rocket_state()) != DEPL_OK)
     {
-      LOG_ERR("Houston, we've had a bad inference", 35);
+      LOG_ERR("Deployment: bad inference #%u (code %d)", retries, last);
       ++retries;
 
       if (retries >= DEPLOYMENT_THREAD_MAX_RETRIES)
       {
-        LOG_SYNC("FATAL: aborting deployment", 27);
+        LOG_ERR_SYNC("FATAL: aborting deployment (%u retries)", retries);
         return;
       }
     }
