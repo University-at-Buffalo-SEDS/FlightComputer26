@@ -7,12 +7,18 @@
 
 /* Threshold and timing configuration */
 
-#define MIN_BURNOUT 4
-#define MIN_DESCENT 4
-#define MIN_REEF    6
-#define MIN_LANDED  4
+#define MIN_BURNOUT 8
+#define MIN_DESCENT 8
+#define MIN_REEF    4
+#define MIN_LANDED  12
 
 #define CONFIRM_INTERVAL_TICKS 20
+
+/* FC '26 GPIO port maps */
+
+#define PYRO_PORT GPIOB
+#define CO2_PIN   GPIO_PIN_5
+#define REEF_PIN  GPIO_PIN_6
 
 /* Extrernal API helper macros */
 
@@ -30,6 +36,20 @@
 #define LOG_ERR(msg, size)                                  \
   log_telemetry_asynchronous(SEDS_DT_GENERIC_ERROR,         \
                              (msg), (size), sizeof(char))
+
+/* This can also be used for a manual emergency deployment */
+
+#define CO2_LOW()                                           \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
+
+#define CO2_HIGH()                                          \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
+
+#define REEF_LOW()                                          \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
+
+#define REEF_HIGH()                                         \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Type definitions */
 

@@ -17,6 +17,9 @@ ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 #include "telemetry.h"
 #include "deployment.h"
 
+#include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_gpio.h"
+
 static rocket_t rock = {0, {0}, {0}, 0, 0};
 
 static inline bool detect_launch(bool confirm)
@@ -113,7 +116,7 @@ static inline bool infer_rocket_state()
         if (rock.sampl_of.descent >= MIN_DESCENT)
         {
           rock.state = DESCENT;
-          // fire pyro
+          CO2_HIGH();
           LOG_MSG("Fired pyro, descending", 23);
         }
       }
@@ -127,7 +130,7 @@ static inline bool infer_rocket_state()
         if (rock.sampl_of.landing >= MIN_REEF)
         {
           rock.state = REEF;
-          // fire reef
+          REEF_HIGH();
           LOG_MSG("Expanded parachute", 19);
         }
       }
@@ -141,7 +144,6 @@ static inline bool infer_rocket_state()
         if (rock.sampl_of.idle >= MIN_LANDED)
         {
           rock.state = LANDED;
-          // fire reef
           LOG_MSG("Rocket landed", 14);
         }
       }
@@ -167,6 +169,9 @@ void deployment_thread_entry(ULONG input)
   (void)input;
 
   LOG_SYNC("Deployment: starting thread", 28);
+
+  CO2_LOW();
+  REEF_LOW();
 
   uint_fast16_t retries = 0;
   for (;;)
