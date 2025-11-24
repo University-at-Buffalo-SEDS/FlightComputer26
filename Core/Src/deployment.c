@@ -44,13 +44,13 @@ static inline bool detect_landed()
   return false;
 }
 
-/* 
+/*
  * This is a state machine that calls functions necessary
  * to gather, validate, process, and draw inference from data.
- * 
+ *
  * Current implementation does not allow state regression
  * and triggers checks to prevent premature or wrong triggers.
- * 
+ *
  * Timings and amount of checks are configurable in deployment.h.
  */
 static inline bool infer_rocket_state()
@@ -175,15 +175,15 @@ void deployment_thread_entry(ULONG input)
     {
       LOG_ERR("Houston, we've had a bad inference", 35);
       ++retries;
-      
+
       if (retries >= DEPLOYMENT_THREAD_MAX_RETRIES)
       {
         LOG_SYNC("FATAL: aborting deployment", 27);
         return;
       }
     }
-    else 
-    {  
+    else
+    {
       retries = 0; // Reset counter (error mitigated)
     }
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
