@@ -1,29 +1,35 @@
 /*
- * Public API for the parachute deployment logic and thread.
+ * Deployment logic header and confirguration file.
  */
 
 #pragma once
 #include <stdint.h>
-#include <sedsprintf.h>
-#include "telemetry.h"
 
-/* Threshold configuration */
+/* Threshold and timing configuration */
 
 #define MIN_BURNOUT 4
 #define MIN_DESCENT 4
 #define MIN_REEF    6
 #define MIN_LANDED  4
 
-/* Telemetry helper macros */
+#define CONFIRM_INTERVAL_TICKS 20
 
-#define LOG_SYNC(msg, size) \
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA, (msg), (size), sizeof(char))
+/* Extrernal API helper macros */
 
-#define LOG_MSG(msg, size) \
-  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA, (msg), (size), sizeof(char))
+#define WAIT_BEFORE_CONFIRM()                               \
+  tx_thread_sleep(CONFIRM_INTERVAL_TICKS)
 
-#define LOG_ERR(msg, size) \
-  log_telemetry_asynchronous(SEDS_DT_GENERIC_ERROR, (msg), (size), sizeof(char))
+#define LOG_SYNC(msg, size)                                 \
+  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
+                            (msg), (size), sizeof(char))
+
+#define LOG_MSG(msg, size)                                  \
+  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
+                             (msg), (size), sizeof(char))
+
+#define LOG_ERR(msg, size)                                  \
+  log_telemetry_asynchronous(SEDS_DT_GENERIC_ERROR,         \
+                             (msg), (size), sizeof(char))
 
 /* Type definitions */
 
@@ -49,16 +55,16 @@ typedef union {
 } time_ex;
 
 typedef union {
-  uint32_t burnout;
-  uint32_t descent;
-  uint32_t landing;
-  uint32_t idle;
+  uint_fast16_t burnout;
+  uint_fast16_t descent;
+  uint_fast16_t landing;
+  uint_fast16_t idle;
 } samples_ex;
 
 typedef struct {
   state_e state;
   time_ex time_of;
   samples_ex sampl_of;
-  uint32_t ring_index;
-  uint32_t apogee_height;
+  uint_fast16_t ring_index;
+  uint_fast16_t apogee_height_ft;
 } rocket_t;
