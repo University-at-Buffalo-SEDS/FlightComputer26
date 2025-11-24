@@ -69,6 +69,7 @@ static inline inference_e infer_rocket_state()
       if (detect_launch(INFER_CONFIRM))
       {
         rock.state = ASCENT;
+        rock.sampl_of.burnout = 0;
         LOG_MSG("Launch confirmed", 17);
       }
       break;
@@ -81,6 +82,7 @@ static inline inference_e infer_rocket_state()
         if (rock.sampl_of.burnout >= MIN_BURNOUT)
         {
           rock.state = BURNOUT;
+          rock.sampl_of.descent = 0;
           LOG_MSG("Watching for apogee", 20);
         }
       }
@@ -105,6 +107,7 @@ static inline inference_e infer_rocket_state()
         if (rock.sampl_of.descent >= MIN_DESCENT)
         {
           rock.state = DESCENT;
+          rock.sampl_of.landing = 0;
           CO2_HIGH();
           LOG_MSG("Fired pyro, descending", 23);
         }
@@ -119,6 +122,7 @@ static inline inference_e infer_rocket_state()
         if (rock.sampl_of.landing >= MIN_REEF)
         {
           rock.state = REEF;
+          rock.sampl_of.idle = 0;
           REEF_HIGH();
           LOG_MSG("Expanded parachute", 19);
         }
