@@ -2,7 +2,8 @@
  * Deployment logic header and confirguration file.
  */
 
-#pragma once
+#ifndef DEPLOYMENT_H
+#define DEPLOYMENT_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -129,3 +130,5 @@ typedef struct {
   uint_fast16_t ring_index;
   uint_fast16_t apogee_height_ft;
 } rocket_t;
+
+#endif // DEPLOYMENT_H
