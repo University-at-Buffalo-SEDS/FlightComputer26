@@ -4,8 +4,15 @@
 
 #pragma once
 
-#include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
+
+#include <sedsprintf.h>
+#include "telemetry.h"
+#include "FC-Threads.h"
+
+#include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_gpio.h"
 
 /* Threshold and timing configuration */
 
@@ -82,7 +89,9 @@
 typedef enum {
   DEPL_OK,
   DEPL_BAD_DATA,
-  DEPL_EMPTY_RING
+  DEPL_EMPTY_RING,
+  INFER_INITIAL,
+  INFER_CONFIRM
 } inference_e;
 
 typedef enum {

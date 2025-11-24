@@ -2,51 +2,38 @@
  * Logic related to state monitoring and parachute deployment.
  */
 
-#include "FC-Threads.h"
-#include "tx_api.h"
-#include "tx_port.h"
+#include "deployment.h"
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
-
-#include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-
-#include <sedsprintf.h>
-#include "telemetry.h"
-#include "deployment.h"
-
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_gpio.h"
 
 static rocket_t rock = {0, {0}, {0}, 0, 0};
 
 // TODO add ring and get/validate/median logic once kalman api exposed
 
-static inline bool detect_launch(bool confirm)
+static inline inference_e detect_launch(inference_e confirm)
 {
-  return false;
+  return DEPL_OK;
 }
 
-static inline bool detect_burnout()
+static inline inference_e detect_burnout()
 {
-  return false;
+  return DEPL_OK;
 }
 
-static inline bool detect_apogee(bool confirm)
+static inline inference_e detect_apogee(inference_e confirm)
 {
-  return false;
+  return DEPL_OK;
 }
 
-static inline bool detect_reef()
+static inline inference_e detect_reef()
 {
-  return false;
+  return DEPL_OK;
 }
 
-static inline bool detect_landed()
+static inline inference_e detect_landed()
 {
-  return false;
+  return DEPL_OK;
 }
 
 /*
@@ -69,7 +56,7 @@ static inline inference_e infer_rocket_state()
   {
     case IDLE:
     {
-      if (detect_launch(false))
+      if (detect_launch(INFER_INITIAL))
       {
         rock.state = LAUNCH;
         LOG_MSG("Launch detected", 16);
@@ -79,7 +66,7 @@ static inline inference_e infer_rocket_state()
     }
     case LAUNCH:
     {
-      if (detect_launch(true))
+      if (detect_launch(INFER_CONFIRM))
       {
         rock.state = ASCENT;
         LOG_MSG("Launch confirmed", 17);
@@ -101,7 +88,7 @@ static inline inference_e infer_rocket_state()
     }
     case BURNOUT:
     {
-      if (detect_apogee(false))
+      if (detect_apogee(INFER_INITIAL))
       {
         rock.state = APOGEE;
         // rock.apogee_height = ...
@@ -112,7 +99,7 @@ static inline inference_e infer_rocket_state()
     }
     case APOGEE:
     {
-      if (detect_apogee(true))
+      if (detect_apogee(INFER_CONFIRM))
       {
         ++rock.sampl_of.descent;
         if (rock.sampl_of.descent >= MIN_DESCENT)
@@ -154,7 +141,7 @@ static inline inference_e infer_rocket_state()
     case LANDED: break;
   }
 
-  return true;
+  return DEPL_OK;
 }
 
 /*
