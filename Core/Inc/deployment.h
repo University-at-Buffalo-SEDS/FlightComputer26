@@ -79,6 +79,22 @@
 #endif // GNUC
 #endif // >= C23
 
+/* Max/min helpers with double-eval safety */
+
+#define MAX(x, y)       \
+  ({                    \
+    typeof(x) _x = (x); \
+    typeof(y) _y = (y); \
+    _x > _y ? _x : _y;  \
+  })
+
+#define MIN(x, y)       \
+  ({                    \
+    typeof(x) _x = (x); \
+    typeof(y) _y = (y); \
+    _x < _y ? _x : _y;  \
+  })
+
 /* This can also be used for manual emergency deployment */
 
 #define CO2_LOW()                                           \
