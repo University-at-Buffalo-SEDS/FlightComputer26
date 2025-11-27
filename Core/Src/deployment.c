@@ -84,28 +84,72 @@ static inline inference_e refresh_data()
   return DEPL_OK;
 }
 
-static inline inference_e detect_launch(inference_e confirm)
+// TODO detection logic
+
+static inline inference_e detect_launch(inference_e mode)
 {
+  rock.state = LAUNCH;
+  LOG_MSG("Launch detected", 16);
+  WAIT_BEFORE_CONFIRM();
+
+  rock.state = ASCENT;
+  rock.samp_of.burnout = 0;
+  LOG_MSG("Launch confirmed", 17);
+
   return DEPL_OK;
 }
 
 static inline inference_e detect_burnout()
 {
+  ++rock.samp_of.burnout;
+  if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
+  {
+    rock.state = BURNOUT;
+    rock.samp_of.descent = 0;
+    LOG_MSG("Watching for apogee", 20);
+  }
   return DEPL_OK;
 }
 
-static inline inference_e detect_apogee(inference_e confirm)
+static inline inference_e detect_apogee(inference_e mode)
 {
+  rock.state = APOGEE;
+  LOG_MSG("Apogee reached", 15);
+  WAIT_BEFORE_CONFIRM();
+
+  ++rock.samp_of.descent;
+  if (rock.samp_of.descent >= MIN_SAMP_DESCENT)
+  {
+    rock.state = DESCENT;
+    rock.samp_of.landing = 0;
+    CO2_HIGH();
+    LOG_MSG("Fired pyro, descending", 23);
+  }
+
   return DEPL_OK;
 }
 
 static inline inference_e detect_reef()
 {
+  ++rock.samp_of.landing;
+  if (rock.samp_of.landing >= MIN_SAMP_REEF)
+  {
+    rock.state = REEF;
+    rock.samp_of.idle = 0;
+    REEF_HIGH();
+    LOG_MSG("Expanded parachute", 19);
+  }
   return DEPL_OK;
 }
 
 static inline inference_e detect_landed()
 {
+  ++rock.samp_of.idle;
+  if (rock.samp_of.idle >= MIN_SAMP_LANDED)
+  {
+    rock.state = LANDED;
+    LOG_MSG("Rocket landed", 14);
+  }
   return DEPL_OK;
 }
 
@@ -130,96 +174,22 @@ static inline inference_e infer_rocket_state()
   switch (rock.state)
   {
     case IDLE:
-    {
-      if (detect_launch(INFER_INITIAL))
-      {
-        rock.state = LAUNCH;
-        LOG_MSG("Launch detected", 16);
-        WAIT_BEFORE_CONFIRM();
-      }
-      break;
-    }
+      return detect_launch(INFER_INITIAL);
     case LAUNCH:
-    {
-      if (detect_launch(INFER_CONFIRM))
-      {
-        rock.state = ASCENT;
-        rock.samp_of.burnout = 0;
-        LOG_MSG("Launch confirmed", 17);
-      }
-      break;
-    }
+      return detect_launch(INFER_CONFIRM);
     case ASCENT:
-    {
-      if (detect_burnout())
-      {
-        ++rock.samp_of.burnout;
-        if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
-        {
-          rock.state = BURNOUT;
-          rock.samp_of.descent = 0;
-          LOG_MSG("Watching for apogee", 20);
-        }
-      }
-      break;
-    }
+      return detect_burnout();
     case BURNOUT:
-    {
-      if (detect_apogee(INFER_INITIAL))
-      {
-        rock.state = APOGEE;
-        LOG_MSG("Apogee reached", 15);
-        WAIT_BEFORE_CONFIRM();
-      }
-      break;
-    }
+      return detect_apogee(INFER_INITIAL);
     case APOGEE:
-    {
-      if (detect_apogee(INFER_CONFIRM))
-      {
-        ++rock.samp_of.descent;
-        if (rock.samp_of.descent >= MIN_SAMP_DESCENT)
-        {
-          rock.state = DESCENT;
-          rock.samp_of.landing = 0;
-          CO2_HIGH();
-          LOG_MSG("Fired pyro, descending", 23);
-        }
-      }
-      break;
-    }
+      return detect_apogee(INFER_CONFIRM);
     case DESCENT:
-    {
-      if (detect_reef())
-      {
-        ++rock.samp_of.landing;
-        if (rock.samp_of.landing >= MIN_SAMP_REEF)
-        {
-          rock.state = REEF;
-          rock.samp_of.idle = 0;
-          REEF_HIGH();
-          LOG_MSG("Expanded parachute", 19);
-        }
-      }
-      break;
-    }
+      return detect_reef();
     case REEF:
-    {
-      if (detect_landed())
-      {
-        ++rock.samp_of.idle;
-        if (rock.samp_of.idle >= MIN_SAMP_LANDED)
-        {
-          rock.state = LANDED;
-          LOG_MSG("Rocket landed", 14);
-        }
-      }
-      break;
-    }
-    case LANDED: break;
+      return detect_landed();
+    case LANDED:
+      return DEPL_OK;
   }
-
-  return DEPL_OK;
 }
 
 /*
