@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #include <sedsprintf.h>
 #include "telemetry.h"
@@ -15,12 +16,19 @@
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_gpio.h"
 
+/* Local ring configuration */
+
+#define DEPL_BUF_SIZE 4
+
 /* Threshold and timing configuration */
 
-#define MIN_BURNOUT 8
-#define MIN_DESCENT 8
-#define MIN_REEF    4
-#define MIN_LANDED  12
+#define MIN_SAMP_BURNOUT  8
+#define MIN_SAMP_DESCENT  8
+#define MIN_SAMP_REEF     4
+#define MIN_SAMP_LANDED   12
+
+#define MIN_TIME_LAUNCH_MS  300
+#define MIN_TIME_BURNOUT_MS 300
 
 #define CONFIRM_INTERVAL_TICKS 20
 
@@ -90,7 +98,7 @@
 typedef enum {
   DEPL_OK,
   DEPL_BAD_DATA,
-  DEPL_EMPTY_RING,
+  DEPL_NO_INPUT,
   INFER_INITIAL,
   INFER_CONFIRM
 } inference_e;
@@ -124,11 +132,29 @@ typedef union {
 } samples_ex;
 
 typedef struct {
+  uint32_t launch_time_ms;
+  uint16_t apogee_height_m;
+  uint32_t apogee_time_ms;
+  uint16_t reef_height_m;
+  uint32_t reef_time_ms;
+} stats_t;
+
+typedef struct {
   state_e state;
   time_ex time_of;
-  samples_ex sampl_of;
-  uint_fast16_t ring_index;
-  uint_fast16_t apogee_height_ft;
+  samples_ex samp_of;
+  struct {
+    uint_fast16_t klm;
+    uint_fast16_t cur;
+    uint_fast16_t prv;
+  } i;
 } rocket_t;
+
+// sample struct until kalman api exposed
+typedef struct {
+  float height_m;
+  float vel_mps;
+  float accel_mps2;
+} filter_t;
 
 #endif // DEPLOYMENT_H

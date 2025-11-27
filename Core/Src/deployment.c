@@ -7,9 +7,78 @@
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
-static rocket_t rock = {0, {0}, {0}, 0, 0};
+static rocket_t rock = {0, {0}, {0}, {0}};
+static filter_t curr[DEPL_BUF_SIZE] = {0};
+static filter_t prev[DEPL_BUF_SIZE] = {0};
+extern atomic_uint_fast16_t newdata;
 
-// TODO add ring and get/validate/median logic once kalman api exposed
+// TODO add ring and validate logic once kalman api exposed
+
+/*
+ * Copies "current" data into "previous" array and
+ * populates "current" with new data from the filter ring.
+ *
+ * rock.i.klm (k) is the index of last copied element from the ring,
+ * rock.i.cur (d) is the current "size" of "current" data,
+ * rock.i.old is the current "size" of "previous" data.
+ *
+ * "size" is the amount of active elements in a local buffer.
+ * newdata (n) is incremented by the filter each time it writes
+ * a new element to the ring. It is atomic to avoid conflicts.
+ *
+ * When "current" is copied into "previous," the "size"
+ * of "current" is inherited by "previous". It helps to
+ * avoid using "previous-previous" garbage data in calculations.
+ *
+ * Then we begin to decrease our local copy of newdata until 
+ * there is no more new elements, or we have reached the limit
+ * of our local buffer. Every iteration we lock a specific element
+ * of the filter ring to avoid partial reads, and to allow filter
+ * write other elements.
+ * 
+ * If the deployment task is switched to filter task while
+ * the second loop was running, newdata will grow. If the filter
+ * encounters our lock, it should starve (due to partial reads).
+ * 
+ * When the deployment task is back, it will continue to use its
+ * old copy of newdata. Because of this, it may copy newer data,
+ * which was written when the tasks switched for the first time,
+ * but this data will still be newer than what it already copied,
+ * and older than the next following element in the ring (which
+ * it will copy the next time this function is called), thus
+ * still being suitable for calculations.
+ */
+static inline inference_e refresh_data()
+{
+  uint_fast16_t d = 0;
+  uint_fast16_t k = rock.i.klm;
+  uint_fast16_t n = atomic_load_explicit(&newdata, memory_order_relaxed);
+  uint_fast16_t ctr = n;
+
+  if (n == 0)
+    return DEPL_NO_INPUT;
+
+  for (; d < rock.i.cur; ++d) {
+    prev[d] = curr[d];
+  }
+  rock.i.prv = rock.i.cur;
+
+  // placeholders until kalman api exposed
+  // kalman ring size should be power of 2 or provide its own masking mechanism
+  for (d = 0; ctr > 0 && d < DEPL_BUF_SIZE; ++d) {
+    /* k = (k + 1) & (KALMAN_RING_SIZE - 1); */
+    // lock kalman_ring[k]
+    /* curr[d] = kalman_ring[rock.i.klm]; */
+    // unlock kalman_ring[k]
+    --ctr;
+  }
+
+  rock.i.klm = k;
+  rock.i.cur = (d < DEPL_BUF_SIZE) ? d : DEPL_BUF_SIZE;
+
+  atomic_fetch_sub_explicit(&newdata, n - ctr, memory_order_relaxed);
+  return DEPL_OK;
+}
 
 static inline inference_e detect_launch(inference_e confirm)
 {
@@ -47,8 +116,10 @@ static inline inference_e detect_landed()
  */
 static inline inference_e infer_rocket_state()
 {
+  if (refresh_data() == DEPL_NO_INPUT)
+    return DEPL_OK;  
 
-  // TODO gather filter data
+  // TODO
   // Verify gathered data: return false on errors
   // For every case, record time (needs clock)
 
@@ -69,7 +140,7 @@ static inline inference_e infer_rocket_state()
       if (detect_launch(INFER_CONFIRM))
       {
         rock.state = ASCENT;
-        rock.sampl_of.burnout = 0;
+        rock.samp_of.burnout = 0;
         LOG_MSG("Launch confirmed", 17);
       }
       break;
@@ -78,11 +149,11 @@ static inline inference_e infer_rocket_state()
     {
       if (detect_burnout())
       {
-        ++rock.sampl_of.burnout;
-        if (rock.sampl_of.burnout >= MIN_BURNOUT)
+        ++rock.samp_of.burnout;
+        if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
         {
           rock.state = BURNOUT;
-          rock.sampl_of.descent = 0;
+          rock.samp_of.descent = 0;
           LOG_MSG("Watching for apogee", 20);
         }
       }
@@ -103,11 +174,11 @@ static inline inference_e infer_rocket_state()
     {
       if (detect_apogee(INFER_CONFIRM))
       {
-        ++rock.sampl_of.descent;
-        if (rock.sampl_of.descent >= MIN_DESCENT)
+        ++rock.samp_of.descent;
+        if (rock.samp_of.descent >= MIN_SAMP_DESCENT)
         {
           rock.state = DESCENT;
-          rock.sampl_of.landing = 0;
+          rock.samp_of.landing = 0;
           CO2_HIGH();
           LOG_MSG("Fired pyro, descending", 23);
         }
@@ -118,11 +189,11 @@ static inline inference_e infer_rocket_state()
     {
       if (detect_reef())
       {
-        ++rock.sampl_of.landing;
-        if (rock.sampl_of.landing >= MIN_REEF)
+        ++rock.samp_of.landing;
+        if (rock.samp_of.landing >= MIN_SAMP_REEF)
         {
           rock.state = REEF;
-          rock.sampl_of.idle = 0;
+          rock.samp_of.idle = 0;
           REEF_HIGH();
           LOG_MSG("Expanded parachute", 19);
         }
@@ -133,8 +204,8 @@ static inline inference_e infer_rocket_state()
     {
       if (detect_landed())
       {
-        ++rock.sampl_of.idle;
-        if (rock.sampl_of.idle >= MIN_LANDED)
+        ++rock.samp_of.idle;
+        if (rock.samp_of.idle >= MIN_SAMP_LANDED)
         {
           rock.state = LANDED;
           LOG_MSG("Rocket landed", 14);
