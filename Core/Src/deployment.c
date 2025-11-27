@@ -79,15 +79,21 @@ static inline inference_e refresh_data()
   return DEPL_OK;
 }
 
+/*
+ * Checks if every metric is within allowed bounds.
+ * 
+ * If this function fails enough times, it will abort
+ * the deployment thread. Set thresholds carefully.
+ */
 static inline inference_e verify_data()
 {
   for (int i = 0; i < DEPL_BUF_SIZE; ++i)
   {
     if (curr[i].height_m    < MIN_HEIGHT_M    ||
-        curr[i].vel_mps     < MIN_VEL_MPS     ||
-        curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
         curr[i].height_m    > MAX_HEIGHT_M    ||
+        curr[i].vel_mps     < MIN_VEL_MPS     ||
         curr[i].vel_mps     > MAX_VEL_MPS     ||
+        curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
         curr[i].accel_mps2  > MAX_ACCEL_MPS2)
     {
       return DEPL_BAD_DATA;
@@ -208,8 +214,8 @@ static inline inference_e infer_rocket_state()
  * Entry point of the deployment thread. Usually called by RTOS.
  *
  * Returns (aborts thread) if the state machine returned an error
- * certain amount of times in a row (that is, if the error)
- * could not be mitigated within a given time.
+ * certain amount of times in a row (that is, if the error could
+ * not be mitigated within a given time).
  *
  * Amount of retries and idle time are configurable in FC-Threads.h.
  */
