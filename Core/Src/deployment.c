@@ -3,9 +3,6 @@
  */
 
 #include "deployment.h"
-#include "tx_api.h"
-#include <stdatomic.h>
-#include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -14,8 +11,6 @@ static rocket_t rock = {0, {0}, {0}, {0}};
 static filter_t curr[DEPL_BUF_SIZE] = {0};
 static filter_t prev[DEPL_BUF_SIZE] = {0};
 extern atomic_uint_fast16_t newdata;
-
-// TODO add ring and validate logic once kalman api exposed
 
 /*
  * Copies "current" data into "previous" array and
@@ -80,6 +75,24 @@ static inline inference_e refresh_data()
   rock.i.klm = k;
   rock.i.prv = rock.i.cur;
   rock.i.cur = d;
+
+  return DEPL_OK;
+}
+
+static inline inference_e verify_data()
+{
+  for (int i = 0; i < DEPL_BUF_SIZE; ++i)
+  {
+    if (curr[i].height_m    < MIN_HEIGHT_M    ||
+        curr[i].vel_mps     < MIN_VEL_MPS     ||
+        curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
+        curr[i].height_m    > MAX_HEIGHT_M    ||
+        curr[i].vel_mps     > MAX_VEL_MPS     ||
+        curr[i].accel_mps2  > MAX_ACCEL_MPS2)
+    {
+      return DEPL_BAD_DATA;
+    }
+  }
 
   return DEPL_OK;
 }
@@ -167,9 +180,8 @@ static inline inference_e infer_rocket_state()
   if (refresh_data() == DEPL_NO_INPUT)
     return DEPL_OK;  
 
-  // TODO
-  // Verify gathered data: return false on errors
-  // For every case, record time (needs clock)
+  if (verify_data() == DEPL_BAD_DATA)
+    return DEPL_BAD_DATA;
 
   switch (rock.state)
   {

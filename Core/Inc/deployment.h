@@ -20,15 +20,20 @@
 
 #define DEPL_BUF_SIZE 4
 
-/* Threshold and timing configuration */
+/* Threshold configuration */
 
 #define MIN_SAMP_BURNOUT  6
 #define MIN_SAMP_DESCENT  6
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
-#define MIN_TIME_LAUNCH_MS  300
-#define MIN_TIME_BURNOUT_MS 300
+#define MAX_HEIGHT_M    3048.0f
+#define MAX_VEL_MPS     100.0f
+#define MAX_ACCEL_MPS2  9.80665f
+
+#define MIN_HEIGHT_M    -8.0f
+#define MIN_VEL_MPS     -4.0f
+#define MIN_ACCEL_MPS2  -2.0f
 
 #define CONFIRM_INTERVAL_TICKS 20
 
