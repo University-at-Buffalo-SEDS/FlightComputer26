@@ -117,11 +117,12 @@
 /* Type definitions */
 
 typedef enum {
-  DEPL_OK,
-  DEPL_BAD_DATA,
-  DEPL_NO_INPUT,
-  INFER_INITIAL,
-  INFER_CONFIRM
+  DEPL_OK         = 0,
+  DEPL_BAD_DATA   = -1,
+  DEPL_NO_INPUT   = -2,
+
+  INFER_INITIAL   = 1,
+  INFER_CONFIRM   = 2,
 } inference_e;
 
 typedef enum {
@@ -135,35 +136,29 @@ typedef enum {
   LANDED
 } state_e;
 
-// Needs clock
-typedef union {
-  uint32_t launch_ms;
-  uint32_t burnout_ms;
-  uint32_t apogee_ms;
-  uint32_t pyro_ms;
-  uint32_t reef_ms;
-  uint32_t landed_ms;
-} time_ex;
-
-typedef union {
-  uint_fast16_t burnout;
-  uint_fast16_t descent;
-  uint_fast16_t landing;
-  uint_fast16_t idle;
-} samples_ex;
-
 typedef struct {
-  uint32_t launch_time_ms;
-  uint16_t apogee_height_m;
-  uint32_t apogee_time_ms;
-  uint16_t reef_height_m;
-  uint32_t reef_time_ms;
+  struct {
+    uint32_t launch;
+    uint32_t burnout;
+    uint32_t apogee;
+    uint32_t reef;
+    uint32_t landed;
+  } time_ms;
+  struct {
+    uint16_t apogee;
+    uint16_t reef;
+  } height_m;
 } stats_t;
 
 typedef struct {
   state_e state;
-  time_ex time_of;
-  samples_ex samp_of;
+  stats_t stats;
+  union {
+    uint_fast16_t burnout;
+    uint_fast16_t descent;
+    uint_fast16_t landing;
+    uint_fast16_t idle;
+  } samp_of;
   struct {
     uint_fast16_t klm;
     uint_fast16_t cur;
