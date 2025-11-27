@@ -164,7 +164,6 @@ static inline inference_e infer_rocket_state()
       if (detect_apogee(INFER_INITIAL))
       {
         rock.state = APOGEE;
-        // rock.apogee_height = ...
         LOG_MSG("Apogee reached", 15);
         WAIT_BEFORE_CONFIRM();
       }

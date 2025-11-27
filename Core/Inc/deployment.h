@@ -22,8 +22,8 @@
 
 /* Threshold and timing configuration */
 
-#define MIN_SAMP_BURNOUT  8
-#define MIN_SAMP_DESCENT  8
+#define MIN_SAMP_BURNOUT  6
+#define MIN_SAMP_DESCENT  6
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
