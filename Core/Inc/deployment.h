@@ -16,11 +16,9 @@
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_gpio.h"
 
-/* Local ring configuration */
+/* Local configuration */
 
 #define DEPL_BUF_SIZE 4
-
-/* Threshold configuration */
 
 #define MIN_SAMP_BURNOUT  6
 #define MIN_SAMP_DESCENT  6
