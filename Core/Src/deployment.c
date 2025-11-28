@@ -15,58 +15,55 @@ extern atomic_uint_fast16_t newdata;
 
 /*
  * Copies "current" data into "previous" array and
- * populates "current" with new data from the filter ring.
+ * updates "current" with new data from the filter ring.
  *
- * rock.i.klm (k) - index of last copied element from the ring,
- * rock.i.cur (d) - the current "size" of "current" data,
- * rock.i.old     - current "size" of "previous" data.
+ * rock.i.klm - index of last copied ring entry,
+ * rock.i.cur - current "size" of "current" data,
+ * rock.i.old - current "size" of "previous" data.
  *
- * "size" is the amount of active elements in a local buffer.
- * newdata (n) is incremented by the filter each time it writes
- * a new element to the ring. It is atomic to avoid conflicts.
+ * newdata (n) - external atomic counter for new elements,
+ * should be incremented each time filter writes to ring.
  *
- * When "current" is copied into "previous," the "size"
- * of "current" is inherited by "previous". It helps to
- * avoid using "previous-previous" garbage data in calculations.
+ * We compute starting index (k) in the ring by adding 1
+ * (modulo ring size) to the index of last copied entry.
+ * If newdata exceeds our local buffer size, we advance
+ * our starting position to copy the latest of new entries.
  *
- * Then we compute the starting point in the ring. If newdata is
- * smaller than or the same as the size of our buffer, we leave
- * it as it is. If it is bigger, we advance our starting position
- * in order to copy the latest of the available new data.
- *
- * Every iteration we lock a specific element of the filter ring
- * to avoid partial reads, and to let filter write other elements.
+ * Every iteration we lock the active element of the ring
+ * to avoid partial reads, and to let other entries update.
  * 
  * If the deployment task is switched to filter task while
- * the second loop was running, newdata will grow. If the filter
- * encounters our lock, it should starve or sched_yield.
- * 
- * When the deployment task is back, it will continue to use its
- * old copy of newdata, and by doing so it will stop exactly
- * before the first element that was added during the interruption.
- * When this function is called the next time, it will advance its
- * starting position again to catch up with faster producer.
+ * the second loop was running, newdata will grow. If the
+ * filter encounters our lock, it should starve or yield.
+ *
+ * When this task is back, it will still use its old copy
+ * newdata, and stop exactly before the first new element.
+ * When this function is called next time, it will begin
+ * copying new data, advancing its starting index if needed.
  */
 static inline inference_e refresh_data()
 {
   uint_fast16_t n;
-
-  if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel))) {
-    // tx_thread_resume(&kalman_thread);
-    return DEPL_NO_INPUT;
-  }
-
   uint_fast16_t d = 0;
   uint_fast16_t k = rock.i.klm;
 
-  // if (n > DEPL_BUF_SIZE)
-  //   k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
+  if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel)))
+  {
+    // tx_thread_resume(&kalman_thread);
+    return DEPL_NO_INPUT;
+  }
+  else if (n > DEPL_BUF_SIZE)
+  {
+    // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
+  }
 
-  for (; d < rock.i.cur; ++d) {
+  for (; d < rock.i.cur; ++d)
+  {
     prev[d] = curr[d];
   }
 
-  for (d = 0; d < MIN(n, DEPL_BUF_SIZE); ++d) {
+  for (d = 0; d < MIN(n, DEPL_BUF_SIZE); ++d)
+  {
     // k = (k + 1) & (KALMAN_RING_SIZE - 1);
     // lock kalman_ring[k]
     // curr[d] = kalman_ring[rock.i.klm];
