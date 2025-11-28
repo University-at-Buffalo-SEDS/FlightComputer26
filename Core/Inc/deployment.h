@@ -115,12 +115,19 @@
 /* Type definitions */
 
 typedef enum {
-  DEPL_OK         = 0,
-  DEPL_BAD_DATA   = -1,
-  DEPL_NO_INPUT   = -2,
+  DEPL_THREAD_ERR = -127,
+  DEPL_GEN_ERROR  = -126,
 
-  INFER_INITIAL   = 1,
-  INFER_CONFIRM   = 2,
+  DEPL_BAD_HEIGHT = -25,
+  DEPL_BAD_VEL    = -5,
+  DEPL_BAD_ACCEL  = -1,
+
+  DEPL_OK         = 0,
+
+  DEPL_NO_INPUT   = 1,
+
+  INFER_INITIAL   = 24,
+  INFER_CONFIRM   = 25,
 } inference_e;
 
 typedef enum {

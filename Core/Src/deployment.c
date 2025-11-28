@@ -3,6 +3,7 @@
  */
 
 #include "deployment.h"
+#include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -87,20 +88,28 @@ static inline inference_e refresh_data()
  */
 static inline inference_e verify_data()
 {
+  inference_e st = DEPL_OK;
+
   for (int i = 0; i < DEPL_BUF_SIZE; ++i)
   {
-    if (curr[i].height_m    < MIN_HEIGHT_M    ||
-        curr[i].height_m    > MAX_HEIGHT_M    ||
-        curr[i].vel_mps     < MIN_VEL_MPS     ||
-        curr[i].vel_mps     > MAX_VEL_MPS     ||
-        curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
+    if (curr[i].height_m    < MIN_HEIGHT_M ||
+        curr[i].height_m    > MAX_HEIGHT_M)
+    {
+      st += DEPL_BAD_HEIGHT;
+    }
+    if (curr[i].vel_mps     < MIN_VEL_MPS ||
+        curr[i].vel_mps     > MAX_VEL_MPS)
+    {
+      st += DEPL_BAD_VEL;
+    }
+    if (curr[i].accel_mps2  < MIN_ACCEL_MPS2 ||
         curr[i].accel_mps2  > MAX_ACCEL_MPS2)
     {
-      return DEPL_BAD_DATA;
+      st += DEPL_BAD_ACCEL;
     }
   }
 
-  return DEPL_OK;
+  return st;
 }
 
 // TODO detection logic
@@ -183,11 +192,13 @@ static inline inference_e detect_landed()
  */
 static inline inference_e infer_rocket_state()
 {
-  if (refresh_data() == DEPL_NO_INPUT)
-    return DEPL_OK;  
+  inference_e st;
 
-  if (verify_data() == DEPL_BAD_DATA)
-    return DEPL_BAD_DATA;
+  if ((st = refresh_data()) < DEPL_OK)
+    return st;
+
+  if ((st = verify_data()) == DEPL_NO_INPUT)
+    return st;
 
   switch (rock.state)
   {
@@ -232,7 +243,15 @@ void deployment_thread_entry(ULONG input)
 
   for (;;)
   {
-    if ((last = infer_rocket_state()) != DEPL_OK)
+    if ((last = infer_rocket_state()) == DEPL_OK)
+    {
+      retries = 0; // Reset counter (error mitigated)
+    }
+    else if (last > DEPL_OK)
+    {
+      LOG_ERR("Deployment: non-critical debug warning (code %d)", last);
+    }
+    else
     {
       LOG_ERR("Deployment: bad inference #%u (code %d)", retries, last);
       ++retries;
@@ -242,10 +261,6 @@ void deployment_thread_entry(ULONG input)
         LOG_ERR_SYNC("FATAL: aborting deployment (%u retries)", retries);
         return;
       }
-    }
-    else
-    {
-      retries = 0; // Reset counter (error mitigated)
     }
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
