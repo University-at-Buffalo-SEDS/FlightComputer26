@@ -41,6 +41,10 @@
 #define CO2_PIN   GPIO_PIN_5
 #define REEF_PIN  GPIO_PIN_6
 
+/* Service definitions */
+
+#define DEPL_CODE_MASK (DEPL_BUF_SIZE + 1)
+
 /* Extrernal API helper macros */
 
 #define WAIT_BEFORE_CONFIRM()                               \
@@ -115,16 +119,15 @@
 /* Type definitions */
 
 typedef enum {
-  DEPL_THREAD_ERR = -127,
-  DEPL_GEN_ERROR  = -126,
-
-  DEPL_BAD_HEIGHT = -25,
-  DEPL_BAD_VEL    = -5,
+  DEPL_BAD_HEIGHT = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
+  DEPL_BAD_VEL    = -(DEPL_CODE_MASK),
   DEPL_BAD_ACCEL  = -1,
 
   DEPL_OK         = 0,
 
   DEPL_NO_INPUT   = 1,
+  DEPL_TORN_FLOW  = 2,
+  DEPL_GEN_ERROR  = 3,
 
   INFER_INITIAL   = 24,
   INFER_CONFIRM   = 25,

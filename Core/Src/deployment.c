@@ -92,17 +92,17 @@ static inline inference_e verify_data()
 
   for (int i = 0; i < DEPL_BUF_SIZE; ++i)
   {
-    if (curr[i].height_m    < MIN_HEIGHT_M ||
+    if (curr[i].height_m    < MIN_HEIGHT_M    ||
         curr[i].height_m    > MAX_HEIGHT_M)
     {
       st += DEPL_BAD_HEIGHT;
     }
-    if (curr[i].vel_mps     < MIN_VEL_MPS ||
+    if (curr[i].vel_mps     < MIN_VEL_MPS     ||
         curr[i].vel_mps     > MAX_VEL_MPS)
     {
       st += DEPL_BAD_VEL;
     }
-    if (curr[i].accel_mps2  < MIN_ACCEL_MPS2 ||
+    if (curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
         curr[i].accel_mps2  > MAX_ACCEL_MPS2)
     {
       st += DEPL_BAD_ACCEL;
@@ -192,7 +192,7 @@ static inline inference_e detect_landed()
  */
 static inline inference_e infer_rocket_state()
 {
-  inference_e st;
+  inference_e st = DEPL_TORN_FLOW;
 
   if ((st = refresh_data()) < DEPL_OK)
     return st;
