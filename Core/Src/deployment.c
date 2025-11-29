@@ -3,7 +3,6 @@
  */
 
 #include "deployment.h"
-#include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
