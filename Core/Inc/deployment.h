@@ -27,7 +27,7 @@
 
 #define MAX_HEIGHT_M    3048.0f
 #define MAX_VEL_MPS     100.0f
-#define MAX_ACCEL_MPS2  9.80665f
+#define MAX_ACCEL_MPS2  (GRAVITY_MPS2 * 10.0f)
 
 #define MIN_HEIGHT_M    -8.0f
 #define MIN_VEL_MPS     -4.0f
@@ -42,6 +42,8 @@
 #define REEF_PIN  GPIO_PIN_6
 
 /* Service definitions */
+
+#define GRAVITY_MPS2 9.80665f
 
 #define DEPL_CODE_MASK (DEPL_BUF_SIZE + 1)
 
