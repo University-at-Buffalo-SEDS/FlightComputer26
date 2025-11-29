@@ -36,7 +36,7 @@ extern atomic_uint_fast16_t newdata;
  * filter encounters our lock, it should starve or yield.
  *
  * When this task is back, it will still use its old copy
- * newdata, and stop exactly before the first new element.
+ * of newdata, and stop exactly before the first new element.
  * When this function is called next time, it will begin
  * copying new data, advancing its starting index if needed.
  */
