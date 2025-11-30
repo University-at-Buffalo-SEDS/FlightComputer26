@@ -3,7 +3,6 @@
  */
 
 #include "deployment.h"
-#include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -17,9 +16,9 @@ extern atomic_uint_fast16_t newdata;
  * Copies "current" data into "previous" buffer and
  * updates "current" with new data from the filter ring.
  *
- * rock.i.klm - index of last copied ring entry,
- * rock.i.cur - current "size" of "current" data,
- * rock.i.old - current "size" of "previous" data.
+ * rock.i.ext - index of last copied ring entry,
+ * rock.i.sc  - current "size" of "current" data,
+ * rock.i.sp  - current "size" of "previous" data.
  *
  * newdata (n) - external atomic counter for new elements,
  * should be incremented each time filter writes to ring.
@@ -45,7 +44,7 @@ static inline inference_e refresh_data()
 {
   uint_fast16_t n;
   uint_fast16_t d = 0;
-  uint_fast16_t k = rock.i.klm;
+  uint_fast16_t k = rock.i.ext;
 
   if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel)))
   {
@@ -57,19 +56,19 @@ static inline inference_e refresh_data()
     // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
   }
 
-  rock.i.r = !rock.i.r;
+  rock.i.a = !rock.i.a;
 
   for (; d < MIN(n, DEPL_BUF_SIZE); ++d)
   {
     // k = (k + 1) & (KALMAN_RING_SIZE - 1);
     // lock kalman_ring[k]
-    // data[rock.i.last][d] = kalman_ring[rock.i.klm];
+    // data[rock.i.last][d] = kalman_ring[rock.i.ext];
     // unlock kalman_ring[k]
   }
 
-  rock.i.klm = k;
-  rock.i.prv = rock.i.cur;
-  rock.i.cur = d;
+  rock.i.ext = k;
+  rock.i.sp = rock.i.sc;
+  rock.i.sc = d;
 
   return DEPL_OK;
 }
@@ -86,18 +85,18 @@ static inline inference_e verify_data()
 
   for (uint_fast8_t j = 0; j < DEPL_BUF_SIZE; ++j)
   {
-    if (data[rock.i.r][j].height_m    < MIN_HEIGHT_M    ||
-        data[rock.i.r][j].height_m    > MAX_HEIGHT_M)
+    if (data[rock.i.a][j].alt < SANITY_MIN_ALT ||
+        data[rock.i.a][j].alt > SANITY_MAX_ALT)
     {
       st += DEPL_BAD_HEIGHT;
     }
-    if (data[rock.i.r][j].vel_mps     < MIN_VEL_MPS     ||
-        data[rock.i.r][j].vel_mps     > MAX_VEL_MPS)
+    if (data[rock.i.a][j].vel < SANITY_MIN_VEL ||
+        data[rock.i.a][j].vel > SANITY_MAX_VEL)
     {
       st += DEPL_BAD_VEL;
     }
-    if (data[rock.i.r][j].accel_mps2  < MIN_ACCEL_MPS2  ||
-        data[rock.i.r][j].accel_mps2  > MAX_ACCEL_MPS2)
+    if (data[rock.i.a][j].vax < SANITY_MIN_VAX ||
+        data[rock.i.a][j].vax > SANITY_MAX_VAX)
     {
       st += DEPL_BAD_ACCEL;
     }
@@ -119,35 +118,26 @@ static inline inference_e verify_data()
  */
 static inline void refresh_stats()
 {
-  float sum_vel = data[rock.i.r][0].vel_mps;
+  float sum_vel = data[rock.i.a][0].vel;
+  float sum_vax = data[rock.i.a][0].vax;
 
-  stats[rock.i.r].max_height_m   = data[rock.i.r][0].height_m;
-  stats[rock.i.r].min_height_m   = data[rock.i.r][0].height_m;
-  stats[rock.i.r].min_accel_mps2 = data[rock.i.r][0].accel_mps2;
+  stats[rock.i.a].max_alt = data[rock.i.a][0].alt;
+  stats[rock.i.a].min_alt = data[rock.i.a][0].alt;
 
-  for (uint_fast8_t j = 1; j < rock.i.cur; ++j)
+  for (uint_fast8_t j = 1; j < rock.i.sc; ++j)
   {
-    float h = data[rock.i.r][j].height_m;
-    float a = data[rock.i.r][j].accel_mps2;
+    stats[rock.i.a].min_alt = MIN(stats[rock.i.a].min_alt,
+                                  data[rock.i.a][j].alt);
 
-    if (h < stats[rock.i.r].min_height_m)
-    {
-      stats[rock.i.r].min_height_m = h;
-    }
-    else if (h > stats[rock.i.r].max_height_m)
-    {
-      stats[rock.i.r].max_height_m = h;
-    }
+    stats[rock.i.a].max_alt = MAX(stats[rock.i.a].max_alt,
+                                  data[rock.i.a][j].alt);
 
-    if (a < stats[rock.i.r].min_accel_mps2)
-    {
-      stats[rock.i.r].min_accel_mps2 = a;
-    }
-
-    sum_vel += data[rock.i.r][j].vel_mps;
+    sum_vel += data[rock.i.a][j].vel;
+    sum_vax += data[rock.i.a][j].vax;
   }
 
-  stats[rock.i.r].mean_vel_mps = sum_vel / (float)rock.i.cur;
+  stats[rock.i.a].avg_vel = sum_vel / (float)rock.i.sc;
+  stats[rock.i.a].avg_vax = sum_vax / (float)rock.i.sc;
 }
 
 /*
@@ -157,11 +147,10 @@ static inline void refresh_stats()
  */
 static inline inference_e detect_launch(inference_e mode)
 {
-  if (stats[rock.i.r].mean_vel_mps >= LAUNCH_MIN_MEAN_VEL_MPS &&
-      stats[rock.i.r].min_accel_mps2 >= LAUNCH_MIN_ACCEL_MPS2 &&
-
-      stats[rock.i.r].mean_vel_mps > stats[!rock.i.r].mean_vel_mps &&
-      stats[rock.i.r].min_height_m > stats[!rock.i.r].max_height_m)
+  if (stats[rock.i.a].avg_vel >= LAUNCH_MIN_VEL &&
+      stats[rock.i.a].avg_vax >= LAUNCH_MIN_VAX &&
+      stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel &&
+      stats[rock.i.a].min_alt > stats[!rock.i.a].max_alt)
   {
     if (mode == INFER_INITIAL)
     {
@@ -172,7 +161,7 @@ static inline inference_e detect_launch(inference_e mode)
     else if (mode == INFER_CONFIRM)
     {
       rock.state = ASCENT;
-      rock.samp_of.burnout = 0;
+      rock.succ.burnout = 0;
       LOG_MSG("Launch confirmed", 17);
     }
   }
@@ -193,23 +182,22 @@ static inline inference_e detect_launch(inference_e mode)
  */
 static inline inference_e detect_burnout()
 {
-  if (stats[rock.i.r].mean_vel_mps >= BURNOUT_MIN_MEAN_VEL_MPS &&
-      stats[rock.i.r].min_accel_mps2 <= BURNOUT_MAX_ACCEL_MPS2 &&
-
-      stats[rock.i.r].max_height_m > stats[rock.i.r].min_height_m &&
-      stats[rock.i.r].mean_vel_mps < stats[!rock.i.r].mean_vel_mps)
+  if (stats[rock.i.a].avg_vel >= BURNOUT_MIN_VEL &&
+      stats[rock.i.a].avg_vax <= BURNOUT_MAX_VAX &&
+      stats[rock.i.a].max_alt > stats[rock.i.a].min_alt &&
+      stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
-    ++rock.samp_of.burnout;
-    if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
+    ++rock.succ.burnout;
+    if (rock.succ.burnout >= MIN_SAMP_BURNOUT)
     {
       rock.state = BURNOUT;
-      rock.samp_of.descent = 0;
+      rock.succ.descent = 0;
       LOG_MSG("Watching for apogee", 20);
     }
   }
-  else if (rock.samp_of.burnout > 0)
+  else if (rock.succ.burnout > 0)
   {
-    rock.samp_of.burnout = 0;
+    rock.succ.burnout = 0;
     return DEPL_N_BURNOUT;
   }
 
@@ -222,11 +210,11 @@ static inline inference_e detect_apogee(inference_e mode)
   LOG_MSG("Apogee reached", 15);
   WAIT_BEFORE_CONFIRM();
 
-  ++rock.samp_of.descent;
-  if (rock.samp_of.descent >= MIN_SAMP_DESCENT)
+  ++rock.succ.descent;
+  if (rock.succ.descent >= MIN_SAMP_DESCENT)
   {
     rock.state = DESCENT;
-    rock.samp_of.landing = 0;
+    rock.succ.landing = 0;
     CO2_HIGH();
     LOG_MSG("Fired pyro, descending", 23);
   }
@@ -236,11 +224,11 @@ static inline inference_e detect_apogee(inference_e mode)
 
 static inline inference_e detect_reef()
 {
-  ++rock.samp_of.landing;
-  if (rock.samp_of.landing >= MIN_SAMP_REEF)
+  ++rock.succ.landing;
+  if (rock.succ.landing >= MIN_SAMP_REEF)
   {
     rock.state = REEF;
-    rock.samp_of.idle = 0;
+    rock.succ.idle = 0;
     REEF_HIGH();
     LOG_MSG("Expanded parachute", 19);
   }
@@ -249,8 +237,8 @@ static inline inference_e detect_reef()
 
 static inline inference_e detect_landed()
 {
-  ++rock.samp_of.idle;
-  if (rock.samp_of.idle >= MIN_SAMP_LANDED)
+  ++rock.succ.idle;
+  if (rock.succ.idle >= MIN_SAMP_LANDED)
   {
     rock.state = LANDED;
     LOG_MSG("Rocket landed", 14);

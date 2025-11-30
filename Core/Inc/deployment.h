@@ -25,23 +25,25 @@
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
-/* Measurement sanity boundaries */
-
-#define MAX_HEIGHT_M    15240.0f
-#define MAX_VEL_MPS     150.0f
-#define MAX_ACCEL_MPS2  (GRAVITY_MPS2 * 8.0f)
-
-#define MIN_HEIGHT_M    -8.0f
-#define MIN_VEL_MPS     -4.0f
-#define MIN_ACCEL_MPS2  -2.0f
-
 #define CONFIRM_INTERVAL_TICKS 20
 
-#define LAUNCH_MIN_MEAN_VEL_MPS   6.0f
-#define LAUNCH_MIN_ACCEL_MPS2     4.0f
-#define BURNOUT_MAX_ACCEL_MPS2    1.0f
-#define BURNOUT_MIN_MEAN_VEL_MPS  6.0f
-#define APOGEE_MAX_MEAN_VEL_MPS   1.0f
+/* Measurement thresholds.
+ * Units: altitude ALT (m), velocity VEL (m/s)
+ * vertical acceleration VAX (m/s^2) */
+
+#define SANITY_MAX_ALT 15240.0f
+#define SANITY_MAX_VEL 150.0f
+#define SANITY_MAX_VAX (GRAVITY_MPS2 * 8.0f)
+
+#define SANITY_MIN_ALT -8.0f
+#define SANITY_MIN_VEL -4.0f
+#define SANITY_MIN_VAX -2.0f
+
+#define LAUNCH_MIN_VEL  6.0f
+#define LAUNCH_MIN_VAX  4.0f
+#define BURNOUT_MIN_VEL 6.0f
+#define BURNOUT_MAX_VAX 1.0f
+#define APOGEE_MAX_VEL  1.0f
 
 /* FC '26 GPIO port maps */
 
@@ -128,6 +130,12 @@
 
 /* Type definitions */
 
+/*
+ * Service enum used to report inference result, and to
+ * provide a compile-time argument to inline functions.
+ * DEPL_CODE_MASK is used to adjust bad data reporting
+ * range based on a reasonable local buffer size.
+ */
 typedef enum {
   DEPL_BAD_HEIGHT = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
   DEPL_BAD_VEL    = -(DEPL_CODE_MASK),
@@ -149,6 +157,9 @@ typedef enum {
   DEPL_DOOM       = 127 // Assert unreachable
 } inference_e;
 
+/*
+ * The backbone of state machine.
+ */
 typedef enum {
   IDLE,
   LAUNCH,
@@ -160,13 +171,24 @@ typedef enum {
   LANDED
 } state_e;
 
+/*
+ * Minimum required stats to have some variety
+ * of checks we use to make a decision. Calculated
+ * for current buffer, useful for two iterations.
+ */
 typedef struct {
-  float min_height_m;
-  float max_height_m;
-  float mean_vel_mps;
-  float min_accel_mps2;
+  float min_alt;
+  float max_alt;
+  float avg_vel;
+  float avg_vax;
 } stats_t;
 
+/*
+ * This struct unifies rocket state, the
+ * amount of successive detections of last
+ * concerned state (one explicit int), and
+ * a toolkit of various indices (see below).
+ */
 typedef struct {
   state_e state;
   union {
@@ -174,20 +196,20 @@ typedef struct {
     uint_fast8_t descent;
     uint_fast8_t landing;
     uint_fast8_t idle;
-  } samp_of;
+  } succ;
   struct {
-    uint_fast16_t klm;
-    uint_fast8_t cur;
-    uint_fast8_t prv;
-    uint_fast8_t r;
+    uint_fast16_t ext;  /* Position in external filter ring   */
+    uint_fast8_t sc;    /* # used elements in "current" buf   */
+    uint_fast8_t sp;    /* # used elements in "previous" buf  */
+    uint_fast8_t a;     /* Index of "current" buffer (0 or 1) */
   } i;
 } rocket_t;
 
 // sample struct until kalman api exposed
 typedef struct {
-  float height_m;
-  float vel_mps;
-  float accel_mps2;
+  float alt;
+  float vel;
+  float vax;
 } filter_t;
 
 #endif // DEPLOYMENT_H
