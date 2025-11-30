@@ -3,6 +3,8 @@
  */
 
 #include "deployment.h"
+#include <math.h>
+#include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -13,7 +15,7 @@ static filter_t prev[DEPL_BUF_SIZE] = {0};
 extern atomic_uint_fast16_t newdata;
 
 /*
- * Copies "current" data into "previous" array and
+ * Copies "current" data into "previous" buffer and
  * updates "current" with new data from the filter ring.
  *
  * rock.i.klm - index of last copied ring entry,
@@ -108,6 +110,50 @@ static inline inference_e verify_data()
   return st;
 }
 
+/*
+ * Updates instantaneous flight statistics based
+ * on data from the "current" buffer.
+ *
+ * Currently updates lowest and largest height,
+ * average velocity, and lowest acceleration reported.
+ * Other metrics can be added later if necessary.
+ *
+ * refresh_data() guarantees that if this function
+ * is called, it does not receive old or empty data.
+ */
+static inline void refresh_stats()
+{
+  float sum_vel = curr[0].vel_mps;
+  rock.stats.max_height_m = curr[0].height_m;
+  rock.stats.min_height_m = curr[0].height_m;
+  rock.stats.min_accel_mps2 = curr[0].accel_mps2;
+
+  for (uint_fast16_t i = 1; i < rock.i.cur; ++i)
+  {
+    float h = curr[i].height_m;
+    float v = curr[i].vel_mps;
+    float a = curr[i].accel_mps2;
+
+    if (h < rock.stats.min_height_m)
+    {
+      rock.stats.min_height_m = h;
+    }
+    else if (h > rock.stats.max_height_m)
+    {
+      rock.stats.max_height_m = h;
+    }
+
+    if (a < rock.stats.min_accel_mps2)
+    {
+      rock.stats.min_accel_mps2 = a;
+    }
+
+    sum_vel += v;
+  }
+
+  rock.stats.mean_vel_mps = sum_vel / (float)rock.i.cur;
+}
+
 // TODO detection logic
 
 static inline inference_e detect_launch(inference_e mode)
@@ -188,13 +234,15 @@ static inline inference_e detect_landed()
  */
 static inline inference_e infer_rocket_state()
 {
-  inference_e st = DEPL_TORN_FLOW;
+  inference_e st;
 
-  if ((st = refresh_data()) < DEPL_OK)
+  if ((st = refresh_data()) == DEPL_NO_INPUT)
     return st;
 
-  if ((st = verify_data()) == DEPL_NO_INPUT)
+  if ((st = verify_data()) < DEPL_OK)
     return st;
+
+  refresh_stats();
 
   switch (rock.state)
   {

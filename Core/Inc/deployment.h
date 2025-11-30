@@ -128,8 +128,7 @@ typedef enum {
   DEPL_OK         = 0,
 
   DEPL_NO_INPUT   = 1,
-  DEPL_TORN_FLOW  = 2,
-  DEPL_GEN_ERROR  = 3,
+  DEPL_GEN_ERROR  = 2,
 
   INFER_INITIAL   = 24,
   INFER_CONFIRM   = 25,
@@ -147,17 +146,10 @@ typedef enum {
 } state_e;
 
 typedef struct {
-  struct {
-    uint32_t launch;
-    uint32_t burnout;
-    uint32_t apogee;
-    uint32_t reef;
-    uint32_t landed;
-  } time_ms;
-  struct {
-    uint16_t apogee;
-    uint16_t reef;
-  } height_m;
+  float min_height_m;
+  float max_height_m;
+  float mean_vel_mps;
+  float min_accel_mps2;
 } stats_t;
 
 typedef struct {
