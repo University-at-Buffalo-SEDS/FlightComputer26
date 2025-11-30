@@ -131,7 +131,6 @@ static inline void refresh_stats()
   for (uint_fast16_t i = 1; i < rock.i.cur; ++i)
   {
     float h = curr[i].height_m;
-    float v = curr[i].vel_mps;
     float a = curr[i].accel_mps2;
 
     if (h < rock.stats.min_height_m)
@@ -148,7 +147,7 @@ static inline void refresh_stats()
       rock.stats.min_accel_mps2 = a;
     }
 
-    sum_vel += v;
+    sum_vel += curr[i].vel_mps;
   }
 
   rock.stats.mean_vel_mps = sum_vel / (float)rock.i.cur;
