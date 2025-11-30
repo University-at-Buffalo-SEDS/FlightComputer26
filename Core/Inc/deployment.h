@@ -41,7 +41,7 @@
 #define LAUNCH_MIN_ACCEL_MPS2     4.0f
 #define BURNOUT_MAX_ACCEL_MPS2    1.0f
 #define BURNOUT_MIN_MEAN_VEL_MPS  6.0f
-
+#define APOGEE_MAX_MEAN_VEL_MPS   1.0f
 
 /* FC '26 GPIO port maps */
 
@@ -169,17 +169,17 @@ typedef struct {
 
 typedef struct {
   state_e state;
-  stats_t stats;
   union {
-    uint_fast16_t burnout;
-    uint_fast16_t descent;
-    uint_fast16_t landing;
-    uint_fast16_t idle;
+    uint_fast8_t burnout;
+    uint_fast8_t descent;
+    uint_fast8_t landing;
+    uint_fast8_t idle;
   } samp_of;
   struct {
     uint_fast16_t klm;
-    uint_fast16_t cur;
-    uint_fast16_t prv;
+    uint_fast8_t cur;
+    uint_fast8_t prv;
+    uint_fast8_t r;
   } i;
 } rocket_t;
 

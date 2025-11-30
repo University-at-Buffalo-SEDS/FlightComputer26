@@ -3,15 +3,14 @@
  */
 
 #include "deployment.h"
-#include <math.h>
 #include <stdint.h>
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
-static rocket_t rock = {0, {0}, {0}, {0}};
-static filter_t curr[DEPL_BUF_SIZE] = {0};
-static filter_t prev[DEPL_BUF_SIZE] = {0};
+static rocket_t rock = {0, {0}, {0, 0, 0, 0}};
+static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
+static stats_t stats[2] = {0};
 extern atomic_uint_fast16_t newdata;
 
 /*
@@ -58,16 +57,13 @@ static inline inference_e refresh_data()
     // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
   }
 
-  for (; d < rock.i.cur; ++d)
-  {
-    prev[d] = curr[d];
-  }
+  rock.i.r = !rock.i.r;
 
-  for (d = 0; d < MIN(n, DEPL_BUF_SIZE); ++d)
+  for (; d < MIN(n, DEPL_BUF_SIZE); ++d)
   {
     // k = (k + 1) & (KALMAN_RING_SIZE - 1);
     // lock kalman_ring[k]
-    // curr[d] = kalman_ring[rock.i.klm];
+    // data[rock.i.last][d] = kalman_ring[rock.i.klm];
     // unlock kalman_ring[k]
   }
 
@@ -88,20 +84,20 @@ static inline inference_e verify_data()
 {
   inference_e st = DEPL_OK;
 
-  for (int i = 0; i < DEPL_BUF_SIZE; ++i)
+  for (uint_fast8_t j = 0; j < DEPL_BUF_SIZE; ++j)
   {
-    if (curr[i].height_m    < MIN_HEIGHT_M    ||
-        curr[i].height_m    > MAX_HEIGHT_M)
+    if (data[rock.i.r][j].height_m    < MIN_HEIGHT_M    ||
+        data[rock.i.r][j].height_m    > MAX_HEIGHT_M)
     {
       st += DEPL_BAD_HEIGHT;
     }
-    if (curr[i].vel_mps     < MIN_VEL_MPS     ||
-        curr[i].vel_mps     > MAX_VEL_MPS)
+    if (data[rock.i.r][j].vel_mps     < MIN_VEL_MPS     ||
+        data[rock.i.r][j].vel_mps     > MAX_VEL_MPS)
     {
       st += DEPL_BAD_VEL;
     }
-    if (curr[i].accel_mps2  < MIN_ACCEL_MPS2  ||
-        curr[i].accel_mps2  > MAX_ACCEL_MPS2)
+    if (data[rock.i.r][j].accel_mps2  < MIN_ACCEL_MPS2  ||
+        data[rock.i.r][j].accel_mps2  > MAX_ACCEL_MPS2)
     {
       st += DEPL_BAD_ACCEL;
     }
@@ -123,44 +119,49 @@ static inline inference_e verify_data()
  */
 static inline void refresh_stats()
 {
-  float sum_vel = curr[0].vel_mps;
-  rock.stats.max_height_m = curr[0].height_m;
-  rock.stats.min_height_m = curr[0].height_m;
-  rock.stats.min_accel_mps2 = curr[0].accel_mps2;
+  float sum_vel = data[rock.i.r][0].vel_mps;
 
-  for (uint_fast16_t i = 1; i < rock.i.cur; ++i)
+  stats[rock.i.r].max_height_m   = data[rock.i.r][0].height_m;
+  stats[rock.i.r].min_height_m   = data[rock.i.r][0].height_m;
+  stats[rock.i.r].min_accel_mps2 = data[rock.i.r][0].accel_mps2;
+
+  for (uint_fast8_t j = 1; j < rock.i.cur; ++j)
   {
-    float h = curr[i].height_m;
-    float a = curr[i].accel_mps2;
+    float h = data[rock.i.r][j].height_m;
+    float a = data[rock.i.r][j].accel_mps2;
 
-    if (h < rock.stats.min_height_m)
+    if (h < stats[rock.i.r].min_height_m)
     {
-      rock.stats.min_height_m = h;
+      stats[rock.i.r].min_height_m = h;
     }
-    else if (h > rock.stats.max_height_m)
+    else if (h > stats[rock.i.r].max_height_m)
     {
-      rock.stats.max_height_m = h;
-    }
-
-    if (a < rock.stats.min_accel_mps2)
-    {
-      rock.stats.min_accel_mps2 = a;
+      stats[rock.i.r].max_height_m = h;
     }
 
-    sum_vel += curr[i].vel_mps;
+    if (a < stats[rock.i.r].min_accel_mps2)
+    {
+      stats[rock.i.r].min_accel_mps2 = a;
+    }
+
+    sum_vel += data[rock.i.r][j].vel_mps;
   }
 
-  rock.stats.mean_vel_mps = sum_vel / (float)rock.i.cur;
+  stats[rock.i.r].mean_vel_mps = sum_vel / (float)rock.i.cur;
 }
 
 /*
  * Monitors if minimum thresholds for velocity and
- * acceleration were exceded. Revertable.
+ * acceleration were exceded. Checks for height and
+ * velocity increase consistancy. Revertable.
  */
 static inline inference_e detect_launch(inference_e mode)
 {
-  if (rock.stats.mean_vel_mps >= LAUNCH_MIN_MEAN_VEL_MPS
-      && rock.stats.min_accel_mps2 >= LAUNCH_MIN_ACCEL_MPS2)
+  if (stats[rock.i.r].mean_vel_mps >= LAUNCH_MIN_MEAN_VEL_MPS &&
+      stats[rock.i.r].min_accel_mps2 >= LAUNCH_MIN_ACCEL_MPS2 &&
+
+      stats[rock.i.r].mean_vel_mps > stats[!rock.i.r].mean_vel_mps &&
+      stats[rock.i.r].min_height_m > stats[!rock.i.r].max_height_m)
   {
     if (mode == INFER_INITIAL)
     {
@@ -187,13 +188,16 @@ static inline inference_e detect_launch(inference_e mode)
 /*
  * Monitors if minimum threshold for velocity and
  * maximum threshold for acceleration were passed.
- * Checks for height consistency. Non-revertable.
+ * Checks for height increase and velocity decrease
+ * consistency. Non-revertable.
  */
 static inline inference_e detect_burnout()
 {
-  if (rock.stats.mean_vel_mps >= BURNOUT_MIN_MEAN_VEL_MPS
-      && rock.stats.max_height_m >= rock.stats.min_height_m
-      && rock.stats.min_accel_mps2 <= BURNOUT_MAX_ACCEL_MPS2)
+  if (stats[rock.i.r].mean_vel_mps >= BURNOUT_MIN_MEAN_VEL_MPS &&
+      stats[rock.i.r].min_accel_mps2 <= BURNOUT_MAX_ACCEL_MPS2 &&
+
+      stats[rock.i.r].max_height_m > stats[rock.i.r].min_height_m &&
+      stats[rock.i.r].mean_vel_mps < stats[!rock.i.r].mean_vel_mps)
   {
     ++rock.samp_of.burnout;
     if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
