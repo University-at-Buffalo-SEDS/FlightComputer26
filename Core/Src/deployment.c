@@ -153,30 +153,62 @@ static inline void refresh_stats()
   rock.stats.mean_vel_mps = sum_vel / (float)rock.i.cur;
 }
 
-// TODO detection logic
-
+/*
+ * Monitors if minimum thresholds for velocity and
+ * acceleration were exceded. Revertable.
+ */
 static inline inference_e detect_launch(inference_e mode)
 {
-  rock.state = LAUNCH;
-  LOG_MSG("Launch detected", 16);
-  WAIT_BEFORE_CONFIRM();
-
-  rock.state = ASCENT;
-  rock.samp_of.burnout = 0;
-  LOG_MSG("Launch confirmed", 17);
+  if (rock.stats.mean_vel_mps >= LAUNCH_MIN_MEAN_VEL_MPS
+      && rock.stats.min_accel_mps2 >= LAUNCH_MIN_ACCEL_MPS2)
+  {
+    if (mode == INFER_INITIAL)
+    {
+      rock.state = LAUNCH;
+      LOG_MSG("Launch detected", 16);
+      WAIT_BEFORE_CONFIRM();
+    }
+    else if (mode == INFER_CONFIRM)
+    {
+      rock.state = ASCENT;
+      rock.samp_of.burnout = 0;
+      LOG_MSG("Launch confirmed", 17);
+    }
+  }
+  else if (mode == INFER_CONFIRM)
+  {
+    rock.state = IDLE;
+    return DEPL_F_LAUNCH;
+  }
 
   return DEPL_OK;
 }
 
+/*
+ * Monitors if minimum threshold for velocity and
+ * maximum threshold for acceleration were passed.
+ * Checks for height consistency. Non-revertable.
+ */
 static inline inference_e detect_burnout()
 {
-  ++rock.samp_of.burnout;
-  if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
+  if (rock.stats.mean_vel_mps >= BURNOUT_MIN_MEAN_VEL_MPS
+      && rock.stats.max_height_m >= rock.stats.min_height_m
+      && rock.stats.min_accel_mps2 <= BURNOUT_MAX_ACCEL_MPS2)
   {
-    rock.state = BURNOUT;
-    rock.samp_of.descent = 0;
-    LOG_MSG("Watching for apogee", 20);
+    ++rock.samp_of.burnout;
+    if (rock.samp_of.burnout >= MIN_SAMP_BURNOUT)
+    {
+      rock.state = BURNOUT;
+      rock.samp_of.descent = 0;
+      LOG_MSG("Watching for apogee", 20);
+    }
   }
+  else if (rock.samp_of.burnout > 0)
+  {
+    rock.samp_of.burnout = 0;
+    return DEPL_N_BURNOUT;
+  }
+
   return DEPL_OK;
 }
 
@@ -227,9 +259,10 @@ static inline inference_e detect_landed()
  * to gather, validate, process, and draw inference from data.
  *
  * Current implementation does not allow state regression
- * and triggers checks to prevent premature or wrong triggers.
+ * between different functions (but allows within one function),
+ * and triggers checks to prevent premature or wrong transitions.
  *
- * Timings and amount of checks are configurable in deployment.h.
+ * Amount of checks and thresholds are configurable in deployment.h.
  */
 static inline inference_e infer_rocket_state()
 {

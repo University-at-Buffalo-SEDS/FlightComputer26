@@ -25,15 +25,23 @@
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
-#define MAX_HEIGHT_M    3048.0f
-#define MAX_VEL_MPS     100.0f
-#define MAX_ACCEL_MPS2  (GRAVITY_MPS2 * 10.0f)
+/* Measurement sanity boundaries */
+
+#define MAX_HEIGHT_M    15240.0f
+#define MAX_VEL_MPS     150.0f
+#define MAX_ACCEL_MPS2  (GRAVITY_MPS2 * 8.0f)
 
 #define MIN_HEIGHT_M    -8.0f
 #define MIN_VEL_MPS     -4.0f
 #define MIN_ACCEL_MPS2  -2.0f
 
 #define CONFIRM_INTERVAL_TICKS 20
+
+#define LAUNCH_MIN_MEAN_VEL_MPS   6.0f
+#define LAUNCH_MIN_ACCEL_MPS2     4.0f
+#define BURNOUT_MAX_ACCEL_MPS2    1.0f
+#define BURNOUT_MIN_MEAN_VEL_MPS  6.0f
+
 
 /* FC '26 GPIO port maps */
 
@@ -128,10 +136,17 @@ typedef enum {
   DEPL_OK         = 0,
 
   DEPL_NO_INPUT   = 1,
-  DEPL_GEN_ERROR  = 2,
+  DEPL_F_LAUNCH   = 2,
+  DEPL_N_BURNOUT  = 3,
+  DEPL_N_APOGEE   = 4,
+  DEPL_F_APOGEE   = 5,
+  DEPL_N_REEF     = 6,
+  DEPL_N_LANDED   = 7,
 
   INFER_INITIAL   = 24,
   INFER_CONFIRM   = 25,
+
+  DEPL_DOOM       = 127 // Assert unreachable
 } inference_e;
 
 typedef enum {
