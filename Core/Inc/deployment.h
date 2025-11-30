@@ -198,10 +198,10 @@ typedef struct {
     uint_fast8_t idle;
   } succ;
   struct {
-    uint_fast16_t ext;  /* Position in external filter ring   */
-    uint_fast8_t sc;    /* # used elements in "current" buf   */
-    uint_fast8_t sp;    /* # used elements in "previous" buf  */
-    uint_fast8_t a;     /* Index of "current" buffer (0 or 1) */
+    uint_fast8_t ex;  /* Position in external filter ring   */
+    uint_fast8_t sc;  /* # used elements in "current" buf   */
+    uint_fast8_t sp;  /* # used elements in "previous" buf  */
+    uint_fast8_t a;   /* Index of "current" buffer (0 or 1) */
   } i;
 } rocket_t;
 

@@ -1,5 +1,6 @@
 /*
- * Logic related to state monitoring and parachute deployment.
+ * State monitoring and parachute deployment.
+ * Designed to run as a task in one thread. 
  */
 
 #include "deployment.h"
@@ -10,7 +11,7 @@ ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 static rocket_t rock = {0, {0}, {0, 0, 0, 0}};
 static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
 static stats_t stats[2] = {0};
-extern atomic_uint_fast16_t newdata;
+extern atomic_uint_fast8_t newdata;
 
 /*
  * Copies "current" data into "previous" buffer and
@@ -42,9 +43,7 @@ extern atomic_uint_fast16_t newdata;
  */
 static inline inference_e refresh_data()
 {
-  uint_fast16_t n;
-  uint_fast16_t d = 0;
-  uint_fast16_t k = rock.i.ext;
+  uint_fast8_t n;
 
   if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel)))
   {
@@ -57,18 +56,15 @@ static inline inference_e refresh_data()
   }
 
   rock.i.a = !rock.i.a;
-
-  for (; d < MIN(n, DEPL_BUF_SIZE); ++d)
-  {
-    // k = (k + 1) & (KALMAN_RING_SIZE - 1);
-    // lock kalman_ring[k]
-    // data[rock.i.last][d] = kalman_ring[rock.i.ext];
-    // unlock kalman_ring[k]
-  }
-
-  rock.i.ext = k;
   rock.i.sp = rock.i.sc;
-  rock.i.sc = d;
+
+  for (rock.i.sc = 0; rock.i.sc < MIN(n, DEPL_BUF_SIZE); ++rock.i.sc)
+  {
+    // rock.i.ex = (rock.i.ex + 1) & (KALMAN_RING_SIZE - 1);
+    // lock kalman_ring[rock.i.ex]
+    // data[rock.i.last][d] = kalman_ring[rock.i.ex];
+    // unlock kalman_ring[rock.i.ex]
+  }
 
   return DEPL_OK;
 }
@@ -260,8 +256,8 @@ static inline inference_e infer_rocket_state()
 {
   inference_e st;
 
-  if ((st = refresh_data()) == DEPL_NO_INPUT)
-    return st;
+  if (refresh_data() == DEPL_NO_INPUT)
+    return DEPL_NO_INPUT;
 
   if ((st = verify_data()) < DEPL_OK)
     return st;
