@@ -256,10 +256,10 @@ static inline inference_e infer_rocket_state()
 {
   inference_e st;
 
-  if (refresh_data() == DEPL_NO_INPUT)
-    return DEPL_NO_INPUT;
+  if ((st = refresh_data()) != DEPL_OK)
+    return st;
 
-  if ((st = verify_data()) < DEPL_OK)
+  if ((st = verify_data()) != DEPL_OK)
     return st;
 
   refresh_stats();
