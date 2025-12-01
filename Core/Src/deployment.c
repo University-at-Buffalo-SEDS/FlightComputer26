@@ -202,7 +202,7 @@ static inline inference_e detect_burnout()
 
 /*
  * Initially monitors for decreasing velocity, then waits
- * and begins to monitor for decreasing altirude and
+ * and begins to monitor for decreasing altitude and
  * increasing velocity. Non-revertable.
  */
 static inline inference_e detect_apogee(inference_e mode)
