@@ -33,7 +33,7 @@
 
 #define SANITY_MAX_ALT 15240.0f
 #define SANITY_MAX_VEL 150.0f
-#define SANITY_MAX_VAX (GRAVITY_MPS2 * 8.0f)
+#define SANITY_MAX_VAX (GRAVITY_SI * 8.0f)
 
 #define SANITY_MIN_ALT -8.0f
 #define SANITY_MIN_VEL -4.0f
@@ -41,9 +41,17 @@
 
 #define LAUNCH_MIN_VEL  6.0f
 #define LAUNCH_MIN_VAX  4.0f
+
 #define BURNOUT_MIN_VEL 6.0f
 #define BURNOUT_MAX_VAX 1.0f
-#define APOGEE_MAX_VEL  1.0f
+
+#define APOGEE_MAX_VEL  4.0f
+
+#define REEF_TARGET_ALT 457.2f
+
+#define ALT_TOLER  1.0f
+#define VEL_TOLER  1.0f
+#define VAX_TOLER  0.5f
 
 /* FC '26 GPIO port maps */
 
@@ -53,7 +61,7 @@
 
 /* Service definitions */
 
-#define GRAVITY_MPS2 9.80665f
+#define GRAVITY_SI 9.80665f
 
 #define DEPL_CODE_MASK (DEPL_BUF_SIZE + 1)
 
@@ -146,8 +154,8 @@ typedef enum {
   DEPL_NO_INPUT   = 1,
   DEPL_F_LAUNCH   = 2,
   DEPL_N_BURNOUT  = 3,
-  DEPL_N_APOGEE   = 4,
-  DEPL_F_APOGEE   = 5,
+  DEPL_F_APOGEE   = 4,
+  DEPL_N_DESCENT  = 5,
   DEPL_N_REEF     = 6,
   DEPL_N_LANDED   = 7,
 
