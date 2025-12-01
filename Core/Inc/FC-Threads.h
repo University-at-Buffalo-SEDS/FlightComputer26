@@ -10,11 +10,11 @@ void create_telemetry_thread(void);
 /* ------ Telemetry Thread ------ */
 
 /* ------ Deployment Thread ------ */
-#define DEPLOYMENT_THREAD_SLEEP         10
-#define DEPLOYMENT_THREAD_PRIORITY      5
+#define DEPLOYMENT_THREAD_SLEEP         60
+#define DEPLOYMENT_THREAD_PRIORITY      6
 #define DEPLOYMENT_THREAD_INPUT         0u
-#define DEPLOYMENT_THREAD_STACK_SIZE    8192u
-#define DEPLOYMENT_THREAD_MAX_RETRIES   70
+#define DEPLOYMENT_THREAD_STACK_SIZE    6144u
+#define DEPLOYMENT_THREAD_MAX_RETRIES   60
 
 extern TX_THREAD deployment_thread;
 extern ULONG deployment_thread_stack[];
