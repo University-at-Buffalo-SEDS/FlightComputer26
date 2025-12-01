@@ -271,7 +271,7 @@ static inline inference_e detect_landed()
 {
   if (stats[rock.i.a].min_alt - stats[!rock.i.a].min_alt <= ALT_TOLER &&
       stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel <= VEL_TOLER &&
-      stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax <= ALT_TOLER)
+      stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax <= VAX_TOLER)
   {
     ++rock.succ.idle;
     if (rock.succ.idle >= MIN_SAMP_LANDED)
