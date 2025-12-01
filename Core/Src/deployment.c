@@ -278,9 +278,13 @@ static inline inference_e detect_reef()
  */
 static inline inference_e detect_landed()
 {
-  if (stats[rock.i.a].min_alt - stats[!rock.i.a].min_alt <= ALT_TOLER &&
-      stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel <= VEL_TOLER &&
-      stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax <= VAX_TOLER)
+  float dh = stats[rock.i.a].min_alt - stats[!rock.i.a].min_alt;
+  float dv = stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel;
+  float da = stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax;
+
+  if ((dh <= ALT_TOLER || dh >= -ALT_TOLER) &&
+      (dv <= VEL_TOLER || dv >= -VEL_TOLER) &&
+      (da <= VAX_TOLER || da >= -VAX_TOLER))
   {
     ++rock.samp.idle;
     if (rock.samp.idle >= MIN_SAMP_LANDED)
