@@ -201,7 +201,9 @@ static inline inference_e detect_burnout()
 }
 
 /*
- * TODO add comments, make sure logic is correct.
+ * Initially monitors for decreasing velocity, then waits
+ * and begins to monitor for decreasing altirude and
+ * increasing velocity. Non-revertable.
  */
 static inline inference_e detect_apogee(inference_e mode)
 {
@@ -243,11 +245,14 @@ static inline inference_e detect_apogee(inference_e mode)
   return DEPL_OK;
 }
 
+/*
+ * Monitors for falling below a specific altitude,
+ * and checks for altitude consistency. Non-revertable.
+ */
 static inline inference_e detect_reef()
 {
   if (stats[rock.i.a].min_alt <= REEF_TARGET_ALT && 
-      stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
-      stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
+      stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt)
   {
     ++rock.samp.landing;
     if (rock.samp.landing >= MIN_SAMP_REEF)
@@ -267,6 +272,10 @@ static inline inference_e detect_reef()
   return DEPL_OK;
 }
 
+/*
+ * Monitors all statistical metrics to not deviate
+ * beyond allowed tolerance thresholds. Non-revertable.
+ */
 static inline inference_e detect_landed()
 {
   if (stats[rock.i.a].min_alt - stats[!rock.i.a].min_alt <= ALT_TOLER &&
