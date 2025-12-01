@@ -204,7 +204,7 @@ typedef struct {
     uint_fast8_t descent;
     uint_fast8_t landing;
     uint_fast8_t idle;
-  } succ;
+  } samp;
   struct {
     uint_fast8_t ex;  /* Position in external filter ring   */
     uint_fast8_t sc;  /* # used elements in "current" buf   */

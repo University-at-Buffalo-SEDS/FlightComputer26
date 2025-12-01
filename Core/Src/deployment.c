@@ -157,7 +157,7 @@ static inline inference_e detect_launch(inference_e mode)
     else if (mode == INFER_CONFIRM)
     {
       rock.state = ASCENT;
-      rock.succ.burnout = 0;
+      rock.samp.burnout = 0;
       LOG_MSG("Launch confirmed", 17);
     }
   }
@@ -183,17 +183,17 @@ static inline inference_e detect_burnout()
       stats[rock.i.a].max_alt > stats[rock.i.a].min_alt &&
       stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
-    ++rock.succ.burnout;
-    if (rock.succ.burnout >= MIN_SAMP_BURNOUT)
+    ++rock.samp.burnout;
+    if (rock.samp.burnout >= MIN_SAMP_BURNOUT)
     {
       rock.state = BURNOUT;
-      rock.succ.descent = 0;
+      rock.samp.descent = 0;
       LOG_MSG("Watching for apogee", 20);
     }
   }
-  else if (rock.succ.burnout > 0)
+  else if (rock.samp.burnout > 0)
   {
-    rock.succ.burnout = 0;
+    rock.samp.burnout = 0;
     return DEPL_N_BURNOUT;
   }
 
@@ -224,18 +224,18 @@ static inline inference_e detect_apogee(inference_e mode)
     if (stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
         stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
     {
-      ++rock.succ.descent;
-      if (rock.succ.descent >= MIN_SAMP_DESCENT)
+      ++rock.samp.descent;
+      if (rock.samp.descent >= MIN_SAMP_DESCENT)
       {
         rock.state = DESCENT;
-        rock.succ.landing = 0;
+        rock.samp.landing = 0;
         CO2_HIGH();
         LOG_MSG("Fired pyro, descending", 23);
       }
     }
-    else if (rock.succ.descent > 0)
+    else if (rock.samp.descent > 0)
     {
-      rock.succ.descent = 0;
+      rock.samp.descent = 0;
       return DEPL_N_DESCENT;
     }
   }
@@ -249,18 +249,18 @@ static inline inference_e detect_reef()
       stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
       stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
   {
-    ++rock.succ.landing;
-    if (rock.succ.landing >= MIN_SAMP_REEF)
+    ++rock.samp.landing;
+    if (rock.samp.landing >= MIN_SAMP_REEF)
     {
       rock.state = REEF;
-      rock.succ.idle = 0;
+      rock.samp.idle = 0;
       REEF_HIGH();
       LOG_MSG("Expanded parachute", 19);
     }
   }
-  else if (rock.succ.landing > 0)
+  else if (rock.samp.landing > 0)
   {
-    rock.succ.landing = 0;
+    rock.samp.landing = 0;
     return DEPL_N_REEF;
   }
 
@@ -273,16 +273,16 @@ static inline inference_e detect_landed()
       stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel <= VEL_TOLER &&
       stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax <= VAX_TOLER)
   {
-    ++rock.succ.idle;
-    if (rock.succ.idle >= MIN_SAMP_LANDED)
+    ++rock.samp.idle;
+    if (rock.samp.idle >= MIN_SAMP_LANDED)
     {
       rock.state = LANDED;
       LOG_MSG("Rocket landed", 14);
     }
   }
-  else if (rock.succ.idle > 0)
+  else if (rock.samp.idle > 0)
   {
-    rock.succ.idle = 0;
+    rock.samp.idle = 0;
     return DEPL_N_LANDED;
   }
 
