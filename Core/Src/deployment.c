@@ -75,11 +75,11 @@ static inline inference_e refresh_data()
  * If this function fails enough times, it will abort
  * the deployment thread. Set thresholds carefully.
  */
-static inline inference_e verify_data()
+static inline inference_e validate_data()
 {
   inference_e st = DEPL_OK;
 
-  for (uint_fast8_t j = 0; j < DEPL_BUF_SIZE; ++j)
+  for (uint_fast8_t j = 0; j < rock.i.sc; ++j)
   {
     if (data[rock.i.a][j].alt < SANITY_MIN_ALT ||
         data[rock.i.a][j].alt > SANITY_MAX_ALT)
@@ -319,7 +319,7 @@ static inline inference_e infer_rocket_state()
   if ((st = refresh_data()) != DEPL_OK)
     return st;
 
-  if ((st = verify_data()) != DEPL_OK)
+  if ((st = validate_data()) != DEPL_OK)
     return st;
 
   refresh_stats();
