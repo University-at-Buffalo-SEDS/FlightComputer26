@@ -1,6 +1,6 @@
 /*
  * State monitoring and parachute deployment.
- * Designed to run as a task in one thread. 
+ * Designed to run as a task *in one thread*. 
  */
 
 #include "deployment.h"
@@ -8,9 +8,18 @@
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
-static rocket_t rock = {0, {0}, {0, 0, 0, 0}};
+static rocket_t rock = {0, {0}, {0, 0, 0, 0}, {0, 0, 0}};
+
+/*
+ * Most-recent and previous data buffers merged
+ */
 static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
-static stats_t stats[2] = {0};
+
+/*
+ * External atomic counter for new elements 
+ * Increment each time a new element is written to filter ring
+ */
+static stats_t stats[2] = {{0}, {0}};
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
@@ -19,21 +28,6 @@ extern atomic_uint_fast8_t newdata;
 /*
  * Copies "current" data into "previous" buffer and
  * updates "current" with new data from the filter ring.
- *
- * rock.i.ext - index of last copied ring entry,
- * rock.i.sc  - current "size" of "current" data,
- * rock.i.sp  - current "size" of "previous" data.
- *
- * newdata (n) - external atomic counter for new elements,
- * should be incremented each time filter writes to ring.
- *
- * We compute starting index (k) in the ring by adding 1
- * (modulo ring size) to the index of last copied entry.
- * If newdata exceeds our local buffer size, we advance
- * our starting position to copy the latest of new entries.
- *
- * Every iteration we lock the active element of the ring
- * to avoid partial reads, and to let other entries update.
  * 
  * If the deployment task is switched to filter task while
  * the second loop was running, newdata will grow. If the
@@ -285,9 +279,9 @@ static inline inference_e detect_landed()
   float dv = stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel;
   float da = stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax;
 
-  if ((dh <= ALT_TOLER || dh >= -ALT_TOLER) &&
-      (dv <= VEL_TOLER || dv >= -VEL_TOLER) &&
-      (da <= VAX_TOLER || da >= -VAX_TOLER))
+  if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
+      (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
+      (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
     ++rock.samp.idle;
     if (rock.samp.idle >= MIN_SAMP_LANDED)
@@ -306,10 +300,7 @@ static inline inference_e detect_landed()
 }
 
 /*
- * This is a state machine that calls functions necessary
- * to gather, validate, process, and draw inference from data.
- *
- * Current implementation does not allow state regression
+ * Currently this state machine does not allow state regression
  * between different functions (but allows within one function),
  * and triggers checks to prevent premature or wrong transitions.
  *
@@ -327,8 +318,7 @@ static inline inference_e infer_rocket_state()
 
   refresh_stats();
 
-  switch (rock.state)
-  {
+  switch (rock.state) {
     case IDLE:
       return detect_launch(INFER_INITIAL);
     case LAUNCH:
@@ -346,20 +336,23 @@ static inline inference_e infer_rocket_state()
     case LANDED:
       return DEPL_OK;
 
-    case RECOVERY:      // Assert unreachable
+    /* Assert unreachable */
+    case RECOVERY:
     case ABORTED:
-    default:
-      return DEPL_DOOM;
+    default: return DEPL_DOOM;
   }
 }
 
 /*
- * Try to reinitializes sensors and
- * invalidate data cache.
+ * Tries to reinitializes sensors and invalidate
+ * data cache. Reassigns the rocket its active state.
  */
-static inline inference_e try_recover_sensors()
+static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
+
+  LOG_MSG("Trying to recover sensors", 26);
+
   (void)__disable_irq;
 
   if (init_barometer(&hspi1) != HAL_OK)
@@ -374,69 +367,51 @@ static inline inference_e try_recover_sensors()
   HAL_DCACHE_Invalidate(&hdcache1);
 
   (void)__enable_irq;
-  return st;
+  
+  if (st == DEPL_OK) {
+    LOG_MSG("Sensor recovery successful", 27);
+  } else {
+    LOG_ERR("Recovery failed (code %d)", st);
+  }
+
+  /* Try to validate data anyway */
+  rock.state = rock.rec.state;
 }
 
 /*
- * Invokes state machine, consequently handling
- * errors, logging, and thread abortion decisions.
+ * Keeps record of successive retries,
+ * and updates rocket state to Recovery or Aborted
+ * if a corresponding retry threshold was exceeded.
+ *
+ * Thresholds are configurable in deployment.h.
  */
-static inline void deployemnt_cycle()
+static inline void bad_inference_handler()
 {
-  if ((rock.rec.inf = infer_rocket_state()) < DEPL_OK)
+  ++rock.rec.ret;
+  LOG_ERR("Deployment: bad inference #%u (code %d)",
+          rock.rec.ret, rock.rec.inf);
+
+  if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
   {
-    ++rock.rec.ret;
-    LOG_ERR("Deployment: bad inference #%u (code %d)",
-            rock.rec.ret, rock.rec.inf);
-
-    if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
-    {
-      rock.state = ABORTED;
-      LOG_ERR("FATAL: aborting deployment (%u retries)",
-              rock.rec.ret);
-    }
-    else if (rock.rec.ret >= PRE_RECOV_RETRIES &&
-             rock.rec.ret % RECOVERY_INTERVAL == 0)
-    {
-      if (rock.state != RECOVERY)
-      {
-        rock.rec.state = rock.state;
-        rock.state = RECOVERY;
-      }
-
-      LOG_MSG("Trying to recover sensors", 26);
-
-      if ((rock.rec.inf = try_recover_sensors()) != DEPL_OK)
-      {
-        LOG_ERR("Recovery failed (code %d)", rock.rec.inf);
-      }
-    }
+    rock.state = ABORTED;
+    LOG_ERR("FATAL: aborting deployment (%u retries)",
+            rock.rec.ret);
   }
-  else if (rock.rec.inf > DEPL_OK)
+  else if (rock.state != RECOVERY &&
+           rock.rec.ret >= PRE_RECOV_RETRIES &&
+           rock.rec.ret % RECOVERY_INTERVAL == 0)
   {
-    LOG_ERR("Deployment: non-critical warning (code %d)",
-            rock.rec.inf);
-  }
-  else if (rock.rec.ret > 0)
-  {
-    if (rock.rec.state == RECOVERY)
-    {
-      rock.state = rock.rec.state;
-    }
-
-    rock.rec.ret = 0;
-    LOG_MSG("Recovered from error, continuing", 33);
+    rock.rec.state = rock.state;
+    rock.state = RECOVERY;
   }
 }
 
 /*
- * Entry point of the deployment thread. Usually called by RTOS.
+ * Invokes state machine and checks for an error.
+ * If one exists, invokes appropriate error handler
+ * or logs non-critical message.
  *
- * Returns (aborts thread) if the state machine returned an error
- * certain amount of times in a row (that is, if the error could
- * not be mitigated within a given time).
- *
- * Amount of retries and idle time are configurable in FC-Threads.h.
+ * Idle time is configurable in FC-Threads.h.
  */
 void deployment_thread_entry(ULONG input)
 {
@@ -446,17 +421,30 @@ void deployment_thread_entry(ULONG input)
 
   CO2_LOW();
   REEF_LOW();
+  rock.state = IDLE;
 
-  for (; rock.state != ABORTED ;)
-  {
-    deployemnt_cycle();
+  while (rock.state != ABORTED) {
+    rock.rec.inf = infer_rocket_state();
+
+    if (rock.state == RECOVERY) {
+      try_recover_sensors();
+    } else if (rock.rec.inf < DEPL_OK) {
+      bad_inference_handler();
+    } else if (rock.rec.inf > DEPL_OK) {
+      LOG_ERR("Deployment: warn code %d", rock.rec.inf);
+    } else if (rock.rec.ret > 0) {
+      rock.rec.ret = 0;
+      LOG_MSG("Deployment: recovered from error", 33);
+    }
+
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 }
 
 /*
- * Creates a non-preemptive deployment thread with defined parameters.
- * Called manually. Provides its entry point with a throwaway input.
+ * Creates a non-preemptive deployment thread with
+ * defined parameters. Called manually. Provides
+ * its entry point with a throwaway input.
  *
  * Stack size and priority are configurable in FC-Threads.h.
  */
@@ -469,12 +457,12 @@ void create_deployment_thread(void)
                              deployment_thread_stack,
                              DEPLOYMENT_THREAD_STACK_SIZE,
                              DEPLOYMENT_THREAD_PRIORITY,
-                             DEPLOYMENT_THREAD_PRIORITY, // No preemption
+                             /* No preemption */
+                             DEPLOYMENT_THREAD_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
-  if (st != TX_SUCCESS)
-  {
+  if (st != TX_SUCCESS) {
     die("Failed to create deployment thread: %u", (unsigned)st);
   }
 }

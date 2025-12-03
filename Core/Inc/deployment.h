@@ -9,6 +9,10 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "gyro.h"
+//#include "accel.h"
+#include "barometer.h"
+
 #include <sedsprintf.h>
 #include "telemetry.h"
 #include "FC-Threads.h"
@@ -18,10 +22,6 @@
 #include "stm32h5xx_hal_spi.h"
 #include "stm32h5xx_hal_gpio.h"
 #include "stm32h5xx_hal_dcache.h"
-
-#include "barometer.h"
-//#include "accel.h"
-#include "gyro.h"
 
 /* Local configuration */
 
@@ -181,17 +181,18 @@ typedef enum {
   DEPL_BAD_BARO   = 40,
 
   /* Arguments to inference functions */
-  INFER_INITIAL   = 122,
-  INFER_CONFIRM   = 121,
+  INFER_INITIAL   = 111,
+  INFER_CONFIRM   = 112,
 
   /* Assert unreachable */
   DEPL_DOOM       = 127
 } inference_e;
 
 /*
- * The backbone of state machine.
+ * The backbone of state machine and error handling.
  */
 typedef enum {
+  INIT,
   IDLE,
   LAUNCH,
   ASCENT,
