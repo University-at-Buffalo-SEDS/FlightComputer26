@@ -4,8 +4,6 @@
  */
 
 #include "deployment.h"
-#include "gyro.h"
-#include "stm32h5xx_hal_dcache.h"
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
