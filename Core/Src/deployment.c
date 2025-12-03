@@ -459,11 +459,14 @@ void deployment_thread_entry(ULONG input)
   rock.state = IDLE;
 
   while (rock.state != ABORTED) {
-    rock.rec.inf = infer_rocket_state();
-
     if (rock.state == RECOVERY) {
       try_recover_sensors();
-    } else if (rock.rec.inf < DEPL_OK) {
+      continue;
+    }
+    
+    rock.rec.inf = infer_rocket_state();
+
+    if (rock.rec.inf < DEPL_OK) {
       bad_inference_handler();
     } else if (rock.rec.inf > DEPL_OK) {
       LOG_ERR("Deployment: warn code %d", rock.rec.inf);
