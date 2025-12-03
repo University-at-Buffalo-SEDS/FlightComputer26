@@ -335,11 +335,8 @@ static inline inference_e detect_landed()
 }
 
 /*
- * Currently this state machine does not allow state regression
- * between different functions (but allows within one function),
- * and triggers checks to prevent premature or wrong transitions.
- *
- * Amount of checks and thresholds are configurable in deployment.h.
+ * The state machine does not allow state regression
+ * and triggers checks to prevent premature transitions.
  */
 static inline inference_e infer_rocket_state()
 {
