@@ -14,7 +14,14 @@
 #include "FC-Threads.h"
 
 #include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_def.h"
+#include "stm32h5xx_hal_spi.h"
 #include "stm32h5xx_hal_gpio.h"
+#include "stm32h5xx_hal_dcache.h"
+
+#include "barometer.h"
+//#include "accel.h"
+#include "gyro.h"
 
 /* Local configuration */
 
@@ -52,6 +59,8 @@
 #define ALT_TOLER  1.0f
 #define VEL_TOLER  1.0f
 #define VAX_TOLER  0.5f
+
+#define RECOVERY_FREQ 4
 
 /* FC '26 GPIO port maps */
 
@@ -145,13 +154,18 @@
  * range based on a reasonable local buffer size.
  */
 typedef enum {
-  DEPL_BAD_HEIGHT = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
+  /* Data validation (critical) */
+  DEPL_BAD_ALT    = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
   DEPL_BAD_VEL    = -(DEPL_CODE_MASK),
-  DEPL_BAD_ACCEL  = -1,
+  DEPL_BAD_VAX    = -1,
 
+  /* Generic OK and a reference point */
   DEPL_OK         = 0,
 
+  /* Getting data from filter (non-critical) */
   DEPL_NO_INPUT   = 1,
+
+  /* Drawing inference (non-critical) */
   DEPL_F_LAUNCH   = 2,
   DEPL_N_BURNOUT  = 3,
   DEPL_F_APOGEE   = 4,
@@ -159,10 +173,17 @@ typedef enum {
   DEPL_N_REEF     = 6,
   DEPL_N_LANDED   = 7,
 
-  INFER_INITIAL   = 24,
-  INFER_CONFIRM   = 25,
+  /* Recovery (critical) */
+  DEPL_BAD_ACCEL  = 20,
+  DEPL_BAD_GYRO   = 30,
+  DEPL_BAD_BARO   = 40,
 
-  DEPL_DOOM       = 127 // Assert unreachable
+  /* Arguments to inference functions */
+  INFER_INITIAL   = 122,
+  INFER_CONFIRM   = 121,
+
+  /* Assert unreachable */
+  DEPL_DOOM       = 127
 } inference_e;
 
 /*
@@ -176,7 +197,9 @@ typedef enum {
   APOGEE,
   DESCENT,
   REEF,
-  LANDED
+  LANDED,
+  RECOVERY,
+  ABORTED,
 } state_e;
 
 /*
@@ -194,8 +217,9 @@ typedef struct {
 /*
  * This struct unifies rocket state, the
  * amount of successive detections of last
- * concerned state (one explicit int), and
- * a toolkit of various indices (see below).
+ * concerned state (one explicit int),
+ * a toolkit of various indices (see below),
+ * and an error recovery toolkit.
  */
 typedef struct {
   state_e state;
@@ -211,6 +235,11 @@ typedef struct {
     uint_fast8_t sp;  /* # used elements in "previous" buf  */
     uint_fast8_t a;   /* Index of "current" buffer (0 or 1) */
   } i;
+  struct {
+    state_e state;
+    inference_e inf;
+    uint_fast8_t ret;
+  } rec;
 } rocket_t;
 
 // sample struct until kalman api exposed

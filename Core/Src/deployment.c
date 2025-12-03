@@ -4,6 +4,8 @@
  */
 
 #include "deployment.h"
+#include "gyro.h"
+#include "stm32h5xx_hal_dcache.h"
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -11,6 +13,9 @@ ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 static rocket_t rock = {0, {0}, {0, 0, 0, 0}};
 static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
 static stats_t stats[2] = {0};
+
+extern SPI_HandleTypeDef hspi1;
+extern DCACHE_HandleTypeDef hdcache1;
 extern atomic_uint_fast8_t newdata;
 
 /*
@@ -84,7 +89,7 @@ static inline inference_e validate_data()
     if (data[rock.i.a][j].alt < SANITY_MIN_ALT ||
         data[rock.i.a][j].alt > SANITY_MAX_ALT)
     {
-      st += DEPL_BAD_HEIGHT;
+      st += DEPL_BAD_ALT;
     }
     if (data[rock.i.a][j].vel < SANITY_MIN_VEL ||
         data[rock.i.a][j].vel > SANITY_MAX_VEL)
@@ -94,7 +99,7 @@ static inline inference_e validate_data()
     if (data[rock.i.a][j].vax < SANITY_MIN_VAX ||
         data[rock.i.a][j].vax > SANITY_MAX_VAX)
     {
-      st += DEPL_BAD_ACCEL;
+      st += DEPL_BAD_VAX;
     }
   }
 
@@ -342,6 +347,79 @@ static inline inference_e infer_rocket_state()
       return detect_landed();
     case LANDED:
       return DEPL_OK;
+
+    case RECOVERY:      // Assert unreachable
+    case ABORTED:
+    default:
+      return DEPL_DOOM;
+  }
+}
+
+/*
+ * Reinitializes sensors
+ */
+static inline inference_e try_recover_sensors()
+{
+  inference_e st = DEPL_OK;
+  (void)__disable_irq;
+
+  if (init_barometer(&hspi1) != HAL_OK)
+    st += DEPL_BAD_BARO;
+
+  if (gyro_init(&hspi1) != HAL_OK)
+    st += DEPL_BAD_GYRO;
+
+  // if (accel_init(&hspi1) != HAL_OK)
+  //   st += DEPL_BAD_ACCEL;
+
+  HAL_DCACHE_Invalidate(&hdcache1);
+
+  (void)__enable_irq;
+  return st;
+}
+
+/*
+ * Invokes state machine, consequently handling
+ * errors, logging, and thread abortion decisions.
+ */
+static inline void deployemnt_cycle()
+{
+  if ((rock.rec.inf = infer_rocket_state()) == DEPL_OK
+      && rock.rec.ret > 0)
+  {
+    rock.rec.ret = 0;
+    LOG_MSG("Recovered from error, continuing", 33);
+  }
+  else if (rock.rec.inf > DEPL_OK)
+  {
+    LOG_ERR("Deployment: warning (code %d)", rock.rec.inf);
+  }
+  else if (rock.rec.inf < DEPL_OK)
+  {
+    rock.rec.state = rock.state;
+    rock.state = RECOVERY;
+    ++rock.rec.ret;
+
+    LOG_ERR("Deployment: bad inference #%u (code %d), trying"
+            " to recover sensors", rock.rec.ret, rock.rec.inf);
+    
+    if (rock.rec.ret % RECOVERY_FREQ == 0)
+    {
+      if ((rock.rec.inf = try_recover_sensors()) != DEPL_OK)
+      {
+        LOG_ERR("Recovery failed (code %d)", rock.rec.inf);
+      }
+      else
+      {
+        rock.state = rock.rec.state;
+      }
+    }
+
+    if (rock.rec.ret >= DEPLOYMENT_THREAD_MAX_RETRIES)
+    {
+      rock.state = ABORTED;
+      LOG_ERR("FATAL: aborting deployment (%u retries)", rock.rec.ret);
+    }
   }
 }
 
@@ -357,35 +435,15 @@ static inline inference_e infer_rocket_state()
 void deployment_thread_entry(ULONG input)
 {
   (void)input;
-  uint_fast16_t retries = 0;
-  inference_e last = DEPL_OK;
 
   LOG_MSG_SYNC("Deployment: starting thread", 28);
 
   CO2_LOW();
   REEF_LOW();
 
-  for (;;)
+  for (; rock.state != ABORTED ;)
   {
-    if ((last = infer_rocket_state()) == DEPL_OK)
-    {
-      retries = 0; // Reset counter (error mitigated)
-    }
-    else if (last > DEPL_OK)
-    {
-      LOG_ERR("Deployment: non-critical debug warning (code %d)", last);
-    }
-    else
-    {
-      LOG_ERR("Deployment: bad inference #%u (code %d)", retries, last);
-      ++retries;
-
-      if (retries >= DEPLOYMENT_THREAD_MAX_RETRIES)
-      {
-        LOG_ERR_SYNC("FATAL: aborting deployment (%u retries)", retries);
-        return;
-      }
-    }
+    deployemnt_cycle();
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 }
