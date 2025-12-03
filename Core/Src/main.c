@@ -25,14 +25,12 @@
 #include "app_threadx.h"
 #include "ux_api.h"
 #include "ux_device_class_cdc_acm.h"
+#include "deployment.h"
 #include <stdint.h>
 #include <stdio.h>
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
