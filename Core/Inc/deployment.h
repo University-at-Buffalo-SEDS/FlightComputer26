@@ -5,24 +5,6 @@
 #ifndef DEPLOYMENT_H
 #define DEPLOYMENT_H
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdatomic.h>
-
-#include "gyro.h"
-//#include "accel.h"
-#include "barometer.h"
-
-#include <sedsprintf.h>
-#include "telemetry.h"
-#include "FC-Threads.h"
-
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "stm32h5xx_hal_gpio.h"
-#include "stm32h5xx_hal_dcache.h"
-
 /* Local configuration */
 
 #define DEPL_BUF_SIZE 4
