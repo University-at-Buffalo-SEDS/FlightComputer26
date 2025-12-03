@@ -9,6 +9,7 @@
 
 #define DEPL_BUF_SIZE 4
 
+#define MIN_SAMP_ASCENT   6
 #define MIN_SAMP_BURNOUT  6
 #define MIN_SAMP_DESCENT  6
 #define MIN_SAMP_REEF     4
@@ -18,7 +19,10 @@
 #define PRE_RECOV_RETRIES 30
 #define PRE_ABORT_RETRIES 40
 
-#define CONFIRM_INTERVAL_TICKS 20
+#define CONSECUTIVE_CONFIRMS 1
+/* Delay in ThreadX ticks */
+#define LAUNCH_CONFIRM_DELAY 25
+#define APOGEE_CONFIRM_DELAY 75
 
 /* Measurement thresholds.
  * Units: altitude ALT (m), velocity VEL (m/s)
@@ -60,8 +64,11 @@
 
 /* Extrernal API helper macros */
 
-#define WAIT_BEFORE_CONFIRM()                               \
-  tx_thread_sleep(CONFIRM_INTERVAL_TICKS)
+#define WAIT_CONFIRM_LAUNCH()                               \
+  tx_thread_sleep(LAUNCH_CONFIRM_DELAY)
+
+#define WAIT_CONFIRM_APOGEE()                               \
+  tx_thread_sleep(APOGEE_CONFIRM_DELAY)
 
 #define LOG_MSG_SYNC(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
@@ -70,6 +77,7 @@
 #define LOG_MSG(msg, size)                                  \
   log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
                              (msg), (size), sizeof(char))
+
 
 #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
@@ -132,8 +140,7 @@
 /* Type definitions */
 
 /*
- * Service enum used to report inference result, and to
- * provide a compile-time argument to inline functions.
+ * Service enum used to report inference result.
  * DEPL_CODE_MASK is used to adjust bad data reporting
  * range based on a reasonable local buffer size.
  */
@@ -150,21 +157,16 @@ typedef enum {
   DEPL_NO_INPUT   = 1,
 
   /* Drawing inference (non-critical) */
-  DEPL_F_LAUNCH   = 2,
+  DEPL_N_LAUNCH   = 2,
   DEPL_N_BURNOUT  = 3,
-  DEPL_F_APOGEE   = 4,
-  DEPL_N_DESCENT  = 5,
-  DEPL_N_REEF     = 6,
-  DEPL_N_LANDED   = 7,
+  DEPL_N_DESCENT  = 4,
+  DEPL_N_REEF     = 5,
+  DEPL_N_LANDED   = 6,
 
   /* Recovery (critical) */
   DEPL_BAD_ACCEL  = 20,
   DEPL_BAD_GYRO   = 30,
   DEPL_BAD_BARO   = 40,
-
-  /* Arguments to inference functions */
-  INFER_INITIAL   = 111,
-  INFER_CONFIRM   = 112,
 
   /* Assert unreachable */
   DEPL_DOOM       = 127
@@ -209,6 +211,7 @@ typedef struct {
 typedef struct {
   state_e state;
   union {
+    uint_fast8_t ascent;
     uint_fast8_t burnout;
     uint_fast8_t descent;
     uint_fast8_t landing;

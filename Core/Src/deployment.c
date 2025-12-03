@@ -152,33 +152,44 @@ static inline void refresh_stats()
 
 /*
  * Monitors if minimum thresholds for velocity and
- * acceleration were exceded. Checks for height and
- * velocity increase consistancy. Revertable.
+ * acceleration were exceded.
  */
-static inline inference_e detect_launch(inference_e mode)
+static inline inference_e detect_launch()
 {
   if (stats[rock.i.a].avg_vel >= LAUNCH_MIN_VEL &&
-      stats[rock.i.a].avg_vax >= LAUNCH_MIN_VAX &&
-      stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel &&
+      stats[rock.i.a].avg_vax >= LAUNCH_MIN_VAX)
+  {
+    rock.state = LAUNCH;
+    rock.samp.ascent = 0;
+    LOG_MSG("Launch detected", 16);
+    WAIT_CONFIRM_LAUNCH();
+  }
+
+  return DEPL_OK;
+}
+
+/*
+ * Monitors height and velocity increase consistency.
+ */
+static inline inference_e detect_ascent()
+{
+  if (stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel &&
       stats[rock.i.a].min_alt > stats[!rock.i.a].max_alt)
   {
-    if (mode == INFER_INITIAL)
-    {
-      rock.state = LAUNCH;
-      LOG_MSG("Launch detected", 16);
-      WAIT_BEFORE_CONFIRM();
-    }
-    else if (mode == INFER_CONFIRM)
-    {
+    ++rock.samp.ascent;
+    if (rock.samp.ascent >= MIN_SAMP_ASCENT) {
       rock.state = ASCENT;
       rock.samp.burnout = 0;
       LOG_MSG("Launch confirmed", 17);
     }
   }
-  else if (mode == INFER_CONFIRM)
+  else if (rock.samp.ascent > 0)
   {
-    rock.state = IDLE;
-    return DEPL_F_LAUNCH;
+    #if (CONSECUTIVE_CONFIRMS == 1)
+    rock.samp.ascent = 0;
+    #endif
+
+    return DEPL_N_LAUNCH;
   }
 
   return DEPL_OK;
@@ -188,7 +199,7 @@ static inline inference_e detect_launch(inference_e mode)
  * Monitors if minimum threshold for velocity and
  * maximum threshold for acceleration were passed.
  * Checks for height increase and velocity decrease
- * consistency. Non-revertable.
+ * consistency.
  */
 static inline inference_e detect_burnout()
 {
@@ -198,8 +209,7 @@ static inline inference_e detect_burnout()
       stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
     ++rock.samp.burnout;
-    if (rock.samp.burnout >= MIN_SAMP_BURNOUT)
-    {
+    if (rock.samp.burnout >= MIN_SAMP_BURNOUT) {
       rock.state = BURNOUT;
       rock.samp.descent = 0;
       LOG_MSG("Watching for apogee", 20);
@@ -207,7 +217,10 @@ static inline inference_e detect_burnout()
   }
   else if (rock.samp.burnout > 0)
   {
+    #if (CONSECUTIVE_CONFIRMS == 1)
     rock.samp.burnout = 0;
+    #endif
+
     return DEPL_N_BURNOUT;
   }
 
@@ -215,45 +228,46 @@ static inline inference_e detect_burnout()
 }
 
 /*
- * Initially monitors for decreasing velocity, then waits
- * and begins to monitor for decreasing altitude and
- * increasing velocity. Non-revertable.
+ * Initially monitors for continuing burnout and
+ * for velocity to pass the minimum threshold.
  */
-static inline inference_e detect_apogee(inference_e mode)
+static inline inference_e detect_apogee()
 {
   if (stats[rock.i.a].avg_vel <= APOGEE_MAX_VEL &&
       stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
-    if (mode == INFER_INITIAL)
-    {
-      rock.state = APOGEE;
-      LOG_MSG("Approaching apogee", 19);
-      WAIT_BEFORE_CONFIRM();
-    }
-    else if (mode == INFER_CONFIRM)
-    {
-      return DEPL_F_APOGEE;
+    rock.state = APOGEE;
+    rock.samp.descent = 0;
+    LOG_MSG("Approaching apogee", 19);
+    WAIT_CONFIRM_APOGEE();
+  }
+
+  return DEPL_OK;
+}
+
+/*
+ * Monitors for decreasing altitude and increasing velocity.
+ */
+static inline inference_e detect_descent()
+{
+  if (stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
+      stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
+  {
+    ++rock.samp.descent;
+    if (rock.samp.descent >= MIN_SAMP_DESCENT) {
+      rock.state = DESCENT;
+      rock.samp.landing = 0;
+      CO2_HIGH();
+      LOG_MSG("Fired pyro, descending", 23);
     }
   }
-  else if (mode == INFER_CONFIRM)
+  else if (rock.samp.descent > 0)
   {
-    if (stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
-        stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
-    {
-      ++rock.samp.descent;
-      if (rock.samp.descent >= MIN_SAMP_DESCENT)
-      {
-        rock.state = DESCENT;
-        rock.samp.landing = 0;
-        CO2_HIGH();
-        LOG_MSG("Fired pyro, descending", 23);
-      }
-    }
-    else if (rock.samp.descent > 0)
-    {
-      rock.samp.descent = 0;
-      return DEPL_N_DESCENT;
-    }
+    #if (CONSECUTIVE_CONFIRMS == 1)
+    rock.samp.descent = 0;
+    #endif
+
+    return DEPL_N_DESCENT;
   }
 
   return DEPL_OK;
@@ -261,7 +275,7 @@ static inline inference_e detect_apogee(inference_e mode)
 
 /*
  * Monitors for falling below a specific altitude,
- * and checks for altitude consistency. Non-revertable.
+ * and checks for altitude consistency.
  */
 static inline inference_e detect_reef()
 {
@@ -269,8 +283,7 @@ static inline inference_e detect_reef()
       stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt)
   {
     ++rock.samp.landing;
-    if (rock.samp.landing >= MIN_SAMP_REEF)
-    {
+    if (rock.samp.landing >= MIN_SAMP_REEF) {
       rock.state = REEF;
       rock.samp.idle = 0;
       REEF_HIGH();
@@ -279,7 +292,10 @@ static inline inference_e detect_reef()
   }
   else if (rock.samp.landing > 0)
   {
+    #if (CONSECUTIVE_CONFIRMS == 1)
     rock.samp.landing = 0;
+    #endif
+
     return DEPL_N_REEF;
   }
 
@@ -288,7 +304,7 @@ static inline inference_e detect_reef()
 
 /*
  * Monitors all statistical metrics to not deviate
- * beyond allowed tolerance thresholds. Non-revertable.
+ * beyond allowed tolerance thresholds.
  */
 static inline inference_e detect_landed()
 {
@@ -301,15 +317,17 @@ static inline inference_e detect_landed()
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
     ++rock.samp.idle;
-    if (rock.samp.idle >= MIN_SAMP_LANDED)
-    {
+    if (rock.samp.idle >= MIN_SAMP_LANDED) {
       rock.state = LANDED;
       LOG_MSG("Rocket landed", 14);
     }
   }
   else if (rock.samp.idle > 0)
   {
+    #if (CONSECUTIVE_CONFIRMS == 1)
     rock.samp.idle = 0;
+    #endif
+
     return DEPL_N_LANDED;
   }
 
@@ -337,15 +355,15 @@ static inline inference_e infer_rocket_state()
 
   switch (rock.state) {
     case IDLE:
-      return detect_launch(INFER_INITIAL);
+      return detect_launch();
     case LAUNCH:
-      return detect_launch(INFER_CONFIRM);
+      return detect_ascent();
     case ASCENT:
       return detect_burnout();
     case BURNOUT:
-      return detect_apogee(INFER_INITIAL);
+      return detect_apogee();
     case APOGEE:
-      return detect_apogee(INFER_CONFIRM);
+      return detect_descent();
     case DESCENT:
       return detect_reef();
     case REEF:
