@@ -356,7 +356,8 @@ static inline inference_e infer_rocket_state()
 }
 
 /*
- * Reinitializes sensors
+ * Try to reinitializes sensors and
+ * invalidate data cache.
  */
 static inline inference_e try_recover_sensors()
 {
@@ -384,42 +385,49 @@ static inline inference_e try_recover_sensors()
  */
 static inline void deployemnt_cycle()
 {
-  if ((rock.rec.inf = infer_rocket_state()) == DEPL_OK
-      && rock.rec.ret > 0)
+  if ((rock.rec.inf = infer_rocket_state()) < DEPL_OK)
   {
-    rock.rec.ret = 0;
-    LOG_MSG("Recovered from error, continuing", 33);
-  }
-  else if (rock.rec.inf > DEPL_OK)
-  {
-    LOG_ERR("Deployment: warning (code %d)", rock.rec.inf);
-  }
-  else if (rock.rec.inf < DEPL_OK)
-  {
-    rock.rec.state = rock.state;
-    rock.state = RECOVERY;
     ++rock.rec.ret;
+    LOG_ERR("Deployment: bad inference #%u (code %d)",
+            rock.rec.ret, rock.rec.inf);
 
-    LOG_ERR("Deployment: bad inference #%u (code %d), trying"
-            " to recover sensors", rock.rec.ret, rock.rec.inf);
-    
-    if (rock.rec.ret % RECOVERY_FREQ == 0)
+    if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
     {
+      rock.state = ABORTED;
+      LOG_ERR("FATAL: aborting deployment (%u retries)",
+              rock.rec.ret);
+    }
+    else if (rock.rec.ret >= PRE_RECOV_RETRIES &&
+             rock.rec.ret % RECOVERY_INTERVAL == 0)
+    {
+      if (rock.state != RECOVERY)
+      {
+        rock.rec.state = rock.state;
+        rock.state = RECOVERY;
+      }
+
+      LOG_MSG("Trying to recover sensors", 26);
+
       if ((rock.rec.inf = try_recover_sensors()) != DEPL_OK)
       {
         LOG_ERR("Recovery failed (code %d)", rock.rec.inf);
       }
-      else
-      {
-        rock.state = rock.rec.state;
-      }
+    }
+  }
+  else if (rock.rec.inf > DEPL_OK)
+  {
+    LOG_ERR("Deployment: non-critical warning (code %d)",
+            rock.rec.inf);
+  }
+  else if (rock.rec.ret > 0)
+  {
+    if (rock.rec.state == RECOVERY)
+    {
+      rock.state = rock.rec.state;
     }
 
-    if (rock.rec.ret >= DEPLOYMENT_THREAD_MAX_RETRIES)
-    {
-      rock.state = ABORTED;
-      LOG_ERR("FATAL: aborting deployment (%u retries)", rock.rec.ret);
-    }
+    rock.rec.ret = 0;
+    LOG_MSG("Recovered from error, continuing", 33);
   }
 }
 

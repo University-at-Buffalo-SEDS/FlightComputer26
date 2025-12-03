@@ -32,6 +32,10 @@
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
+#define RECOVERY_INTERVAL 4
+#define PRE_RECOV_RETRIES 30
+#define PRE_ABORT_RETRIES 40
+
 #define CONFIRM_INTERVAL_TICKS 20
 
 /* Measurement thresholds.
@@ -59,8 +63,6 @@
 #define ALT_TOLER  1.0f
 #define VEL_TOLER  1.0f
 #define VAX_TOLER  0.5f
-
-#define RECOVERY_FREQ 4
 
 /* FC '26 GPIO port maps */
 
