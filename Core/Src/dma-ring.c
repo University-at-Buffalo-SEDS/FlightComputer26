@@ -1,4 +1,4 @@
-/**
+/*
  * Logic related to DMA and ring buffer.
  */
 
@@ -18,13 +18,13 @@
 #include "gyro.h"
 #include "accel.h"
 
-// HAL handles from main.c.
+/* HAL handles from main.c. */
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 
-// DMA buffers for each sensor. Note: HAL expects non-volatile buffers.
-// Tx: Producer: (final literal value). Consumer: DMA peripheral.
-// Rx: Producer: DMA peripheral. Consumer: ReceiveComplete callback.
+/* DMA buffers for each sensor. Note: HAL expects non-volatile buffers.
+ * Tx: Producer: (final literal value). Consumer: DMA peripheral.
+ * Rx: Producer: DMA peripheral. Consumer: ReceiveComplete callback. */
 static uint8_t baro_dma_tx[BMP390_BUF_SIZE] = {[0] = (uint8_t)(BARO_DATA_0 | BMP390_SPI_READ_BIT)};
 static uint8_t baro_dma_rx[BMP390_BUF_SIZE];
 static uint8_t gyro_dma_tx[GYRO_BUF_SIZE] = {[0] = (uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB))};
@@ -32,19 +32,17 @@ static uint8_t gyro_dma_rx[GYRO_BUF_SIZE];
 static uint8_t accel_dma_tx[ACCEL_BUF_SIZE] = {[0] = (uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB))};
 static uint8_t accel_dma_rx[ACCEL_BUF_SIZE];
 
-// Ring buffer. Producer: ReceiveComplete callback. Consumers: Sensor and Kalman tasks.
+/* Ring buffer. Producer: ReceiveComplete callback. Consumers: Sensor and Kalman tasks. */
 static volatile payload_t ring[RING_SIZE];
 static volatile atomic_uint_fast16_t head = ATOMIC_VAR_INIT(0);
 static volatile atomic_uint_fast16_t tail = ATOMIC_VAR_INIT(0);
 
-// Device to expect next time ReceiveComplete is invoked by HAL.
+/* Device to expect next time ReceiveComplete is invoked by HAL. */
 static volatile atomic_uint_fast8_t next = ATOMIC_VAR_INIT(NONE);
 static uint_fast8_t expected = ATOMIC_VAR_INIT(NONE);
 
-/**
- * @brief Enqueues data and signals transfer completion.
- * @param type
- * @retval None
+/*
+ * Enqueues data and signals transfer completion.
  */
 static inline void enqueue(const expected_e type) {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
@@ -97,10 +95,8 @@ static inline void enqueue(const expected_e type) {
   atomic_store_explicit(&head, h + 1, memory_order_release);
 }
 
-/**
- * @brief Copy and calibrate the oldest element of the ring.
- * @param None
- * @retval A boolean indicating success or that the ring is empty.
+/*
+ * Copy and calibrate the oldest element of the ring.
  */
 inline bool dma_ring_copy_oldest(payload_t *buf) {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
@@ -139,17 +135,15 @@ inline bool dma_ring_copy_oldest(payload_t *buf) {
   return true;
 }
 
-/**
- * @brief Dequeue the oldest element of the ring and advance tail.
- * @param None
- * @retval A boolean indicating success or that the ring is empty.
+/*
+ * Dequeue the oldest element of the ring and advance tail.
  */
 inline bool dma_ring_dequeue_oldest(payload_t *buf) {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_acquire);
   uint16_t i = t & RING_MASK;
 
-  // Check if the ring is empty (head is on tail)
+  /* Check if the ring is empty (head is on tail) */
   if ((h & RING_MASK) == i)
     return false;
 
@@ -161,10 +155,8 @@ inline bool dma_ring_dequeue_oldest(payload_t *buf) {
   return true;
 }
 
-/**
- * @brief Enqueues data and signals transfer completion.
- * @param hspi
- * @retval None
+/*
+ * Enqueues data and signals transfer completion.
  */
 void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi) {
   if (hspi->Lock == HAL_LOCKED)
@@ -174,10 +166,8 @@ void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi) {
   atomic_store_explicit(&next, NONE, memory_order_release);
 }
 
-/**
- * @brief Cleans cache for a device that produced an error.
- * @param hspi
- * @retval None
+/*
+ * Cleans cache for a device that produced an error.
  */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
   if (hspi->Lock == HAL_LOCKED)
@@ -209,10 +199,8 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi) {
   }
 }
 
-/**
- * @brief Interrupt used to trigger DMA transfer
- * @param GPIO_Pin
- * @retval None
+/*
+ * Interrupt used to trigger DMA transfer
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
   HAL_StatusTypeDef st;
