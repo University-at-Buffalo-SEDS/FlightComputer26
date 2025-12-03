@@ -145,7 +145,7 @@
  * range based on a reasonable local buffer size.
  */
 typedef enum {
-  /* Data validation (critical) */
+  /* Data validation error codes (additive, critical) */
   DEPL_BAD_ALT    = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
   DEPL_BAD_VEL    = -(DEPL_CODE_MASK),
   DEPL_BAD_VAX    = -1,
@@ -153,20 +153,20 @@ typedef enum {
   /* Generic OK and a reference point */
   DEPL_OK         = 0,
 
-  /* Getting data from filter (non-critical) */
+  /* Filter had no data (non-critical) */
   DEPL_NO_INPUT   = 1,
+  
+  /* Recovery error codes (additive, critical) */
+  DEPL_BAD_ACCEL  = 2,
+  DEPL_BAD_GYRO   = 3,
+  DEPL_BAD_BARO   = 4,
 
-  /* Drawing inference (non-critical) */
-  DEPL_N_LAUNCH   = 2,
-  DEPL_N_BURNOUT  = 3,
-  DEPL_N_DESCENT  = 4,
-  DEPL_N_REEF     = 5,
-  DEPL_N_LANDED   = 6,
-
-  /* Recovery (critical) */
-  DEPL_BAD_ACCEL  = 20,
-  DEPL_BAD_GYRO   = 30,
-  DEPL_BAD_BARO   = 40,
+  /* Unconfirmed state transitions (non-critical) */
+  DEPL_N_LAUNCH   = 16,
+  DEPL_N_BURNOUT  = 17,
+  DEPL_N_DESCENT  = 18,
+  DEPL_N_REEF     = 19,
+  DEPL_N_LANDED   = 20,
 
   /* Assert unreachable */
   DEPL_DOOM       = 127

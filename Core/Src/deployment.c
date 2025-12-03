@@ -60,14 +60,10 @@ static inline inference_e refresh_data()
   uint_fast8_t n;
 
   if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel)))
-  {
-    // tx_thread_resume(&kalman_thread);
     return DEPL_NO_INPUT;
-  }
-  else if (n > DEPL_BUF_SIZE)
-  {
-    // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
-  }
+
+  if (n > DEPL_BUF_SIZE)
+    return DEPL_OK; // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
 
   rock.i.a = !rock.i.a;
   rock.i.sp = rock.i.sc;
@@ -463,7 +459,10 @@ void deployment_thread_entry(ULONG input)
     
     rock.rec.inf = infer_rocket_state();
 
-    if (rock.rec.inf < DEPL_OK) {
+    if (rock.rec.inf == DEPL_NO_INPUT) {
+      // tx_thread_resume(&kalman_thread);
+      continue;
+    } else if (rock.rec.inf < DEPL_OK) {
       bad_inference_handler();
     } else if (rock.rec.inf > DEPL_OK) {
       LOG_ERR("Deployment: warn code %d", rock.rec.inf);
