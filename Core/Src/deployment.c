@@ -162,7 +162,7 @@ static inline inference_e detect_ascent()
   }
   else if (rock.samp.ascent > 0)
   {
-    #if (CONSECUTIVE_CONFIRMS == 1)
+    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.ascent = 0;
     #endif
 
@@ -194,7 +194,7 @@ static inline inference_e detect_burnout()
   }
   else if (rock.samp.burnout > 0)
   {
-    #if (CONSECUTIVE_CONFIRMS == 1)
+    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.burnout = 0;
     #endif
 
@@ -240,7 +240,7 @@ static inline inference_e detect_descent()
   }
   else if (rock.samp.descent > 0)
   {
-    #if (CONSECUTIVE_CONFIRMS == 1)
+    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.descent = 0;
     #endif
 
@@ -269,7 +269,7 @@ static inline inference_e detect_reef()
   }
   else if (rock.samp.landing > 0)
   {
-    #if (CONSECUTIVE_CONFIRMS == 1)
+    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.landing = 0;
     #endif
 
@@ -301,7 +301,7 @@ static inline inference_e detect_landed()
   }
   else if (rock.samp.idle > 0)
   {
-    #if (CONSECUTIVE_CONFIRMS == 1)
+    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.idle = 0;
     #endif
 
