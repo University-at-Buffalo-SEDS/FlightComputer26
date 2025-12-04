@@ -28,27 +28,27 @@
  * Units: altitude ALT (m), velocity VEL (m/s)
  * vertical acceleration VAX (m/s^2) */
 
-#define SANITY_MAX_ALT 15240.0f
-#define SANITY_MAX_VEL 150.0f
-#define SANITY_MAX_VAX (GRAVITY_SI * 8.0f)
+#define SANITY_MAX_ALT 4800.0f
+#define SANITY_MAX_VEL 200.0f
+#define SANITY_MAX_VAX (GRAVITY_SI * 12.0f)
 
-#define SANITY_MIN_ALT -8.0f
-#define SANITY_MIN_VEL -4.0f
-#define SANITY_MIN_VAX -2.0f
+#define SANITY_MIN_ALT -10.0f
+#define SANITY_MIN_VEL -6.0f
+#define SANITY_MIN_VAX -4.0f
 
-#define LAUNCH_MIN_VEL  6.0f
-#define LAUNCH_MIN_VAX  4.0f
+#define LAUNCH_MIN_VEL  8.0f
+#define LAUNCH_MIN_VAX  5.0f
 
-#define BURNOUT_MIN_VEL 6.0f
-#define BURNOUT_MAX_VAX 1.0f
+#define BURNOUT_MIN_VEL 12.0f
+#define BURNOUT_MAX_VAX 1.5f
 
 #define APOGEE_MAX_VEL  4.0f
 
 #define REEF_TARGET_ALT 457.2f
 
-#define ALT_TOLER  1.0f
-#define VEL_TOLER  1.0f
-#define VAX_TOLER  0.5f
+#define ALT_TOLER  2.0f
+#define VEL_TOLER  1.5f
+#define VAX_TOLER  1.0f
 
 /* FC '26 GPIO port maps */
 
