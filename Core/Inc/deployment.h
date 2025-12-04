@@ -9,20 +9,6 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "gyro.h"
-//#include "accel.h"
-#include "barometer.h"
-
-#include <sedsprintf.h>
-#include "telemetry.h"
-#include "FC-Threads.h"
-
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "stm32h5xx_hal_gpio.h"
-#include "stm32h5xx_hal_dcache.h"
-
 /* Local configuration */
 
 #define DEPL_BUF_SIZE 4
@@ -84,77 +70,6 @@
 #define GRAVITY_SI 9.80665f
 
 #define DEPL_CODE_MASK (DEPL_BUF_SIZE + 1)
-
-/* Extrernal API helper macros */
-
-#define DEPL_WAIT(duration) tx_thread_sleep(duration)
-
-#define LOG_MSG_SYNC(msg, size)                             \
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
-                            (msg), (size), sizeof(char))
-
-#define LOG_MSG(msg, size)                                  \
-  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
-                             (msg), (size), sizeof(char))
-
-
-#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
-
-#define LOG_ERR_SYNC(fmt, ...)                              \
-  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
-                           
-#define LOG_ERR(fmt, ...)                                   \
-  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
-
-#else
-#ifdef __GNUC__
-
-#define LOG_ERR_SYNC(fmt, ...)                              \
-  log_error_syncronous(fmt, ##__VA_ARGS__)
-
-#define LOG_ERR(fmt, ...)                                   \
-  log_error_asyncronous(fmt, ##__VA_ARGS__)
-
-#else /* Does not support 0 variadic arguments */
-
-#define LOG_ERR_SYNC(fmt, ...)                              \
-  log_error_syncronous(fmt, __VA_ARGS__)
-
-#define LOG_ERR(fmt, ...)                                   \
-  log_error_asyncronous(fmt, __VA_ARGS__)
-
-#endif // GNUC
-#endif // >= C23
-
-/* Max/min helpers with double-eval safety */
-
-#define MAX(x, y)       \
-  ({                    \
-    typeof(x) _x = (x); \
-    typeof(y) _y = (y); \
-    _x > _y ? _x : _y;  \
-  })
-
-#define MIN(x, y)       \
-  ({                    \
-    typeof(x) _x = (x); \
-    typeof(y) _y = (y); \
-    _x < _y ? _x : _y;  \
-  })
-
-/* This can also be used for manual emergency deployment */
-
-#define CO2_LOW()                                           \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
-
-#define CO2_HIGH()                                          \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
-
-#define REEF_LOW()                                          \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
-
-#define REEF_HIGH()                                         \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Type definitions */
 
@@ -248,12 +163,5 @@ typedef struct {
     uint_fast8_t ret;
   } rec;
 } rocket_t;
-
-// sample struct until kalman api exposed
-typedef struct {
-  float alt;
-  float vel;
-  float vax;
-} filter_t;
 
 #endif // DEPLOYMENT_H

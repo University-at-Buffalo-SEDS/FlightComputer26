@@ -3,10 +3,12 @@
  * Designed to run as a task *in one thread*. 
  */
 
-#include "deployment.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdatomic.h>
 
-TX_THREAD deployment_thread;
-ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
+#include "platform.h"
+#include "deployment.h"
 
 static rocket_t rock = {0, {0}, {0, 0, 0, 0}, {0, 0, 0}};
 
@@ -20,10 +22,6 @@ static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
  * Increment each time a new element is written to filter ring
  */
 static stats_t stats[2] = {{0}, {0}};
-
-extern SPI_HandleTypeDef hspi1;
-extern DCACHE_HandleTypeDef hdcache1;
-extern atomic_uint_fast8_t newdata;
 
 /*
  * Copies "current" data into "previous" buffer and
@@ -364,20 +362,20 @@ static inline void try_recover_sensors()
 
   LOG_MSG("Trying to recover sensors", 26);
 
-  (void)__disable_irq;
+  DISABLE_HAL_INTS();
 
-  if (init_barometer(&hspi1) != HAL_OK)
+  if (BARO_INIT() != HAL_OK)
     st += DEPL_BAD_BARO;
 
-  if (gyro_init(&hspi1) != HAL_OK)
+  if (GYRO_INIT() != HAL_OK)
     st += DEPL_BAD_GYRO;
 
-  // if (accel_init(&hspi1) != HAL_OK)
+  // if (ACCEL_INIT() != HAL_OK)
   //   st += DEPL_BAD_ACCEL;
 
-  HAL_DCACHE_Invalidate(&hdcache1);
+  INVALIDATE_DCACHE();
 
-  (void)__enable_irq;
+  ENABLE_HAL_INTS();
   
   if (st == DEPL_OK) {
     LOG_MSG("Sensor recovery successful", 27);
@@ -486,19 +484,19 @@ void deployment_thread_entry(ULONG input)
  */
 void create_deployment_thread(void)
 {
-  UINT st = tx_thread_create(&deployment_thread,
-                             "Deployment Thread",
-                             deployment_thread_entry,
-                             DEPLOYMENT_THREAD_INPUT,
-                             deployment_thread_stack,
-                             DEPLOYMENT_THREAD_STACK_SIZE,
-                             DEPLOYMENT_THREAD_PRIORITY,
-                             /* No preemption */
-                             DEPLOYMENT_THREAD_PRIORITY,
-                             TX_NO_TIME_SLICE,
-                             TX_AUTO_START);
+  FC_TX_UINT st = FC_CREATE_THREAD(&deployment_thread,
+                                   "Deployment Thread",
+                                   deployment_thread_entry,
+                                   DEPLOYMENT_THREAD_INPUT,
+                                   deployment_thread_stack,
+                                   DEPLOYMENT_THREAD_STACK_SIZE,
+                                   DEPLOYMENT_THREAD_PRIORITY,
+                                   /* No preemption */
+                                   DEPLOYMENT_THREAD_PRIORITY,
+                                   TX_NO_TIME_SLICE,
+                                   TX_AUTO_START);
 
-  if (st != TX_SUCCESS) {
-    die("Failed to create deployment thread: %u", (unsigned)st);
+  if (st != FC_TX_SUCCESS) {
+    LOG_DIE("Failed to create deployment thread: %u", (unsigned)st);
   }
 }

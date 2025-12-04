@@ -16,8 +16,8 @@ void create_telemetry_thread(void);
 #define DEPLOYMENT_THREAD_STACK_SIZE    6144u
 #define DEPLOYMENT_THREAD_MAX_RETRIES   60
 
-extern TX_THREAD deployment_thread;
-extern ULONG deployment_thread_stack[];
+TX_THREAD deployment_thread;
+ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
 
 void deployment_thread_entry(ULONG input);
 void create_deployment_thread(void);
