@@ -2,9 +2,8 @@
  * Interrupt-based sensor data collection.
  */
 
-#include <math.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 #include <stdatomic.h>
 
 #include "platform.h"
@@ -98,26 +97,26 @@ static inline void enqueue(const expected_e type)
 /*
  * Copy the oldest raw element of the ring.
  */
-inline bool dma_ring_copy_oldest(payload_t *buf)
+inline dma_e dma_ring_copy_oldest(payload_t *buf)
 {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_relaxed);
   uint16_t i = t & RING_MASK;
 
   if ((h & RING_MASK) == i)
-    return false;
+    return RING_EMPTY;
 
   DISABLE_HAL_INTS();
   *buf = ring[i];
   ENABLE_HAL_INTS();
 
-  return true;
+  return DMA_OK;
 }
 
 /*
  * Dequeue the oldest raw element of the ring and advance tail.
  */
-inline bool dma_ring_dequeue_oldest(payload_t *buf)
+inline dma_e dma_ring_dequeue_oldest(payload_t *buf)
 {
   uint16_t h = atomic_load_explicit(&head, memory_order_acquire);
   uint16_t t = atomic_load_explicit(&tail, memory_order_acquire);
@@ -127,14 +126,14 @@ inline bool dma_ring_dequeue_oldest(payload_t *buf)
    * Check if the ring is empty (head is on tail)
    */
   if ((h & RING_MASK) == i)
-    return false;
+    return RING_EMPTY;
 
   DISABLE_HAL_INTS();
   *buf = ring[i];
   ENABLE_HAL_INTS();
 
   atomic_store_explicit(&tail, t + 1, memory_order_release);
-  return true;
+  return DMA_OK;
 }
 
 /*

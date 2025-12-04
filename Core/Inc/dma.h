@@ -7,6 +7,13 @@
 #define RING_SIZE 16
 #define RING_MASK RING_SIZE - 1
 
+/* Status reporting to consumers */
+
+typedef enum {
+  DMA_OK      = 0,
+  RING_EMPTY  = -1,
+} dma_e;
+
 /* Packet queue typedefs */
 
 typedef enum {
@@ -30,9 +37,9 @@ typedef struct {
 /*
  * Dequeue the oldest element of the ring and advance tail.
  */
-inline bool dma_ring_dequeue_oldest(payload_t *buf);
+inline dma_e dma_ring_dequeue_oldest(payload_t *buf);
 
 /*
  * Copy but not dequeue the oldest element of the ring.
  */
-inline bool dma_ring_copy_oldest(payload_t *buf);
+inline dma_e dma_ring_copy_oldest(payload_t *buf);
