@@ -32,7 +32,9 @@
 #define FC_TX_UINT UINT
 #define FC_TX_SUCCESS TX_SUCCESS
 
-#define DEPL_WAIT(duration) tx_thread_sleep(duration)
+#define DEPL_WAIT(duration) tx_thread_sleep((duration))
+
+#define DEPL_YIELD(thread)  tx_thread_resume((thread))
 
 #define FC_CREATE_THREAD(thread, name, entry, input,        \
                          stack, stack_size, priority,       \

@@ -457,7 +457,7 @@ void deployment_thread_entry(ULONG input)
     rock.rec.inf = infer_rocket_state();
 
     if (rock.rec.inf == DEPL_NO_INPUT) {
-      // tx_thread_resume(&kalman_thread);
+      // DEPL_YIELD(&kalman_thread);
       continue;
     } else if (rock.rec.inf < DEPL_OK) {
       bad_inference_handler();
@@ -468,7 +468,7 @@ void deployment_thread_entry(ULONG input)
       LOG_MSG("Deployment: recovered from error", 33);
     }
 
-    tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
+    DEPL_WAIT(DEPLOYMENT_THREAD_SLEEP);
   }
 
   if (rock.state == ABORTED)
