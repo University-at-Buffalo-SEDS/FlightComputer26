@@ -1,19 +1,6 @@
 // Includes consumer API
 
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_gpio.h"
-
-#include "barometer.h"
-#include "gyro.h"
-#include "accel.h"
-
-/* DMA interrupt pins for each device */
-
-#define ACCEL_INT_PIN_1 GPIO_PIN_4
-#define ACCEL_INT_PIN_2 GPIO_PIN_5
-#define GYRO_INT_PIN_1  GPIO_PIN_0
-#define GYRO_INT_PIN_2  GPIO_PIN_1
-#define BARO_INT_PIN    GPIO_PIN_7
+#include <stdint.h>
 
 /* Ring properties */
 
