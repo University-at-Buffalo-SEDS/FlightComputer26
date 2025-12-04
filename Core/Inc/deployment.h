@@ -5,6 +5,24 @@
 #ifndef DEPLOYMENT_H
 #define DEPLOYMENT_H
 
+#include <stddef.h>
+#include <stdint.h>
+#include <stdatomic.h>
+
+#include "gyro.h"
+//#include "accel.h"
+#include "barometer.h"
+
+#include <sedsprintf.h>
+#include "telemetry.h"
+#include "FC-Threads.h"
+
+#include "stm32h5xx_hal.h"
+#include "stm32h5xx_hal_def.h"
+#include "stm32h5xx_hal_spi.h"
+#include "stm32h5xx_hal_gpio.h"
+#include "stm32h5xx_hal_dcache.h"
+
 /* Local configuration */
 
 #define DEPL_BUF_SIZE 4
@@ -23,6 +41,11 @@
 /* Delay in ThreadX ticks */
 #define LAUNCH_CONFIRM_DELAY 25
 #define APOGEE_CONFIRM_DELAY 75
+
+/* If deployment aborts, delay (in ticks) between
+ * engine shutdown and CO2/REEF deployments */
+#define ABORT_CO2_DELAY   150
+#define ABORT_REEF_DELAY  150
 
 /* Measurement thresholds.
  * Units: altitude ALT (m), velocity VEL (m/s)
@@ -64,11 +87,7 @@
 
 /* Extrernal API helper macros */
 
-#define WAIT_CONFIRM_LAUNCH()                               \
-  tx_thread_sleep(LAUNCH_CONFIRM_DELAY)
-
-#define WAIT_CONFIRM_APOGEE()                               \
-  tx_thread_sleep(APOGEE_CONFIRM_DELAY)
+#define DEPL_WAIT(duration) tx_thread_sleep(duration)
 
 #define LOG_MSG_SYNC(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \

@@ -3,24 +3,7 @@
  * Designed to run as a task *in one thread*. 
  */
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdatomic.h>
-
-#include "gyro.h"
-//#include "accel.h"
-#include "barometer.h"
-
 #include "deployment.h"
-#include <sedsprintf.h>
-#include "telemetry.h"
-#include "FC-Threads.h"
-
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "stm32h5xx_hal_gpio.h"
-#include "stm32h5xx_hal_dcache.h"
 
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE / sizeof(ULONG)];
@@ -158,7 +141,7 @@ static inline inference_e detect_launch()
     rock.state = LAUNCH;
     rock.samp.ascent = 0;
     LOG_MSG("Launch detected", 16);
-    WAIT_CONFIRM_LAUNCH();
+    DEPL_WAIT(LAUNCH_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -235,7 +218,7 @@ static inline inference_e detect_apogee()
     rock.state = APOGEE;
     rock.samp.descent = 0;
     LOG_MSG("Approaching apogee", 19);
-    WAIT_CONFIRM_APOGEE();
+    DEPL_WAIT(APOGEE_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -435,6 +418,22 @@ static inline void bad_inference_handler()
 }
 
 /*
+ * Avoid crashing into the ground by turning off
+ * engine and deploying parachutes.
+ *
+ * Delays are configurable in deployment.h
+ */
+static inline void deployment_abort_procedures()
+{
+  LOG_MSG("Deployment: turning off engine and firing pyro", 47);
+  // turn off engine
+  DEPL_WAIT(ABORT_CO2_DELAY);
+  CO2_HIGH();
+  DEPL_WAIT(ABORT_REEF_DELAY);
+  REEF_HIGH();
+}
+
+/*
  * Invokes state machine and checks for an error.
  * If one exists, invokes appropriate error handler
  * or logs non-critical message.
@@ -473,6 +472,9 @@ void deployment_thread_entry(ULONG input)
 
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
+
+  if (rock.state == ABORTED)
+    deployment_abort_procedures();
 }
 
 /*
