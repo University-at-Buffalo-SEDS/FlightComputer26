@@ -457,7 +457,7 @@ void deployment_thread_entry(ULONG input)
     rock.rec.inf = infer_rocket_state();
 
     if (rock.rec.inf == DEPL_NO_INPUT) {
-      // DEPL_YIELD(&kalman_thread);
+      // FC_TX_YIELD(&kalman_thread);
       continue;
     } else if (rock.rec.inf < DEPL_OK) {
       bad_inference_handler();
