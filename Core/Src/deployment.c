@@ -139,7 +139,7 @@ static inline inference_e detect_launch()
     rock.state = LAUNCH;
     rock.samp.ascent = 0;
     LOG_MSG("Launch detected", 16);
-    DEPL_WAIT(LAUNCH_CONFIRM_DELAY);
+    FC_TX_WAIT(LAUNCH_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -216,7 +216,7 @@ static inline inference_e detect_apogee()
     rock.state = APOGEE;
     rock.samp.descent = 0;
     LOG_MSG("Approaching apogee", 19);
-    DEPL_WAIT(APOGEE_CONFIRM_DELAY);
+    FC_TX_WAIT(APOGEE_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -425,9 +425,9 @@ static inline void deployment_abort_procedures()
 {
   LOG_MSG("Deployment: turning off engine and firing pyro", 47);
   // turn off engine
-  DEPL_WAIT(ABORT_CO2_DELAY);
+  FC_TX_WAIT(ABORT_CO2_DELAY);
   CO2_HIGH();
-  DEPL_WAIT(ABORT_REEF_DELAY);
+  FC_TX_WAIT(ABORT_REEF_DELAY);
   REEF_HIGH();
 }
 
@@ -468,7 +468,7 @@ void deployment_thread_entry(ULONG input)
       LOG_MSG("Deployment: recovered from error", 33);
     }
 
-    DEPL_WAIT(DEPLOYMENT_THREAD_SLEEP);
+    FC_TX_WAIT(DEPLOYMENT_THREAD_SLEEP);
   }
 
   if (rock.state == ABORTED)
