@@ -33,15 +33,9 @@ def main() -> None:
     run([
         "cmake",
         "--build", str(build_dir),
-        "--target", "fctest",
+        "--target", "check",
         "--parallel",
     ])
-
-    test_bin = build_dir / "fctest"
-    if test_bin.exists() and os.access(test_bin, os.X_OK):
-        run([str(test_bin)])
-    else:
-        print("Not found:", test_bin)
 
 
 if __name__ == "__main__":

@@ -96,6 +96,8 @@ option(TEST_ON_HOST "Build for testing on host machine" OFF)
 if(TEST_ON_HOST)
     message(STATUS "Building test target for host")
     enable_language(C)
+    include(CTest)
+    set(FC_TEST fctest)
     set(HOST_TEST_SOURCES
         tests/emu-core.c
         tests/platform.h
@@ -106,6 +108,15 @@ if(TEST_ON_HOST)
     target_include_directories(fctest PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Inc
         ${CMAKE_SOURCE_DIR}/tests
+    )
+    add_test(NAME ${FC_TEST} COMMAND
+        ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/fctest)
+    add_custom_target(check
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+        --target fctest --config ${CMAKE_BUILD_TYPE}
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        -C ${CMAKE_BUILD_TYPE} WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Build and run host tests"
     )
     target_compile_definitions(fctest PRIVATE PL_HOST)
     target_link_libraries(fctest PRIVATE pthread)
