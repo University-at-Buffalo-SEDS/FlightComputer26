@@ -10,18 +10,33 @@
 #include "platform.h"
 #include "deployment.h"
 
-static rocket_t rock = {0, {0}, {0, 0, 0, 0}, {0, 0, 0}};
+/*
+ * Aliased ThreadX thread and thread stack.
+ */
+FC_THREAD deployment_thread;
+FC_TX_ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
+                                    / sizeof(FC_TX_ULONG)];
+
+/*
+ * Counter for the amount of new records in filter ring.
+ */
+extern atomic_uint_fast8_t newdata;
+
+/*
+ * Contains most-often used globals
+ */
+static rocket_t rock = {0};
 
 /*
  * Most-recent and previous data buffers merged
  */
-static filter_t data[2][DEPL_BUF_SIZE] = {{0}, {0}};
+static filter_t data[2][DEPL_BUF_SIZE] = {0};
 
 /*
  * External atomic counter for new elements 
  * Increment each time a new element is written to filter ring
  */
-static stats_t stats[2] = {{0}, {0}};
+static stats_t stats[2] = {0};
 
 /*
  * Copies "current" data into "previous" buffer and

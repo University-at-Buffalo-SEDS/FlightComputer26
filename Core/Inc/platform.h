@@ -29,7 +29,10 @@
 #include "tx_port.h"
 #include "FC-Threads.h"
 
-#define FC_TX_UINT UINT
+typedef UINT FC_TX_UINT;
+typedef ULONG FC_TX_ULONG;
+typedef TX_THREAD FC_THREAD;
+
 #define FC_TX_SUCCESS TX_SUCCESS
 
 #define FC_TX_WAIT(duration) tx_thread_sleep((duration))
@@ -102,7 +105,6 @@
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
-extern atomic_uint_fast8_t newdata;
 
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
