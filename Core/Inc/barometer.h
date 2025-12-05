@@ -212,7 +212,3 @@ float get_relative_altitude(SPI_HandleTypeDef *hspi);
 float get_relative_altitude_non_blocking(SPI_HandleTypeDef *hspi);
 float compensate_temperature(uint32_t uncomp_temp);
 float compensate_pressure(uint32_t uncomp_press);
-
-inline uint32_t u24(uint8_t b0, uint8_t b1, uint8_t b2) {
-  return ((uint32_t)b2 << 16) | ((uint32_t)b1 << 8) | (uint32_t)b0;
-}
