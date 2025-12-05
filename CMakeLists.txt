@@ -87,3 +87,28 @@ if(ENABLE_TELEMETRY)
 else()
     # Not defined → disabled
 endif()
+
+# Testing
+
+# Option defaults to OFF
+option(TEST_ON_HOST "Build for testing on host machine" OFF)
+
+if(TEST_ON_HOST)
+    message(STATUS "Building test target for host")
+    enable_language(C)
+    set(HOST_TEST_SOURCES
+        tests/emu-core.c
+        tests/platform.h
+        # testing target
+    )
+    set(ENABLE_TELEMETRY OFF CACHE BOOL "Disabling telemetry for testing" FORCE)
+    add_executable(fctest ${HOST_TEST_SOURCES} tests/run-tests.c)
+    target_include_directories(fctest PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Inc
+        ${CMAKE_SOURCE_DIR}/tests
+    )
+    target_compile_definitions(fctest PRIVATE PL_HOST)
+    target_link_libraries(fctest PRIVATE pthread)
+else()
+    # eabi build
+endif()
