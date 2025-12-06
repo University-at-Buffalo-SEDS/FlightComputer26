@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
+#include <time.h>
 #include <pthread.h>
 
 #include "platform.h"
@@ -50,7 +50,18 @@ void emu_sleep(unsigned ticks)
     unsigned t = random() % EMU_TASKS;
     emu_yield(&t);
   } else {
-    sleep(duration);
+    time_t sec = (time_t)duration;
+    long nsec = (long)((duration - (double)sec) * 1e9);
+
+    if (nsec < 0) {
+      nsec = 0;
+    } else if (nsec > 1e9L) {
+      sec += 1;
+      nsec -= 1e9L;
+    }
+
+    struct timespec delay = {sec, nsec};
+    nanosleep(&delay, NULL);
   }
 }
 

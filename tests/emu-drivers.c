@@ -1,5 +1,10 @@
-#include "platform.h"
 #include <stdint.h>
+#include <time.h>
+
+#include "platform.h"
+
+static struct timespec success_delay = {0, 100000000};
+static struct timespec failure_delay = {0, 50000000};
 
 static uint_fast8_t init_fail_baro = 0;
 static uint_fast8_t init_fail_gyro = 0;
@@ -18,9 +23,11 @@ static uint_fast8_t accel_ready = 0;
 PL_HAL_Handle emu_baro_init()
 {
   if (!init_fail_baro) {
+    nanosleep(&success_delay, NULL);
     baro_ready = 1;
     return HAL_OK;
   } else {
+    nanosleep(&failure_delay, NULL);
     return HAL_ERROR;
   }
 }
@@ -28,9 +35,11 @@ PL_HAL_Handle emu_baro_init()
 PL_HAL_Handle emu_gyro_init()
 {
   if (!init_fail_gyro) {
+    nanosleep(&success_delay, NULL);
     gyro_ready = 1;
     return HAL_OK;
   } else {
+    nanosleep(&failure_delay, NULL);
     return HAL_ERROR;
   }
 }
@@ -38,9 +47,11 @@ PL_HAL_Handle emu_gyro_init()
 PL_HAL_Handle emu_accel_init()
 {
   if (!init_fail_accel) {
+    nanosleep(&success_delay, NULL);
     accel_ready = 1;
     return HAL_OK;
   } else {
+    nanosleep(&failure_delay, NULL);
     return HAL_ERROR;
   }
 }
