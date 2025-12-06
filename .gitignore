@@ -33,6 +33,7 @@ desktop.ini
 /.settings/
 *.launch
 *.code-workspace
+.clangd
 
 # STM32CubeIDE / Eclipse
 *.project

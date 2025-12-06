@@ -11,8 +11,7 @@
 
 #include "platform.h"
 
-typedef void (*task_t)(unsigned);
-typedef struct { task_t entry; unsigned arg; } task_relay_t;
+typedef void *(*task_t)(void *);
 
 #define EMU_TASKS           4u
 #define MIN_TICKS_TO_YIELD  50u
@@ -20,6 +19,11 @@ typedef struct { task_t entry; unsigned arg; } task_relay_t;
 #define FAKE_YIELD_CYCLES   4u
 
 #define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
+
+unsigned sensor_thread = 0;
+unsigned kalman_thread = 1;
+unsigned telemetry_thread = 2;
+unsigned deployment_thread = 3;
 
 static task_t tasks[EMU_TASKS];
 
@@ -47,16 +51,16 @@ void emu_sleep(unsigned ticks)
   }
 }
 
-/*
- * Needed to alias task_t for pthread.
- */
-static void *run_task(void *v)
-{
-  task_relay_t *tr = v;
-  tr->entry(tr->arg);
-  free(tr);
-  return NULL;
-}
+// /*
+//  * Needed to alias task_t for pthread.
+//  */
+// static void *run_task(void *v)
+// {
+//   task_relay_t *tr = v;
+//   tr->entry(tr->arg);
+//   free(tr);
+//   return NULL;
+// }
 
 unsigned emu_create_thread(unsigned *thread, char *name,
                            task_t entry, unsigned input,
@@ -64,6 +68,7 @@ unsigned emu_create_thread(unsigned *thread, char *name,
                            unsigned priority, unsigned preemption,
                            unsigned time_slice, unsigned autostart)
 {
+  (void)input;
   (void)stack; (void)stack_size;
   (void)priority; (void)preemption;
   (void)time_slice; (void)autostart;
@@ -73,11 +78,8 @@ unsigned emu_create_thread(unsigned *thread, char *name,
 
   pthread_t id;
   void *result;
-  task_relay_t *tr = malloc(sizeof(task_relay_t));
-  tr->entry = entry;
-  tr->arg = input;
 
-  if (!pthread_create(&id, NULL, run_task, &tr))
+  if (!pthread_create(&id, NULL, entry, NULL))
     return FC_TX_FAILURE;
 
   if (pthread_join(id, &result))

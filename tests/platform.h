@@ -25,10 +25,10 @@
 
 /* ThreadX API abstraction */
 
-unsigned sensor_thread = 0;
-unsigned kalman_thread = 1;
-unsigned telemetry_thread = 2;
-unsigned deployment_thread = 3;
+extern unsigned sensor_thread;
+extern unsigned kalman_thread;
+extern unsigned telemetry_thread;
+extern unsigned deployment_thread;
 
 #define DEPLOYMENT_THREAD_SLEEP         60
 #define DEPLOYMENT_THREAD_PRIORITY      6
