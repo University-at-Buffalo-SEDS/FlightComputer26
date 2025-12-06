@@ -104,6 +104,15 @@ typedef enum { SEDS_DT_MESSAGE_DATA } emu_data_e;
 
 /* HAAL (hardware abstraction abstraction layer) <3 */
 
+/* HAL and SPI handle aliases */
+
+typedef enum { HAL_OK, HAL_ERROR } emu_hal_e;
+typedef enum { HAL_LOCKED, HAL_UNLOCKED } emu_spi_e;
+typedef struct { emu_spi_e Lock; } emu_spi_t;
+
+typedef emu_hal_e PL_HAL_Handle;
+typedef emu_spi_t PL_SPI_Handle;
+
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
 

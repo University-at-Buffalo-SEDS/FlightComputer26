@@ -34,7 +34,7 @@ void emu_yield(unsigned *thread)
   printf("[RTOS] Running task %u\n (%u cycles)",
          *thread, FAKE_YIELD_CYCLES);
 
-  for (int t = 0; t < FAKE_YIELD_CYCLES; ++t) {
+  for (uint_fast8_t t = 0; t < FAKE_YIELD_CYCLES; ++t) {
     tasks[*thread](FAKE_THREAD_INPUT);
   }
 }
