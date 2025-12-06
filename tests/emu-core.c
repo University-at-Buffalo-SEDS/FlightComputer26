@@ -51,17 +51,6 @@ void emu_sleep(unsigned ticks)
   }
 }
 
-// /*
-//  * Needed to alias task_t for pthread.
-//  */
-// static void *run_task(void *v)
-// {
-//   task_relay_t *tr = v;
-//   tr->entry(tr->arg);
-//   free(tr);
-//   return NULL;
-// }
-
 unsigned emu_create_thread(unsigned *thread, char *name,
                            task_t entry, unsigned input,
                            unsigned long *stack, unsigned stack_size,
