@@ -54,6 +54,8 @@ extern unsigned deployment_thread;
 
 /* Telemetry API abstraction */
 
+typedef enum { SEDS_DT_MESSAGE_DATA } emu_data_e;
+
 #define LOG_MSG_SYNC(msg, size)                             \
   emu_print_buf(SEDS_DT_MESSAGE_DATA,                       \
                 (msg), (size), sizeof(char))

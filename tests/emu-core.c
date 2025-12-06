@@ -3,6 +3,8 @@
  * parts of the flight computer.
  */
 
+#include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -44,6 +46,7 @@ void emu_sleep(unsigned ticks)
          "(%f seconds)\n", ticks, duration);
 
   if (ticks >= MIN_TICKS_TO_YIELD) {
+    /* Scheduling at its best */
     unsigned t = random() % EMU_TASKS;
     emu_yield(&t);
   } else {
@@ -75,4 +78,26 @@ unsigned emu_create_thread(unsigned *thread, char *name,
     return FC_TX_FAILURE;
 
   return FC_TX_SUCCESS;
+}
+
+void emu_print_buf(emu_data_e type, void *buf,
+                   size_t size, size_t element_size)
+{
+  (void)type; (void)size; (void)element_size;
+  printf("[MSG] %s", (char *)buf);
+}
+
+void emu_print_err(const char *fmt, ...)
+{
+  char buf[128];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  fprintf(stderr, "[ERR] %s", buf);
+}
+
+void emu_print_event(void *buf)
+{
+  printf("[EVENT] %s", (char *)buf);
 }
