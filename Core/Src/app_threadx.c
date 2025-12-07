@@ -27,6 +27,7 @@
 #include "main.h"
 #include "sedsprintf.h"
 #include "telemetry.h"
+#include "deployment.h"
 #include "FC-Threads.h"
 #include "tx_api.h"
 /* USER CODE END Includes */
@@ -78,6 +79,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr) {
 
   /* USER CODE BEGIN App_ThreadX_Init */
   create_telemetry_thread();
+  create_deployment_thread();
 
   /* USER CODE END App_ThreadX_Init */
 

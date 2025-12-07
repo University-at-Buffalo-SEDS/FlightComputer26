@@ -12,6 +12,11 @@
 BMP390_calib_data_t calib_data = {0};
 float ground_level_pressure = 0.0f;
 
+// ---- Private helpers ----
+static inline uint32_t u24(uint8_t b0, uint8_t b1, uint8_t b2) {
+  return ((uint32_t)b2 << 16) | ((uint32_t)b1 << 8) | (uint32_t)b0;
+}
+
 // ---- Basic SPI helpers ----
 HAL_StatusTypeDef baro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg,
                                 uint8_t *out, uint16_t len) {
