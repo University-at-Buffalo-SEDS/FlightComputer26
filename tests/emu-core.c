@@ -12,15 +12,7 @@
 #include <pthread.h>
 
 #include "platform.h"
-
-typedef void *(*task_t)(void *);
-
-#define EMU_TASKS           4u
-#define MIN_TICKS_TO_YIELD  50u
-#define FAKE_THREAD_INPUT   0u
-#define FAKE_YIELD_CYCLES   4u
-
-#define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
+#include "emulation.h"
 
 unsigned sensor_thread = 0;
 unsigned kalman_thread = 1;
@@ -28,6 +20,19 @@ unsigned telemetry_thread = 2;
 unsigned deployment_thread = 3;
 
 static task_t tasks[EMU_TASKS];
+
+void proper_sleep(time_t sec, long nsec)
+{
+  if (nsec < 0) {
+    nsec = 0;
+  } else if (nsec >= 1e9L) {
+    sec += 1;
+    nsec -= 1e9L;
+  }
+
+  struct timespec delay = {sec, nsec};
+  nanosleep(&delay, NULL);
+}
 
 void emu_yield(unsigned *thread)
 {
@@ -52,16 +57,7 @@ void emu_sleep(unsigned ticks)
   } else {
     time_t sec = (time_t)duration;
     long nsec = (long)((duration - (double)sec) * 1e9);
-
-    if (nsec < 0) {
-      nsec = 0;
-    } else if (nsec >= 1e9L) {
-      sec += 1;
-      nsec -= 1e9L;
-    }
-
-    struct timespec delay = {sec, nsec};
-    nanosleep(&delay, NULL);
+    proper_sleep(sec, nsec);
   }
 }
 
