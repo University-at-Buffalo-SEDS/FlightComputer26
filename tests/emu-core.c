@@ -55,7 +55,7 @@ void emu_sleep(unsigned ticks)
 
     if (nsec < 0) {
       nsec = 0;
-    } else if (nsec > 1e9L) {
+    } else if (nsec >= 1e9L) {
       sec += 1;
       nsec -= 1e9L;
     }
