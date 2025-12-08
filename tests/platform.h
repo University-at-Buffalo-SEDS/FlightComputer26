@@ -145,6 +145,9 @@ typedef emu_spi_t PL_SPI_Handle;
 #define GYRO_INIT() emu_gyro_init()
 //#define ACCEL_INIT() emu_accel_init()
 
+/* Duplicate declaration of deployment entry for testing */
+void create_deployment_thread();
+
 
 /* Deployment specific fake Kalman struct 
  * (remove when Kalman API is exposed) */

@@ -26,14 +26,17 @@ void proper_sleep(time_t sec, long nsec)
   if (nsec < 0) {
     nsec = 0;
   } else if (nsec >= 1e9L) {
-    sec += 1;
-    nsec -= 1e9L;
+    sec += nsec / NS_IN_SEC;
+    nsec = nsec % NS_IN_SEC;
   }
 
   struct timespec delay = {sec, nsec};
   nanosleep(&delay, NULL);
 }
 
+/*
+ * TODO populate tasks[] with emu filter function(s)
+ */
 void emu_yield(unsigned *thread)
 {
   printf("[RTOS] Running task %u\n (%u cycles)",

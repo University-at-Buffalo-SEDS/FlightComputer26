@@ -28,9 +28,10 @@ static inline atomic_uint_fast16_t incr()
   return atomic_fetch_add_explicit(&newdata, 1, memory_order_acq_rel);
 }
 
-void filter_init()
+void filter_init_testing()
 {
   srand(time(0));
+  create_deployment_thread();
 }
 
 static inline float abnormal(float bound)
@@ -86,8 +87,7 @@ static float noise(float mu, float sigma)
   return (float)((u * s) * sigma + mu);
 }
 
-static void produce_normal(float h1, float v1, float a,
-                           uint_fast16_t samp, float sigma)
+void produce_normal(float h1, float v1, float a, ulong samp, float sigma)
 {
   float alt = h1, vel = v1;
   float dt = 1.0f / SAMPLE_HZ;

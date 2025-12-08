@@ -4,6 +4,7 @@
  */
 
 typedef void *(*task_t)(void *);
+typedef unsigned long ulong;
 
 #define EMU_TASKS           4u
 #define MIN_TICKS_TO_YIELD  50u
@@ -11,11 +12,13 @@ typedef void *(*task_t)(void *);
 #define FAKE_YIELD_CYCLES   4u
 
 #define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
+#define NS_IN_SEC 1000000000L
 
 #define SAMPLE_HZ 50
 #define SAMPLE_NS (1e9 / SAMPLE_HZ)
 
 #define MAX_DEVIATION 2.0f
+#define CASUAL_SIGMA  0.5f
 
 #define T_IDLE      2.0f
 #define T_LAUNCH    2.0f
@@ -45,3 +48,8 @@ void break_accel();
 void unbreak_baro();
 void unbreak_gyro();
 void unbreak_accel();
+
+/* Pseudo-filter */
+
+void filter_init_testing();
+void produce_normal(float h1, float v1, float a, ulong samp, float sigma);
