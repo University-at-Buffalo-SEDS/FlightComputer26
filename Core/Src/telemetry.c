@@ -2,15 +2,23 @@
 #include "app_threadx.h" // should bring in tx_api.h; if not, include tx_api.h directly
 #include "sedsprintf.h"
 #include "stm32h5xx_hal.h"
+#include <stm32h5xx_hal_fdcan.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "sdcard.h"
+
 #ifndef TELEMETRY_ENABLED
 static void print_data_no_telem(void *data, size_t len) {
   // Implementation for debugging telemetry data
 }
 #endif
+
+extern FDCAN_HandleTypeDef hfdcan1; // FDCAN handle defined in main.c
+extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
+extern SD_HandleTypeDef hsd1; // only if your driver wants &hsd1
+
 
 /* ---------------- Time helpers: 32->64 extender ---------------- */
 static uint64_t stm_now_ms(void *user) {
@@ -35,15 +43,66 @@ uint64_t node_now_since_ms(void *user) {
 /* ---------------- Global router state ---------------- */
 RouterState g_router = {.r = NULL, .created = 0, .start_time = 0};
 
+/* ---------------- TX helpers ---------------- */
+SedsResult send_can_bus(const uint8_t *bytes, size_t len){
+  FDCAN2->TXBAR |= (1 << 0); // Set the corresponding bit to request transmission
+      //transmit CAN frame
+      FDCAN_TxHeaderTypeDef txHeader;
+      txHeader.Identifier = 0x03; // Example CAN ID
+      txHeader.IdType = FDCAN_STANDARD_ID;
+      txHeader.TxFrameType = FDCAN_DATA_FRAME;
+      txHeader.DataLength = len;
+      txHeader.ErrorStateIndicator = 0;
+      txHeader.BitRateSwitch = FDCAN_BRS_OFF;
+      txHeader.FDFormat = FDCAN_FD_CAN;
+      txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS; 
+      txHeader.MessageMarker = 0;
+      uint8_t txData[64] = {0}; // Max 64 bytes for CAN FD
+      memcpy(txData, bytes, len > 64 ? 64 : len);
+      if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &txHeader, txData) != HAL_OK) {
+        return SEDS_ERR;
+      }
+      return SEDS_OK;
+}
+/* ---------------------------- Handlers for the interrupts of receiving from uart and can bus ---------------- */
+/* Config setup */
+static inline size_t fdcan_dlc_to_len(uint32_t dlc)
+{
+    // HAL stores DLC as enum values (0..15). This mapping is standard CAN FD.
+    static const uint8_t map[16] = {
+        0, 1, 2, 3, 4, 5, 6, 7,
+        8, 12, 16, 20, 24, 32, 48, 64
+    };
+    dlc &= 0xF;
+    return map[dlc];
+}
+
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
+{
+    if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) == 0) {
+        return;
+    }
+
+    FDCAN_RxHeaderTypeDef hdr;
+    uint8_t data[64];
+
+    // Drain FIFO1 (could be multiple frames pending)
+    while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO1) > 0) {
+        if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &hdr, data) != HAL_OK) {
+            break;
+        }
+
+        size_t len = fdcan_dlc_to_len(hdr.DataLength);
+
+        rx_asynchronous(data, len);
+    }
+}
+
 /* ---------------- TX path (CANSEND) ---------------- */
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
-  (void)bytes;
-  (void)len;
-
-  /*TODO: Implement the cansend function*/
-
-  return SEDS_OK;
+  
+  return send_can_bus(bytes, len);
 }
 
 /* ---------------- RX helpers ---------------- */
@@ -69,20 +128,19 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   seds_router_rx_serialized_packet_to_queue(g_router.r, bytes, len);
 }
 
+
 /* ---------------- Local endpoint handler (SD_CARD) ---------------- */
 SedsResult on_sd_packet(const SedsPacketView *pkt, void *user) {
   (void)user;
 
-  /* TODO: Implement the saving to SD logic*/
   char buf[seds_pkt_to_string_len(pkt)];
   SedsResult s = seds_pkt_to_string(pkt, buf, sizeof(buf));
-  if (s == SEDS_OK) {
-    printf("on_sd_packet: %s\r\n", buf);
-  } else {
-    printf("on_sd_packet: seds_pkt_to_string failed (%d)\r\n", s);
-  }
-  return s;
+  if (s != SEDS_OK) return s;
+
+  UINT fx = sd_logger_enqueue_line(buf, strlen(buf));
+  return (fx == FX_SUCCESS) ? SEDS_OK : SEDS_ERR;
 }
+
 
 /* ---------------- Router init (idempotent) ---------------- */
 SedsResult init_telemetry_router(void) {
@@ -93,10 +151,7 @@ SedsResult init_telemetry_router(void) {
   if (g_router.created && g_router.r)
     return SEDS_OK;
 
-  if (g_router.created && g_router.r) {
-
-    return SEDS_OK;
-  }
+  (void)sd_logger_init("seds_log.txt", fx_stm32_sd_driver, &hsd1);
 
   const SedsLocalEndpointDesc locals[] = {
       {.endpoint = SEDS_EP_SD_CARD,
