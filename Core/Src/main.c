@@ -27,6 +27,7 @@
 #include "ux_device_class_cdc_acm.h"
 #include <stdint.h>
 #include <stdio.h>
+#include "can_bus.h"
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
@@ -129,7 +130,7 @@ int main(void) {
   MX_ICACHE_Init();
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
-
+  can_bus_init(&hfdcan1);
   /* USER CODE END 2 */
 
   MX_ThreadX_Init();

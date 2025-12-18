@@ -7,15 +7,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "sdcard.h"
+#include "sd_card.h"
+#include "can_bus.h"
 
 #ifndef TELEMETRY_ENABLED
+
+
 static void print_data_no_telem(void *data, size_t len) {
   // Implementation for debugging telemetry data
 }
 #endif
 
-extern FDCAN_HandleTypeDef hfdcan1; // FDCAN handle defined in main.c
+static uint8_t g_can_rx_subscribed = 0;
+
 extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
 extern SD_HandleTypeDef hsd1; // only if your driver wants &hsd1
 
@@ -43,69 +47,22 @@ uint64_t node_now_since_ms(void *user) {
 /* ---------------- Global router state ---------------- */
 RouterState g_router = {.r = NULL, .created = 0, .start_time = 0};
 
-/* ---------------- TX helpers ---------------- */
-SedsResult send_can_bus(const uint8_t *bytes, size_t len){
-  FDCAN2->TXBAR |= (1 << 0); // Set the corresponding bit to request transmission
-      //transmit CAN frame
-      FDCAN_TxHeaderTypeDef txHeader;
-      txHeader.Identifier = 0x03; // Example CAN ID
-      txHeader.IdType = FDCAN_STANDARD_ID;
-      txHeader.TxFrameType = FDCAN_DATA_FRAME;
-      txHeader.DataLength = len;
-      txHeader.ErrorStateIndicator = 0;
-      txHeader.BitRateSwitch = FDCAN_BRS_OFF;
-      txHeader.FDFormat = FDCAN_FD_CAN;
-      txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS; 
-      txHeader.MessageMarker = 0;
-      uint8_t txData[64] = {0}; // Max 64 bytes for CAN FD
-      memcpy(txData, bytes, len > 64 ? 64 : len);
-      if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &txHeader, txData) != HAL_OK) {
-        return SEDS_ERR;
-      }
-      return SEDS_OK;
-}
-/* ---------------------------- Handlers for the interrupts of receiving from uart and can bus ---------------- */
-/* Config setup */
-static inline size_t fdcan_dlc_to_len(uint32_t dlc)
-{
-    // HAL stores DLC as enum values (0..15). This mapping is standard CAN FD.
-    static const uint8_t map[16] = {
-        0, 1, 2, 3, 4, 5, 6, 7,
-        8, 12, 16, 20, 24, 32, 48, 64
-    };
-    dlc &= 0xF;
-    return map[dlc];
-}
-
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
-{
-    if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) == 0) {
-        return;
-    }
-
-    FDCAN_RxHeaderTypeDef hdr;
-    uint8_t data[64];
-
-    // Drain FIFO1 (could be multiple frames pending)
-    while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO1) > 0) {
-        if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &hdr, data) != HAL_OK) {
-            break;
-        }
-
-        size_t len = fdcan_dlc_to_len(hdr.DataLength);
-
-        rx_asynchronous(data, len);
-    }
-}
-
-/* ---------------- TX path (CANSEND) ---------------- */
+/* ---------------- TX Helpers ---------------- */
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
-  
-  return send_can_bus(bytes, len);
+
+  if (can_bus_send_bytes(bytes, len, 0x03) != HAL_OK) {
+    return SEDS_ERR;
+  }
+  return SEDS_OK;
 }
 
 /* ---------------- RX helpers ---------------- */
+static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
+  (void)user;
+  rx_asynchronous(data, len);
+}
+
 void rx_synchronous(const uint8_t *bytes, size_t len) {
   if (!bytes || !len)
     return;
@@ -150,6 +107,16 @@ SedsResult init_telemetry_router(void) {
   /* Fast check without lock to avoid needless acquire in the common case. */
   if (g_router.created && g_router.r)
     return SEDS_OK;
+
+  if (!g_can_rx_subscribed) {
+    if (can_bus_subscribe_rx(telemetry_can_rx, NULL) == HAL_OK) {
+      g_can_rx_subscribed = 1;
+    } else {
+      /* Not fatal to router creation, but you'll miss RX */
+      /* You could return SEDS_ERR here if you want hard-fail. */
+      printf("Error: can_bus_subscribe_rx failed\r\n");
+    }
+  }
 
   (void)sd_logger_init("seds_log.txt", fx_stm32_sd_driver, &hsd1);
 
