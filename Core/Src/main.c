@@ -28,8 +28,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "can_bus.h"
+#include "sd_card.h"
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
+extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
 
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -131,6 +133,10 @@ int main(void) {
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
   can_bus_init(&hfdcan1);
+  if (sd_logger_init("seds_log.txt", fx_stm32_sd_driver, &hsd1) != FX_SUCCESS) {
+    /* SD Logger init failed */
+    Error_Handler();
+  }
   /* USER CODE END 2 */
 
   MX_ThreadX_Init();

@@ -20,9 +20,6 @@ static void print_data_no_telem(void *data, size_t len) {
 
 static uint8_t g_can_rx_subscribed = 0;
 
-extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
-extern SD_HandleTypeDef hsd1; // only if your driver wants &hsd1
-
 
 /* ---------------- Time helpers: 32->64 extender ---------------- */
 static uint64_t stm_now_ms(void *user) {
@@ -117,8 +114,6 @@ SedsResult init_telemetry_router(void) {
       printf("Error: can_bus_subscribe_rx failed\r\n");
     }
   }
-
-  (void)sd_logger_init("seds_log.txt", fx_stm32_sd_driver, &hsd1);
 
   const SedsLocalEndpointDesc locals[] = {
       {.endpoint = SEDS_EP_SD_CARD,

@@ -105,14 +105,7 @@ static UINT ensure_media_open(void) {
   return FX_SUCCESS;
 }
 
-/*
-  FIXED:
-  - Your FileX doesn't have FX_OPEN_FOR_APPEND.
-  - Your FileX also may not have fx_file_size_get().
-  So we:
-    1) open FX_OPEN_FOR_WRITE
-    2) seek to end using g_sd_file.fx_file_current_file_size
-*/
+
 static UINT ensure_file_open(void) {
   if (g_file_open) return FX_SUCCESS;
 
@@ -261,7 +254,7 @@ UINT sd_logger_enqueue_line(const CHAR *data, size_t len) {
   ULONG msg = (ULONG)(uintptr_t)rec;
   if (tx_queue_send(&g_sd_log_queue, &msg, TX_NO_WAIT) != TX_SUCCESS) {
     sd_pool_free(rec);
-    return FX_NO_MORE_SPACE; /* FIXED: no FX_QUEUE_FULL in your build */
+    return FX_NO_MORE_SPACE;
   }
 
   return FX_SUCCESS;
