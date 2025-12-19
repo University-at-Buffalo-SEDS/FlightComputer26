@@ -31,8 +31,8 @@ typedef enum {
 } dma_e;
 
 typedef struct {
-  atomic_uint_fast8_t w;
   atomic_uint_fast8_t r;
+  atomic_uint_fast8_t w;
   expected_e type[2];
 } dma_t;
 
