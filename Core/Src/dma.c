@@ -7,6 +7,7 @@
 #include <stdatomic.h>
 
 #include "platform.h"
+#include "stm32h5xx_hal_def.h"
 #include "dma.h"
 
 /*
@@ -20,14 +21,30 @@ static uint8_t tx[3][SENSOR_BUF_SIZE] = {
 };
 static uint8_t rx[2][SENSOR_BUF_SIZE];
 
+/* Inline helpers */
+
+/*
+ * Checks whether pointers are equal, or that p points
+ * inside any of the two buffers (due to HAL offset).
+ */
 static inline uint_fast8_t index_from_ptr(uint8_t *p)
 {
-  return (p != NULL) ? ((p == rx[0]) ? 0 : 1) : 127;
+  if (p == rx[0] || ((uintptr_t)p >= (uintptr_t)rx[0] &&
+      (uintptr_t)p < (uintptr_t)rx[0] + SENSOR_BUF_SIZE))
+  {
+    return 0u;
+  }
+  else if (p == rx[1] || ((uintptr_t)p >= (uintptr_t)rx[1] &&
+           (uintptr_t)p < (uintptr_t)rx[1] + SENSOR_BUF_SIZE))
+  {
+    return 1u;
+  }
+  else return DMA_RX_NULL;
 }
 
 static inline void switch_pull_cs_high(uint_fast8_t i)
 {
-  switch (ctr.type[i]) {
+  switch (atomic_load_explicit(&ctr.t[i], memory_order_relaxed)) {
     case BAROMETER:
       PL_CS_BARO_HIGH(); break;
     case GYROSCOPE:
@@ -39,12 +56,19 @@ static inline void switch_pull_cs_high(uint_fast8_t i)
 }
 
 /*
- * TODO
+ * Successful transfer routine that publishes new buffer.
  */
 void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
-  if (a == 127) return;
+
+  if (a == DMA_RX_NULL) {
+    INVALIDATE_DCACHE_ADDR_INT(rx[0], SENSOR_BUF_SIZE * 2);
+    PL_CS_BARO_HIGH();
+    PL_CS_GYRO_HIGH();
+    PL_CS_ACCEL_HIGH();
+    return;
+  }
 
   INVALIDATE_DCACHE_ADDR_INT(rx[a], SENSOR_BUF_SIZE);
   atomic_store_explicit(&ctr.w, a, memory_order_release);
@@ -52,54 +76,99 @@ void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
 }
 
 /*
- * TODO
+ * Edge case invalidates cache for both buffers and
+ * raises CS pin for all sensors.
  */
 void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
-  if (a == 127) return;
+  
+  if (a == DMA_RX_NULL) {
+    INVALIDATE_DCACHE_ADDR_INT(rx[0], SENSOR_BUF_SIZE * 2);
+    PL_CS_BARO_HIGH();
+    PL_CS_GYRO_HIGH();
+    PL_CS_ACCEL_HIGH();
+    return;
+  }
 
-  CLEAN_DCACHE_ADDR_INT(rx[a], SENSOR_BUF_SIZE);
+  INVALIDATE_DCACHE_ADDR_INT(rx[a], SENSOR_BUF_SIZE);
   switch_pull_cs_high(a);
 }
 
 /*
- * TODO
+ * Selects a buffer different from currently reading (if any),
+ * and attempts to initiate DMA transfer.
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   PL_HAL_Handle st;
   uint_fast8_t a = atomic_load_explicit(&ctr.w, memory_order_acquire);
 
+  /* There is only one consumer, safely switch to another buffer. */
   if (a == atomic_load_explicit(&ctr.r, memory_order_acquire))
     a = !a;
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
       PL_CS_BARO_LOW();
+    /*
+     * If another transfer is currently in progress, this
+     * call will return HAL_BUSY (see try-lock on line 2438
+     * of stm32h5xx_hal_spi.c). We should neither update the type
+     * nor pull CS high to avoid corrupting active transfer.
+     * Only on HAL_OK the type is adjusted, and only on HAL_ERROR
+     * (when HAL aborts its side effects) CS is pulled back high.
+     */
       st = DMA_SPI_TXRX(tx[0], rx[a], SENSOR_BUF_SIZE);
-      if (st == HAL_OK) ctr.type[a] = BAROMETER;
+      if (st == HAL_OK) {
+        atomic_store_explicit(&ctr.t[a], BAROMETER, memory_order_relaxed);
+      } else if (st == HAL_ERROR) {
+        PL_CS_BARO_HIGH();
+      }
       break;
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
       PL_CS_GYRO_LOW();
       st = DMA_SPI_TXRX(tx[1], rx[a], SENSOR_BUF_SIZE);
-      if (st == HAL_OK) ctr.type[a] = GYROSCOPE;
+      if (st == HAL_OK) {
+        atomic_store_explicit(&ctr.t[a], GYROSCOPE, memory_order_relaxed);
+      } else if (st == HAL_ERROR) {
+        PL_CS_GYRO_HIGH();
+      }
       break;
     case ACCEL_INT_PIN_1:
     case ACCEL_INT_PIN_2:
       PL_CS_ACCEL_LOW();
       st = DMA_SPI_TXRX(tx[2], rx[a], SENSOR_BUF_SIZE);
-      if (st == HAL_OK) ctr.type[a] = ACCELEROMETER;
+      if (st == HAL_OK) {
+        atomic_store_explicit(&ctr.t[a], ACCELEROMETER, memory_order_relaxed);
+      } else if (st == HAL_ERROR) {
+        PL_CS_ACCEL_HIGH();
+      }
       break;
-    default: return;
+    default: break;
   }
 }
 
-inline dma_e dma_read_latest(payload_t *buf)
+/*
+ * Transforms bits into raw data, storing the
+ * result in provided buffer.
+ */
+dma_e dma_read_latest(payload_t *buf)
 {
+  if (buf == NULL) return DMA_GENERR;
+
   uint_fast8_t a = atomic_load_explicit(&ctr.w, memory_order_acquire);
-  buf->type = ctr.type[a];
+  /*
+   * Happens-before is ensured by loading "a" with acquire.
+   * We only need to guarantee atomicity of this assignment.
+   */
+  buf->type = atomic_load_explicit(&ctr.t[a], memory_order_relaxed);
+  /*
+   * Claim buffer for reading. EXTI guarantees that the buffer
+   * for which ctr.w (write) flag is published is not
+   * currently in transfer (double buffering).
+   */
   atomic_store_explicit(&ctr.r, a, memory_order_release);
   
   switch (buf->type) {
@@ -120,5 +189,9 @@ inline dma_e dma_read_latest(payload_t *buf)
     case NONE: return DMA_EMPTY;
   }
 
+  /*
+   * Uncalim buffer to let EXTI initiate DMA on any buffer.
+   */
+  atomic_store_explicit(&ctr.r, BUF_UNCLAIMED, memory_order_release);
   return DMA_OK;
 }

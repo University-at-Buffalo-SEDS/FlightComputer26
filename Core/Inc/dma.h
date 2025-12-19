@@ -5,6 +5,10 @@
 
 #define SENSOR_BUF_SIZE 8
 
+#define BUF_UNCLAIMED UINT8_MAX
+
+#define DMA_RX_NULL UINT8_MAX
+
 /* Typedefs */
 
 typedef enum {
@@ -33,7 +37,7 @@ typedef enum {
 typedef struct {
   atomic_uint_fast8_t r;
   atomic_uint_fast8_t w;
-  expected_e type[2];
+  atomic_uint_fast8_t t[2];
 } dma_t;
 
 /* Globals */
@@ -42,4 +46,4 @@ typedef struct {
  * Reads the latest payload entry.
  * Returns DMA_OK (0) on success and > 0 on failure.
  */
-inline dma_e dma_read_latest(payload_t *buf);
+dma_e dma_read_latest(payload_t *buf);
