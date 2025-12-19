@@ -7,7 +7,6 @@
 #include <stdatomic.h>
 
 #include "platform.h"
-#include "stm32h5xx_hal_def.h"
 #include "dma.h"
 
 /*
