@@ -1,4 +1,4 @@
-# Flight Computer '26
+# Flight Computer 26
 
 This is the Flight Computer repository for UB SEDS 2026 IREC.
 
