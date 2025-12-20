@@ -48,7 +48,7 @@ RouterState g_router = {.r = NULL, .created = 0, .start_time = 0};
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
 
-  if (can_bus_send_bytes(bytes, len, 0x03) != HAL_OK) {
+  if (can_bus_send_large(bytes, len, 0x03) != HAL_OK) {
     return SEDS_ERR;
   }
   return SEDS_OK;
