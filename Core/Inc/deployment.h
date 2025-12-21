@@ -164,4 +164,17 @@ typedef struct {
   } rec;
 } rocket_t;
 
+/* Public helpers */
+
+/*
+ * Public helper. Invoked from thread context.
+ */
+state_e get_rocket_state();
+
+/*
+ * Triggers forced parachute firing and expansion with
+ * compile-time specified intervals. USE WITH CAUTION.
+ */
+void force_abort_deployment();
+
 #endif // DEPLOYMENT_H

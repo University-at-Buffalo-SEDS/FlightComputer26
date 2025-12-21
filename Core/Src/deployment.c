@@ -28,15 +28,25 @@ extern atomic_uint_fast8_t newdata;
 static rocket_t rock = {0};
 
 /*
- * Most-recent and previous data buffers merged
+ * Most-recent and previous data buffers stored together
  */
 static filter_t data[2][DEPL_BUF_SIZE] = {0};
 
 /*
- * External atomic counter for new elements 
- * Increment each time a new element is written to filter ring
+ * Simple statistics struct for each buffer.
  */
 static stats_t stats[2] = {0};
+
+/*
+ * Public helper. Invoked from thread context.
+ */
+state_e get_rocket_state() { return rock.state; }
+
+/*
+ * Triggers forced parachute firing and expansion with
+ * compile-time specified intervals. USE WITH CAUTION.
+ */
+void force_abort_deployment() { rock.state = ABORTED; }
 
 /*
  * Copies "current" data into "previous" buffer and
@@ -53,9 +63,8 @@ static stats_t stats[2] = {0};
  */
 static inline inference_e refresh_data()
 {
-  uint_fast8_t n;
-
-  if (!(n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel)))
+  uint_fast8_t n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel);
+  if (!n)
     return DEPL_NO_INPUT;
 
   if (n > DEPL_BUF_SIZE)
