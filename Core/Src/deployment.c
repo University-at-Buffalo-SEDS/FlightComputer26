@@ -45,8 +45,29 @@ state_e get_rocket_state() { return rock.state; }
 /*
  * Triggers forced parachute firing and expansion with
  * compile-time specified intervals. USE WITH CAUTION.
+ * Invoked from thread context.
  */
-void force_abort_deployment() { rock.state = ABORTED; }
+void force_abort_deployment()
+{
+  rock.rec.lock = 1;
+  /*
+   * The lock must be "force acquired" before writing state
+   * to prevent state transitions on last remaining iteration.
+   */
+  PL_DMB();
+  rock.state = ABORTED;
+}
+
+/*
+ * Safe helper that respects abortion lock.
+ */
+static inline inference_e update_state(state_e s)
+{
+  if (rock.rec.lock) return DEPL_DOOM;
+
+  rock.state = s;
+  return DEPL_OK;
+}
 
 /*
  * Copies "current" data into "previous" buffer and
@@ -160,10 +181,11 @@ static inline inference_e detect_launch()
   if (stats[rock.i.a].avg_vel >= LAUNCH_MIN_VEL &&
       stats[rock.i.a].avg_vax >= LAUNCH_MIN_VAX)
   {
-    rock.state = LAUNCH;
-    rock.samp.ascent = 0;
-    LOG_MSG("Launch detected", 16);
-    FC_TX_WAIT(LAUNCH_CONFIRM_DELAY);
+    if (update_state(LAUNCH) == DEPL_OK) {
+      rock.samp.ascent = 0;
+      LOG_MSG("Launch detected", 16);
+      FC_TX_WAIT(LAUNCH_CONFIRM_DELAY);
+    }
   }
 
   return DEPL_OK;
@@ -178,8 +200,9 @@ static inline inference_e detect_ascent()
       stats[rock.i.a].min_alt > stats[!rock.i.a].max_alt)
   {
     ++rock.samp.ascent;
-    if (rock.samp.ascent >= MIN_SAMP_ASCENT) {
-      rock.state = ASCENT;
+    if (rock.samp.ascent >= MIN_SAMP_ASCENT
+        && update_state(ASCENT) == DEPL_OK)
+    {
       rock.samp.burnout = 0;
       LOG_MSG("Launch confirmed", 17);
     }
@@ -210,9 +233,9 @@ static inline inference_e detect_burnout()
       stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
     ++rock.samp.burnout;
-    if (rock.samp.burnout >= MIN_SAMP_BURNOUT) {
-      rock.state = BURNOUT;
-      rock.samp.descent = 0;
+    if (rock.samp.burnout >= MIN_SAMP_BURNOUT
+        && update_state(BURNOUT) == DEPL_OK)
+    {
       LOG_MSG("Watching for apogee", 20);
     }
   }
@@ -237,10 +260,11 @@ static inline inference_e detect_apogee()
   if (stats[rock.i.a].avg_vel <= APOGEE_MAX_VEL &&
       stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
   {
-    rock.state = APOGEE;
-    rock.samp.descent = 0;
-    LOG_MSG("Approaching apogee", 19);
-    FC_TX_WAIT(APOGEE_CONFIRM_DELAY);
+    if (update_state(APOGEE) == DEPL_OK) {
+      rock.samp.descent = 0;
+      LOG_MSG("Approaching apogee", 19);
+      FC_TX_WAIT(APOGEE_CONFIRM_DELAY);
+    }
   }
 
   return DEPL_OK;
@@ -255,8 +279,9 @@ static inline inference_e detect_descent()
       stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
   {
     ++rock.samp.descent;
-    if (rock.samp.descent >= MIN_SAMP_DESCENT) {
-      rock.state = DESCENT;
+    if (rock.samp.descent >= MIN_SAMP_DESCENT
+        && update_state(DESCENT) == DEPL_OK)
+    {
       rock.samp.landing = 0;
       CO2_HIGH();
       LOG_MSG("Fired pyro, descending", 23);
@@ -284,8 +309,9 @@ static inline inference_e detect_reef()
       stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt)
   {
     ++rock.samp.landing;
-    if (rock.samp.landing >= MIN_SAMP_REEF) {
-      rock.state = REEF;
+    if (rock.samp.landing >= MIN_SAMP_REEF
+        && update_state(REEF) == DEPL_OK)
+    {
       rock.samp.idle = 0;
       REEF_HIGH();
       LOG_MSG("Expanded parachute", 19);
@@ -318,8 +344,9 @@ static inline inference_e detect_landed()
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
     ++rock.samp.idle;
-    if (rock.samp.idle >= MIN_SAMP_LANDED) {
-      rock.state = LANDED;
+    if (rock.samp.idle >= MIN_SAMP_LANDED
+        && update_state(LANDED) == DEPL_OK)
+    {
       LOG_MSG("Rocket landed", 14);
     }
   }
@@ -408,7 +435,7 @@ static inline void try_recover_sensors()
   }
 
   /* Try to validate data anyway */
-  rock.state = rock.rec.state;
+  update_state(rock.rec.state);
 }
 
 /*
@@ -426,7 +453,8 @@ static inline void bad_inference_handler()
 
   if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
   {
-    rock.state = ABORTED;
+    /* Return value ignored - aborting anyway :D */
+    update_state(ABORTED);
     LOG_ERR("FATAL: aborting deployment (%u retries)",
             rock.rec.ret);
   }
@@ -435,7 +463,7 @@ static inline void bad_inference_handler()
            rock.rec.ret % RECOVERY_INTERVAL == 0)
   {
     rock.rec.state = rock.state;
-    rock.state = RECOVERY;
+    update_state(RECOVERY);
   }
 }
 

@@ -130,6 +130,20 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define DISABLE_HAL_INTS()  __disable_irq()
 #define ENABLE_HAL_INTS()   __enable_irq()
 
+/* Data memory barrier
+ * (#else branch is to be invented :D) */
+
+#if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
+
+#include "cmsis_compiler.h"
+#define PL_DMB() __DMB()
+
+#else
+
+#define PL_DMB() (void)0
+
+#endif // DMB support
+
 
 /* Sensor drivers and data collection */
 
