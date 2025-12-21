@@ -170,6 +170,7 @@ dma_e dma_read_latest(payload_t *buf)
    */
   atomic_store_explicit(&ctr.r, a, memory_order_release);
   
+  dma_e st = DMA_OK;
   switch (buf->type) {
     case BAROMETER:
       buf->data.baro[0] = U24(rx[a][1], rx[a][2], rx[a][3]);
@@ -185,12 +186,12 @@ dma_e dma_read_latest(payload_t *buf)
       buf->data.accel[1] = F16(rx[a][4], rx[a][5]);
       buf->data.accel[2] = F16(rx[a][6], rx[a][7]);
       break;
-    case NONE: return DMA_EMPTY;
+    case NONE: st = DMA_EMPTY;
   }
 
   /*
    * Uncalim buffer to let EXTI initiate DMA on any buffer.
    */
   atomic_store_explicit(&ctr.r, BUF_UNCLAIMED, memory_order_release);
-  return DMA_OK;
+  return st;
 }
