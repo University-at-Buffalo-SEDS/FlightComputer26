@@ -9,10 +9,8 @@
 #include "platform.h"
 #include "dma.h"
 
-/*
- * Control struct and tx/rx buffers.
- * Two shared rx bufs implement double buffering.
- */
+/// Control struct and tx/rx buffers.
+/// Two shared rx bufs implement double buffering.
 static dma_t ctr = {0};
 
 static uint8_t tx[3][SENSOR_BUF_SIZE] = {
@@ -20,12 +18,8 @@ static uint8_t tx[3][SENSOR_BUF_SIZE] = {
 };
 static uint8_t rx[2][SENSOR_BUF_SIZE];
 
-/* Inline helpers */
-
-/*
- * Checks whether pointers are equal, or that p points
- * inside any of the two buffers (due to HAL offset).
- */
+/// Checks whether pointers are equal, or that p points
+/// inside any of the two buffers (due to HAL offset).
 static inline uint_fast8_t index_from_ptr(uint8_t *p)
 {
   if (p == rx[0] || ((uintptr_t)p >= (uintptr_t)rx[0] &&
@@ -41,6 +35,8 @@ static inline uint_fast8_t index_from_ptr(uint8_t *p)
   else return DMA_RX_NULL;
 }
 
+/// Reads device type for buffer i and pulls the
+/// corresponding CS pin high.
 static inline void switch_pull_cs_high(uint_fast8_t i)
 {
   switch (atomic_load_explicit(&ctr.t[i], memory_order_relaxed)) {
@@ -54,9 +50,7 @@ static inline void switch_pull_cs_high(uint_fast8_t i)
   }
 }
 
-/*
- * Successful transfer routine that publishes new buffer.
- */
+/// Successful transfer routine that publishes new buffer.
 void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
@@ -74,10 +68,8 @@ void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
   switch_pull_cs_high(a);
 }
 
-/*
- * Edge case invalidates cache for both buffers and
- * raises CS pin for all sensors.
- */
+/// Edge case: invalidate cache for both buffers and
+/// raise CS pin for all sensors.
 void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
@@ -94,10 +86,8 @@ void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
   switch_pull_cs_high(a);
 }
 
-/*
- * Selects a buffer different from currently reading (if any),
- * and attempts to initiate DMA transfer.
- */
+/// Selects a buffer different from currently reading (if any),
+/// and attempts to initiate DMA transfer.
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   PL_HAL_Handle st;
@@ -110,14 +100,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
       PL_CS_BARO_LOW();
-    /*
-     * If another transfer is currently in progress, this
-     * call will return HAL_BUSY (see try-lock on line 2438
-     * of stm32h5xx_hal_spi.c). We should neither update the type
-     * nor pull CS high to avoid corrupting active transfer.
-     * Only on HAL_OK the type is adjusted, and only on HAL_ERROR
-     * (when HAL aborts its side effects) CS is pulled back high.
-     */
+      /*
+       * If another transfer is currently in progress, this
+       * call will return HAL_BUSY (see try-lock on line 2438
+       * of stm32h5xx_hal_spi.c). We should neither update the type
+       * nor pull CS high to avoid corrupting active transfer.
+       * Only on HAL_OK the type is adjusted, and only on HAL_ERROR
+       * (when HAL aborts its side effects) CS is pulled back high.
+       */
       st = DMA_SPI_TXRX(tx[0], rx[a], SENSOR_BUF_SIZE);
       if (st == HAL_OK) {
         atomic_store_explicit(&ctr.t[a], BAROMETER, memory_order_relaxed);
@@ -149,10 +139,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   }
 }
 
-/*
- * Transforms bits into raw data, storing the
- * result in provided buffer.
- */
+/// Transforms bits into raw data, storing the
+/// result in provided buffer.
 dma_e dma_read_latest(payload_t *buf)
 {
   if (buf == NULL) return DMA_GENERR;
@@ -190,7 +178,7 @@ dma_e dma_read_latest(payload_t *buf)
   }
 
   /*
-   * Uncalim buffer to let EXTI initiate DMA on any buffer.
+   * Unclaim buffer to let EXTI initiate DMA on any buffer.
    */
   atomic_store_explicit(&ctr.r, BUF_UNCLAIMED, memory_order_release);
   return st;
