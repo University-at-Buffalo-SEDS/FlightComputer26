@@ -102,7 +102,7 @@ typedef enum {
   DEPL_N_REEF     = 19,
   DEPL_N_LANDED   = 20,
 
-  /* Assert unreachable */
+  /* For abortion and unreachable statements */
   DEPL_DOOM       = 127
 } inference_e;
 
@@ -161,7 +161,22 @@ typedef struct {
     state_e state;
     inference_e inf;
     uint_fast8_t ret;
+    uint_fast8_t lock;
   } rec;
 } rocket_t;
+
+/* Public helpers */
+
+/*
+ * Public helper. Invoked from thread context.
+ */
+state_e get_rocket_state();
+
+/*
+ * Triggers forced parachute firing and expansion with
+ * compile-time specified intervals. USE WITH CAUTION.
+ * Invoked from thread context.
+ */
+void force_abort_deployment();
 
 #endif // DEPLOYMENT_H
