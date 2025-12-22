@@ -138,6 +138,12 @@ typedef emu_spi_t PL_SPI_Handle;
 #define DISABLE_HAL_INTS()  emu_disable_irq()
 #define ENABLE_HAL_INTS()   emu_enable_irq()
 
+/*
+ * Host runs a multithreaded CPU
+ * and needs a hardware memory barrier.
+ */
+#define PL_DMB() __sync_synchronize()
+
 
 /* Sensor drivers and data collection */
 
