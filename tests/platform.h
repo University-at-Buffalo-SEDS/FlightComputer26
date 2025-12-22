@@ -6,6 +6,10 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include "emulation.h"
+
+/* Generic definitions */
+
 /* Max/min helpers with double-eval safety */
 
 #define MAX(x, y)       \
@@ -22,13 +26,29 @@
     _x < _y ? _x : _y;  \
   })
 
+/* Deployment specific fake Kalman struct 
+* (remove when Kalman API is exposed) */
 
-/* ThreadX API abstraction */
+typedef struct {
+  float alt;
+  float vel;
+  float vax;
+} filter_t;
 
-extern unsigned sensor_thread;
-extern unsigned kalman_thread;
-extern unsigned telemetry_thread;
-extern unsigned deployment_thread;
+
+/* The following alias definitions in emulation.h */
+
+/* ThreadX substitution API */
+
+#define TX_SUCCESS 0
+#define TX_FAILURE -1
+#define TX_NO_TIME_SLICE 0
+#define TX_AUTO_START 0
+
+extern TX_THREAD sensor_thread;
+extern TX_THREAD kalman_thread;
+extern TX_THREAD telemetry_thread;
+extern TX_THREAD deployment_thread;
 
 #define DEPLOYMENT_THREAD_SLEEP         60
 #define DEPLOYMENT_THREAD_PRIORITY      6
@@ -36,15 +56,11 @@ extern unsigned deployment_thread;
 #define DEPLOYMENT_THREAD_STACK_SIZE    6144u
 #define DEPLOYMENT_THREAD_MAX_RETRIES   60
 
-#define FC_TX_UINT unsigned
-#define FC_TX_SUCCESS 0
-#define FC_TX_FAILURE -1
+#define tx_thread_sleep(duration) emu_sleep((duration))
 
-#define FC_TX_WAIT(duration) emu_sleep((duration))
+#define tx_thread_resume(thread)  emu_yield((thread))
 
-#define FC_TX_YIELD(thread)  emu_yield((thread))
-
-#define FC_CREATE_THREAD(thread, name, entry, input,        \
+#define tx_thread_create(thread, name, entry, input,        \
                          stack, stack_size, priority,       \
                          preemption, time_slice, autostart) \
   emu_create_thread((thread), (name), (entry), (input),     \
@@ -54,48 +70,46 @@ extern unsigned deployment_thread;
 
 /* Telemetry API abstraction */
 
-typedef enum { SEDS_DT_MESSAGE_DATA } emu_data_e;
-
-#define LOG_MSG_SYNC(msg, size)                             \
+#define log_msg_sync(msg, size)                             \
   emu_print_buf(SEDS_DT_MESSAGE_DATA,                       \
                 (msg), (size), sizeof(char))
 
-#define LOG_MSG(msg, size)                                  \
+#define log_msg(msg, size)                                  \
   emu_print_buf(SEDS_DT_MESSAGE_DATA,                       \
                 (msg), (size), sizeof(char))
 
 #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   emu_print_err(fmt __VA_OPT__(,) __VA_ARGS__)
                            
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   emu_print_err(fmt __VA_OPT__(,) __VA_ARGS__)
 
-#define LOG_DIE(fmt, ...)                                   \
+#define log_die(fmt, ...)                                   \
   emu_print_err(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #else
 #ifdef __GNUC__
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   emu_print_err(fmt, ##__VA_ARGS__)
 
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   emu_print_err(fmt, ##__VA_ARGS__)
 
-#define LOG_DIE(fmt, ...)                                   \
+#define log_die(fmt, ...)                                   \
   emu_print_err(fmt, ##__VA_ARGS__)
 
 #else /* Does not support 0 variadic arguments */
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   emu_print_err(fmt, __VA_ARGS__)
 
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   emu_print_err(fmt, __VA_ARGS__)
 
-#define LOG_DIE(fmt, ...)                                   \
+#define log_die(fmt, ...)                                   \
   emu_print_err(fmt, __VA_ARGS__)
 
 #endif // GNUC
@@ -104,65 +118,45 @@ typedef enum { SEDS_DT_MESSAGE_DATA } emu_data_e;
 
 /* HAAL (hardware abstraction abstraction layer) <3 */
 
-/* HAL and SPI handle aliases */
-
-typedef enum { HAL_OK, HAL_ERROR } emu_hal_e;
-typedef enum { HAL_LOCKED, HAL_UNLOCKED } emu_spi_e;
-typedef struct { emu_spi_e Lock; } emu_spi_t;
-
-typedef emu_hal_e PL_HAL_Handle;
-typedef emu_spi_t PL_SPI_Handle;
-
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
 
-#define CO2_LOW()                                           \
+#define co2_low()                                           \
   emu_print_event("CO2 set up to low")
 
-#define CO2_HIGH()                                          \
+#define co2_high()                                          \
   emu_print_event("Rose edge on CO2, fired parachute")
 
-#define REEF_LOW()                                          \
+#define reef_low()                                          \
   emu_print_event("REEF set up to low")
 
-#define REEF_HIGH()                                         \
+#define reef_high()                                         \
   emu_print_event("Rose edge on REEF, expanded parachute")
 
 /* Data cache calls */
 
-#define INVALIDATE_DCACHE()                                 \
+#define invalidate_dcache()                                 \
   emu_print_event("Invalidated entire data cache")
 
 /* Interrupts toggle */
 
-#define DISABLE_HAL_INTS()  emu_disable_irq()
-#define ENABLE_HAL_INTS()   emu_enable_irq()
+#define __disable_irq()  emu_disable_irq()
+#define __enable_irq()   emu_enable_irq()
 
 /*
  * Host runs a multithreaded CPU
  * and needs a hardware memory barrier.
  */
-#define PL_DMB() __sync_synchronize()
-
+#define __DMB() __sync_synchronize()
 
 /* Sensor drivers and data collection */
 
-#define BARO_INIT() emu_baro_init()
-#define GYRO_INIT() emu_gyro_init()
-//#define ACCEL_INIT() emu_accel_init()
+#define init_baro() emu_baro_init()
+#define init_gyro() emu_gyro_init()
+//#define init_accel() emu_accel_init()
 
 /* Duplicate declaration of deployment entry for testing */
 void create_deployment_thread();
-
-
-/* Deployment specific fake Kalman struct 
- * (remove when Kalman API is exposed) */
-
-typedef struct {
-  float alt;
-  float vel;
-  float vax;
-} filter_t;
 
 
 #endif // PLATFORM_H

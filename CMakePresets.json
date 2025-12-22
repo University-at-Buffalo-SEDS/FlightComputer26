@@ -27,12 +27,7 @@
       "name": "HostDebug",
       "displayName": "Host machine testing (Debug)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-test",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "TEST_ON_HOST": "ON",
-        "ENABLE_TELEMETRY": "OFF"
-      }
+      "binaryDir": "${sourceDir}/build-test"
     }
   ],
   "buildPresets": [

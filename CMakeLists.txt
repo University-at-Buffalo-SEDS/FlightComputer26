@@ -100,14 +100,17 @@ if(TEST_ON_HOST)
     set(FC_TEST fctest)
     set(HOST_TEST_SOURCES
         tests/emu-core.c
-        tests/platform.h
-        # testing target
+        tests/emu-filter.c
+        tests/emu-drivers.c
+
+        Core/Src/deployment.c # testing target
     )
     set(ENABLE_TELEMETRY OFF CACHE BOOL "Disabling telemetry for testing" FORCE)
     add_executable(fctest ${HOST_TEST_SOURCES} tests/run-tests.c)
+    target_link_libraries(fctest PRIVATE m pthread)
     target_include_directories(fctest PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Inc
         ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/Core/Inc
     )
     add_test(NAME ${FC_TEST} COMMAND
         ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/fctest)

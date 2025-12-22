@@ -12,12 +12,9 @@
 #include <pthread.h>
 
 #include "platform.h"
-#include "emulation.h"
 
-unsigned sensor_thread = 0;
-unsigned kalman_thread = 1;
-unsigned telemetry_thread = 2;
-unsigned deployment_thread = 3;
+/* Header for source being tested */
+#include "deployment.h"
 
 static task_t tasks[EMU_TASKS];
 
@@ -64,13 +61,24 @@ void emu_sleep(unsigned ticks)
   }
 }
 
-unsigned emu_create_thread(unsigned *thread, char *name,
-                           task_t entry, unsigned input,
+/*
+ * Illegal compatibility adapter
+ * between threadx and pthread.
+ */
+void *emu_adapter(void *p)
+{
+  callee_t *t = (callee_t *)p;
+  t->fn(t->arg);
+  free(p);
+  return NULL;
+}
+
+unsigned emu_create_thread(TX_THREAD *thread, char *name,
+                           task_t entry, ULONG input,
                            unsigned long *stack, unsigned stack_size,
                            unsigned priority, unsigned preemption,
                            unsigned time_slice, unsigned autostart)
 {
-  (void)input;
   (void)stack; (void)stack_size;
   (void)priority; (void)preemption;
   (void)time_slice; (void)autostart;
@@ -81,13 +89,23 @@ unsigned emu_create_thread(unsigned *thread, char *name,
   pthread_t id;
   void *result;
 
-  if (!pthread_create(&id, NULL, entry, NULL))
-    return FC_TX_FAILURE;
+  callee_t *t = malloc(sizeof(*t));
+  if (!t) goto error;
+
+  t->fn = entry;
+  t->arg = input;
+
+  if (pthread_create(&id, NULL, emu_adapter, t))
+    goto error;
 
   if (pthread_join(id, &result))
-    return FC_TX_FAILURE;
+    goto error;
 
-  return FC_TX_SUCCESS;
+  return TX_SUCCESS;
+
+error:
+  free(t);
+  return TX_FAILURE;
 }
 
 void emu_print_buf(emu_data_e type, void *buf,

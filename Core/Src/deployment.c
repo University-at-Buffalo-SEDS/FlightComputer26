@@ -11,9 +11,9 @@
 #include "deployment.h"
 
 /// Aliased ThreadX thread and thread stack.
-FC_THREAD deployment_thread;
-FC_TX_ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
-                                    / sizeof(FC_TX_ULONG)];
+TX_THREAD deployment_thread;
+ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
+                              / sizeof(ULONG)];
 
 /// Counter for the amount of new records in filter ring.
 extern atomic_uint_fast8_t newdata;
@@ -38,7 +38,7 @@ void force_abort_deployment()
   rock.rec.lock = 1;
   /// The lock must be "force acquired" before writing state
   /// to prevent state transitions on last remaining iteration.
-  PL_DMB();
+  __DMB();
   rock.state = ABORTED;
 }
 
@@ -64,7 +64,8 @@ static inline inference_e update_state(state_e s)
 /// copying new data, advancing its starting index if needed.
 static inline inference_e refresh_data()
 {
-  uint_fast8_t n = atomic_exchange_explicit(&newdata, 0, memory_order_acq_rel);
+  uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
+                                            memory_order_acq_rel);
   if (!n)
     return DEPL_NO_INPUT;
 
@@ -73,8 +74,9 @@ static inline inference_e refresh_data()
 
   rock.i.a = !rock.i.a;
   rock.i.sp = rock.i.sc;
+  rock.i.sc = 0;
 
-  for (rock.i.sc = 0; rock.i.sc < MIN(n, DEPL_BUF_SIZE); ++rock.i.sc)
+  for (; rock.i.sc < MIN(n, DEPL_BUF_SIZE); ++rock.i.sc)
   {
     // rock.i.ex = (rock.i.ex + 1) & (KALMAN_RING_SIZE - 1);
     // lock kalman_ring[rock.i.ex]
@@ -157,8 +159,8 @@ static inline inference_e detect_launch()
   {
     if (update_state(LAUNCH) == DEPL_OK) {
       rock.samp.ascent = 0;
-      LOG_MSG("Launch detected", 16);
-      FC_TX_WAIT(LAUNCH_CONFIRM_DELAY);
+      log_msg("Launch detected", 16);
+      tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
     }
   }
 
@@ -176,17 +178,16 @@ static inline inference_e detect_ascent()
         && update_state(ASCENT) == DEPL_OK)
     {
       rock.samp.burnout = 0;
-      LOG_MSG("Launch confirmed", 17);
+      log_msg("Launch confirmed", 17);
     }
   }
+#if defined CONSECUTIVE_CONFIRMS
   else if (rock.samp.ascent > 0)
   {
-    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.ascent = 0;
-    #endif
-
     return DEPL_N_LAUNCH;
   }
+#endif
 
   return DEPL_OK;
 }
@@ -206,17 +207,16 @@ static inline inference_e detect_burnout()
     if (rock.samp.burnout >= MIN_SAMP_BURNOUT
         && update_state(BURNOUT) == DEPL_OK)
     {
-      LOG_MSG("Watching for apogee", 20);
+      log_msg("Watching for apogee", 20);
     }
   }
+#if defined CONSECUTIVE_CONFIRMS
   else if (rock.samp.burnout > 0)
   {
-    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.burnout = 0;
-    #endif
-
     return DEPL_N_BURNOUT;
   }
+#endif
 
   return DEPL_OK;
 }
@@ -230,8 +230,8 @@ static inline inference_e detect_apogee()
   {
     if (update_state(APOGEE) == DEPL_OK) {
       rock.samp.descent = 0;
-      LOG_MSG("Approaching apogee", 19);
-      FC_TX_WAIT(APOGEE_CONFIRM_DELAY);
+      log_msg("Approaching apogee", 19);
+      tx_thread_sleep(APOGEE_CONFIRM_DELAY);
     }
   }
 
@@ -249,18 +249,17 @@ static inline inference_e detect_descent()
         && update_state(DESCENT) == DEPL_OK)
     {
       rock.samp.landing = 0;
-      CO2_HIGH();
-      LOG_MSG("Fired pyro, descending", 23);
+      co2_high();
+      log_msg("Fired pyro, descending", 23);
     }
   }
+#if defined CONSECUTIVE_CONFIRMS
   else if (rock.samp.descent > 0)
   {
-    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.descent = 0;
-    #endif
-
     return DEPL_N_DESCENT;
   }
+#endif
 
   return DEPL_OK;
 }
@@ -277,18 +276,17 @@ static inline inference_e detect_reef()
         && update_state(REEF) == DEPL_OK)
     {
       rock.samp.idle = 0;
-      REEF_HIGH();
-      LOG_MSG("Expanded parachute", 19);
+      reef_low();
+      log_msg("Expanded parachute", 19);
     }
   }
+#if defined CONSECUTIVE_CONFIRMS
   else if (rock.samp.landing > 0)
   {
-    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.landing = 0;
-    #endif
-
     return DEPL_N_REEF;
   }
+#endif
 
   return DEPL_OK;
 }
@@ -309,17 +307,16 @@ static inline inference_e detect_landed()
     if (rock.samp.idle >= MIN_SAMP_LANDED
         && update_state(LANDED) == DEPL_OK)
     {
-      LOG_MSG("Rocket landed", 14);
+      log_msg("Rocket landed", 14);
     }
   }
+#if defined CONSECUTIVE_CONFIRMS
   else if (rock.samp.idle > 0)
   {
-    #if defined CONSECUTIVE_CONFIRMS
     rock.samp.idle = 0;
-    #endif
-
     return DEPL_N_LANDED;
   }
+#endif
 
   return DEPL_OK;
 }
@@ -355,11 +352,10 @@ static inline inference_e infer_rocket_state()
       return detect_landed();
     case LANDED:
       return DEPL_OK;
-
-    /* Assert unreachable */
     case RECOVERY:
     case ABORTED:
-    default: return DEPL_DOOM;
+    case INIT:
+      return DEPL_DOOM;
   }
 }
 
@@ -369,27 +365,27 @@ static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
 
-  LOG_MSG("Trying to recover sensors", 26);
+  log_msg("Trying to recover sensors", 26);
 
-  DISABLE_HAL_INTS();
+  __disable_irq();
 
-  if (BARO_INIT() != HAL_OK)
+  if (init_baro() != HAL_OK)
     st += DEPL_BAD_BARO;
 
-  if (GYRO_INIT() != HAL_OK)
+  if (init_gyro() != HAL_OK)
     st += DEPL_BAD_GYRO;
 
-  // if (ACCEL_INIT() != HAL_OK)
+  // if (init_accel() != HAL_OK)
   //   st += DEPL_BAD_ACCEL;
 
-  INVALIDATE_DCACHE();
+  invalidate_dcache();
 
-  ENABLE_HAL_INTS();
+  __disable_irq();
   
   if (st == DEPL_OK) {
-    LOG_MSG("Sensor recovery successful", 27);
+    log_msg("Sensor recovery successful", 27);
   } else {
-    LOG_ERR("Recovery failed (code %d)", st);
+    log_err("Recovery failed (code %d)", st);
   }
 
   /// Try to validate data anyway
@@ -404,14 +400,14 @@ static inline void try_recover_sensors()
 static inline void bad_inference_handler()
 {
   ++rock.rec.ret;
-  LOG_ERR("Deployment: bad inference #%u (code %d)",
+  log_err("Deployment: bad inference #%u (code %d)",
           rock.rec.ret, rock.rec.inf);
 
   if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
   {
     /// Return value ignored - aborting anyway :D
     update_state(ABORTED);
-    LOG_ERR("FATAL: aborting deployment (%u retries)",
+    log_err("FATAL: aborting deployment (%u retries)",
             rock.rec.ret);
   }
   else if (rock.state != RECOVERY &&
@@ -429,12 +425,12 @@ static inline void bad_inference_handler()
 /// Delays are configurable in deployment.h
 static inline void deployment_abort_procedures()
 {
-  LOG_MSG("Deployment: turning off engine and firing pyro", 47);
+  log_msg("Deployment: turning off engine and firing pyro", 47);
   // turn off engine
-  FC_TX_WAIT(ABORT_CO2_DELAY);
-  CO2_HIGH();
-  FC_TX_WAIT(ABORT_REEF_DELAY);
-  REEF_HIGH();
+  tx_thread_sleep(ABORT_CO2_DELAY);
+  co2_high();
+  tx_thread_sleep(ABORT_REEF_DELAY);
+  reef_high();
 }
 
 /// Invokes state machine and checks for an error.
@@ -446,10 +442,10 @@ void deployment_thread_entry(ULONG input)
 {
   (void)input;
 
-  LOG_MSG_SYNC("Deployment: starting thread", 28);
+  log_msg_sync("Deployment: starting thread", 28);
 
-  CO2_LOW();
-  REEF_LOW();
+  co2_low();
+  reef_low();
   rock.state = IDLE;
 
   while (rock.state != ABORTED) {
@@ -461,18 +457,18 @@ void deployment_thread_entry(ULONG input)
     rock.rec.inf = infer_rocket_state();
 
     if (rock.rec.inf == DEPL_NO_INPUT) {
-      // FC_TX_YIELD(&kalman_thread);
+      // tx_thread_resume(&kalman_thread);
       continue;
     } else if (rock.rec.inf < DEPL_OK) {
       bad_inference_handler();
     } else if (rock.rec.inf > DEPL_OK) {
-      LOG_ERR("Deployment: warn code %d", rock.rec.inf);
+      log_err("Deployment: warn code %d", rock.rec.inf);
     } else if (rock.rec.ret > 0) {
       rock.rec.ret = 0;
-      LOG_MSG("Deployment: recovered from error", 33);
+      log_msg("Deployment: recovered from error", 33);
     }
 
-    FC_TX_WAIT(DEPLOYMENT_THREAD_SLEEP);
+    tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 
   if (rock.state == ABORTED)
@@ -486,19 +482,19 @@ void deployment_thread_entry(ULONG input)
 /// Stack size and priority are configurable in FC-Threads.h.
 void create_deployment_thread(void)
 {
-  FC_TX_UINT st = FC_CREATE_THREAD(&deployment_thread,
-                                   "Deployment Thread",
-                                   deployment_thread_entry,
-                                   DEPLOYMENT_THREAD_INPUT,
-                                   deployment_thread_stack,
-                                   DEPLOYMENT_THREAD_STACK_SIZE,
-                                   DEPLOYMENT_THREAD_PRIORITY,
-                                   /* No preemption */
-                                   DEPLOYMENT_THREAD_PRIORITY,
-                                   TX_NO_TIME_SLICE,
-                                   TX_AUTO_START);
+  UINT st = tx_thread_create(&deployment_thread,
+                             "Deployment Thread",
+                             deployment_thread_entry,
+                             DEPLOYMENT_THREAD_INPUT,
+                             deployment_thread_stack,
+                             DEPLOYMENT_THREAD_STACK_SIZE,
+                             DEPLOYMENT_THREAD_PRIORITY,
+                             /* No preemption */
+                             DEPLOYMENT_THREAD_PRIORITY,
+                             TX_NO_TIME_SLICE,
+                             TX_AUTO_START);
 
-  if (st != FC_TX_SUCCESS) {
-    LOG_DIE("Failed to create deployment thread: %u", (unsigned)st);
+  if (st != TX_SUCCESS) {
+    log_die("Failed to create deployment thread: %u", (unsigned)st);
   }
 }

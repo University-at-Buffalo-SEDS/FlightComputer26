@@ -2,7 +2,7 @@
 
 static void test_normal_flight()
 {
-  ulong samp;
+  ULONG samp;
 
   /* 
    * This should result in creation of the deployment thread.
@@ -12,13 +12,10 @@ static void test_normal_flight()
   filter_init_testing();
 
   /* 1. Idle: noisy 0s */
-  samp = (ulong)(T_IDLE * SAMPLE_HZ);
-  for (ulong i = 0; i < samp; ++i) {
-    produce_normal(0.0f, 0.0f, 0.0f, samp, CASUAL_SIGMA);
+  samp = (ULONG)(T_IDLE * SAMPLE_HZ);
+  for (ULONG i = 0; i < samp; ++i) {
+    produce_normal(0.0f, 0.0f, 0.0f, 1, CASUAL_SIGMA);
   }
-
-  // ... TODO
-  // lazy, exams, life (??), will do later
 }
 
 int main()

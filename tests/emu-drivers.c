@@ -20,7 +20,7 @@ static uint_fast8_t baro_ready = 0;
 static uint_fast8_t gyro_ready = 0 ;
 static uint_fast8_t accel_ready = 0;
 
-PL_HAL_Handle emu_baro_init()
+HAL_StatusTypeDef emu_baro_init()
 {
   if (!init_fail_baro) {
     nanosleep(&success_delay, NULL);
@@ -32,7 +32,7 @@ PL_HAL_Handle emu_baro_init()
   }
 }
 
-PL_HAL_Handle emu_gyro_init()
+HAL_StatusTypeDef emu_gyro_init()
 {
   if (!init_fail_gyro) {
     nanosleep(&success_delay, NULL);
@@ -44,7 +44,7 @@ PL_HAL_Handle emu_gyro_init()
   }
 }
 
-PL_HAL_Handle emu_accel_init()
+HAL_StatusTypeDef emu_accel_init()
 {
   if (!init_fail_accel) {
     nanosleep(&success_delay, NULL);

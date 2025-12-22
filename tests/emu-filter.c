@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "emulation.h"
 #include "platform.h"
 
 /* Header of the file tested */
@@ -23,7 +22,7 @@ static inline float fgen(float low, float high)
   return low + (high - low)*((float)rand() / (float)(RAND_MAX + 1u));
 }
 
-static inline atomic_uint_fast16_t incr()
+static inline uint_fast8_t incr()
 {
   return atomic_fetch_add_explicit(&newdata, 1, memory_order_acq_rel);
 }
@@ -87,7 +86,14 @@ static float noise(float mu, float sigma)
   return (float)((u * s) * sigma + mu);
 }
 
-void produce_normal(float h1, float v1, float a, ulong samp, float sigma)
+/*
+ * h1: starting height, m
+ * v1: starting velocity, m/s
+ * a: acceleration on the interval, m/s^2
+ * samp: amount of samples to produce
+ * sigma: standard deviation for produced sample
+ */
+void produce_normal(float h1, float v1, float a, ULONG samp, float sigma)
 {
   float alt = h1, vel = v1;
   float dt = 1.0f / SAMPLE_HZ;
