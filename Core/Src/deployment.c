@@ -1,5 +1,8 @@
-/// State monitoring and parachute deployment.
-/// Designed to run as a task *in one thread*.
+/*
+ * State monitoring and parachute deployment.
+ * Designed to run as a task *in one thread*.
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
