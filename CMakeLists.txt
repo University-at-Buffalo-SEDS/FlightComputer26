@@ -114,13 +114,6 @@ if(TEST_ON_HOST)
     )
     add_test(NAME ${FC_TEST} COMMAND
         ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/fctest)
-    add_custom_target(check
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
-        --target fctest --config ${CMAKE_BUILD_TYPE}
-        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-        -C ${CMAKE_BUILD_TYPE} WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Build and run host tests"
-    )
     target_compile_definitions(fctest PRIVATE PL_HOST)
     target_link_libraries(fctest PRIVATE pthread)
 else()

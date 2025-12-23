@@ -11,6 +11,7 @@
 #include <time.h>
 #include <pthread.h>
 
+#include "emulation.h"
 #include "platform.h"
 
 /* Header for source being tested */
@@ -34,7 +35,7 @@ void proper_sleep(time_t sec, long nsec)
 /*
  * TODO populate tasks[] with emu filter function(s)
  */
-void emu_yield(unsigned *thread)
+void emu_yield(TX_THREAD *thread)
 {
   printf("[RTOS] Running task %u\n (%u cycles)",
          *thread, FAKE_YIELD_CYCLES);
@@ -44,15 +45,15 @@ void emu_yield(unsigned *thread)
   }
 }
 
-void emu_sleep(unsigned ticks)
+void emu_sleep(UINT ticks)
 {
   float duration = TX_TO_SEC(ticks);
   printf("[RTOS] Thread requested to sleep for %u ticks"
-         "(%f seconds)\n", ticks, duration);
+         " (%f seconds)\n", ticks, duration);
 
-  if (ticks >= MIN_TICKS_TO_YIELD) {
+  if (ticks >= MIN_TICKS_TO_YIELD && 0) { // TODO change back when proper yielding is implemented
     /* Scheduling at its best */
-    unsigned t = random() % EMU_TASKS;
+    UINT t = random() % EMU_TASKS;
     emu_yield(&t);
   } else {
     time_t sec = (time_t)duration;
@@ -73,11 +74,10 @@ void *emu_adapter(void *p)
   return NULL;
 }
 
-unsigned emu_create_thread(TX_THREAD *thread, char *name,
-                           task_t entry, ULONG input,
-                           unsigned long *stack, unsigned stack_size,
-                           unsigned priority, unsigned preemption,
-                           unsigned time_slice, unsigned autostart)
+UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
+                       ULONG *stack, UINT stack_size,
+                       UINT priority, UINT preemption,
+                       UINT time_slice, UINT autostart)
 {
   (void)stack; (void)stack_size;
   (void)priority; (void)preemption;
@@ -87,32 +87,29 @@ unsigned emu_create_thread(TX_THREAD *thread, char *name,
   tasks[*thread] = entry;
 
   pthread_t id;
-  void *result;
-
   callee_t *t = malloc(sizeof(*t));
-  if (!t) goto error;
+  if (!t)
+    return TX_FAILURE;
 
   t->fn = entry;
   t->arg = input;
 
-  if (pthread_create(&id, NULL, emu_adapter, t))
-    goto error;
+  if (pthread_create(&id, NULL, emu_adapter, t)) {
+    free(t);
+    return TX_FAILURE;
+  }
 
-  if (pthread_join(id, &result))
-    goto error;
+  if (pthread_detach(id))
+    return TX_FAILURE;
 
   return TX_SUCCESS;
-
-error:
-  free(t);
-  return TX_FAILURE;
 }
 
 void emu_print_buf(emu_data_e type, void *buf,
                    size_t size, size_t element_size)
 {
   (void)type; (void)size; (void)element_size;
-  printf("[MSG] %s", (char *)buf);
+  printf("[MSG] %s\n", (char *)buf);
 }
 
 void emu_print_err(const char *fmt, ...)
@@ -122,10 +119,10 @@ void emu_print_err(const char *fmt, ...)
   va_start(ap, fmt);
   vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
-  fprintf(stderr, "[ERR] %s", buf);
+  fprintf(stderr, "[ERR] %s\n", buf);
 }
 
 void emu_print_event(void *buf)
 {
-  printf("[EVENT] %s", (char *)buf);
+  printf("[EVENT] %s\n", (char *)buf);
 }

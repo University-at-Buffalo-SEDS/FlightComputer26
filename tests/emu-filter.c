@@ -27,12 +27,6 @@ static inline uint_fast8_t incr()
   return atomic_fetch_add_explicit(&newdata, 1, memory_order_acq_rel);
 }
 
-void filter_init_testing()
-{
-  srand(time(0));
-  create_deployment_thread();
-}
-
 static inline float abnormal(float bound)
 {
   return (bound > 0) ? fgen(bound, bound + MAX_DEVIATION)

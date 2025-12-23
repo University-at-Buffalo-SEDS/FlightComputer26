@@ -8,14 +8,14 @@
 
 #include <time.h>
 
-/* General ThreadX compatibility definitions */
+/* General ThreadX compatibility typedefs */
 
-#define UINT unsigned int
-#define ULONG unsigned long
-#define TX_THREAD UINT
+typedef unsigned int UINT;
+typedef unsigned long ULONG;
+typedef UINT TX_THREAD;
 
 typedef void (*task_t)(ULONG);
-typedef struct {task_t fn; ULONG arg;} callee_t;
+typedef struct { task_t fn; ULONG arg; } callee_t;
 
 /* Emulation service constants and helpers */
 
@@ -85,13 +85,11 @@ HAL_StatusTypeDef emu_accel_init();
 
 /* Emulation core */
 
-void emu_yield(unsigned *thread);
-void emu_sleep(unsigned ticks);
-unsigned emu_create_thread(TX_THREAD *thread, char *name,
-                          task_t entry, ULONG input,
-                          unsigned long *stack, unsigned stack_size,
-                          unsigned priority, unsigned preemption,
-                          unsigned time_slice, unsigned autostart);
+void emu_yield(TX_THREAD *thread);
+void emu_sleep(UINT ticks);
+UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
+                       ULONG *stack, UINT stack_size, UINT priority,
+                       UINT preemption, UINT time_slice, UINT autostart);
 void emu_print_buf(emu_data_e type, void *buf,
                    size_t size, size_t element_size);
 void emu_print_err(const char *fmt, ...);
@@ -99,7 +97,6 @@ void emu_print_event(void *buf);
 
 /* Pseudo-filter */
 
-void filter_init_testing();
 void produce_normal(float h1, float v1, float a, ULONG samp, float sigma);
 
 
