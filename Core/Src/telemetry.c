@@ -2,15 +2,24 @@
 #include "app_threadx.h" // should bring in tx_api.h; if not, include tx_api.h directly
 #include "sedsprintf.h"
 #include "stm32h5xx_hal.h"
+#include <stm32h5xx_hal_fdcan.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "sd_card.h"
+#include "can_bus.h"
+
 #ifndef TELEMETRY_ENABLED
+
+
 static void print_data_no_telem(void *data, size_t len) {
   // Implementation for debugging telemetry data
 }
 #endif
+
+static uint8_t g_can_rx_subscribed = 0;
+
 
 /* ---------------- Time helpers: 32->64 extender ---------------- */
 static uint64_t stm_now_ms(void *user) {
@@ -35,18 +44,22 @@ uint64_t node_now_since_ms(void *user) {
 /* ---------------- Global router state ---------------- */
 RouterState g_router = {.r = NULL, .created = 0, .start_time = 0};
 
-/* ---------------- TX path (CANSEND) ---------------- */
+/* ---------------- TX Helpers ---------------- */
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
-  (void)bytes;
-  (void)len;
 
-  /*TODO: Implement the cansend function*/
-
+  if (can_bus_send_large(bytes, len, 0x03) != HAL_OK) {
+    return SEDS_ERR;
+  }
   return SEDS_OK;
 }
 
 /* ---------------- RX helpers ---------------- */
+static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
+  (void)user;
+  rx_asynchronous(data, len);
+}
+
 void rx_synchronous(const uint8_t *bytes, size_t len) {
   if (!bytes || !len)
     return;
@@ -69,20 +82,19 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   seds_router_rx_serialized_packet_to_queue(g_router.r, bytes, len);
 }
 
+
 /* ---------------- Local endpoint handler (SD_CARD) ---------------- */
 SedsResult on_sd_packet(const SedsPacketView *pkt, void *user) {
   (void)user;
 
-  /* TODO: Implement the saving to SD logic*/
   char buf[seds_pkt_to_string_len(pkt)];
   SedsResult s = seds_pkt_to_string(pkt, buf, sizeof(buf));
-  if (s == SEDS_OK) {
-    printf("on_sd_packet: %s\r\n", buf);
-  } else {
-    printf("on_sd_packet: seds_pkt_to_string failed (%d)\r\n", s);
-  }
-  return s;
+  if (s != SEDS_OK) return s;
+
+  UINT fx = sd_logger_enqueue_line(buf, strlen(buf));
+  return (fx == FX_SUCCESS) ? SEDS_OK : SEDS_ERR;
 }
+
 
 /* ---------------- Router init (idempotent) ---------------- */
 SedsResult init_telemetry_router(void) {
@@ -93,9 +105,14 @@ SedsResult init_telemetry_router(void) {
   if (g_router.created && g_router.r)
     return SEDS_OK;
 
-  if (g_router.created && g_router.r) {
-
-    return SEDS_OK;
+  if (!g_can_rx_subscribed) {
+    if (can_bus_subscribe_rx(telemetry_can_rx, NULL) == HAL_OK) {
+      g_can_rx_subscribed = 1;
+    } else {
+      /* Not fatal to router creation, but you'll miss RX */
+      /* You could return SEDS_ERR here if you want hard-fail. */
+      printf("Error: can_bus_subscribe_rx failed\r\n");
+    }
   }
 
   const SedsLocalEndpointDesc locals[] = {
