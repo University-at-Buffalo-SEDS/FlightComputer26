@@ -45,6 +45,7 @@ inline void ukf_measurement(const state_vec_t *restrict vec,
   out->alt = vec->p.z;
 }
 
+/// Outputs one next-sample prediction. 
 inline void ukf_predict(const state_vec_t *restrict vec,
                         state_vec_t *restrict next)
 {

@@ -20,3 +20,13 @@ typedef struct {
   coords_t gyro, accl;
   float alt;
 } sensor_meas_t;
+
+/* Globals */
+
+/// Transforms state vector into sensor measurement.
+inline void ukf_measurement(const state_vec_t *restrict vec,
+                            sensor_meas_t *restrict out);
+
+/// Outputs one next-sample prediction. 
+inline void ukf_predict(const state_vec_t *restrict vec,
+                        state_vec_t *restrict next);
