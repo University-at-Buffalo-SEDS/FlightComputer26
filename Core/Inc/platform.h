@@ -23,73 +23,55 @@
   })
 
 
-/* ThreadX API abstraction */
+/* ThreadX API includes */
 
 #include "tx_api.h"
 #include "tx_port.h"
 #include "FC-Threads.h"
-
-typedef UINT FC_TX_UINT;
-typedef ULONG FC_TX_ULONG;
-typedef TX_THREAD FC_THREAD;
-
-#define FC_TX_SUCCESS TX_SUCCESS
-
-#define FC_TX_WAIT(duration) tx_thread_sleep((duration))
-
-#define FC_TX_YIELD(thread)  tx_thread_resume((thread))
-
-#define FC_CREATE_THREAD(thread, name, entry, input,        \
-                         stack, stack_size, priority,       \
-                         preemption, time_slice, autostart) \
-  tx_thread_create((thread), (name), (entry), (input),      \
-                   (stack), (stack_size), (priority),       \
-                   (preemption), (time_slice), (autostart)) \
-
 
 /* Telemetry API abstraction */
 
 #include <sedsprintf.h>
 #include "telemetry.h"
 
-#define LOG_MSG_SYNC(msg, size)                             \
+#define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
 
-#define LOG_MSG(msg, size)                                  \
+#define log_msg(msg, size)                                  \
   log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
                              (msg), (size), sizeof(char))
 
 #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
                            
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
 
-#define LOG_DIE(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
+#define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #else
 #ifdef __GNUC__
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt, ##__VA_ARGS__)
 
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   log_error_asyncronous(fmt, ##__VA_ARGS__)
 
-#define LOG_DIE(fmt, ...) die(fmt, ##__VA_ARGS__)
+#define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
 #else /* Does not support 0 variadic arguments */
 
-#define LOG_ERR_SYNC(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt, __VA_ARGS__)
 
-#define LOG_ERR(fmt, ...)                                   \
+#define log_err(fmt, ...)                                   \
   log_error_asyncronous(fmt, __VA_ARGS__)
 
-#define LOG_DIE(fmt, ...) die(fmt, __VA_ARGS__)
+#define log_die(fmt, ...) die(fmt, __VA_ARGS__)
 
 #endif // GNUC
 #endif // >= C23
@@ -109,39 +91,29 @@ extern DCACHE_HandleTypeDef hdcache1;
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
 
-#define CO2_LOW()                                           \
+#define co2_low()                                           \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-#define CO2_HIGH()                                          \
+#define co2_high()                                          \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
 
-#define REEF_LOW()                                          \
+#define reef_low()                                          \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define REEF_HIGH()                                         \
+#define reef_high()                                         \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Data cache calls */
 
-#define INVALIDATE_DCACHE() HAL_DCACHE_Invalidate(&hdcache1)
-
-/* Interrupts toggle */
-
-#define DISABLE_HAL_INTS()  __disable_irq()
-#define ENABLE_HAL_INTS()   __enable_irq()
+#define invalidate_dcache() HAL_DCACHE_Invalidate(&hdcache1)
 
 /* Data memory barrier
  * (#else branch is to be invented :D) */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
-
 #include "cmsis_compiler.h"
-#define PL_DMB() __DMB()
-
 #else
-
-#define PL_DMB() (void)0
-
+#define __DMB() (void)0
 #endif // DMB support
 
 
@@ -152,9 +124,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "barometer.h"
 //#include "dma-ring.h"
 
-#define BARO_INIT() init_barometer(&hspi1)
-#define GYRO_INIT() gyro_init(&hspi1)
-//#define ACCEL_INIT() accel_init(&hspi1)
+#define init_baro() init_barometer(&hspi1)
+#define init_gyro() gyro_init(&hspi1)
+//#define init_accel() accel_init(&hspi1)
 
 
 /* Deployment specific fake Kalman struct 
