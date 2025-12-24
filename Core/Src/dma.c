@@ -41,11 +41,11 @@ static inline void switch_pull_cs_high(uint_fast8_t i)
 {
   switch (atomic_load_explicit(&ctr.t[i], memory_order_relaxed)) {
     case BAROMETER:
-      PL_CS_BARO_HIGH(); break;
+      BARO_CS_HIGH(); break;
     case GYROSCOPE:
-      PL_CS_GYRO_HIGH(); break;
+      GYRO_CS_HIGH(); break;
     case ACCELEROMETER:
-      PL_CS_ACCEL_HIGH(); break;
+      ACCEL_CS_HIGH(); break;
     case NONE: return;
   }
 }
@@ -56,14 +56,14 @@ void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
 
   if (a == DMA_RX_NULL) {
-    INVALIDATE_DCACHE_ADDR_INT(rx[0], SENSOR_BUF_SIZE * 2);
-    PL_CS_BARO_HIGH();
-    PL_CS_GYRO_HIGH();
-    PL_CS_ACCEL_HIGH();
+    invalidate_dcache_addr_int(rx[0], SENSOR_BUF_SIZE * 2);
+    BARO_CS_HIGH();
+    GYRO_CS_HIGH();
+    ACCEL_CS_HIGH();
     return;
   }
 
-  INVALIDATE_DCACHE_ADDR_INT(rx[a], SENSOR_BUF_SIZE);
+  invalidate_dcache_addr_int(rx[a], SENSOR_BUF_SIZE);
   atomic_store_explicit(&ctr.w, a, memory_order_release);
   switch_pull_cs_high(a);
 }
@@ -75,14 +75,14 @@ void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
   
   if (a == DMA_RX_NULL) {
-    INVALIDATE_DCACHE_ADDR_INT(rx[0], SENSOR_BUF_SIZE * 2);
-    PL_CS_BARO_HIGH();
-    PL_CS_GYRO_HIGH();
-    PL_CS_ACCEL_HIGH();
+    invalidate_dcache_addr_int(rx[0], SENSOR_BUF_SIZE * 2);
+    BARO_CS_HIGH();
+    GYRO_CS_HIGH();
+    ACCEL_CS_HIGH();
     return;
   }
 
-  INVALIDATE_DCACHE_ADDR_INT(rx[a], SENSOR_BUF_SIZE);
+  invalidate_dcache_addr_int(rx[a], SENSOR_BUF_SIZE);
   switch_pull_cs_high(a);
 }
 
@@ -90,7 +90,7 @@ void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
 /// and attempts to initiate DMA transfer.
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  PL_HAL_Handle st;
+  HAL_StatusTypeDef st;
   uint_fast8_t a = atomic_load_explicit(&ctr.w, memory_order_acquire);
 
   /* There is only one consumer, safely switch to another buffer. */
@@ -99,7 +99,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
-      PL_CS_BARO_LOW();
+      BARO_CS_LOW();
       /*
        * If another transfer is currently in progress, this
        * call will return HAL_BUSY (see try-lock on line 2438
@@ -108,31 +108,31 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
        * Only on HAL_OK the type is adjusted, and only on HAL_ERROR
        * (when HAL aborts its side effects) CS is pulled back high.
        */
-      st = DMA_SPI_TXRX(tx[0], rx[a], SENSOR_BUF_SIZE);
+      st = dma_spi_txrx(tx[0], rx[a], SENSOR_BUF_SIZE);
       if (st == HAL_OK) {
         atomic_store_explicit(&ctr.t[a], BAROMETER, memory_order_relaxed);
       } else if (st == HAL_ERROR) {
-        PL_CS_BARO_HIGH();
+        BARO_CS_HIGH();
       }
       break;
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
-      PL_CS_GYRO_LOW();
-      st = DMA_SPI_TXRX(tx[1], rx[a], SENSOR_BUF_SIZE);
+      GYRO_CS_LOW();
+      st = dma_spi_txrx(tx[1], rx[a], SENSOR_BUF_SIZE);
       if (st == HAL_OK) {
         atomic_store_explicit(&ctr.t[a], GYROSCOPE, memory_order_relaxed);
       } else if (st == HAL_ERROR) {
-        PL_CS_GYRO_HIGH();
+        GYRO_CS_HIGH();
       }
       break;
     case ACCEL_INT_PIN_1:
     case ACCEL_INT_PIN_2:
-      PL_CS_ACCEL_LOW();
-      st = DMA_SPI_TXRX(tx[2], rx[a], SENSOR_BUF_SIZE);
+      ACCEL_CS_LOW();
+      st = dma_spi_txrx(tx[2], rx[a], SENSOR_BUF_SIZE);
       if (st == HAL_OK) {
         atomic_store_explicit(&ctr.t[a], ACCELEROMETER, memory_order_relaxed);
       } else if (st == HAL_ERROR) {
-        PL_CS_ACCEL_HIGH();
+        ACCEL_CS_HIGH();
       }
       break;
     default: break;
