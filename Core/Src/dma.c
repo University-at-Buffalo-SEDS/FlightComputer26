@@ -13,7 +13,7 @@
 /// Two shared rx bufs implement double buffering.
 static dma_t ctr = {0};
 
-static uint8_t tx[3][SENSOR_BUF_SIZE] = {
+static const uint8_t tx[3][SENSOR_BUF_SIZE] = {
   [0][0] = BARO_TX_BYTE, [1][0] = GYRO_TX_BYTE, [2][0] = ACCEL_TX_BYTE
 };
 static uint8_t rx[2][SENSOR_BUF_SIZE];
