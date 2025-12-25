@@ -101,18 +101,18 @@ static inline void ukf_predict(const state_vec_t *restrict vec,
   next->p.y = (fact * dvy) + (dt * vec->v.y) + vec->p.y;
   next->p.z = (fact * dvz) + (dt * vec->v.z) + vec->p.z;
 
-  next->q1 = vec->q1 - fact * (vec->w.x * vec->q2 + \
-                               vec->w.y * vec->q3 + \
-                               vec->w.z * vec->q4);
-  next->q2 = vec->q2 + fact * (vec->w.x * vec->q1 + \
-                               vec->w.z * vec->q3 - \
-                               vec->w.y * vec->q4);
-  next->q3 = vec->q3 + fact * (vec->w.y * vec->q1 - \
-                               vec->w.z * vec->q2 + \
-                               vec->w.x * vec->q4);
-  next->q4 = vec->q4 + fact * (vec->w.z * vec->q1 + \
-                               vec->w.y * vec->q2 - \
-                               vec->w.x * vec->q3);
+  next->q1 = vec->q1 - (fact * (vec->w.x * vec->q2 + \
+                                vec->w.y * vec->q3 + \
+                                vec->w.z * vec->q4));
+  next->q2 = vec->q2 + (fact * (vec->w.x * vec->q1 + \
+                                vec->w.z * vec->q3 - \
+                                vec->w.y * vec->q4));
+  next->q3 = vec->q3 + (fact * (vec->w.y * vec->q1 - \
+                                vec->w.z * vec->q2 + \
+                                vec->w.x * vec->q4));
+  next->q4 = vec->q4 + (fact * (vec->w.z * vec->q1 + \
+                                vec->w.y * vec->q2 - \
+                                vec->w.x * vec->q3));
 
   const float expr = next->q1*next->q1 + next->q2*next->q2 + \
                      next->q3*next->q3 + next->q4*next->q4;
