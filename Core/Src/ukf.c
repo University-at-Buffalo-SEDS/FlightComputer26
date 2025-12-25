@@ -3,8 +3,9 @@
  * Target scenario is one physical thread and scheduler.
  */
 
-#include <math.h>
 #include <stdint.h>
+#include <stdatomic.h>
+#include <math.h>
 
 #include "platform.h"
 #include "ukf.h"
@@ -12,8 +13,12 @@
 TX_THREAD ukf_thread;
 ULONG ukf_thread_stack[UKF_THREAD_STACK_SIZE];
 
+/// Public ring and counter for deployment.
+sensor_meas_t ring[UKF_RING_SIZE] = {0};
+atomic_uint_fast8_t newdata = 0;
+
 /// Last recorded time for each UKF timer user.
-static uint32_t time[Time_Users];
+static uint32_t time[Time_Users] = {0};
 
 /* General helpers */
 
@@ -29,9 +34,8 @@ static inline uint32_t ukf_elapsed_ms(ukf_time_user_e u)
 /// Updates time for each user to prevent large first returns.
 static inline void ukf_initialize_time()
 {
-  uint32_t uniform_init = hal_time_ms();
   for (ukf_time_user_e u = 0; u < Time_Users; ++u)
-    time[u] = uniform_init;
+    time[u] = hal_time_ms();
 }
 
 /* Prediction tools */

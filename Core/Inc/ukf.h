@@ -8,6 +8,8 @@
 #define TLOWER_1 (1.0f - TOLERANCE)
 #define TUPPER_1 (1.0f + TOLERANCE)
 
+#define UKF_RING_SIZE 16
+
 #define FSEC(ms) ((float)(ms) / 1000.0f)
 
 typedef enum {
