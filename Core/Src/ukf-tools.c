@@ -5,16 +5,11 @@
 #include <math.h>
 #include "ukf-shared.h"
 
-/*
- * TODO: release build
- * -mcpu=cortex-m33 -mfloat-abi=hard -mfpu=fpv5-sp-d16
- * -O3 -fno-math-errno -ffast-math -funroll-loops -flto
- *
- * Arguments must be non-volatile
- */
+/// Transforms state vector into sensor measurement.
 inline void ukf_measurement(const state_vec_t *restrict vec,
                             sensor_meas_t *restrict out)
 {
+  const float ag = vec->a.z + G_MPS2;
   const float qq2 = vec->q2 * vec->q2;
   const float qq3 = vec->q3 * vec->q3;
   const float qq4 = vec->q4 * vec->q4;
@@ -25,21 +20,24 @@ inline void ukf_measurement(const state_vec_t *restrict vec,
   const float q23 = vec->q2 * vec->q3;
   const float q24 = vec->q2 * vec->q4;
   const float q34 = vec->q3 * vec->q4;
-
-  const float ag = vec->a.z + G_MPS2;
   /* 
    * DCM body->nav from quaternion (scalar-first w,x,y,z)
-   * Manually transposed
+   * Manually transposed (as used). Each value used once
+   * => array is not used to allow for compile-time folding
    */
-  const float r_bn[3][3] = {
-    {1.0f - 2.0f*(qq3 + qq4), 2.0f*(q23 + q14), 2.0f*(q24 - q13)},
-    {2.0f*(q23 - q14), 1.0f - 2.0f*(qq2 + qq4), 2.0f*(q34 + q12)},
-    {2.0f*(q24 + q13), 2.0f*(q34 - q12), 1.0f - 2.0f*(qq2 + qq3)}
-  };
+  const float r11 = 1.0f - (2.0f * (qq3 + qq4));
+  const float r12 = 2.0f * (q23 + q14);
+  const float r13 = 2.0f * (q24 - q13);
+  const float r21 = 2.0f * (q23 - q14);
+  const float r22 = 1.0f - (2.0f * (qq2 + qq4));
+  const float r23 = 2.0f * (q34 + q12);
+  const float r31 = 2.0f * (q24 + q13);
+  const float r32 = 2.0f * (q34 - q12);
+  const float r33 = 1.0f - (2.0f * (qq2 + qq3));
 
-  out->accl.x = r_bn[0][0]*vec->a.x + r_bn[0][1]*vec->a.y + r_bn[0][2]*ag;
-  out->accl.y = r_bn[1][0]*vec->a.x + r_bn[1][1]*vec->a.y + r_bn[1][2]*ag;
-  out->accl.z = r_bn[2][0]*vec->a.x + r_bn[2][1]*vec->a.y + r_bn[2][2]*ag;
+  out->accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
+  out->accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
+  out->accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
 
   out->gyro = vec->w;
   out->alt = vec->p.z;
