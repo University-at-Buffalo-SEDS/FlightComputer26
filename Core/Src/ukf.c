@@ -1,6 +1,6 @@
 /*
  * Unscented Kalman Filter thread and logic.
- * Assumed scenario is one physical thread and scheduler.
+ * Target scenario is one physical thread and scheduler.
  */
 
 #include <math.h>

@@ -3,7 +3,6 @@
  * combined in one header.
  */
 
-#define DT_S 0.01f
 #define G_MPS2 9.80665f
 #define TOLERANCE 1e-3f
 #define TLOWER_1 (1.0f - TOLERANCE)
