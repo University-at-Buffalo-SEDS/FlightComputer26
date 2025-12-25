@@ -9,6 +9,14 @@
 #define TLOWER_1 (1.0f - TOLERANCE)
 #define TUPPER_1 (1.0f + TOLERANCE)
 
+#define FSEC(ms) ((float)(ms) / 1000.0f)
+
+typedef enum {
+  Predict,
+
+  Time_Users
+} ukf_time_user_e;
+
 typedef struct { float x, y, z; } coords_t;
 
 typedef struct {
@@ -22,11 +30,3 @@ typedef struct {
 } sensor_meas_t;
 
 /* Globals */
-
-/// Transforms state vector into sensor measurement.
-inline void ukf_measurement(const state_vec_t *restrict vec,
-                            sensor_meas_t *restrict out);
-
-/// Outputs one next-sample prediction. 
-inline void ukf_predict(const state_vec_t *restrict vec,
-                        state_vec_t *restrict next);

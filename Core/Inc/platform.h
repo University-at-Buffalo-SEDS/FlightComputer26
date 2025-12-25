@@ -22,6 +22,12 @@
     _x < _y ? _x : _y;  \
   })
 
+/* ThreadX API includes */
+
+#include "tx_api.h"
+#include "tx_port.h"
+#include "FC-Threads.h"
+
 /* Telemetry API abstraction */
 
 #include <sedsprintf.h>
@@ -68,5 +74,11 @@
 
 #endif // GNUC
 #endif // >= C23
+
+/* HAAL */
+
+#include "stm32h5xx_hal.h"
+
+#define hal_time_ms() HAL_GetTick()
 
 #endif
