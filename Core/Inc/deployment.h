@@ -113,7 +113,7 @@ typedef enum {
   DEPL_DOOM       = 9,
 } inference_e;
 
-_Static_assert(sizeof(inference_e) > sizeof(int_fast8_t), "enum capacity");
+_Static_assert(sizeof(inference_e) > sizeof(int8_t), "enum capacity");
 
 /*
  * The backbone of state machine and error handling.
