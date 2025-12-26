@@ -87,6 +87,10 @@
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 
+/* Get currect tick for custom timer */
+
+#define hal_time_ms() HAL_GetTick()
+
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
 
