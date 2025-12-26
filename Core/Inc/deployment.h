@@ -73,6 +73,9 @@
 #define VALID_VEL (1u << 2)
 #define VALID_VAX (1u << 4)
 
+/* Base offset for reporting bad data */
+#define DATA_OFFSET -10
+
 /* Type definitions */
 
 /*
@@ -81,36 +84,36 @@
  * range based on a reasonable local buffer size.
  */
 typedef enum {
-  /* Generic OK and a reference point */
-  DEPL_OK         = 0,
-
-  /* Filter had no data (non-critical) */
-  DEPL_NO_INPUT   = 1,
-  
-  /* Recovery error codes (additive, critical) */
-  DEPL_BAD_ACCEL  = 2,
-  DEPL_BAD_GYRO   = 3,
-  DEPL_BAD_BARO   = 4,
-
-  /* Unconfirmed state transitions (non-critical) */
-  DEPL_N_LAUNCH   = 16,
-  DEPL_N_BURNOUT  = 17,
-  DEPL_N_DESCENT  = 18,
-  DEPL_N_REEF     = 19,
-  DEPL_N_LANDED   = 20,
-
-  /* For abortion and unreachable statements */
-  DEPL_DOOM       = 127
-} inference_e;
-
-typedef enum {
+  /* Bad data codes (additive, critical)
+   * Ranges: [-134, -11] (error), [11, 134] (warning) 
+   * when used with DATA_OFFSET */
   DATA_BAD_ALT    = -(DATA_MASK)*(DATA_MASK),
   DATA_BAD_VEL    = -(DATA_MASK),
   DATA_BAD_VAX    = -1,
 
-  DATA_OK         = 0,
-  DATA_NONE       = 127,
-} data_status_e;
+  /* Recovery error codes (additive, critical) */
+  DEPL_BAD_ACCEL  = -4,
+  DEPL_BAD_GYRO   = -3,
+  DEPL_BAD_BARO   = -2,
+
+  /* Generic OK and a reference point */
+  DEPL_OK         = 0,
+
+  /* Unconfirmed state transitions (non-critical) */
+  DEPL_N_LAUNCH   = 1,
+  DEPL_N_BURNOUT  = 2,
+  DEPL_N_DESCENT  = 3,
+  DEPL_N_REEF     = 4,
+  DEPL_N_LANDED   = 5,
+
+  /* UKF ring has no new entries (non-critical) */
+  DATA_NONE       = 8,
+
+  /* For abortion and unreachable statements */
+  DEPL_DOOM       = 9,
+} inference_e;
+
+_Static_assert(sizeof(inference_e) > sizeof(int_fast8_t), "enum capacity");
 
 /*
  * The backbone of state machine and error handling.
@@ -166,6 +169,7 @@ typedef struct {
   struct {
     state_e state;
     inference_e inf;
+    inference_e warn;
     uint_fast8_t ret;
     uint_fast8_t lock;
   } rec;

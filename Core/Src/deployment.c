@@ -57,7 +57,7 @@ static inline inference_e update_state(state_e s)
 /// Returns DATA_NONE if ring has no new values, > 0 if some data
 /// was rejected but new stats_t was formed, and < 0 if provided
 /// valid data was not enough to form a complete stats_t;
-static inline data_status_e refresh_data()
+static inline inference_e refresh_stats()
 {
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
                                             memory_order_acq_rel);
@@ -72,7 +72,7 @@ static inline data_status_e refresh_data()
   rk.i.a = !rk.i.a;
   rk.i.sp = rk.i.sc;
 
-  data_status_e st = DATA_OK;
+  inference_e st = DATA_OFFSET;
   uint_fast8_t valid_mask = 0u;
   uint_fast8_t vel_count = 1u;
   uint_fast8_t vax_count = 1u;
@@ -145,7 +145,7 @@ static inline data_status_e refresh_data()
   stats[rk.i.a].avg_vel = sum_vel / (float)vel_count;
   stats[rk.i.a].avg_vax = sum_vax / (float)vax_count;
 
-  return -st;
+  return (st == DATA_OFFSET) ? DEPL_OK : -st;
 }
 
 /// Monitors if minimum thresholds for velocity and
@@ -323,10 +323,16 @@ static inline inference_e detect_landed()
 /// and triggers checks to prevent premature transitions.
 static inline inference_e infer_rocket_state()
 {
-  data_status_e st;
+  inference_e st = refresh_stats();
 
-  if ((st = refresh_data()) != DATA_OK)
-    return (inference_e)st;
+  if (st == DATA_NONE) {
+    rk.rec.warn = st;
+    return DEPL_OK;
+  } else if (st > DEPL_OK) {
+    rk.rec.warn = st;
+  } else if (st < DEPL_OK) {
+    return st;
+  }
 
   switch (rk.state) {
     case IDLE:
@@ -447,12 +453,12 @@ void deployment_thread_entry(ULONG input)
     
     rk.rec.inf = infer_rocket_state();
 
-    if (rk.rec.inf == DEPL_NO_INPUT) {
-      // tx_thread_resume(&kalman_thread);
+    if (rk.rec.inf == DATA_NONE) {
+      tx_thread_resume(&ukf_thread);
       continue;
     } else if (rk.rec.inf < DEPL_OK) {
       bad_inference_handler();
-    } else if (rk.rec.inf > DEPL_OK) {
+    } else if (rk.rec.warn != DEPL_OK) {
       log_err("Deployment: warn code %d", rk.rec.inf);
     } else if (rk.rec.ret > 0) {
       rk.rec.ret = 0;
