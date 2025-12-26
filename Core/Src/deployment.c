@@ -459,6 +459,7 @@ void deployment_thread_entry(ULONG input)
     } else if (rk.rec.inf < DEPL_OK) {
       bad_inference_handler();
     } else if (rk.rec.warn != DEPL_OK) {
+      rk.rec.warn = DEPL_OK;
       log_err("Deployment: warn code %d", rk.rec.inf);
     } else if (rk.rec.ret > 0) {
       rk.rec.ret = 0;
