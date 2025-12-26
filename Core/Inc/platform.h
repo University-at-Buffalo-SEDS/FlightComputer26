@@ -22,7 +22,6 @@
     _x < _y ? _x : _y;  \
   })
 
-
 /* ThreadX API includes */
 
 #include "tx_api.h"
@@ -76,7 +75,6 @@
 #endif // GNUC
 #endif // >= C23
 
-
 /* HAAL (hardware abstraction abstraction layer) <3 */
 
 #include "stm32h5xx_hal.h"
@@ -84,6 +82,7 @@
 #include "stm32h5xx_hal_spi.h"
 #include "stm32h5xx_hal_gpio.h"
 #include "stm32h5xx_hal_dcache.h"
+#include "core_cm33.h"
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
@@ -107,6 +106,58 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define invalidate_dcache() HAL_DCACHE_Invalidate(&hdcache1)
 
+#define invalidate_dcache_addr_int(buf, size)         \
+  (HAL_DCACHE_InvalidateByAddr_IT((&hdcache1),        \
+                                  (uint32_t *)(buf),  \
+                                  (size)))
+
+#define clean_dcache_addr_int(buf, size)              \
+  (HAL_DCACHE_CleanByAddr_IT((&hdcache1),             \
+                             (uint32_t *)(buf),       \
+                             (size)))
+
+/* Sensor drivers and data collection */
+
+#include "gyro.h"
+#include "accel.h"
+#include "barometer.h"
+#include "dma.h"
+
+#define init_baro() init_barometer(&hspi1)
+#define init_gyro() gyro_init(&hspi1)
+#define init_accel() accel_init(&hspi1)
+
+/* DMA transmit-receive */
+
+#define dma_spi_txrx(txbuf, rxbuf, size)              \
+  (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
+                               (rxbuf), (size)))
+
+/* Identification bytes for DMA Tx buffers */
+
+#define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BMP390_SPI_READ_BIT))
+#define GYRO_TX_BYTE  ((uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB)))
+#define ACCEL_TX_BYTE ((uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB)))
+
+/* Peripheral sensor EXT interrupt pins */
+
+#define ACCEL_INT_PIN_1 GPIO_PIN_4
+#define ACCEL_INT_PIN_2 GPIO_PIN_5
+#define GYRO_INT_PIN_1  GPIO_PIN_0
+#define GYRO_INT_PIN_2  GPIO_PIN_1
+#define BARO_INT_PIN    GPIO_PIN_7
+
+/* Driver-specific data conversions */
+
+#define U24(b0, b1, b2)                                             \
+  (((uint32_t)(b2) << 16) | ((uint32_t)(b1) << 8) | (uint32_t)(b0))
+
+#define I16(b0, b1)                                                 \
+  ((int16_t)(((uint16_t)(b1) << 8) | (uint16_t)(b0)))
+
+#define F16(b0, b1)                                                 \
+  ((float)I16(b0, b1))
+
 /* Data memory barrier
  * (#else branch is to be invented :D) */
 
@@ -116,19 +167,6 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define __DMB() (void)0
 #endif // DMB support
 
-
-/* Sensor drivers and data collection */
-
-#include "gyro.h"
-//#include "accel.h"
-#include "barometer.h"
-//#include "dma-ring.h"
-
-#define init_baro() init_barometer(&hspi1)
-#define init_gyro() gyro_init(&hspi1)
-//#define init_accel() accel_init(&hspi1)
-
-
 /* Deployment specific fake Kalman struct 
  * (remove when Kalman API is exposed) */
 
@@ -137,6 +175,5 @@ typedef struct {
   float vel;
   float vax;
 } filter_t;
-
 
 #endif // PLATFORM_H

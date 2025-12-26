@@ -352,9 +352,7 @@ static inline inference_e infer_rocket_state()
       return detect_landed();
     case LANDED:
       return DEPL_OK;
-    case RECOVERY:
-    case ABORTED:
-    case INIT:
+    default:
       return DEPL_DOOM;
   }
 }

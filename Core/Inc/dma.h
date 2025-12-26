@@ -1,0 +1,54 @@
+// Includes consumer API
+
+#ifndef DMA_H
+#define DMA_H
+
+#include <stdint.h>
+#include <stdatomic.h>
+
+#define SENSOR_BUF_SIZE 8
+
+#define BUF_UNCLAIMED UINT8_MAX
+
+#define DMA_RX_NULL UINT8_MAX
+
+/* Typedefs */
+
+typedef enum {
+  NONE = 0,
+  BAROMETER = 1,
+  GYROSCOPE = 2,
+  ACCELEROMETER = 3,
+} expected_e;
+
+typedef struct {
+  expected_e type;
+  union {
+    float baro[2];
+    int16_t gyro[3];
+    float accel[3];
+  } data;
+} payload_t;
+
+typedef enum {
+  DMA_OK,
+  DMA_BUSY,
+  DMA_EMPTY,
+  DMA_GENERR
+} dma_e;
+
+typedef struct {
+  atomic_uint_fast8_t r;
+  atomic_uint_fast8_t w;
+  atomic_uint_fast8_t t[2];
+} dma_t;
+
+/* Globals */
+
+/*
+ * Reads the latest payload entry.
+ * Returns DMA_OK (0) on success and > 0 on failure.
+ */
+dma_e dma_read_latest(payload_t *buf);
+
+#endif // DMA_H
