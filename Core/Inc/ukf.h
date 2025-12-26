@@ -9,6 +9,7 @@
 #define TUPPER_1 (1.0f + TOLERANCE)
 
 #define UKF_RING_SIZE 16
+#define UKF_RING_MASK (UKF_RING_SIZE - 1)
 
 #define FSEC(ms) ((float)(ms) / 1000.0f)
 

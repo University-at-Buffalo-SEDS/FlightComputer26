@@ -9,6 +9,7 @@
 
 #include "platform.h"
 #include "deployment.h"
+#include "ukf.h"
 
 /// Aliased ThreadX thread and thread stack.
 TX_THREAD deployment_thread;
@@ -17,148 +18,136 @@ ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
 
 /// Counter for the amount of new records in filter ring.
 extern atomic_uint_fast8_t newdata;
+extern filter_t ring[];
 
 /// Contains most-often used globals
-static rocket_t rock = {0};
+static rket_t rk = {0};
 
 /// Most-recent and previous data buffers stored together
-static filter_t data[2][DEPL_BUF_SIZE] = {0};
+static filter_t data[2][MAX_SAMPLE] = {0};
 
 /// Simple statistics struct for each buffer.
 static stats_t stats[2] = {0};
 
 /// Public helper. Invoked from thread context.
-state_e get_rocket_state() { return rock.state; }
+state_e get_rket_state() { return rk.state; }
 
 /// Triggers forced parachute firing and expansion with
 /// compile-time specified intervals. USE WITH CAUTION.
 /// Invoked from thread context.
 void force_abort_deployment()
 {
-  rock.rec.lock = 1;
+  rk.rec.lock = 1;
   /// The lock must be "force acquired" before writing state
   /// to prevent state transitions on last remaining iteration.
   __DMB();
-  rock.state = ABORTED;
+  rk.state = ABORTED;
 }
 
 /// Safe helper that respects abortion lock.
 static inline inference_e update_state(state_e s)
 {
-  if (rock.rec.lock) return DEPL_DOOM;
+  if (rk.rec.lock) return DEPL_DOOM;
 
-  rock.state = s;
+  rk.state = s;
   return DEPL_OK;
 }
 
-/// Copies "current" data into "previous" buffer and
-/// updates "current" with new data from the filter ring.
-/// 
-/// If the deployment task is switched to filter task while
-/// the second loop was running, newdata will grow. If the
-/// filter encounters our lock, it should starve or yield.
-///
-/// When this task is back, it will still use its old copy
-/// of newdata, and stop exactly before the first new element.
-/// When this function is called next time, it will begin
-/// copying new data, advancing its starting index if needed.
+/// This is ravings of a madman but required in order
+/// to be able to accept and filter partially valid samples.
 static inline inference_e refresh_data()
 {
+  inference_e st = DEPL_OK;
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
                                             memory_order_acq_rel);
   if (!n)
     return DEPL_NO_INPUT;
 
-  if (n > DEPL_BUF_SIZE)
-    return DEPL_OK; // k = (k + n - DEPL_BUF_SIZE) & (KALMAN_RING_SIZE - 1);
-
-  rock.i.a = !rock.i.a;
-  rock.i.sp = rock.i.sc;
-  rock.i.sc = 0;
-
-  for (; rock.i.sc < MIN(n, DEPL_BUF_SIZE); ++rock.i.sc)
-  {
-    // rock.i.ex = (rock.i.ex + 1) & (KALMAN_RING_SIZE - 1);
-    // lock kalman_ring[rock.i.ex]
-    // data[rock.i.last][d] = kalman_ring[rock.i.ex];
-    // unlock kalman_ring[rock.i.ex]
+  if (n > MAX_SAMPLE) {
+    rk.i.ex = (rk.i.ex + n - MAX_SAMPLE) & UKF_RING_MASK;
+    n = MAX_SAMPLE;
   }
 
-  return DEPL_OK;
-}
+  rk.i.a = !rk.i.a;
+  rk.i.sp = rk.i.sc;
+  ++rk.i.ex;
 
-/// Checks if every metric is within allowed bounds.
-/// 
-/// If this function fails enough times, it will abort
-/// the deployment thread. Set thresholds carefully.
-static inline inference_e validate_data()
-{
-  inference_e st = DEPL_OK;
+  if (ring[rk.i.ex].alt < SN_MIN_ALT ||
+      ring[rk.i.ex].alt > SN_MAX_ALT) {
+    st += DEPL_BAD_ALT;
+    stats[rk.i.a].min_alt = 0.0f;
+  } else {
+    stats[rk.i.a].min_alt = ring[rk.i.ex].alt;
+    stats[rk.i.a].max_alt = ring[rk.i.ex].alt;
+  }
 
-  for (uint_fast8_t j = 0; j < rock.i.sc; ++j)
+  float sum_vel = 0.0f;
+  float sum_vax = 0.0f;
+  uint_fast8_t valid_vel, valid_vax = 0u;
+  
+  if (ring[rk.i.ex].vel < SN_MIN_VEL ||
+    ring[rk.i.ex].vel > SN_MAX_VEL) {
+    st += DEPL_BAD_VEL;
+  } else {
+    sum_vel = ring[rk.i.ex].vel;
+    valid_vel = 1u;
+  }
+
+  if (ring[rk.i.ex].vax < SN_MIN_VAX ||
+    ring[rk.i.ex].vax > SN_MAX_VAX) {
+    st += DEPL_BAD_VAX;
+  } else {
+    sum_vax += ring[rk.i.ex].vax;
+    valid_vax = 1u;
+  }
+
+  for (rk.i.sc = 1; rk.i.sc < n; ++rk.i.sc)
   {
-    if (data[rock.i.a][j].alt < SANITY_MIN_ALT ||
-        data[rock.i.a][j].alt > SANITY_MAX_ALT)
-    {
+    uint_fast8_t j = (rk.i.ex + rk.i.sc) & UKF_RING_MASK;
+
+    if (ring[j].alt < SN_MIN_ALT || ring[j].alt > SN_MAX_ALT) {
       st += DEPL_BAD_ALT;
+    } else {
+      if (ring[j].alt < stats[rk.i.a].min_alt)
+        stats[rk.i.a].min_alt = ring[j].alt;
+      if (ring[j].alt > stats[rk.i.a].max_alt)
+        stats[rk.i.a].max_alt = ring[j].alt;
     }
-    if (data[rock.i.a][j].vel < SANITY_MIN_VEL ||
-        data[rock.i.a][j].vel > SANITY_MAX_VEL)
-    {
+    
+    if (ring[j].vel < SN_MIN_VEL || ring[j].vel > SN_MAX_VEL) {
       st += DEPL_BAD_VEL;
+    } else {
+      sum_vel += ring[j].vel;
+      ++valid_vel;
     }
-    if (data[rock.i.a][j].vax < SANITY_MIN_VAX ||
-        data[rock.i.a][j].vax > SANITY_MAX_VAX)
-    {
+
+    if (ring[j].vax < SN_MIN_VAX || ring[j].vax > SN_MAX_VAX) {
       st += DEPL_BAD_VAX;
+    } else {
+      sum_vax += ring[j].vax;
+      ++valid_vax;
     }
   }
 
-  return st;
-}
-
-/// Updates instantaneous flight statistics based
-/// on data from the "current" buffer.
-///
-/// Currently updates lowest and largest height,
-/// average velocity, and lowest acceleration reported.
-/// Other metrics can be added later if necessary.
-///
-/// refresh_data() guarantees that if this function
-/// is called, it does not receive old or empty data.
-static inline void refresh_stats()
-{
-  float sum_vel = data[rock.i.a][0].vel;
-  float sum_vax = data[rock.i.a][0].vax;
-
-  stats[rock.i.a].max_alt = data[rock.i.a][0].alt;
-  stats[rock.i.a].min_alt = data[rock.i.a][0].alt;
-
-  for (uint_fast8_t j = 1; j < rock.i.sc; ++j)
-  {
-    stats[rock.i.a].min_alt = MIN(stats[rock.i.a].min_alt,
-                                  data[rock.i.a][j].alt);
-
-    stats[rock.i.a].max_alt = MAX(stats[rock.i.a].max_alt,
-                                  data[rock.i.a][j].alt);
-
-    sum_vel += data[rock.i.a][j].vel;
-    sum_vax += data[rock.i.a][j].vax;
+  if (!stats[rk.i.a].min_alt || !valid_vel || !valid_vax) {
+    return st;
   }
 
-  stats[rock.i.a].avg_vel = sum_vel / (float)rock.i.sc;
-  stats[rock.i.a].avg_vax = sum_vax / (float)rock.i.sc;
+  stats[rk.i.a].avg_vel = sum_vel / (float)valid_vel;
+  stats[rk.i.a].avg_vax = sum_vax / (float)valid_vax;
+
+  return -st;
 }
 
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
 static inline inference_e detect_launch()
 {
-  if (stats[rock.i.a].avg_vel >= LAUNCH_MIN_VEL &&
-      stats[rock.i.a].avg_vax >= LAUNCH_MIN_VAX)
+  if (stats[rk.i.a].avg_vel >= LAUNCH_MIN_VEL &&
+      stats[rk.i.a].avg_vax >= LAUNCH_MIN_VAX)
   {
     if (update_state(LAUNCH) == DEPL_OK) {
-      rock.samp.ascent = 0;
+      rk.samp.ascent = 0;
       log_msg("Launch detected", 16);
       tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
     }
@@ -170,21 +159,21 @@ static inline inference_e detect_launch()
 /// Monitors height and velocity increase consistency.
 static inline inference_e detect_ascent()
 {
-  if (stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel &&
-      stats[rock.i.a].min_alt > stats[!rock.i.a].max_alt)
+  if (stats[rk.i.a].avg_vel > stats[!rk.i.a].avg_vel &&
+      stats[rk.i.a].min_alt > stats[!rk.i.a].max_alt)
   {
-    ++rock.samp.ascent;
-    if (rock.samp.ascent >= MIN_SAMP_ASCENT
+    ++rk.samp.ascent;
+    if (rk.samp.ascent >= MIN_SAMP_ASCENT
         && update_state(ASCENT) == DEPL_OK)
     {
-      rock.samp.burnout = 0;
+      rk.samp.burnout = 0;
       log_msg("Launch confirmed", 17);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.ascent > 0)
+  else if (rk.samp.ascent > 0)
   {
-    rock.samp.ascent = 0;
+    rk.samp.ascent = 0;
     return DEPL_N_LAUNCH;
   }
 #endif
@@ -198,22 +187,22 @@ static inline inference_e detect_ascent()
 /// consistency.
 static inline inference_e detect_burnout()
 {
-  if (stats[rock.i.a].avg_vel >= BURNOUT_MIN_VEL &&
-      stats[rock.i.a].avg_vax <= BURNOUT_MAX_VAX &&
-      stats[rock.i.a].max_alt > stats[rock.i.a].min_alt &&
-      stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
+  if (stats[rk.i.a].avg_vel >= BURNOUT_MIN_VEL &&
+      stats[rk.i.a].avg_vax <= BURNOUT_MAX_VAX &&
+      stats[rk.i.a].max_alt > stats[rk.i.a].min_alt &&
+      stats[rk.i.a].avg_vel < stats[!rk.i.a].avg_vel)
   {
-    ++rock.samp.burnout;
-    if (rock.samp.burnout >= MIN_SAMP_BURNOUT
+    ++rk.samp.burnout;
+    if (rk.samp.burnout >= MIN_SAMP_BURNOUT
         && update_state(BURNOUT) == DEPL_OK)
     {
       log_msg("Watching for apogee", 20);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.burnout > 0)
+  else if (rk.samp.burnout > 0)
   {
-    rock.samp.burnout = 0;
+    rk.samp.burnout = 0;
     return DEPL_N_BURNOUT;
   }
 #endif
@@ -225,11 +214,11 @@ static inline inference_e detect_burnout()
 /// for velocity to pass the minimum threshold.
 static inline inference_e detect_apogee()
 {
-  if (stats[rock.i.a].avg_vel <= APOGEE_MAX_VEL &&
-      stats[rock.i.a].avg_vel < stats[!rock.i.a].avg_vel)
+  if (stats[rk.i.a].avg_vel <= APOGEE_MAX_VEL &&
+      stats[rk.i.a].avg_vel < stats[!rk.i.a].avg_vel)
   {
     if (update_state(APOGEE) == DEPL_OK) {
-      rock.samp.descent = 0;
+      rk.samp.descent = 0;
       log_msg("Approaching apogee", 19);
       tx_thread_sleep(APOGEE_CONFIRM_DELAY);
     }
@@ -241,22 +230,22 @@ static inline inference_e detect_apogee()
 /// Monitors for decreasing altitude and increasing velocity.
 static inline inference_e detect_descent()
 {
-  if (stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt &&
-      stats[rock.i.a].avg_vel > stats[!rock.i.a].avg_vel)
+  if (stats[rk.i.a].max_alt < stats[!rk.i.a].min_alt &&
+      stats[rk.i.a].avg_vel > stats[!rk.i.a].avg_vel)
   {
-    ++rock.samp.descent;
-    if (rock.samp.descent >= MIN_SAMP_DESCENT
+    ++rk.samp.descent;
+    if (rk.samp.descent >= MIN_SAMP_DESCENT
         && update_state(DESCENT) == DEPL_OK)
     {
-      rock.samp.landing = 0;
+      rk.samp.landing = 0;
       co2_high();
       log_msg("Fired pyro, descending", 23);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.descent > 0)
+  else if (rk.samp.descent > 0)
   {
-    rock.samp.descent = 0;
+    rk.samp.descent = 0;
     return DEPL_N_DESCENT;
   }
 #endif
@@ -268,22 +257,22 @@ static inline inference_e detect_descent()
 /// and checks for altitude consistency.
 static inline inference_e detect_reef()
 {
-  if (stats[rock.i.a].min_alt <= REEF_TARGET_ALT && 
-      stats[rock.i.a].max_alt < stats[!rock.i.a].min_alt)
+  if (stats[rk.i.a].min_alt <= REEF_TARGET_ALT && 
+      stats[rk.i.a].max_alt < stats[!rk.i.a].min_alt)
   {
-    ++rock.samp.landing;
-    if (rock.samp.landing >= MIN_SAMP_REEF
+    ++rk.samp.landing;
+    if (rk.samp.landing >= MIN_SAMP_REEF
         && update_state(REEF) == DEPL_OK)
     {
-      rock.samp.idle = 0;
+      rk.samp.idle = 0;
       reef_low();
       log_msg("Expanded parachute", 19);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.landing > 0)
+  else if (rk.samp.landing > 0)
   {
-    rock.samp.landing = 0;
+    rk.samp.landing = 0;
     return DEPL_N_REEF;
   }
 #endif
@@ -295,25 +284,25 @@ static inline inference_e detect_reef()
 /// beyond allowed tolerance thresholds.
 static inline inference_e detect_landed()
 {
-  float dh = stats[rock.i.a].min_alt - stats[!rock.i.a].min_alt;
-  float dv = stats[rock.i.a].avg_vel - stats[!rock.i.a].avg_vel;
-  float da = stats[rock.i.a].avg_vax - stats[!rock.i.a].avg_vax;
+  float dh = stats[rk.i.a].min_alt - stats[!rk.i.a].min_alt;
+  float dv = stats[rk.i.a].avg_vel - stats[!rk.i.a].avg_vel;
+  float da = stats[rk.i.a].avg_vax - stats[!rk.i.a].avg_vax;
 
   if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
-    ++rock.samp.idle;
-    if (rock.samp.idle >= MIN_SAMP_LANDED
+    ++rk.samp.idle;
+    if (rk.samp.idle >= MIN_SAMP_LANDED
         && update_state(LANDED) == DEPL_OK)
     {
       log_msg("Rocket landed", 14);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.idle > 0)
+  else if (rk.samp.idle > 0)
   {
-    rock.samp.idle = 0;
+    rk.samp.idle = 0;
     return DEPL_N_LANDED;
   }
 #endif
@@ -323,19 +312,14 @@ static inline inference_e detect_landed()
 
 /// The state machine does not allow state regression
 /// and triggers checks to prevent premature transitions.
-static inline inference_e infer_rocket_state()
+static inline inference_e infer_rket_state()
 {
   inference_e st;
 
   if ((st = refresh_data()) != DEPL_OK)
     return st;
 
-  if ((st = validate_data()) != DEPL_OK)
-    return st;
-
-  refresh_stats();
-
-  switch (rock.state) {
+  switch (rk.state) {
     case IDLE:
       return detect_launch();
     case LAUNCH:
@@ -358,7 +342,7 @@ static inline inference_e infer_rocket_state()
 }
 
 /// Tries to reinitializes sensors and invalidate
-/// data cache. Reassigns the rocket its active state.
+/// data cache. Reassigns the rket its active state.
 static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
@@ -387,32 +371,32 @@ static inline void try_recover_sensors()
   }
 
   /// Try to validate data anyway
-  update_state(rock.rec.state);
+  update_state(rk.rec.state);
 }
 
 /// Keeps record of successive retries,
-/// and updates rocket state to Recovery or Aborted
+/// and updates rket state to Recovery or Aborted
 /// if a corresponding retry threshold was exceeded.
 ///
 /// Thresholds are configurable in deployment.h.
 static inline void bad_inference_handler()
 {
-  ++rock.rec.ret;
+  ++rk.rec.ret;
   log_err("Deployment: bad inference #%u (code %d)",
-          rock.rec.ret, rock.rec.inf);
+          rk.rec.ret, rk.rec.inf);
 
-  if (rock.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
+  if (rk.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
   {
     /// Return value ignored - aborting anyway :D
     update_state(ABORTED);
     log_err("FATAL: aborting deployment (%u retries)",
-            rock.rec.ret);
+            rk.rec.ret);
   }
-  else if (rock.state != RECOVERY &&
-           rock.rec.ret >= PRE_RECOV_RETRIES &&
-           rock.rec.ret % RECOVERY_INTERVAL == 0)
+  else if (rk.state != RECOVERY &&
+           rk.rec.ret >= PRE_RECOV_RETRIES &&
+           rk.rec.ret % RECOVERY_INTERVAL == 0)
   {
-    rock.rec.state = rock.state;
+    rk.rec.state = rk.state;
     update_state(RECOVERY);
   }
 }
@@ -444,32 +428,32 @@ void deployment_thread_entry(ULONG input)
 
   co2_low();
   reef_low();
-  rock.state = IDLE;
+  rk.state = IDLE;
 
-  while (rock.state != ABORTED) {
-    if (rock.state == RECOVERY) {
+  while (rk.state != ABORTED) {
+    if (rk.state == RECOVERY) {
       try_recover_sensors();
       continue;
     }
     
-    rock.rec.inf = infer_rocket_state();
+    rk.rec.inf = infer_rket_state();
 
-    if (rock.rec.inf == DEPL_NO_INPUT) {
+    if (rk.rec.inf == DEPL_NO_INPUT) {
       // tx_thread_resume(&kalman_thread);
       continue;
-    } else if (rock.rec.inf < DEPL_OK) {
+    } else if (rk.rec.inf < DEPL_OK) {
       bad_inference_handler();
-    } else if (rock.rec.inf > DEPL_OK) {
-      log_err("Deployment: warn code %d", rock.rec.inf);
-    } else if (rock.rec.ret > 0) {
-      rock.rec.ret = 0;
+    } else if (rk.rec.inf > DEPL_OK) {
+      log_err("Deployment: warn code %d", rk.rec.inf);
+    } else if (rk.rec.ret > 0) {
+      rk.rec.ret = 0;
       log_msg("Deployment: recovered from error", 33);
     }
 
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 
-  if (rock.state == ABORTED)
+  if (rk.state == ABORTED)
     deployment_abort_procedures();
 }
 

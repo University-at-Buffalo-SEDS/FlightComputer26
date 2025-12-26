@@ -14,7 +14,7 @@ TX_THREAD ukf_thread;
 ULONG ukf_thread_stack[UKF_THREAD_STACK_SIZE];
 
 /// Public ring and counter for deployment.
-sensor_meas_t ring[UKF_RING_SIZE] = {0};
+filter_t ring[UKF_RING_SIZE] = {0};
 atomic_uint_fast8_t newdata = 0;
 
 /// Last recorded time for each UKF timer user.
