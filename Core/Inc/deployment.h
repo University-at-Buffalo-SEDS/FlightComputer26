@@ -65,11 +65,13 @@
 #define CO2_PIN   GPIO_PIN_5
 #define REEF_PIN  GPIO_PIN_6
 
-/* Service definitions */
+/* Data validation and statistics  */
 
-#define GRAVITY_SI 9.80665f
+#define DATA_MASK (MAX_SAMPLE + 1)
 
-#define DEPL_CODE_MASK (MAX_SAMPLE + 1)
+#define VALID_ALT 0x01u
+#define VALID_VEL (1u << 2)
+#define VALID_VAX (1u << 4)
 
 /* Type definitions */
 
@@ -79,11 +81,6 @@
  * range based on a reasonable local buffer size.
  */
 typedef enum {
-  /* Data validation error codes (additive, critical) */
-  DEPL_BAD_ALT    = -(DEPL_CODE_MASK)*(DEPL_CODE_MASK),
-  DEPL_BAD_VEL    = -(DEPL_CODE_MASK),
-  DEPL_BAD_VAX    = -1,
-
   /* Generic OK and a reference point */
   DEPL_OK         = 0,
 
@@ -105,6 +102,15 @@ typedef enum {
   /* For abortion and unreachable statements */
   DEPL_DOOM       = 127
 } inference_e;
+
+typedef enum {
+  DATA_BAD_ALT    = -(DATA_MASK)*(DATA_MASK),
+  DATA_BAD_VEL    = -(DATA_MASK),
+  DATA_BAD_VAX    = -1,
+
+  DATA_OK         = 0,
+  DATA_NONE       = 127,
+} data_status_e;
 
 /*
  * The backbone of state machine and error handling.

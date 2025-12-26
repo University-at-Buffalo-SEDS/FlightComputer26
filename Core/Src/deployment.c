@@ -21,16 +21,13 @@ extern atomic_uint_fast8_t newdata;
 extern filter_t ring[];
 
 /// Contains most-often used globals
-static rket_t rk = {0};
+static rocket_t rk = {0};
 
-/// Most-recent and previous data buffers stored together
-static filter_t data[2][MAX_SAMPLE] = {0};
-
-/// Simple statistics struct for each buffer.
+/// Simple statistics struct for most recent and previous snapshots.
 static stats_t stats[2] = {0};
 
 /// Public helper. Invoked from thread context.
-state_e get_rket_state() { return rk.state; }
+state_e get_rocket_state() { return rk.state; }
 
 /// Triggers forced parachute firing and expansion with
 /// compile-time specified intervals. USE WITH CAUTION.
@@ -53,15 +50,19 @@ static inline inference_e update_state(state_e s)
   return DEPL_OK;
 }
 
-/// This is ravings of a madman but required in order
-/// to be able to accept and filter partially valid samples.
-static inline inference_e refresh_data()
+/// Checks 1 to 4 new values in ring against sanity boundaries,
+/// and averages valid values as defined in stats_t (deployment.h).
+/// Partially valid samples are supported.
+///
+/// Returns DATA_NONE if ring has no new values, > 0 if some data
+/// was rejected but new stats_t was formed, and < 0 if provided
+/// valid data was not enough to form a complete stats_t;
+static inline data_status_e refresh_data()
 {
-  inference_e st = DEPL_OK;
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
                                             memory_order_acq_rel);
   if (!n)
-    return DEPL_NO_INPUT;
+    return DATA_NONE;
 
   if (n > MAX_SAMPLE) {
     rk.i.ex = (rk.i.ex + n - MAX_SAMPLE) & UKF_RING_MASK;
@@ -70,71 +71,79 @@ static inline inference_e refresh_data()
 
   rk.i.a = !rk.i.a;
   rk.i.sp = rk.i.sc;
-  ++rk.i.ex;
 
-  if (ring[rk.i.ex].alt < SN_MIN_ALT ||
-      ring[rk.i.ex].alt > SN_MAX_ALT) {
-    st += DEPL_BAD_ALT;
-    stats[rk.i.a].min_alt = 0.0f;
-  } else {
-    stats[rk.i.a].min_alt = ring[rk.i.ex].alt;
-    stats[rk.i.a].max_alt = ring[rk.i.ex].alt;
-  }
+  data_status_e st = DATA_OK;
+  uint_fast8_t valid_mask = 0u;
+  uint_fast8_t vel_count = 1u;
+  uint_fast8_t vax_count = 1u;
 
   float sum_vel = 0.0f;
   float sum_vax = 0.0f;
-  uint_fast8_t valid_vel, valid_vax = 0u;
-  
-  if (ring[rk.i.ex].vel < SN_MIN_VEL ||
-    ring[rk.i.ex].vel > SN_MAX_VEL) {
-    st += DEPL_BAD_VEL;
-  } else {
-    sum_vel = ring[rk.i.ex].vel;
-    valid_vel = 1u;
-  }
 
-  if (ring[rk.i.ex].vax < SN_MIN_VAX ||
-    ring[rk.i.ex].vax > SN_MAX_VAX) {
-    st += DEPL_BAD_VAX;
-  } else {
-    sum_vax += ring[rk.i.ex].vax;
-    valid_vax = 1u;
-  }
-
-  for (rk.i.sc = 1; rk.i.sc < n; ++rk.i.sc)
+  for (rk.i.sc = 1; rk.i.sc <= n; ++rk.i.sc)
   {
     uint_fast8_t j = (rk.i.ex + rk.i.sc) & UKF_RING_MASK;
 
-    if (ring[j].alt < SN_MIN_ALT || ring[j].alt > SN_MAX_ALT) {
-      st += DEPL_BAD_ALT;
-    } else {
+    if (ring[j].alt < SN_MIN_ALT || ring[j].alt > SN_MAX_ALT)
+    {
+      st += DATA_BAD_ALT;
+    }
+    else if (valid_mask & VALID_ALT)
+    {
       if (ring[j].alt < stats[rk.i.a].min_alt)
         stats[rk.i.a].min_alt = ring[j].alt;
       if (ring[j].alt > stats[rk.i.a].max_alt)
         stats[rk.i.a].max_alt = ring[j].alt;
     }
+    else
+    {
+      stats[rk.i.a].min_alt = ring[j].alt;
+      stats[rk.i.a].max_alt = ring[j].alt;
+      valid_mask |= VALID_ALT;
+    }
     
-    if (ring[j].vel < SN_MIN_VEL || ring[j].vel > SN_MAX_VEL) {
-      st += DEPL_BAD_VEL;
-    } else {
+    if (ring[j].vel < SN_MIN_VEL || ring[j].vel > SN_MAX_VEL)
+    {
+      st += DATA_BAD_VEL;
+    }
+    else if (valid_mask & VALID_VEL)
+    {
       sum_vel += ring[j].vel;
-      ++valid_vel;
+      ++vel_count;
+    }
+    else
+    {
+      sum_vel = ring[j].vel;
+      valid_mask |= VALID_VEL;
     }
 
-    if (ring[j].vax < SN_MIN_VAX || ring[j].vax > SN_MAX_VAX) {
-      st += DEPL_BAD_VAX;
-    } else {
+    if (ring[j].vax < SN_MIN_VAX || ring[j].vax > SN_MAX_VAX)
+    {
+      st += DATA_BAD_VAX;
+    }
+    else if (!(valid_mask & VALID_VAX))
+    {
       sum_vax += ring[j].vax;
-      ++valid_vax;
+      ++vax_count;
+    }
+    else
+    {
+      sum_vax = ring[j].vax;
+      valid_mask |= VALID_VAX;
     }
   }
 
-  if (!stats[rk.i.a].min_alt || !valid_vel || !valid_vax) {
+  if (!((valid_mask & VALID_ALT) &&
+        (valid_mask & VALID_VEL) &&
+        (valid_mask & VALID_VAX)))
+  {
+    /* Write to the same buffer next time. */
+    rk.i.a = !rk.i.a;
     return st;
   }
 
-  stats[rk.i.a].avg_vel = sum_vel / (float)valid_vel;
-  stats[rk.i.a].avg_vax = sum_vax / (float)valid_vax;
+  stats[rk.i.a].avg_vel = sum_vel / (float)vel_count;
+  stats[rk.i.a].avg_vax = sum_vax / (float)vax_count;
 
   return -st;
 }
@@ -312,12 +321,12 @@ static inline inference_e detect_landed()
 
 /// The state machine does not allow state regression
 /// and triggers checks to prevent premature transitions.
-static inline inference_e infer_rket_state()
+static inline inference_e infer_rocket_state()
 {
-  inference_e st;
+  data_status_e st;
 
-  if ((st = refresh_data()) != DEPL_OK)
-    return st;
+  if ((st = refresh_data()) != DATA_OK)
+    return (inference_e)st;
 
   switch (rk.state) {
     case IDLE:
@@ -342,7 +351,7 @@ static inline inference_e infer_rket_state()
 }
 
 /// Tries to reinitializes sensors and invalidate
-/// data cache. Reassigns the rket its active state.
+/// data cache. Reassigns the rocket its active state.
 static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
@@ -375,7 +384,7 @@ static inline void try_recover_sensors()
 }
 
 /// Keeps record of successive retries,
-/// and updates rket state to Recovery or Aborted
+/// and updates rocket state to Recovery or Aborted
 /// if a corresponding retry threshold was exceeded.
 ///
 /// Thresholds are configurable in deployment.h.
@@ -436,7 +445,7 @@ void deployment_thread_entry(ULONG input)
       continue;
     }
     
-    rk.rec.inf = infer_rket_state();
+    rk.rec.inf = infer_rocket_state();
 
     if (rk.rec.inf == DEPL_NO_INPUT) {
       // tx_thread_resume(&kalman_thread);

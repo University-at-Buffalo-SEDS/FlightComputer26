@@ -44,7 +44,7 @@ static inline void ukf_initialize_time()
 static inline void ukf_measurement(const state_vec_t *restrict vec,
                                    sensor_meas_t *restrict out)
 {
-  const float ag = vec->a.z + G_MPS2;
+  const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->q2 * vec->q2;
   const float qq3 = vec->q3 * vec->q3;
   const float qq4 = vec->q4 * vec->q4;
