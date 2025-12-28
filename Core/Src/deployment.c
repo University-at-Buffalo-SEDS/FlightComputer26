@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "FC-Threads.h"
+#include "cmsis_gcc.h"
 #include "platform.h"
 #include "deployment.h"
 #include "ukf.h"
@@ -34,7 +36,7 @@ state_e get_rocket_state() { return rk.state; }
 /// Invoked from thread context.
 void force_abort_deployment()
 {
-  rk.rec.lock = 1;
+  rk.rec.lock = 1u;
   /// The lock must be "force acquired" before writing state
   /// to prevent state transitions on last remaining iteration.
   __DMB();
@@ -363,7 +365,7 @@ static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
 
-  log_msg("Trying to recover sensors", 26);
+  log_msg("Trying to reinitialize sensors", 31);
 
   __disable_irq();
 
@@ -373,12 +375,12 @@ static inline void try_recover_sensors()
   if (init_gyro() != HAL_OK)
     st += DEPL_BAD_GYRO;
 
-  // if (init_accel() != HAL_OK)
-  //   st += DEPL_BAD_ACCEL;
+  if (init_accel() != HAL_OK)
+    st += DEPL_BAD_ACCEL;
 
-  invalidate_dcache();
+  invalidate_dcache(); // non-IT (synchronous)
 
-  __disable_irq();
+  __enable_irq();
   
   if (st == DEPL_OK) {
     log_msg("Sensor recovery successful", 27);
@@ -401,19 +403,19 @@ static inline void bad_inference_handler()
   log_err("Deployment: bad inference #%u (code %d)",
           rk.rec.ret, rk.rec.inf);
 
-  if (rk.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
+  if (rk.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES
+      && update_state(ABORTED) == DEPL_OK)
   {
-    /// Return value ignored - aborting anyway :D
-    update_state(ABORTED);
+    rk.rec.state = rk.state;
     log_err("FATAL: aborting deployment (%u retries)",
             rk.rec.ret);
   }
   else if (rk.state != RECOVERY &&
            rk.rec.ret >= PRE_RECOV_RETRIES &&
-           rk.rec.ret % RECOVERY_INTERVAL == 0)
+           rk.rec.ret % RECOVERY_INTERVAL == 0 &&
+           update_state(RECOVERY) == DEPL_OK)
   {
     rk.rec.state = rk.state;
-    update_state(RECOVERY);
   }
 }
 
@@ -424,7 +426,7 @@ static inline void bad_inference_handler()
 static inline void deployment_abort_procedures()
 {
   log_msg("Deployment: turning off engine and firing pyro", 47);
-  // turn off engine
+  // turn off engine here
   tx_thread_sleep(ABORT_CO2_DELAY);
   co2_high();
   tx_thread_sleep(ABORT_REEF_DELAY);
@@ -433,18 +435,22 @@ static inline void deployment_abort_procedures()
 
 /// Invokes state machine and checks for an error.
 /// If one exists, invokes appropriate error handler
-/// or logs non-critical message.
+/// or logs non-critical message. Idempotent.
 ///
 /// Idle time is configurable in FC-Threads.h.
-void deployment_thread_entry(ULONG input)
+void deployment_thread_entry(ULONG cycle)
 {
-  (void)input;
-
   log_msg_sync("Deployment: starting thread", 28);
 
-  co2_low();
-  reef_low();
-  rk.state = IDLE;
+  if (cycle == DEPLOYMENT_THREAD_INPUT) {
+    co2_low();
+    reef_low();
+    rk.state = IDLE;
+  } else {
+    rk.state = rk.rec.state;
+    rk.rec.warn = DEPL_OK;
+    rk.rec.ret = 0u;
+  }
 
   while (rk.state != ABORTED) {
     if (rk.state == RECOVERY) {
@@ -470,13 +476,23 @@ void deployment_thread_entry(ULONG input)
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 
-  if (rk.state == ABORTED)
+  if (rk.rec.lock || cycle >= DEPLOYMENT_THREAD_RETRIES
+                            + DEPLOYMENT_THREAD_INPUT) {
     deployment_abort_procedures();
+
+    /* Directed by            Fuad
+     * Consulting Producer    Rylan
+     * Executive Producer     Parth
+     * Copyright              UB SEDS 2026 */
+    return;
+  }
+
+  deployment_thread_entry(++cycle);
 }
 
 /// Creates a non-preemptive deployment thread with
 /// defined parameters. Called manually. Provides
-/// its entry point with a throwaway input.
+/// its entry point with an input of 0;
 ///
 /// Stack size and priority are configurable in FC-Threads.h.
 void create_deployment_thread(void)
