@@ -159,8 +159,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define I16(b0, b1)                                                 \
   ((int16_t)(((uint16_t)(b1) << 8) | (uint16_t)(b0)))
 
-#define F16(b0, b1)                                                 \
-  ((float)I16(b0, b1))
+#define F16(b0, b1) ((float)I16(b0, b1))
 
 /* Data memory barrier
  * (#else branch is to be invented :D) */

@@ -32,6 +32,7 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/usbx/common/usbx_stm32_device_controllers
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/usbx/common/usbx_device_classes/inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../sedsprintf_rs/C-Headers
 )
 
 # STM32CubeMX generated application sources
@@ -44,14 +45,15 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../USBX/App/ux_device_cdc_acm.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tx_initialize_low_level.S
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/deployment.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/accel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/dma.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_thread.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry.c 
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_hooks.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/accel.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/deployment.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ukf.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/app_threadx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_hal_msp.c
