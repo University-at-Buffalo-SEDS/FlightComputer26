@@ -51,7 +51,7 @@ static inline void switch_pull_cs_high(uint_fast8_t i)
 }
 
 /// Successful transfer routine that publishes new buffer.
-void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
 
@@ -70,7 +70,7 @@ void HAL_SPI_TxRxCpltCallback(PL_SPI_Handle *hspi)
 
 /// Edge case: invalidate cache for both buffers and
 /// raise CS pin for all sensors.
-void HAL_SPI_ErrorCallback(PL_SPI_Handle *hspi)
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
   uint_fast8_t a = index_from_ptr(hspi->pRxBuffPtr);
   
