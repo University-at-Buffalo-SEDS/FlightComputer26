@@ -7,8 +7,6 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "FC-Threads.h"
-#include "cmsis_gcc.h"
 #include "platform.h"
 #include "deployment.h"
 #include "ukf.h"
