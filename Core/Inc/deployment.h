@@ -132,6 +132,16 @@ typedef enum {
 } state_e;
 
 /*
+ * Commands for manual control.
+ */
+typedef enum {
+  CONTINUE,
+  FIRE_PYRO,
+  FIRE_REEF,
+  SHUTDOWN
+} command_e;
+
+/*
  * Minimum required stats to have some variety
  * of checks we use to make a decision. Calculated
  * for current buffer, useful for two iterations.
@@ -166,6 +176,7 @@ typedef struct {
 
   struct {
     state_e state;
+    command_e cmd;
     inference_e warn;
     uint_fast8_t ret;
     uint_fast8_t lock;
@@ -174,16 +185,16 @@ typedef struct {
 
 /* Public helpers */
 
-/*
- * Public helper. Invoked from thread context.
- */
+/// Public helper. Invoked from thread context.
 state_e get_rocket_state();
 
-/*
- * Triggers forced parachute firing and expansion with
- * compile-time specified intervals. USE WITH CAUTION.
- * Invoked from thread context.
- */
+/// Triggers forced parachute firing and expansion with
+/// compile-time specified intervals. USE WITH CAUTION.
+/// Use this before sending any commands in manual mode.
 void force_abort_deployment();
+
+/// Send enum-specified command in manual mode.
+/// Commands sent before manual mode was entered are discarded.
+void deployment_send_command(command_e c);
 
 #endif // DEPLOYMENT_H

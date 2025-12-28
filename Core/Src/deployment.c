@@ -31,7 +31,7 @@ state_e get_rocket_state() { return rk.state; }
 
 /// Triggers forced parachute firing and expansion with
 /// compile-time specified intervals. USE WITH CAUTION.
-/// Invoked from thread context.
+/// Use this before sending any commands in manual mode.
 void force_abort_deployment()
 {
   rk.rec.lock = 1u;
@@ -41,10 +41,15 @@ void force_abort_deployment()
   rk.state = ABORTED;
 }
 
+/// Send enum-specified command in manual mode.
+/// Commands sent before manual mode was entered are discarded.
+void deployment_send_command(command_e c) { rk.rec.cmd = c; }
+
 /// Safe helper that respects abortion lock.
 static inline inference_e update_state(state_e s)
 {
-  if (rk.rec.lock) return DEPL_DOOM;
+  if (rk.rec.lock)
+    return DEPL_DOOM;
 
   rk.state = s;
   return DEPL_OK;
@@ -154,13 +159,12 @@ static inline inference_e refresh_stats()
 static inline inference_e detect_launch()
 {
   if (stats[rk.buf].avg_vel >= LAUNCH_MIN_VEL &&
-      stats[rk.buf].avg_vax >= LAUNCH_MIN_VAX)
+      stats[rk.buf].avg_vax >= LAUNCH_MIN_VAX &&
+      update_state(LAUNCH) == DEPL_OK)
   {
-    if (update_state(LAUNCH) == DEPL_OK) {
-      rk.samp.ascent = 0;
-      log_msg("DEPL: Launch detected", 22);
-      tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
-    }
+    rk.samp.ascent = 0;
+    log_msg("DEPL: Launch detected", 22);
+    tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -225,13 +229,12 @@ static inline inference_e detect_burnout()
 static inline inference_e detect_apogee()
 {
   if (stats[rk.buf].avg_vel <= APOGEE_MAX_VEL &&
-      stats[rk.buf].avg_vel < stats[!rk.buf].avg_vel)
+      stats[rk.buf].avg_vel < stats[!rk.buf].avg_vel
+      && update_state(APOGEE) == DEPL_OK)
   {
-    if (update_state(APOGEE) == DEPL_OK) {
-      rk.samp.descent = 0;
-      log_msg("DEPL: Approaching apogee", 25);
-      tx_thread_sleep(APOGEE_CONFIRM_DELAY);
-    }
+    rk.samp.descent = 0;
+    log_msg("DEPL: Approaching apogee", 25);
+    tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 
   return DEPL_OK;
@@ -326,7 +329,9 @@ static inline inference_e infer_rocket_state()
 {
   inference_e st = refresh_stats();
 
-  if (st == DATA_NONE) {
+  if (st == DEPL_OK) {
+    /* Skip other branches */
+  } else if (st == DATA_NONE) {
     rk.rec.warn = st;
     return DEPL_OK;
   } else if (st > DEPL_OK) {
@@ -376,7 +381,7 @@ static inline void try_recover_sensors()
   if (init_accel() != HAL_OK)
     st += DEPL_BAD_ACCEL;
 
-  invalidate_dcache(); // non-IT (synchronous)
+  invalidate_dcache(); /* non-IT (synchronous) */
 
   __enable_irq();
   
@@ -386,7 +391,7 @@ static inline void try_recover_sensors()
     log_err("DEPL: Recovery failed (code %d)", st);
   }
 
-  /// Try to validate data anyway
+  /* Try to validate data anyway */
   update_state(rk.rec.state);
 }
 
@@ -415,18 +420,23 @@ static inline void bad_inference_handler(inference_e inf)
   }
 }
 
-/// Avoid crashing into the ground by turning off
-/// engine and deploying parachutes.
-///
-/// Delays are configurable in deployment.h
-static inline void deployment_abort_procedures()
+/// Give up control to another thread and wait for signals.
+static inline void manual_mode()
 {
-  log_msg("DEPL: turning off engine and firing pyro", 41);
-  // turn off engine here
-  tx_thread_sleep(ABORT_CO2_DELAY);
-  co2_high();
-  tx_thread_sleep(ABORT_REEF_DELAY);
-  reef_high();
+  rk.rec.cmd = CONTINUE;
+  log_msg("DEPL: Entering manual mode", 27);
+
+  while (1) {
+    switch (rk.rec.cmd) {
+      case CONTINUE: break;
+      case FIRE_PYRO: co2_high(); break;
+      case FIRE_REEF: reef_high(); break;
+      case SHUTDOWN: return;
+    }
+
+    rk.rec.cmd = CONTINUE;
+    tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
+  }
 }
 
 /// Invokes state machine and checks for an error.
@@ -472,7 +482,7 @@ void deployment_thread_entry(ULONG cycle)
 
   if (rk.rec.lock || cycle >= DEPLOYMENT_THREAD_RETRIES
                             + DEPLOYMENT_THREAD_INPUT) {
-    deployment_abort_procedures();
+    manual_mode();
 
     /* Directed by            Fuad
      * Consulting Producer    Rylan
@@ -481,6 +491,7 @@ void deployment_thread_entry(ULONG cycle)
     return;
   }
 
+  /* Small stack outside while loop => safe recursion */
   deployment_thread_entry(++cycle);
 }
 
