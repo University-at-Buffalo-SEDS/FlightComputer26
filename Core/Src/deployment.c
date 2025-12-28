@@ -120,7 +120,7 @@ static inline inference_e refresh_stats()
     {
       st += DATA_BAD_VAX;
     }
-    else if (!(valid_mask & VALID_VAX))
+    else if (valid_mask & VALID_VAX)
     {
       sum_vax += ring[k].vax;
       ++vax_count;
