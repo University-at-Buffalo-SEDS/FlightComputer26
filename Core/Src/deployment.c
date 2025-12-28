@@ -65,85 +65,86 @@ static inline inference_e refresh_stats()
     return DATA_NONE;
 
   if (n > MAX_SAMPLE) {
-    rk.i.ex = (rk.i.ex + n - MAX_SAMPLE) & UKF_RING_MASK;
+    rk.ukf = (rk.ukf + n - MAX_SAMPLE) & UKF_RING_MASK;
     n = MAX_SAMPLE;
   }
 
-  rk.i.a = !rk.i.a;
-  rk.i.sp = rk.i.sc;
+  rk.buf = !rk.buf;
 
   inference_e st = DATA_OFFSET;
-  uint_fast8_t valid_mask = 0u;
-  uint_fast8_t vel_count = 1u;
-  uint_fast8_t vax_count = 1u;
 
   float sum_vel = 0.0f;
   float sum_vax = 0.0f;
 
-  for (rk.i.sc = 1; rk.i.sc <= n; ++rk.i.sc)
-  {
-    uint_fast8_t j = (rk.i.ex + rk.i.sc) & UKF_RING_MASK;
+  uint_fast8_t valid_mask = 0u;
+  uint_fast8_t vel_count = 1u;
+  uint_fast8_t vax_count = 1u;
+  uint_fast8_t k = rk.ukf;
 
-    if (ring[j].alt < SN_MIN_ALT || ring[j].alt > SN_MAX_ALT)
+  for (; k < n; k = (k + 1) & UKF_RING_MASK)
+  {
+    if (ring[k].alt < SN_MIN_ALT || ring[k].alt > SN_MAX_ALT)
     {
       st += DATA_BAD_ALT;
     }
     else if (valid_mask & VALID_ALT)
     {
-      if (ring[j].alt < stats[rk.i.a].min_alt)
-        stats[rk.i.a].min_alt = ring[j].alt;
-      if (ring[j].alt > stats[rk.i.a].max_alt)
-        stats[rk.i.a].max_alt = ring[j].alt;
+      if (ring[k].alt < stats[rk.buf].min_alt)
+        stats[rk.buf].min_alt = ring[k].alt;
+      if (ring[k].alt > stats[rk.buf].max_alt)
+        stats[rk.buf].max_alt = ring[k].alt;
     }
     else
     {
-      stats[rk.i.a].min_alt = ring[j].alt;
-      stats[rk.i.a].max_alt = ring[j].alt;
+      stats[rk.buf].min_alt = ring[k].alt;
+      stats[rk.buf].max_alt = ring[k].alt;
       valid_mask |= VALID_ALT;
     }
     
-    if (ring[j].vel < SN_MIN_VEL || ring[j].vel > SN_MAX_VEL)
+    if (ring[k].vel < SN_MIN_VEL || ring[k].vel > SN_MAX_VEL)
     {
       st += DATA_BAD_VEL;
     }
     else if (valid_mask & VALID_VEL)
     {
-      sum_vel += ring[j].vel;
+      sum_vel += ring[k].vel;
       ++vel_count;
     }
     else
     {
-      sum_vel = ring[j].vel;
+      sum_vel = ring[k].vel;
       valid_mask |= VALID_VEL;
     }
 
-    if (ring[j].vax < SN_MIN_VAX || ring[j].vax > SN_MAX_VAX)
+    if (ring[k].vax < SN_MIN_VAX || ring[k].vax > SN_MAX_VAX)
     {
       st += DATA_BAD_VAX;
     }
     else if (!(valid_mask & VALID_VAX))
     {
-      sum_vax += ring[j].vax;
+      sum_vax += ring[k].vax;
       ++vax_count;
     }
     else
     {
-      sum_vax = ring[j].vax;
+      sum_vax = ring[k].vax;
       valid_mask |= VALID_VAX;
     }
   }
+
+  rk.ukf = (rk.ukf + n) & UKF_RING_MASK;
 
   if (!((valid_mask & VALID_ALT) &&
         (valid_mask & VALID_VEL) &&
         (valid_mask & VALID_VAX)))
   {
     /* Write to the same buffer next time. */
-    rk.i.a = !rk.i.a;
+    rk.buf = !rk.buf;
     return st;
   }
 
-  stats[rk.i.a].avg_vel = sum_vel / (float)vel_count;
-  stats[rk.i.a].avg_vax = sum_vax / (float)vax_count;
+  stats[rk.buf].avg_vel = sum_vel / (float)vel_count;
+  stats[rk.buf].avg_vax = sum_vax / (float)vax_count;
 
   return (st == DATA_OFFSET) ? DEPL_OK : -st;
 }
@@ -152,8 +153,8 @@ static inline inference_e refresh_stats()
 /// acceleration were exceded.
 static inline inference_e detect_launch()
 {
-  if (stats[rk.i.a].avg_vel >= LAUNCH_MIN_VEL &&
-      stats[rk.i.a].avg_vax >= LAUNCH_MIN_VAX)
+  if (stats[rk.buf].avg_vel >= LAUNCH_MIN_VEL &&
+      stats[rk.buf].avg_vax >= LAUNCH_MIN_VAX)
   {
     if (update_state(LAUNCH) == DEPL_OK) {
       rk.samp.ascent = 0;
@@ -168,8 +169,8 @@ static inline inference_e detect_launch()
 /// Monitors height and velocity increase consistency.
 static inline inference_e detect_ascent()
 {
-  if (stats[rk.i.a].avg_vel > stats[!rk.i.a].avg_vel &&
-      stats[rk.i.a].min_alt > stats[!rk.i.a].max_alt)
+  if (stats[rk.buf].avg_vel > stats[!rk.buf].avg_vel &&
+      stats[rk.buf].min_alt > stats[!rk.buf].max_alt)
   {
     ++rk.samp.ascent;
     if (rk.samp.ascent >= MIN_SAMP_ASCENT
@@ -196,10 +197,10 @@ static inline inference_e detect_ascent()
 /// consistency.
 static inline inference_e detect_burnout()
 {
-  if (stats[rk.i.a].avg_vel >= BURNOUT_MIN_VEL &&
-      stats[rk.i.a].avg_vax <= BURNOUT_MAX_VAX &&
-      stats[rk.i.a].max_alt > stats[rk.i.a].min_alt &&
-      stats[rk.i.a].avg_vel < stats[!rk.i.a].avg_vel)
+  if (stats[rk.buf].avg_vel >= BURNOUT_MIN_VEL &&
+      stats[rk.buf].avg_vax <= BURNOUT_MAX_VAX &&
+      stats[rk.buf].max_alt > stats[rk.buf].min_alt &&
+      stats[rk.buf].avg_vel < stats[!rk.buf].avg_vel)
   {
     ++rk.samp.burnout;
     if (rk.samp.burnout >= MIN_SAMP_BURNOUT
@@ -223,8 +224,8 @@ static inline inference_e detect_burnout()
 /// for velocity to pass the minimum threshold.
 static inline inference_e detect_apogee()
 {
-  if (stats[rk.i.a].avg_vel <= APOGEE_MAX_VEL &&
-      stats[rk.i.a].avg_vel < stats[!rk.i.a].avg_vel)
+  if (stats[rk.buf].avg_vel <= APOGEE_MAX_VEL &&
+      stats[rk.buf].avg_vel < stats[!rk.buf].avg_vel)
   {
     if (update_state(APOGEE) == DEPL_OK) {
       rk.samp.descent = 0;
@@ -239,8 +240,8 @@ static inline inference_e detect_apogee()
 /// Monitors for decreasing altitude and increasing velocity.
 static inline inference_e detect_descent()
 {
-  if (stats[rk.i.a].max_alt < stats[!rk.i.a].min_alt &&
-      stats[rk.i.a].avg_vel > stats[!rk.i.a].avg_vel)
+  if (stats[rk.buf].max_alt < stats[!rk.buf].min_alt &&
+      stats[rk.buf].avg_vel > stats[!rk.buf].avg_vel)
   {
     ++rk.samp.descent;
     if (rk.samp.descent >= MIN_SAMP_DESCENT
@@ -266,8 +267,8 @@ static inline inference_e detect_descent()
 /// and checks for altitude consistency.
 static inline inference_e detect_reef()
 {
-  if (stats[rk.i.a].min_alt <= REEF_TARGET_ALT && 
-      stats[rk.i.a].max_alt < stats[!rk.i.a].min_alt)
+  if (stats[rk.buf].min_alt <= REEF_TARGET_ALT && 
+      stats[rk.buf].max_alt < stats[!rk.buf].min_alt)
   {
     ++rk.samp.landing;
     if (rk.samp.landing >= MIN_SAMP_REEF
@@ -293,9 +294,9 @@ static inline inference_e detect_reef()
 /// beyond allowed tolerance thresholds.
 static inline inference_e detect_landed()
 {
-  float dh = stats[rk.i.a].min_alt - stats[!rk.i.a].min_alt;
-  float dv = stats[rk.i.a].avg_vel - stats[!rk.i.a].avg_vel;
-  float da = stats[rk.i.a].avg_vax - stats[!rk.i.a].avg_vax;
+  float dh = stats[rk.buf].min_alt - stats[!rk.buf].min_alt;
+  float dv = stats[rk.buf].avg_vel - stats[!rk.buf].avg_vel;
+  float da = stats[rk.buf].avg_vax - stats[!rk.buf].avg_vax;
 
   if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&

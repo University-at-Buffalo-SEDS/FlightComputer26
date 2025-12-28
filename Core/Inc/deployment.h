@@ -153,6 +153,7 @@ typedef struct {
  */
 typedef struct {
   state_e state;
+
   union {
     uint_fast8_t ascent;
     uint_fast8_t burnout;
@@ -160,12 +161,10 @@ typedef struct {
     uint_fast8_t landing;
     uint_fast8_t idle;
   } samp;
-  struct {
-    uint_fast8_t ex;  /* Position in external filter ring   */
-    uint_fast8_t sc;  /* # used elements in "current" buf   */
-    uint_fast8_t sp;  /* # used elements in "previous" buf  */
-    uint_fast8_t a;   /* Index of "current" buffer (0 or 1) */
-  } i;
+
+  uint_fast8_t ukf; /* Position in external filter ring   */
+  uint_fast8_t buf; /* Index of "current" buffer (0 or 1) */
+
   struct {
     state_e state;
     inference_e inf;
