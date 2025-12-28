@@ -7,10 +7,8 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "FC-Threads.h"
 #include "platform.h"
 #include "deployment.h"
-#include "tx_api.h"
 #include "ukf.h"
 
 /// Aliased ThreadX thread and thread stack.
