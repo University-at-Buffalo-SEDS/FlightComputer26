@@ -1,5 +1,6 @@
 // telemetry_thread.c
 #include "FC-Threads.h"
+#include "can_bus.h"
 #include "tx_api.h"
 #include "telemetry.h"
 
@@ -19,8 +20,10 @@ void telemetry_thread_entry(ULONG initial_input)
                               1);
 
     for (;;) {
-        process_all_queues_timeout(20);
-        tx_thread_sleep(10);  // 10 ticks; adjust as needed
+        can_bus_process_rx();
+        process_all_queues_timeout(5);
+        can_bus_process_rx();
+        tx_thread_sleep(1);  // 1 tick; adjust as needed
     }
 }
 
