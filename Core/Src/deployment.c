@@ -60,7 +60,7 @@ static inline inference_e update_state(state_e s)
 static inline inference_e refresh_stats()
 {
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
-                                            memory_order_acq_rel);
+                                            memory_order_acquire);
   if (!n)
     return DATA_NONE;
 

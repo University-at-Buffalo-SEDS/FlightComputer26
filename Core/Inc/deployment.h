@@ -80,7 +80,7 @@
 
 /*
  * Service enum used to report inference result.
- * DEPL_CODE_MASK is used to adjust bad data reporting
+ * DATA_MASK is used to adjust bad data reporting
  * range based on a reasonable local buffer size.
  */
 typedef enum {
