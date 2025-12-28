@@ -7,8 +7,10 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "FC-Threads.h"
 #include "platform.h"
 #include "deployment.h"
+#include "tx_api.h"
 #include "ukf.h"
 
 /// Aliased ThreadX thread and thread stack.
@@ -391,7 +393,8 @@ static inline void try_recover_sensors()
     log_err("DEPL: Recovery failed (code %d)", st);
   }
 
-  /* Try to validate data anyway */
+  /* Given UKF time to process new data */
+  tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP * 4);
   update_state(rk.rec.state);
 }
 
