@@ -158,7 +158,7 @@ static inline inference_e detect_launch()
   {
     if (update_state(LAUNCH) == DEPL_OK) {
       rk.samp.ascent = 0;
-      log_msg("Launch detected", 16);
+      log_msg("DEPL: Launch detected", 22);
       tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
     }
   }
@@ -177,7 +177,7 @@ static inline inference_e detect_ascent()
         && update_state(ASCENT) == DEPL_OK)
     {
       rk.samp.burnout = 0;
-      log_msg("Launch confirmed", 17);
+      log_msg("DEPL: Launch confirmed", 23);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
@@ -206,7 +206,7 @@ static inline inference_e detect_burnout()
     if (rk.samp.burnout >= MIN_SAMP_BURNOUT
         && update_state(BURNOUT) == DEPL_OK)
     {
-      log_msg("Watching for apogee", 20);
+      log_msg("DEPL: Watching for apogee", 26);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
@@ -229,7 +229,7 @@ static inline inference_e detect_apogee()
   {
     if (update_state(APOGEE) == DEPL_OK) {
       rk.samp.descent = 0;
-      log_msg("Approaching apogee", 19);
+      log_msg("DEPL: Approaching apogee", 25);
       tx_thread_sleep(APOGEE_CONFIRM_DELAY);
     }
   }
@@ -249,7 +249,7 @@ static inline inference_e detect_descent()
     {
       rk.samp.landing = 0;
       co2_high();
-      log_msg("Fired pyro, descending", 23);
+      log_msg("DEPL: Fired pyro, descending", 29);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
@@ -276,7 +276,7 @@ static inline inference_e detect_reef()
     {
       rk.samp.idle = 0;
       reef_low();
-      log_msg("Expanded parachute", 19);
+      log_msg("DEPL: Expanded parachute", 25);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
@@ -306,7 +306,7 @@ static inline inference_e detect_landed()
     if (rk.samp.idle >= MIN_SAMP_LANDED
         && update_state(LANDED) == DEPL_OK)
     {
-      log_msg("Rocket landed", 14);
+      log_msg("DEPL: Rocket landed", 20);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
@@ -363,7 +363,7 @@ static inline void try_recover_sensors()
 {
   inference_e st = DEPL_OK;
 
-  log_msg("Trying to reinitialize sensors", 31);
+  log_msg("DEPL: Trying to reinitialize sensors", 37);
 
   __disable_irq();
 
@@ -381,9 +381,9 @@ static inline void try_recover_sensors()
   __enable_irq();
   
   if (st == DEPL_OK) {
-    log_msg("Sensor recovery successful", 27);
+    log_msg("DEPL: Sensor recovery successful", 33);
   } else {
-    log_err("Recovery failed (code %d)", st);
+    log_err("DEPL: Recovery failed (code %d)", st);
   }
 
   /// Try to validate data anyway
@@ -395,18 +395,16 @@ static inline void try_recover_sensors()
 /// if a corresponding retry threshold was exceeded.
 ///
 /// Thresholds are configurable in deployment.h.
-static inline void bad_inference_handler()
+static inline void bad_inference_handler(inference_e inf)
 {
   ++rk.rec.ret;
-  log_err("Deployment: bad inference #%u (code %d)",
-          rk.rec.ret, rk.rec.inf);
+  log_err("DEPL: bad inference #%u (code %d)", rk.rec.ret, inf);
 
   if (rk.rec.ret >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES
       && update_state(ABORTED) == DEPL_OK)
   {
     rk.rec.state = rk.state;
-    log_err("FATAL: aborting deployment (%u retries)",
-            rk.rec.ret);
+    log_err("DEPL: aborting cycle (%u retries)", rk.rec.ret);
   }
   else if (rk.state != RECOVERY &&
            rk.rec.ret >= PRE_RECOV_RETRIES &&
@@ -423,7 +421,7 @@ static inline void bad_inference_handler()
 /// Delays are configurable in deployment.h
 static inline void deployment_abort_procedures()
 {
-  log_msg("Deployment: turning off engine and firing pyro", 47);
+  log_msg("DEPL: turning off engine and firing pyro", 41);
   // turn off engine here
   tx_thread_sleep(ABORT_CO2_DELAY);
   co2_high();
@@ -438,8 +436,6 @@ static inline void deployment_abort_procedures()
 /// Idle time is configurable in FC-Threads.h.
 void deployment_thread_entry(ULONG cycle)
 {
-  log_msg_sync("Deployment: starting thread", 28);
-
   if (cycle == DEPLOYMENT_THREAD_INPUT) {
     co2_low();
     reef_low();
@@ -456,19 +452,19 @@ void deployment_thread_entry(ULONG cycle)
       continue;
     }
     
-    rk.rec.inf = infer_rocket_state();
+    inference_e inf = infer_rocket_state();
 
-    if (rk.rec.inf == DATA_NONE) {
+    if (inf == DATA_NONE) {
       tx_thread_resume(&ukf_thread);
       continue;
-    } else if (rk.rec.inf < DEPL_OK) {
-      bad_inference_handler();
+    } else if (inf < DEPL_OK) {
+      bad_inference_handler(inf);
     } else if (rk.rec.warn != DEPL_OK) {
       rk.rec.warn = DEPL_OK;
-      log_err("Deployment: warn code %d", rk.rec.inf);
+      log_err("DEPL: non-critical warning code %d", inf);
     } else if (rk.rec.ret > 0) {
       rk.rec.ret = 0;
-      log_msg("Deployment: recovered from error", 33);
+      log_msg("DEPL: recovered from error", 27);
     }
 
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
@@ -507,7 +503,8 @@ void create_deployment_thread(void)
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
-  if (st != TX_SUCCESS) {
+  if (st == TX_SUCCESS)
+    log_msg_sync("Starting deployment thread", 27);
+  else
     log_die("Failed to create deployment thread: %u", (unsigned)st);
-  }
 }

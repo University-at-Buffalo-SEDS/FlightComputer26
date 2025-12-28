@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdatomic.h>
 
 /* Local configuration */
 
@@ -20,8 +19,8 @@
 #define MIN_SAMP_LANDED   12
 
 #define RECOVERY_INTERVAL 4
-#define PRE_RECOV_RETRIES 30
-#define PRE_ABORT_RETRIES 40
+#define PRE_RECOV_RETRIES 20
+#define PRE_ABORT_RETRIES 20
 
 #define CONSECUTIVE_CONFIRMS
 /* Delay in ThreadX ticks */
@@ -167,7 +166,6 @@ typedef struct {
 
   struct {
     state_e state;
-    inference_e inf;
     inference_e warn;
     uint_fast8_t ret;
     uint_fast8_t lock;
