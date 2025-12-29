@@ -7,9 +7,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "platform.h"
 #include "ukf.h"
 
-/* Local configuration */
+
+/* ------ Local configuration ------ */
 
 #define MAX_SAMPLE 4
 
@@ -71,7 +74,16 @@
 /* Base offset for reporting bad data */
 #define DATA_OFFSET -10
 
-/* Type definitions */
+/* Cycle and abortion defines */
+
+#define MAX_CYCLES (DEPLOYMENT_THREAD_RETRIES \
+                    + DEPLOYMENT_THREAD_INPUT)
+
+#define AUTO_ABORT    0x01u
+#define MANUAL_ABORT  (1u << 4)
+
+
+/* ------ Type definitions ------ */
 
 /*
  * Service enum used to report inference result.
@@ -104,17 +116,17 @@ typedef enum {
   /* UKF ring has no new entries (non-critical) */
   DATA_NONE       = 8,
 
-  /* For abortion and unreachable statements */
+  /* For unreachable statements */
   DEPL_DOOM       = 9,
 } inference_e;
 
+/* Do not allow inference_e to be < 16 bits due to increment */
 _Static_assert(sizeof(inference_e) > sizeof(int8_t), "enum capacity");
 
 /*
- * The backbone of state machine and error handling.
+ * In-flight rocket states only since used internally.
  */
 typedef enum {
-  INIT,
   IDLE,
   LAUNCH,
   ASCENT,
@@ -123,8 +135,6 @@ typedef enum {
   DESCENT,
   REEF,
   LANDED,
-  RECOVERY,
-  ABORTED,
 } state_e;
 
 /*
@@ -138,9 +148,8 @@ typedef enum {
 } command_e;
 
 /*
- * Minimum required stats to have some variety
- * of checks we use to make a decision. Calculated
- * for current buffer, useful for two iterations.
+ * Minimum required stats to have some variety of checks
+ * we use to make a decision. Useful for two iterations.
  */
 typedef struct {
   float min_alt;
@@ -149,16 +158,12 @@ typedef struct {
   float avg_vax;
 } stats_t;
 
-/*
- * This struct unifies rocket state, the
- * amount of successive detections of last
- * concerned state (one explicit int),
- * a toolkit of various indices (see below),
- * and an error recovery toolkit.
- */
 typedef struct {
-  state_e state;
+  state_e state;    /* Current in-flight state     */
+  inference_e warn; /* Stash for non-critical code */
+  command_e cmd;    /* Last command in manual mode */
 
+  /* Amount of samples for state monitored */
   union {
     uint_fast8_t ascent;
     uint_fast8_t burnout;
@@ -170,22 +175,16 @@ typedef struct {
   uint_fast8_t ukf; /* Position in external filter ring   */
   uint_fast8_t buf; /* Index of "current" buffer (0 or 1) */
 
-  struct {
-    state_e state;
-    command_e cmd;
-    inference_e warn;
-    uint_fast8_t ret;
-    uint_fast8_t lock;
-  } rec;
+  uint_fast8_t retry; /* Per cycle. Reset on success.      */
+  uint_fast8_t abort; /* Mask for auto and manual triggers */
 } rocket_t;
 
-/* Public helpers */
 
-/// Public helper. Invoked from thread context.
+/* ------ Public API ------ */
+
 state_e get_rocket_state();
 
-/// Triggers forced parachute firing and expansion with
-/// compile-time specified intervals. USE WITH CAUTION.
+/// Triggers manual rocket control on next iteration.
 /// Use this before sending any commands in manual mode.
 void force_abort_deployment();
 

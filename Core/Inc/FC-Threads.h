@@ -20,7 +20,7 @@ void create_telemetry_thread(void);
 extern TX_THREAD deployment_thread;
 extern ULONG deployment_thread_stack[];
 
-void deployment_thread_entry(ULONG input);
+void deployment_thread_entry(ULONG cycle);
 void create_deployment_thread(void);
 /* ------ Deployment Thread ------ */
 
