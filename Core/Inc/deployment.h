@@ -27,11 +27,6 @@
 #define LAUNCH_CONFIRM_DELAY 25
 #define APOGEE_CONFIRM_DELAY 75
 
-/* If deployment aborts, delay (in ticks) between
- * engine shutdown and CO2/REEF deployments */
-#define ABORT_CO2_DELAY   150
-#define ABORT_REEF_DELAY  150
-
 /* Measurement thresholds.
  * Units: altitude ALT (m), velocity VEL (m/s)
  * vertical acceleration VAX (m/s^2) */
