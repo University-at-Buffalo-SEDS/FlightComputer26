@@ -3,6 +3,9 @@
  * combined in one header.
  */
 
+#ifndef UKF_H
+#define UKF_H
+
 #define GRAVITY_SI 9.80665f
 #define TOLERANCE 1e-3f
 #define TLOWER_1 (1.0f - TOLERANCE)
@@ -31,4 +34,4 @@ typedef struct {
   float alt;
 } sensor_meas_t;
 
-/* Globals */
+#endif // UKF_H

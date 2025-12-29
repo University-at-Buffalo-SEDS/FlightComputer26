@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "ukf.h"
 
 /* Local configuration */
 

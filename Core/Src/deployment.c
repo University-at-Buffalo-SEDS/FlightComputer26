@@ -9,9 +9,7 @@
 
 #include "platform.h"
 #include "deployment.h"
-#include "ukf.h"
 
-/// Aliased ThreadX thread and thread stack.
 TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
                               / sizeof(ULONG)];
