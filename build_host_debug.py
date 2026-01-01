@@ -14,7 +14,7 @@ def main() -> None:
     repo_root = Path(__file__).parent.resolve()
     os.chdir(repo_root)
     project_dir = Path.cwd()
-    build_dir = project_dir / "build" / "Host_Debug"
+    build_dir = project_dir / "build" / "HostDebug"
     telemetry_flag = f"-DENABLE_TELEMETRY=OFF"
 
     build_dir.mkdir(parents=True, exist_ok=True)

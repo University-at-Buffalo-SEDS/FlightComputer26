@@ -1,22 +1,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <sys/signal.h>
 
 #include "deployment.h"
 #include "platform.h"
 
 void handler(int sig)
 {
-  emu_print_event("Host issued abortion signal via SIGINT!");
-  force_abort_deployment();
-
-  for (int i = 0; i < 10; ++i) {
-    emu_print_event("Still spinning main thread!");
-    proper_sleep(1, 0);
+  command_e cmd;
+  /* SIGINT  = ABORT
+   * SIGQUIT = FIRE_PYRO
+   * SIGTSTP = FIRE_REEF */
+  switch (sig) {
+    case SIGINT: cmd = ABORT; break;
+    case SIGQUIT: cmd = FIRE_PYRO; break;
+    case SIGTSTP: cmd = FIRE_REEF; break;
+    default: return;
   }
 
-  emu_print_event("This is just emulation, bye!");
-  _Exit(0);
+  deployment_send_command(cmd);
+
+  if (cmd == FIRE_REEF) _Exit(0);
 }
 
 static void init_testing()

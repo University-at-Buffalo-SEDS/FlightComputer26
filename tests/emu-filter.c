@@ -22,9 +22,9 @@ static inline float fgen(float low, float high)
   return low + (high - low)*((float)rand() / (float)(RAND_MAX + 1u));
 }
 
-static inline uint_fast8_t incr()
+static inline void incr()
 {
-  return atomic_fetch_add_explicit(&newdata, 1, memory_order_acq_rel);
+  atomic_fetch_add_explicit(&newdata, 1, memory_order_release);
 }
 
 static inline float abnormal(float bound)
@@ -113,7 +113,7 @@ void produce_normal(float h1, float v1, float a, ULONG samp, float sigma)
     
     filter_t buf = {alt + dh, vel + dv, a + da};
 
-    sanitize(&buf.alt, SANITY_MAX_ALT);
+    sanitize(&buf.alt, SN_MAX_ALT);
     push(&buf);
     proper_sleep(0, SAMPLE_NS);
   }

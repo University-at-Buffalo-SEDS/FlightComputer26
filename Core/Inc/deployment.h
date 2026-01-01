@@ -8,7 +8,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef PL_HOST
+#include "../../tests/platform.h"
+#else
 #include "platform.h"
+#endif
+
 #include "ukf.h"
 
 
@@ -80,7 +85,8 @@
                     + DEPLOYMENT_THREAD_INPUT)
 
 #define AUTO_ABORT    0x01u
-#define MANUAL_ABORT  (1u << 4)
+#define MANUAL_ABORT  (1u << 2)
+#define PYRO_FIRED    (1u << 4)
 
 
 /* ------ Type definitions ------ */
@@ -141,6 +147,7 @@ typedef enum {
  * Commands for manual control.
  */
 typedef enum {
+  ABORT,
   CONTINUE,
   FIRE_PYRO,
   FIRE_REEF,
@@ -184,12 +191,8 @@ typedef struct {
 
 state_e get_rocket_state();
 
-/// Triggers manual rocket control on next iteration.
-/// Use this before sending any commands in manual mode.
-void force_abort_deployment();
-
 /// Send enum-specified command in manual mode.
-/// Commands sent before manual mode was entered are discarded.
+/// First command should be 'ABORT' to enter manual mode.
 void deployment_send_command(command_e c);
 
 #endif // DEPLOYMENT_H

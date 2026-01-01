@@ -26,13 +26,15 @@ static stats_t stats[2] = {0};
 
 state_e get_rocket_state() { return rock.state; }
 
-/// Triggers manual rocket control on next iteration.
-/// Use this before sending any commands in manual mode.
-void force_abort_deployment() { rock.abort |= MANUAL_ABORT; }
-
 /// Send enum-specified command in manual mode.
-/// Commands sent before manual mode was entered are discarded.
-void deployment_send_command(command_e c) { rock.cmd = c; }
+/// First command should be 'ABORT' to enter manual mode.
+void deployment_send_command(command_e c)
+{
+  if (c == ABORT)
+    rock.abort |= MANUAL_ABORT;
+  else
+    rock.cmd = c;
+}
 
 
 /* ------ Data acquisition ------ */
@@ -408,18 +410,26 @@ static inline void bad_inference_handler(inference_e inf)
 /// Give up control to another thread and wait for signals.
 static inline void manual_mode()
 {
-  rock.cmd = CONTINUE;
   log_msg("DEPL: Entering manual mode", 27);
 
   while (1) {
     switch (rock.cmd) {
-      case CONTINUE: break;
-      case FIRE_PYRO: co2_high(); break;
-      case FIRE_REEF: reef_high(); break;
+      case FIRE_PYRO:
+        if (!(rock.abort & PYRO_FIRED)) {
+          co2_high();
+          rock.abort |= PYRO_FIRED;
+        }
+        break;
+      case FIRE_REEF:
+        if (rock.abort & PYRO_FIRED) {
+          reef_high();
+          return;
+        }
+        break;
       case SHUTDOWN: return;
+      default: break;
     }
 
-    rock.cmd = CONTINUE;
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP * 2);
   }
 }

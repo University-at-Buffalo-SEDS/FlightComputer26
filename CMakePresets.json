@@ -25,14 +25,13 @@
     },
     {
       "name": "HostDebug",
-      "displayName": "Host machine testing (Debug)",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-test"
+      "binaryDir": "${sourceDir}/build/${presetName}"
     }
   ],
   "buildPresets": [
     {
-      "name": "HostDebug",
+      "name": "Debug",
       "configurePreset": "Debug"
     },
     {
@@ -40,10 +39,8 @@
       "configurePreset": "Release"
     },
     {
-      "name": "Host machine testing (Debug)",
-      "displayName": "Build Host Tests (Debug)",
-      "configurePreset": "HostDebug",
-      "description": "Builds host test target"
+      "name": "HostDebug",
+      "configurePreset": "HostDebug"
     }
   ],
   "testPresets": [
