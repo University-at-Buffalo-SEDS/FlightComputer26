@@ -45,16 +45,14 @@ typedef struct {
 #define TX_NO_TIME_SLICE 0
 #define TX_AUTO_START 0
 
-extern TX_THREAD sensor_thread;
-extern TX_THREAD kalman_thread;
-extern TX_THREAD telemetry_thread;
+extern TX_THREAD ukf_thread;
 extern TX_THREAD deployment_thread;
 
 #define DEPLOYMENT_THREAD_SLEEP         60
 #define DEPLOYMENT_THREAD_PRIORITY      6
 #define DEPLOYMENT_THREAD_INPUT         0u
 #define DEPLOYMENT_THREAD_STACK_SIZE    6144u
-#define DEPLOYMENT_THREAD_MAX_RETRIES   60
+#define DEPLOYMENT_THREAD_RETRIES       30
 
 #define tx_thread_sleep(duration) emu_sleep((duration))
 
@@ -118,6 +116,10 @@ extern TX_THREAD deployment_thread;
 
 /* HAAL (hardware abstraction abstraction layer) <3 */
 
+/* Time */
+
+#define hal_time_ms() emu_time_ms()
+
 /* Parachute deployment definitions
  * This can also be used for manual emergency deployment */
 
@@ -153,7 +155,7 @@ extern TX_THREAD deployment_thread;
 
 #define init_baro() emu_baro_init()
 #define init_gyro() emu_gyro_init()
-//#define init_accel() emu_accel_init()
+#define init_accel() emu_accel_init()
 
 /* Duplicate declaration of deployment entry for testing */
 void create_deployment_thread();

@@ -6,6 +6,7 @@
 #ifndef EMULATION_H
 #define EMULATION_H
 
+#include <stdbool.h>
 #include <time.h>
 
 /* General ThreadX compatibility typedefs */
@@ -19,10 +20,8 @@ typedef struct { task_t fn; ULONG arg; } callee_t;
 
 /* Emulation service constants and helpers */
 
-#define EMU_TASKS           4u
-#define MIN_TICKS_TO_YIELD  50u
-#define FAKE_THREAD_INPUT   0u
-#define FAKE_YIELD_CYCLES   4u
+#define EMU_TASKS   2u
+#define YIELD_SLEEP 100
 
 #define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
 #define NS_IN_SEC 1000000000L
@@ -60,7 +59,7 @@ typedef struct {
 /* Emulation Helpers */
 
 /* Nanosleep wrapper */
-void proper_sleep(time_t sec, long nsec);
+int proper_sleep(time_t sec, long nsec);
 
 void emu_enable_irq();
 void emu_disable_irq();
@@ -86,7 +85,7 @@ HAL_StatusTypeDef emu_accel_init();
 /* Emulation core */
 
 void emu_yield(TX_THREAD *thread);
-void emu_sleep(UINT ticks);
+int emu_sleep(UINT ticks);
 UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
                        ULONG *stack, UINT stack_size, UINT priority,
                        UINT preemption, UINT time_slice, UINT autostart);

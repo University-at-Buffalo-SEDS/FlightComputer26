@@ -3,6 +3,7 @@
  * parts of the flight computer.
  */
 
+#include <bits/time.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -11,15 +12,20 @@
 #include <time.h>
 #include <pthread.h>
 
-#include "emulation.h"
 #include "platform.h"
 
-/* Header for source being tested */
 #include "deployment.h"
 
 static task_t tasks[EMU_TASKS];
 
-void proper_sleep(time_t sec, long nsec)
+uint32_t emu_time_ms()
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint32_t)((ts.tv_sec * 1e3) + (ts.tv_nsec / 1e6));
+}
+
+int proper_sleep(time_t sec, long nsec)
 {
   if (nsec < 0) {
     nsec = 0;
@@ -29,43 +35,30 @@ void proper_sleep(time_t sec, long nsec)
   }
 
   struct timespec delay = {sec, nsec};
-  nanosleep(&delay, NULL);
+  return nanosleep(&delay, NULL);
 }
 
-/*
- * TODO populate tasks[] with emu filter function(s)
- */
-void emu_yield(TX_THREAD *thread)
-{
-  printf("[RTOS] Running task %u\n (%u cycles)",
-         *thread, FAKE_YIELD_CYCLES);
-
-  for (uint_fast8_t t = 0; t < FAKE_YIELD_CYCLES; ++t) {
-    tasks[*thread](FAKE_THREAD_INPUT);
-  }
-}
-
-void emu_sleep(UINT ticks)
+int emu_sleep(UINT ticks)
 {
   float duration = TX_TO_SEC(ticks);
+
   printf("[RTOS] Thread requested to sleep for %u ticks"
          " (%f seconds)\n", ticks, duration);
 
-  if (ticks >= MIN_TICKS_TO_YIELD && 0) { // TODO change back when proper yielding is implemented
-    /* Scheduling at its best */
-    UINT t = random() % EMU_TASKS;
-    emu_yield(&t);
-  } else {
-    time_t sec = (time_t)duration;
-    long nsec = (long)((duration - (double)sec) * 1e9);
-    proper_sleep(sec, nsec);
-  }
+  time_t sec = (time_t)duration;
+  long nsec = (long)((duration - (double)sec) * 1e9);
+  return proper_sleep(sec, nsec);
 }
 
-/*
- * Illegal compatibility adapter
- * between threadx and pthread.
- */
+void emu_yield(TX_THREAD *thread)
+{
+  /* Since emulation is multithreaded, yielding is redundant: 
+   * requested thread is already running and this can just wait. */
+  (void)thread;
+  emu_sleep(YIELD_SLEEP);
+}
+
+/// Compatibility adapter between threadx and pthread.
 void *emu_adapter(void *p)
 {
   callee_t *t = (callee_t *)p;
@@ -74,7 +67,8 @@ void *emu_adapter(void *p)
   return NULL;
 }
 
-UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
+UINT emu_create_thread(TX_THREAD *thread, char *name,
+                       task_t entry, ULONG input,
                        ULONG *stack, UINT stack_size,
                        UINT priority, UINT preemption,
                        UINT time_slice, UINT autostart)
