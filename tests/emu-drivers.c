@@ -34,6 +34,9 @@ HAL_StatusTypeDef emu_init_sensor(int k)
   }
 }
 
+/// Whether a sensor successfully initialized
+uint_fast8_t sensor_is_ready(int k) { return flags[k][1]; }
+
 /// Set a sensor to fail next init.
 void break_sensor(int k)    { flags[k][0] = 1; }
 

@@ -101,6 +101,9 @@ void emu_disable_irq();
 /// Returns the value of irq flag
 uint_fast8_t irq_enabled();
 
+/// Whether a sensor successfully initialized
+uint_fast8_t sensor_is_ready(int k);
+
 /// Set a sensor to fail next init.
 void break_sensor(int k);
 
