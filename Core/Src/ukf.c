@@ -7,7 +7,6 @@
 #include <stdatomic.h>
 #include <math.h>
 
-#include "platform.h"
 #include "ukf.h"
 
 TX_THREAD ukf_thread;
@@ -18,7 +17,7 @@ filter_t ring[UKF_RING_SIZE] = {0};
 atomic_uint_fast8_t newdata = 0;
 
 /// Last recorded time for each UKF timer user.
-static uint32_t time[Time_Users] = {0};
+static uint32_t ukf_time[Time_Users] = {0};
 
 /* General helpers */
 
@@ -26,16 +25,16 @@ static uint32_t time[Time_Users] = {0};
 /// Does not handle u32 wrap (flight assumed < 49 days :D).
 static inline uint32_t ukf_elapsed_ms(ukf_time_user_e u)
 {
-  uint32_t prev = time[u];
-  time[u] = hal_time_ms();
-  return time[u] - prev;
+  uint32_t prev = ukf_time[u];
+  ukf_time[u] = hal_time_ms();
+  return ukf_time[u] - prev;
 }
 
 /// Updates time for each user to prevent large first returns.
 static inline void ukf_initialize_time()
 {
   for (ukf_time_user_e u = 0; u < Time_Users; ++u)
-    time[u] = hal_time_ms();
+    ukf_time[u] = hal_time_ms();
 }
 
 /* Prediction tools */

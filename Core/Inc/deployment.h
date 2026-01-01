@@ -88,6 +88,8 @@
 #define MANUAL_ABORT  (1u << 2)
 #define PYRO_FIRED    (1u << 4)
 
+#define SEDS_ARE_COOL 1
+
 
 /* ------ Type definitions ------ */
 
@@ -148,7 +150,6 @@ typedef enum {
  */
 typedef enum {
   ABORT,
-  CONTINUE,
   FIRE_PYRO,
   FIRE_REEF,
   SHUTDOWN
@@ -184,12 +185,13 @@ typedef struct {
 
   uint_fast8_t retry; /* Per cycle. Reset on success.      */
   uint_fast8_t abort; /* Mask for auto and manual triggers */
-} rocket_t;
+} flight_t;
 
 
 /* ------ Public API ------ */
 
-state_e get_rocket_state();
+/// Does not cover states before rocket is ready to launch.
+state_e current_flight_state();
 
 /// Send enum-specified command in manual mode.
 /// First command should be 'ABORT' to enter manual mode.

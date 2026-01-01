@@ -6,6 +6,12 @@
 #ifndef UKF_H
 #define UKF_H
 
+#ifdef PL_HOST
+#include "../../tests/platform.h"
+#else
+#include "platform.h"
+#endif
+
 #define GRAVITY_SI 9.80665f
 #define TOLERANCE 1e-3f
 #define TLOWER_1 (1.0f - TOLERANCE)

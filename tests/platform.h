@@ -52,7 +52,13 @@ extern TX_THREAD deployment_thread;
 #define DEPLOYMENT_THREAD_PRIORITY      6
 #define DEPLOYMENT_THREAD_INPUT         0u
 #define DEPLOYMENT_THREAD_STACK_SIZE    6144u
-#define DEPLOYMENT_THREAD_RETRIES       30
+#define DEPLOYMENT_THREAD_RETRIES       3u
+#define DEPLOYMENT_RESTART_ON_FAIL      1
+
+#define UKF_THREAD_SLEEP      45
+#define UKF_THREAD_PRIORITY   3
+#define UKF_THREAD_INPUT      0UL
+#define UKF_THREAD_STACK_SIZE 6144u
 
 #define tx_thread_sleep(duration) emu_sleep((duration))
 
@@ -153,12 +159,12 @@ extern TX_THREAD deployment_thread;
 
 /* Sensor drivers and data collection */
 
-#define init_baro() emu_baro_init()
-#define init_gyro() emu_gyro_init()
-#define init_accel() emu_accel_init()
+#define init_baro() emu_init_sensor(0)
+#define init_gyro() emu_init_sensor(1)
+#define init_accel() emu_init_sensor(2)
 
 /* Duplicate declaration of deployment entry for testing */
+void create_ukf_thread();
 void create_deployment_thread();
-
 
 #endif // PLATFORM_H

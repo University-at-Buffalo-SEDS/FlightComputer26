@@ -6,21 +6,14 @@
 #ifndef EMULATION_H
 #define EMULATION_H
 
-#include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 
-/* General ThreadX compatibility typedefs */
 
-typedef unsigned int UINT;
-typedef unsigned long ULONG;
-typedef UINT TX_THREAD;
-
-typedef void (*task_t)(ULONG);
-typedef struct { task_t fn; ULONG arg; } callee_t;
-
-/* Emulation service constants and helpers */
+/* ------ Emulation general definitions ------ */
 
 #define EMU_TASKS   2u
+#define EMU_SENSORS 3
 #define YIELD_SLEEP 100
 
 #define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
@@ -41,10 +34,18 @@ typedef struct { task_t fn; ULONG arg; } callee_t;
 #define T_REEF      2.0f
 #define T_LANDED    2.0f
 
-#define FILTER_RING_SIZE 32
-#define FILTER_RING_MASK (FILTER_RING_SIZE - 1)
 
-/* Poisoned minimal types for HAL and telemetry */
+/* ------ ThreadX compatibility typedefs ------ */
+
+typedef unsigned int UINT;
+typedef unsigned long ULONG;
+typedef UINT TX_THREAD;
+
+typedef void (*task_t)(ULONG);
+typedef struct { task_t fn; ULONG arg; } callee_t;
+
+
+/* ------ HAL compatibility typedefs ------ */
 
 typedef enum { SEDS_DT_MESSAGE_DATA } emu_data_e;
 typedef enum { HAL_LOCKED, HAL_UNLOCKED } emu_spi_lock_e;
@@ -56,46 +57,64 @@ typedef struct {
   void *pRxBufPtr;
 } SPI_HandleTypeDef;
 
-/* Emulation Helpers */
 
-/* Nanosleep wrapper */
+/* ------ Emulation core API ------ */
+
+/// Millisecond conversion of host libc RTC wrapper.
+uint32_t emu_time_ms();
+
+/// Nanosleep wrapper.
 int proper_sleep(time_t sec, long nsec);
 
-void emu_enable_irq();
-void emu_disable_irq();
-
-/* Emulated drivers */
-
-/*
- * Set whether initialization (!) functions
- * should fail next time. For recovery testing.
- */
-void break_baro();
-void break_gyro();
-void break_accel();
-
-void unbreak_baro();
-void unbreak_gyro();
-void unbreak_accel();
-
-HAL_StatusTypeDef emu_baro_init();
-HAL_StatusTypeDef emu_gyro_init();
-HAL_StatusTypeDef emu_accel_init();
-
-/* Emulation core */
-
-void emu_yield(TX_THREAD *thread);
+/// Substituies tx_thread_sleep()
 int emu_sleep(UINT ticks);
+
+/// Substitutes tx_thread_resume()
+void emu_yield(TX_THREAD *thread);
+
+/// Substitutes log_telemetry_(a)sync(SEDS_DT_MESSAGE_DATA, ...)
+void emu_print_buf(emu_data_e type, void *buf,
+                   size_t size, size_t element_size);
+
+/// Substitutes log_error_(a)sync(...)
+void emu_print_err(const char *fmt, ...);
+
+/// Substitutes several embedded API functions.
+/// Visible indication of physical events
+/// such as parachute deployment or expansion.
+void emu_print_event(void *buf);
+
+/// Substitutes tx_create_thread()
 UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
                        ULONG *stack, UINT stack_size, UINT priority,
                        UINT preemption, UINT time_slice, UINT autostart);
-void emu_print_buf(emu_data_e type, void *buf,
-                   size_t size, size_t element_size);
-void emu_print_err(const char *fmt, ...);
-void emu_print_event(void *buf);
 
-/* Pseudo-filter */
 
+/* ------ Emulation drivers API ------ */
+
+/// Sets irq flag to 1
+void emu_enable_irq();
+
+/// Sets irq flag to 0
+void emu_disable_irq();
+
+/// Returns the value of irq flag
+uint_fast8_t irq_enabled();
+
+/// Set a sensor to fail next init.
+void break_sensor(int k);
+
+/// Set a sensor to succeed next init.
+void recover_sensor(int k);
+
+/// Tries to initialize sensor according to its breakage flag.
+/// Substitutes sensor initialization functions.
+HAL_StatusTypeDef emu_init_sensor(int k);
+
+
+/* ------ Emulation sensors API ------ */
+
+/// Produce one normal sample (deprecated)
 void produce_normal(float h1, float v1, float a, ULONG samp, float sigma);
 
 

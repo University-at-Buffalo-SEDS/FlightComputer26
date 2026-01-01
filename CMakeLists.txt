@@ -100,9 +100,9 @@ if(TEST_ON_HOST)
     set(FC_TEST fctest)
     set(HOST_TEST_SOURCES
         tests/emu-core.c
-        tests/emu-filter.c
         tests/emu-drivers.c
-
+        tests/emu-sensors.c
+        Core/Src/ukf.c
         Core/Src/deployment.c
     )
     set(ENABLE_TELEMETRY OFF CACHE BOOL "" FORCE)

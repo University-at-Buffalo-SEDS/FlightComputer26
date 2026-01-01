@@ -1,30 +1,32 @@
+/*
+ * Minimal runtime configuration interface
+ * used to instruct emulated sensors of fault injections.
+ */
+
 #include <stdint.h>
+#include <stdatomic.h>
 #include <time.h>
 
 #include "platform.h"
 
-static struct timespec success_delay = {0, 100000000};
-static struct timespec failure_delay = {0, 50000000};
+/// Default "init" delays.
+static const struct timespec success_delay = {0, 100000000};
+static const struct timespec failure_delay = {0, 50000000};
 
-static uint_fast8_t init_fail_baro = 0;
-static uint_fast8_t init_fail_gyro = 0;
-static uint_fast8_t init_fail_accel = 0;
+/// For each sensor k in EMU_SENSORS:
+/// [k][0] - fail next init; [k][1] - sensor is ready.
+static uint_fast8_t flags[EMU_SENSORS][2] = {0u};
 
-/*
- * For the testing purposes, disabling interrputs
- * completely disables emulation drivers.
- */
-uint_fast8_t irq = 1;
+/// Accessed inter-threads.
+static atomic_uint_fast8_t irq = 1u;
 
-static uint_fast8_t baro_ready = 0;
-static uint_fast8_t gyro_ready = 0 ;
-static uint_fast8_t accel_ready = 0;
-
-HAL_StatusTypeDef emu_baro_init()
+/// Tries to initialize sensor according to its breakage flag.
+/// Substitutes sensor initialization functions.
+HAL_StatusTypeDef emu_init_sensor(int k)
 {
-  if (!init_fail_baro) {
+  if (!flags[k][0]) {
     nanosleep(&success_delay, NULL);
-    baro_ready = 1;
+    flags[k][1] = 1;
     return HAL_OK;
   } else {
     nanosleep(&failure_delay, NULL);
@@ -32,37 +34,17 @@ HAL_StatusTypeDef emu_baro_init()
   }
 }
 
-HAL_StatusTypeDef emu_gyro_init()
-{
-  if (!init_fail_gyro) {
-    nanosleep(&success_delay, NULL);
-    gyro_ready = 1;
-    return HAL_OK;
-  } else {
-    nanosleep(&failure_delay, NULL);
-    return HAL_ERROR;
-  }
-}
+/// Set a sensor to fail next init.
+void break_sensor(int k)    { flags[k][0] = 1; }
 
-HAL_StatusTypeDef emu_accel_init()
-{
-  if (!init_fail_accel) {
-    nanosleep(&success_delay, NULL);
-    accel_ready = 1;
-    return HAL_OK;
-  } else {
-    nanosleep(&failure_delay, NULL);
-    return HAL_ERROR;
-  }
-}
+/// Set a sensor to succeed next init.
+void recover_sensor(int k)  { flags[k][0] = 0; }
 
-void break_baro() { init_fail_baro = 1; }
-void break_gyro() { init_fail_gyro = 1; }
-void break_accel() { init_fail_accel = 1; }
+/// Sets irq flag to 0
+void emu_disable_irq()  { atomic_store_explicit(&irq, 0, memory_order_release); }
 
-void unbreak_baro() { init_fail_baro = 0; }
-void unbreak_gyro() { init_fail_gyro = 0; }
-void unbreak_accel() { init_fail_accel = 0; }
+/// Sets irq flag to 1
+void emu_enable_irq()   { atomic_store_explicit(&irq, 1, memory_order_release); }
 
-void emu_disable_irq() { irq = 0; }
-void emu_enable_irq() { irq = 1; }
+/// Returns the value of irq flag
+uint_fast8_t irq_enabled() { return atomic_load_explicit(&irq, memory_order_acquire); }

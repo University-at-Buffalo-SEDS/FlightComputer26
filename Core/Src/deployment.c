@@ -13,27 +13,28 @@ TX_THREAD deployment_thread;
 ULONG deployment_thread_stack[DEPLOYMENT_THREAD_STACK_SIZE
                               / sizeof(ULONG)];
 
-/// From UKF.
+/// From UKF (ukf.c).
 extern atomic_uint_fast8_t newdata;
 extern filter_t ring[];
 
 /// Rocket controls and statistics.
-static rocket_t rock = {0};
+static flight_t rock = {0};
 static stats_t stats[2] = {0};
 
 
 /* ------ Public API ------ */
 
-state_e get_rocket_state() { return rock.state; }
+/// Does not cover states before rocket is ready to launch.
+state_e current_flight_state() { return rock.state; }
 
-/// Send enum-specified command in manual mode.
+/// Send enum-specified command to deployment.
 /// First command should be 'ABORT' to enter manual mode.
-void deployment_send_command(command_e c)
+void deployment_send_command(command_e command)
 {
-  if (c == ABORT)
+  if (command == ABORT)
     rock.abort |= MANUAL_ABORT;
   else
-    rock.cmd = c;
+    rock.cmd = command;
 }
 
 
@@ -50,10 +51,9 @@ static inline inference_e refresh_stats()
 {
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
                                             memory_order_acquire);
-  if (!n)
+  if (!n) {
     return DATA_NONE;
-
-  if (n > MAX_SAMPLE) {
+  } else if (n > MAX_SAMPLE) {
     rock.ukf = (rock.ukf + n - MAX_SAMPLE) & UKF_RING_MASK;
     n = MAX_SAMPLE;
   }
@@ -68,9 +68,8 @@ static inline inference_e refresh_stats()
   uint_fast8_t valid_mask = 0u;
   uint_fast8_t vel_count = 1u;
   uint_fast8_t vax_count = 1u;
-  uint_fast8_t k = rock.ukf;
 
-  for (; k < n; k = (k + 1) & UKF_RING_MASK)
+  for (uint_fast8_t k = rock.ukf; k < n; k = (k + 1) & UKF_RING_MASK)
   {
     if (ring[k].alt < SN_MIN_ALT || ring[k].alt > SN_MAX_ALT)
     {
@@ -407,28 +406,25 @@ static inline void bad_inference_handler(inference_e inf)
   }
 }
 
-/// Give up control to another thread and wait for signals.
+/// Give up inference attempts and wait for signals.
 static inline void manual_mode()
 {
   log_msg("DEPL: Entering manual mode", 27);
 
-  while (1) {
-    switch (rock.cmd) {
-      case FIRE_PYRO:
-        if (!(rock.abort & PYRO_FIRED)) {
-          co2_high();
-          rock.abort |= PYRO_FIRED;
-        }
-        break;
-      case FIRE_REEF:
-        if (rock.abort & PYRO_FIRED) {
-          reef_high();
-          return;
-        }
-        break;
-      case SHUTDOWN: return;
-      default: break;
+  while (SEDS_ARE_COOL) {
+    if (rock.cmd == FIRE_PYRO &&
+        !(rock.abort & PYRO_FIRED))
+    {
+      co2_high();
+      rock.abort |= PYRO_FIRED;
     }
+    else if (rock.cmd == FIRE_REEF &&
+             rock.abort & PYRO_FIRED)
+    {
+      reef_high();
+      return;
+    }
+    else if (rock.cmd == SHUTDOWN) return;
 
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP * 2);
   }
@@ -471,6 +467,7 @@ void deployment_thread_entry(ULONG cycle)
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP);
   }
 
+#if DEPLOYMENT_RESTART_ON_FAIL > 0
   if (rock.abort & MANUAL_ABORT || cycle >= MAX_CYCLES) {
     manual_mode();
 
@@ -481,8 +478,13 @@ void deployment_thread_entry(ULONG cycle)
     return;
   }
 
-  /* Small stack outside while loop => safe recursion */
+  /* Small stack outside of while loop => safe recursion */
   deployment_thread_entry(++cycle);
+
+#else
+  manual_mode();
+
+#endif
 }
 
 /// Creates a non-preemptive deployment thread with
@@ -503,8 +505,8 @@ void create_deployment_thread(void)
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
-  if (st == TX_SUCCESS)
-    log_msg_sync("Starting deployment thread", 27);
-  else
+  if (st != TX_SUCCESS)
     log_die("Failed to create deployment thread: %u", (unsigned)st);
+  else
+    log_msg_sync("Starting deployment thread", 27);
 }
