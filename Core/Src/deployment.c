@@ -122,10 +122,7 @@ static inline inference_e refresh_stats()
 
   rock.ukf = (rock.ukf + n) & UKF_RING_MASK;
 
-  if (!((valid_mask & VALID_ALT) &&
-        (valid_mask & VALID_VEL) &&
-        (valid_mask & VALID_VAX)))
-  {
+  if ((valid_mask & VALID_STATS) != VALID_STATS) {
     /* Write to the same buffer next time. */
     rock.buf = !rock.buf;
     return st;
@@ -134,7 +131,7 @@ static inline inference_e refresh_stats()
   stats[rock.buf].avg_vel = sum_vel / (float)vel_count;
   stats[rock.buf].avg_vax = sum_vax / (float)vax_count;
 
-  return (st == DATA_OFFSET) ? DEPL_OK : -st;
+  return (st != DATA_OFFSET) ?  : -st;
 }
 
 

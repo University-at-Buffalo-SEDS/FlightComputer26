@@ -76,6 +76,8 @@
 #define VALID_VEL (1u << 2)
 #define VALID_VAX (1u << 4)
 
+#define VALID_STATS (VALID_ALT | VALID_VEL | VALID_VAX)
+
 /* Base offset for reporting bad data */
 #define DATA_OFFSET -10
 
