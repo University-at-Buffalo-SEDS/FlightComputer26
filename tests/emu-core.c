@@ -3,16 +3,17 @@
  * parts of the flight computer.
  */
 
+#include <stdio.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <time.h>
-#include <stdio.h>
+#include <signal.h>
+#include <sys/signal.h>
 #include <pthread.h>
+#include <time.h>
 
 #include "platform.h"
-
 #include "deployment.h"
 
 /// Book keeping of running tasks being tested.
@@ -113,4 +114,48 @@ UINT emu_create_thread(TX_THREAD *thread, char *name,
     return TX_FAILURE;
 
   return TX_SUCCESS;
+}
+
+/// UNIX signal handler.
+/// Used here to send commands to deployment
+static void handler(int sig)
+{
+  command_e cmd;
+  /* SIGINT  = ABORT
+   * SIGQUIT = FIRE_PYRO
+   * SIGTSTP = FIRE_REEF */
+  switch (sig) {
+    case SIGINT: cmd = ABORT; break;      /* C-c */
+    case SIGQUIT: cmd = FIRE_PYRO; break; /* C-\ */
+    case SIGTSTP: cmd = FIRE_REEF; break; /* C-z */
+    default: return;
+  }
+
+  deployment_send_command(cmd);
+
+  if (cmd == FIRE_REEF)
+    _Exit(0);
+}
+
+/// Initialize emulation.
+void emu_init()
+{
+  srand(time(0));
+
+  /* For internal book keeping */
+  deployment_thread = 0;
+  ukf_thread = 1;
+
+  if (signal(SIGINT, handler) == SIG_ERR  ||
+      signal(SIGQUIT, handler) == SIG_ERR ||
+      signal(SIGTSTP, handler) == SIG_ERR)
+  {
+    emu_print_err("Could not register UNIX signal(s).");
+    _Exit(1);
+  }
+  else
+  {
+    create_ukf_thread();
+    create_deployment_thread();
+  }
 }

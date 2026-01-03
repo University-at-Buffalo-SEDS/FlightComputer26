@@ -1,54 +1,46 @@
+/*
+ * Testing entry point.
+ * This file should utilize the functionality
+ * found in emulation.h to create testing scenarios.
+ */
+
 #include <stdio.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <sys/signal.h>
 
-#include "deployment.h"
 #include "platform.h"
+#include "deployment.h"
 
-void handler(int sig)
+static inline void test_normal_flight(state_e until_state)
 {
-  command_e cmd;
-  /* SIGINT  = ABORT
-   * SIGQUIT = FIRE_PYRO
-   * SIGTSTP = FIRE_REEF */
-  switch (sig) {
-    case SIGINT: cmd = ABORT; break;
-    case SIGQUIT: cmd = FIRE_PYRO; break;
-    case SIGTSTP: cmd = FIRE_REEF; break;
-    default: return;
-  }
-
-  deployment_send_command(cmd);
-
-  if (cmd == FIRE_REEF) _Exit(0);
+  // TODO
 }
 
-static void init_testing()
+static inline void test_total_failure(state_e failing_state)
 {
-  srand(time(0));
-
-  deployment_thread = 0;
-  ukf_thread = 1;
-
-  if (signal(SIGINT, handler) == SIG_ERR) {
-    emu_print_err("Could not register UNIX signal.");
-  } else {
-    create_ukf_thread();
-    create_deployment_thread();
-  }
+  test_normal_flight(failing_state);
+  // TODO
 }
 
-static void test_normal_flight()
+static inline void test_with_warnings(int deviations)
 {
-  ULONG samp;
-
-  init_testing();
-
-  // TODO: after ukf is finished, supply it with raw data.
+  // TODO
 }
 
+/// CTest single entry point.
 int main()
 {
-  test_normal_flight();
+  /* User configuation */
+  const int testing_scenario = 0;
+  const int num_deviations = 10;
+  const state_e failing_state = LAUNCH;
+  const unsigned int ticks_idling = 100;
+
+  emu_init();
+  emu_sleep(ticks_idling);
+
+  switch (testing_scenario) {
+    case 0: test_normal_flight(LANDED); break;
+    case 1: test_total_failure(failing_state); break;
+    case 2: test_with_warnings(num_deviations); break;
+    /* ... */
+  }
 }

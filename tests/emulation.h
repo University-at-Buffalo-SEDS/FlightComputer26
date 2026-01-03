@@ -7,7 +7,6 @@
 #define EMULATION_H
 
 #include <stdint.h>
-#include <time.h>
 
 
 /* ------ Emulation general definitions ------ */
@@ -16,23 +15,18 @@
 #define EMU_SENSORS 3
 #define YIELD_SLEEP 100
 
-#define TX_TO_SEC(ticks) (((float)ticks) / 100.0f)
-#define NS_IN_SEC 1000000000L
+#define EMU_INIT 1u
+#define EMU_FUNC (1u << 8)
+#define EMU_PRED (1u << 16)
+
+#define SUCCESS_TICKS 100
+#define FAILURE_TICKS 50
 
 #define SAMPLE_HZ 50
 #define SAMPLE_TK (1e7 / SAMPLE_HZ)
 
-#define MAX_DEVIATION 2.0f
-#define CASUAL_SIGMA  0.5f
-
-#define T_IDLE      2.0f
-#define T_LAUNCH    2.0f
-#define T_ASCENT    10.0f
-#define T_BURNOUT   1.0f
-#define T_APOGEE    6.0f
-#define T_DESCENT   10.0f
-#define T_REEF      2.0f
-#define T_LANDED    2.0f
+#define MAX_DEVIATION 1.5f
+#define CASUAL_SIGMA  0.375f
 
 
 /* ------ ThreadX compatibility typedefs ------ */
@@ -59,6 +53,9 @@ typedef struct {
 
 
 /* ------ Emulation core API ------ */
+
+/// Initialize emulation.
+void emu_init();
 
 /// Millisecond conversion of host libc RTC wrapper.
 uint32_t emu_time_ms();
@@ -90,27 +87,27 @@ UINT emu_create_thread(TX_THREAD *thread, char *name, task_t entry, ULONG input,
 
 /* ------ Emulation drivers API ------ */
 
-/// Sets irq flag to 1
-void emu_enable_irq();
-
-/// Sets irq flag to 0
-void emu_disable_irq();
-
-/// Returns the value of irq flag
-uint_fast8_t irq_enabled();
-
-/// Whether a sensor successfully initialized
-uint_fast8_t sensor_is_ready(int k);
-
-/// Set a sensor to fail next init.
-void break_sensor(int k);
-
-/// Set a sensor to succeed next init.
-void recover_sensor(int k);
-
 /// Tries to initialize sensor according to its breakage flag.
 /// Substitutes sensor initialization functions.
-HAL_StatusTypeDef emu_init_sensor(int k);
+HAL_StatusTypeDef emu_init_sensor(unsigned int k);
+
+/// Sets a sensor to report functional but produce invalid measurements.
+HAL_StatusTypedef emu_init_byzantine();
+
+/// Whether a sensor reports itself as functional.
+unsigned int sensor_is_ready(unsigned int k);
+
+/// Set a sensor to produce valid (> 0) or invalid (0) measurements.
+void sensor_prediction(unsigned int sensor, unsigned int valid);
+
+/// Set a sensor to succeed (> 0) or fail (0) next init.
+void sensor_next_init(unsigned int sensor, unsigned int succeed);
+
+/// Sets the IRQ flag
+void set_irq(unsigned int k);
+
+/// Returns the value of the IRQ flag
+unsigned int irq_enabled();
 
 
 /* ------ Emulation sensors API ------ */

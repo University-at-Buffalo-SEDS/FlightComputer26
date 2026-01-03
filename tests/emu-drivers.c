@@ -3,51 +3,77 @@
  * used to instruct emulated sensors of fault injections.
  */
 
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdatomic.h>
-#include <time.h>
 
 #include "platform.h"
 
-/// Default "init" delays.
-static const struct timespec success_delay = {0, 100000000};
-static const struct timespec failure_delay = {0, 50000000};
-
-/// For each sensor k in EMU_SENSORS:
-/// [k][0] - fail next init; [k][1] - sensor is ready.
-static uint_fast8_t flags[EMU_SENSORS][2] = {0u};
+/// For each sensor k in EMU_SENSORS, the mask follows as:
+/// Bit 1:  sensor will fail next init;
+/// Bit 8:  sensor will report its state as normal;
+/// Bit 16: sensor will produce incorrent measurements.
+static unsigned int flags[EMU_SENSORS] = {0};
 
 /// Accessed inter-threads.
-static atomic_uint_fast8_t irq = 1u;
+static atomic_uint_t irq = 1;
 
 /// Tries to initialize sensor according to its breakage flag.
 /// Substitutes sensor initialization functions.
-HAL_StatusTypeDef emu_init_sensor(int k)
+HAL_StatusTypeDef emu_init_sensor(unsigned int k)
 {
-  if (!flags[k][0]) {
-    nanosleep(&success_delay, NULL);
-    flags[k][1] = 1;
+  unsigned int i = k % EMU_SENSORS;
+  if (flags[i] & EMU_INIT) {
+    emu_sleep(SUCCESS_TICKS);
+    flags[i] |= EMU_FUNC;
     return HAL_OK;
   } else {
-    nanosleep(&failure_delay, NULL);
+    emu_sleep(FAILURE_TICKS);
     return HAL_ERROR;
   }
 }
 
-/// Whether a sensor successfully initialized
-uint_fast8_t sensor_is_ready(int k) { return flags[k][1]; }
+/// Sets a sensor to report functional but produce invalid measurements.
+HAL_StatusTypedef emu_init_byzantine()
+{
+  int k = rand() % EMU_SENSORS;
+  emu_sleep(SUCCESS_TICKS);
+  flags[k] = EMU_FUNC | EMU_PRED;
+  return HAL_OK;
+}
 
-/// Set a sensor to fail next init.
-void break_sensor(int k)    { flags[k][0] = 1; }
+/// Whether a sensor reports itself as functional.
+unsigned int sensor_is_ready(unsigned int k)
+{
+  return flags[k % EMU_SENSORS] & EMU_FUNC;
+}
 
-/// Set a sensor to succeed next init.
-void recover_sensor(int k)  { flags[k][0] = 0; }
+/// Set a sensor to produce valid (> 0) or invalid (0) measurements.
+void sensor_prediction(unsigned int sensor, unsigned int valid)
+{
+  if (valid)
+    flags[sensor % EMU_SENSORS] &= ~EMU_PRED;
+  else
+    flags[sensor % EMU_SENSORS] |= EMU_PRED;
+}
 
-/// Sets irq flag to 0
-void emu_disable_irq()  { atomic_store_explicit(&irq, 0, memory_order_release); }
+/// Set a sensor to succeed (> 0) or fail (0) next init.
+void sensor_next_init(unsigned int sensor, unsigned int succeed)
+{
+  if (succeed)
+    flags[sensor % EMU_SENSORS] &= ~EMU_INIT;
+  else
+    flags[sensor % EMU_SENSORS] |= EMU_INIT;
+}
 
-/// Sets irq flag to 1
-void emu_enable_irq()   { atomic_store_explicit(&irq, 1, memory_order_release); }
+/// Sets the IRQ flag
+void set_irq(unsigned int k)
+{
+  atomic_store_explicit(&irq, k, memory_order_release);
+}
 
-/// Returns the value of irq flag
-uint_fast8_t irq_enabled() { return atomic_load_explicit(&irq, memory_order_acquire); }
+/// Returns the value of the IRQ flag
+unsigned int irq_enabled()
+{
+  return atomic_load_explicit(&irq, memory_order_acquire);
+}
