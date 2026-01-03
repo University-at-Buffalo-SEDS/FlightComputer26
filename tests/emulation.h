@@ -20,7 +20,7 @@
 #define NS_IN_SEC 1000000000L
 
 #define SAMPLE_HZ 50
-#define SAMPLE_NS (1e9 / SAMPLE_HZ)
+#define SAMPLE_TK (1e7 / SAMPLE_HZ)
 
 #define MAX_DEVIATION 2.0f
 #define CASUAL_SIGMA  0.5f
@@ -64,8 +64,6 @@ typedef struct {
 uint32_t emu_time_ms();
 
 /// Nanosleep wrapper.
-int proper_sleep(time_t sec, long nsec);
-
 /// Substituies tx_thread_sleep()
 int emu_sleep(UINT ticks);
 

@@ -97,6 +97,6 @@ void produce_normal(float h1, float v1, float a, ULONG samp, float sigma)
 
     sanitize(&buf.alt, SN_MAX_ALT);
     // push sample to sensor-ukf exchange medium
-    proper_sleep(0, SAMPLE_NS);
+    emu_sleep(SAMPLE_TK);
   }
 }

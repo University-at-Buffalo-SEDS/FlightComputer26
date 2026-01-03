@@ -27,30 +27,14 @@ uint32_t emu_time_ms()
 }
 
 /// Nanosleep wrapper.
-int proper_sleep(time_t sec, long nsec)
-{
-  if (nsec < 0) {
-    nsec = 0;
-  } else if (nsec >= 1e9L) {
-    sec += nsec / NS_IN_SEC;
-    nsec = nsec % NS_IN_SEC;
-  }
-
-  struct timespec delay = {sec, nsec};
-  return nanosleep(&delay, NULL);
-}
-
 /// Substitutes tx_thread_sleep()
 int emu_sleep(UINT ticks)
 {
-  float duration = TX_TO_SEC(ticks);
+  struct timespec ts;
+  ts.tv_sec = ticks / 100L;
+  ts.tv_nsec = ticks * 1e7L - ts.tv_sec * 1e9L;
 
-  printf("[RTOS] Thread requested to sleep for %u ticks"
-         " (%f seconds)\n", ticks, duration);
-
-  time_t sec = (time_t)duration;
-  long nsec = (long)((duration - (double)sec) * 1e9);
-  return proper_sleep(sec, nsec);
+  return nanosleep(&ts, NULL);
 }
 
 /// Substitutes tx_thread_resume()
