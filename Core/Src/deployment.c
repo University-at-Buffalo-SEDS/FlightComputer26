@@ -53,7 +53,14 @@ static inline inference_e refresh_stats()
                                             memory_order_acquire);
   if (!n) {
     return DATA_NONE;
-  } else if (n > MAX_SAMPLE) {
+  }
+
+  /* Here and until the end of the for loop below, if deployment thread
+   * is displaced for a time long enough for the UKF thread to fill
+   * at least UKF_RING_SIZE - n samples, a data race will occur.
+   * Current implementation is subject to tests with ThreadX sheduler. */
+  
+  if (n > MAX_SAMPLE) {
     rock.ukf = (rock.ukf + n - MAX_SAMPLE) & UKF_RING_MASK;
     n = MAX_SAMPLE;
   }
