@@ -10,12 +10,8 @@
 #define POOL_SIZE 32
 #define POOL_MASK (POOL_SIZE - 1)
 
-typedef struct {
-  filter_t data;
-  uint_fast8_t next;
-} node_t;
-
-node_t pool[POOL_SIZE] = {0};
+uint_fast8_t next[POOL_SIZE] = {0};
+filter_t pool[POOL_SIZE] = {0};
 
 atomic_uint_fast8_t top = 0u;
 atomic_uint_least32_t mask = 0u;
@@ -42,7 +38,7 @@ inline void sll_clean(uint_fast8_t curr, uint_fast8_t end)
   while (curr != end)
   {
     uint_fast8_t k = curr;
-    curr = pool[k].next;
+    curr = next[k];
     atomic_fetch_and_explicit(&mask, ~(1u << k), memory_order_release);
   }
 }
@@ -56,8 +52,8 @@ void sll_produce() // one sample
   uint_fast8_t k = sll_select();
 
   if (k != UINT_FAST8_MAX) {
-    // Write stuff to pool[k].data
-    pool[k].next = atomic_exchange_explicit(&top, k, memory_order_release);
+    // Write stuff to pool[k]
+    next[k] = atomic_exchange_explicit(&top, k, memory_order_release);
   }
 }
 
@@ -73,8 +69,8 @@ void sll_consume() // several samples
     for (uint_fast8_t i = 0; t != top_cached && i < MAX_SAMPLE; ++i)
     {
       uint_fast8_t k = t;
-      t = pool[k].next;
-      // Do stuff with pool[k].data
+      t = next[k];
+      // Do stuff with pool[k]
       atomic_fetch_and_explicit(&mask, ~(1u << k), memory_order_release);
     }
 
