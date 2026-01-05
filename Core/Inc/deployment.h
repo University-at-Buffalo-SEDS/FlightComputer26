@@ -19,7 +19,7 @@
 
 /* ------ Local configuration ------ */
 
-#define MAX_SAMPLE 4
+#define DATA_CAP 4
 
 #define MIN_SAMP_ASCENT   6
 #define MIN_SAMP_BURNOUT  6
@@ -40,13 +40,13 @@
  * Units: altitude ALT (m), velocity VEL (m/s)
  * vertical acceleration VAX (m/s^2) */
 
-#define SN_MAX_ALT 4800.0f
-#define SN_MAX_VEL 200.0f
-#define SN_MAX_VAX (GRAVITY_SI * 12.0f)
+#define MAX_ALT 4800.0f
+#define MAX_VEL 200.0f
+#define MAX_VAX (GRAVITY_SI * 12.0f)
 
-#define SN_MIN_ALT -10.0f
-#define SN_MIN_VEL -6.0f
-#define SN_MIN_VAX -4.0f
+#define MIN_ALT -10.0f
+#define MIN_VEL -6.0f
+#define MIN_VAX -4.0f
 
 #define LAUNCH_MIN_VEL  8.0f
 #define LAUNCH_MIN_VAX  5.0f
@@ -70,7 +70,7 @@
 
 /* Data validation and statistics  */
 
-#define DATA_MASK (MAX_SAMPLE + 1)
+#define DATA_MASK (DATA_CAP + 1)
 
 #define VALID_ALT 0x01u
 #define VALID_VEL (1u << 2)
@@ -95,11 +95,9 @@
 
 /* ------ Type definitions ------ */
 
-/*
- * Service enum used to report inference result.
- * DATA_MASK is used to adjust bad data reporting
- * range based on a reasonable local buffer size.
- */
+/// Service enum used to report inference result.
+/// DATA_MASK is used to adjust bad data reporting
+/// range based on a reasonable local buffer size.
 typedef enum {
   /* Bad data codes (additive, critical)
    * Ranges: [-134, -11] (error), [11, 134] (warning) 
@@ -133,9 +131,7 @@ typedef enum {
 /* Do not allow inference_e to be < 16 bits due to increment */
 _Static_assert(sizeof(inference_e) > sizeof(int8_t), "enum capacity");
 
-/*
- * In-flight rocket states only since used internally.
- */
+/// In-flight rocket states only since used internally.
 typedef enum {
   IDLE,
   LAUNCH,
@@ -147,9 +143,7 @@ typedef enum {
   LANDED,
 } state_e;
 
-/*
- * Commands for manual control.
- */
+/// Commands for manual control.
 typedef enum {
   ABORT,
   FIRE_PYRO,
@@ -157,10 +151,8 @@ typedef enum {
   SHUTDOWN
 } command_e;
 
-/*
- * Minimum required stats to have some variety of checks
- * we use to make a decision. Useful for two iterations.
- */
+/// Minimum required stats to have some variety of checks
+/// we use to make a decision. Useful for two iterations.
 typedef struct {
   float min_alt;
   float max_alt;
@@ -168,26 +160,29 @@ typedef struct {
   float avg_vax;
 } stats_t;
 
+/// Local struct used when fetching data from UKF ring.
+/// Conveniently passed as argument.
 typedef struct {
-  state_e state;    /* Current in-flight state     */
-  inference_e warn; /* Stash for non-critical code */
-  command_e cmd;    /* Last command in manual mode */
+  inference_e st;
+  uint_fast8_t mask;
+} fetch_t;
 
-  /* Amount of samples for state monitored */
-  union {
-    uint_fast8_t ascent;
-    uint_fast8_t burnout;
-    uint_fast8_t descent;
-    uint_fast8_t landing;
-    uint_fast8_t idle;
-  } samp;
-
-  uint_fast8_t ukf; /* Position in external filter ring   */
-  uint_fast8_t buf; /* Index of "current" buffer (0 or 1) */
-
-  uint_fast8_t retry; /* Per cycle. Reset on success.      */
-  uint_fast8_t abort; /* Mask for auto and manual triggers */
+/// Flight statistics struct.
+/// These variables are used most often and
+/// should to loaded to D-Cache together.
+typedef struct {
+  state_e state;
+  uint_fast8_t a;
+  uint_fast8_t samples;
 } flight_t;
+
+/// Critical communication struct.
+typedef struct {
+  command_e cmd;      /* Last command in manual mode       */
+  inference_e warn;   /* Stash for non-critical code       */
+  uint_fast8_t retry; /* Per cycle, reset on success       */
+  uint_fast8_t abort; /* Mask for auto and manual triggers */
+} monitor_t;
 
 
 /* ------ Public API ------ */
@@ -197,6 +192,6 @@ state_e current_flight_state();
 
 /// Send enum-specified command in manual mode.
 /// First command should be 'ABORT' to enter manual mode.
-void deployment_send_command(command_e c);
+void deployment_send_command(command_e command);
 
 #endif // DEPLOYMENT_H

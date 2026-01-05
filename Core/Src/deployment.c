@@ -3,7 +3,6 @@
  * Designed to run as a task *in one thread*.
  */
 
-#include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -19,6 +18,9 @@ extern filter_t ring[];
 
 /// Rocket controls and statistics.
 static flight_t rock = {0};
+static monitor_t monitor = {0};
+
+/// Generalized UKF metrics (double buffering).
 static stats_t stats[2] = {0};
 
 
@@ -32,13 +34,46 @@ state_e current_flight_state() { return rock.state; }
 void deployment_send_command(command_e command)
 {
   if (command == ABORT)
-    rock.abort |= MANUAL_ABORT;
+    monitor.abort |= MANUAL_ABORT;
   else
-    rock.cmd = command;
+    monitor.cmd = command;
 }
 
 
 /* ------ Data acquisition ------ */
+
+/// Helper to determine max/min values on an interval.
+static inline void acc_abs(fetch_t *ft, float val, max, min,
+                           uint_fast8_t ok, inference_e err,
+                           float *abs_min, float *abs_max)
+{
+  if (val < min || val > max) {
+    ft->st += err;
+  } else if (ft->mask & ok) {
+    *abs_min = MIN(val, *abs_min);
+    *abs_max = MAX(val, *abs_max);
+  } else {
+    *abs_min = val;
+    *abs_max = val;
+    ft->mask |= ok;
+  }
+}
+
+/// Helper to calculate sum (average) on an interval. 
+static inline void acc_avg(fetch_t *ft, float val, max, min,
+                           uint_fast8_t ok, inference_e err,
+                           uint_fast8_t *count, float *sum)
+{
+  if (val < min || val > max) {
+    ft->st += err;
+  } else if (ft->mask & ok) {
+    *sum += val;
+    ++(*count);
+  } else {
+    *sum = val;
+    ft->mask |= ok;
+  }
+}
 
 /// Checks 1 to 4 new values in ring against sanity boundaries,
 /// and averages valid values as defined in stats_t (deployment.h).
@@ -47,98 +82,56 @@ void deployment_send_command(command_e command)
 /// Returns DATA_NONE if ring has no new values, > 0 if some data
 /// was rejected but new stats_t was formed, and < 0 if provided
 /// valid data was not enough to form a complete stats_t;
-static inline inference_e refresh_stats()
+static inline inference_e fetch_ukf()
 {
+  static uint_fast8_t i = 0;
+  static filter_t data[DATA_CAP];
+
   uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
                                             memory_order_acquire);
-  if (!n) {
-    return DATA_NONE;
-  }
-
-  /* Here and until the end of the for loop below, if deployment thread
-   * is displaced for a time long enough for the UKF thread to fill
-   * at least UKF_RING_SIZE - n samples, a data race will occur.
-   * Current implementation is subject to tests with ThreadX sheduler. */
-  
-  if (n > MAX_SAMPLE) {
-    rock.ukf = (rock.ukf + n - MAX_SAMPLE) & UKF_RING_MASK;
-    n = MAX_SAMPLE;
-  }
-
-  rock.buf = !rock.buf;
-
-  inference_e st = DATA_OFFSET;
-
-  float sum_vel = 0.0f;
-  float sum_vax = 0.0f;
-
-  uint_fast8_t valid_mask = 0u;
-  uint_fast8_t vel_count = 1u;
-  uint_fast8_t vax_count = 1u;
-
-  for (uint_fast8_t k = rock.ukf; k < n; k = (k + 1) & UKF_RING_MASK)
+  if (!n) return DATA_NONE;
+  if (n > DATA_CAP)
   {
-    if (ring[k].alt < SN_MIN_ALT || ring[k].alt > SN_MAX_ALT)
-    {
-      st += DATA_BAD_ALT;
-    }
-    else if (valid_mask & VALID_ALT)
-    {
-      if (ring[k].alt < stats[rock.buf].min_alt)
-        stats[rock.buf].min_alt = ring[k].alt;
-      if (ring[k].alt > stats[rock.buf].max_alt)
-        stats[rock.buf].max_alt = ring[k].alt;
-    }
-    else
-    {
-      stats[rock.buf].min_alt = ring[k].alt;
-      stats[rock.buf].max_alt = ring[k].alt;
-      valid_mask |= VALID_ALT;
-    }
-    
-    if (ring[k].vel < SN_MIN_VEL || ring[k].vel > SN_MAX_VEL)
-    {
-      st += DATA_BAD_VEL;
-    }
-    else if (valid_mask & VALID_VEL)
-    {
-      sum_vel += ring[k].vel;
-      ++vel_count;
-    }
-    else
-    {
-      sum_vel = ring[k].vel;
-      valid_mask |= VALID_VEL;
-    }
-
-    if (ring[k].vax < SN_MIN_VAX || ring[k].vax > SN_MAX_VAX)
-    {
-      st += DATA_BAD_VAX;
-    }
-    else if (valid_mask & VALID_VAX)
-    {
-      sum_vax += ring[k].vax;
-      ++vax_count;
-    }
-    else
-    {
-      sum_vax = ring[k].vax;
-      valid_mask |= VALID_VAX;
-    }
+    i = (i + n - DATA_CAP) & UKF_RING_MASK;
+    n = DATA_CAP;
   }
 
-  rock.ukf = (rock.ukf + n) & UKF_RING_MASK;
+  uint_fast8_t k = 0;
+  for (; k < n; ++k)
+  {
+    // TODO what if UKF currently writes ring[i]?
+    data[k] = ring[i];
+    i = (i + 1) & UKF_RING_MASK;
+  }
 
-  if ((valid_mask & VALID_STATS) != VALID_STATS) {
+  rock.a = !rock.a;
+  fetch_t ft = { DATA_OFFSET, 0 };
+  uint_fast8_t vel = 1u, vax = 1u;
+  float sum_vel = 0.0f, sum_vax = 0.0f;
+
+  for (; k > 0; --k)
+  {
+    acc_abs(&ft, data[k].alt, MAX_ALT, MIN_ALT, VALID_ALT,
+            DATA_BAD_ALT, &stats[rock.a].min_alt,
+            &stats[rock.a].max_alt);
+
+    acc_avg(&ft, data[k].vel, MAX_VEL, MIN_VEL,
+            VALID_VEL, DATA_BAD_VEL, &vel, &sum_vel);
+
+    acc_avg(&ft, data[k].vax, MAX_VAX, MIN_VAX,
+            VALID_VAX, DATA_BAD_VAX, &vax, &sum_vax);
+  }
+
+  if ((ft.mask & VALID_STATS) != VALID_STATS) {
     /* Write to the same buffer next time. */
-    rock.buf = !rock.buf;
-    return st;
+    rock.a = !rock.a;
+    return ft.st;
   }
 
-  stats[rock.buf].avg_vel = sum_vel / (float)vel_count;
-  stats[rock.buf].avg_vax = sum_vax / (float)vax_count;
+  stats[rock.a].avg_vel = sum_vel / (float)vel;
+  stats[rock.a].avg_vax = sum_vax / (float)vax;
 
-  return (st != DATA_OFFSET) ?  : -st;
+  return (ft.st == DATA_OFFSET) ? DEPL_OK : -ft.st;
 }
 
 
@@ -148,11 +141,10 @@ static inline inference_e refresh_stats()
 /// acceleration were exceded.
 static inline inference_e detect_launch()
 {
-  if (stats[rock.buf].avg_vel >= LAUNCH_MIN_VEL &&
-      stats[rock.buf].avg_vax >= LAUNCH_MIN_VAX)
+  if (stats[rock.a].avg_vel >= LAUNCH_MIN_VEL &&
+      stats[rock.a].avg_vax >= LAUNCH_MIN_VAX)
   {
     rock.state = LAUNCH;
-    rock.samp.ascent = 0;
     log_msg("DEPL: Launch detected", 22);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
@@ -163,21 +155,21 @@ static inline inference_e detect_launch()
 /// Monitors height and velocity increase consistency.
 static inline inference_e detect_ascent()
 {
-  if (stats[rock.buf].avg_vel > stats[!rock.buf].avg_vel &&
-      stats[rock.buf].min_alt > stats[!rock.buf].max_alt)
+  if (stats[rock.a].avg_vel > stats[!rock.a].avg_vel &&
+      stats[rock.a].min_alt > stats[!rock.a].max_alt)
   {
-    ++rock.samp.ascent;
-    if (rock.samp.ascent >= MIN_SAMP_ASCENT)
+    ++rock.samples;
+    if (rock.samples >= MIN_SAMP_ASCENT)
     {
       rock.state = ASCENT;
-      rock.samp.burnout = 0;
+      rock.samples = 0;
       log_msg("DEPL: Launch confirmed", 23);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.ascent > 0)
+  else if (rock.samples > 0)
   {
-    rock.samp.ascent = 0;
+    rock.samples = 0;
     return DEPL_N_LAUNCH;
   }
 #endif
@@ -191,22 +183,22 @@ static inline inference_e detect_ascent()
 /// consistency.
 static inline inference_e detect_burnout()
 {
-  if (stats[rock.buf].avg_vel >= BURNOUT_MIN_VEL &&
-      stats[rock.buf].avg_vax <= BURNOUT_MAX_VAX &&
-      stats[rock.buf].max_alt > stats[rock.buf].min_alt &&
-      stats[rock.buf].avg_vel < stats[!rock.buf].avg_vel)
+  if (stats[rock.a].avg_vel >= BURNOUT_MIN_VEL &&
+      stats[rock.a].avg_vax <= BURNOUT_MAX_VAX &&
+      stats[rock.a].max_alt > stats[rock.a].min_alt &&
+      stats[rock.a].avg_vel < stats[!rock.a].avg_vel)
   {
-    ++rock.samp.burnout;
-    if (rock.samp.burnout >= MIN_SAMP_BURNOUT)
+    ++rock.samples;
+    if (rock.samples >= MIN_SAMP_BURNOUT)
     {
       rock.state = BURNOUT;
       log_msg("DEPL: Watching for apogee", 26);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.burnout > 0)
+  else if (rock.samples > 0)
   {
-    rock.samp.burnout = 0;
+    rock.samples = 0;
     return DEPL_N_BURNOUT;
   }
 #endif
@@ -218,11 +210,11 @@ static inline inference_e detect_burnout()
 /// for velocity to pass the minimum threshold.
 static inline inference_e detect_apogee()
 {
-  if (stats[rock.buf].avg_vel <= APOGEE_MAX_VEL &&
-      stats[rock.buf].avg_vel < stats[!rock.buf].avg_vel)
+  if (stats[rock.a].avg_vel <= APOGEE_MAX_VEL &&
+      stats[rock.a].avg_vel < stats[!rock.a].avg_vel)
   {
     rock.state = APOGEE;
-    rock.samp.descent = 0;
+    rock.samples = 0;
     log_msg("DEPL: Approaching apogee", 25);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -233,22 +225,22 @@ static inline inference_e detect_apogee()
 /// Monitors for decreasing altitude and increasing velocity.
 static inline inference_e detect_descent()
 {
-  if (stats[rock.buf].max_alt < stats[!rock.buf].min_alt &&
-      stats[rock.buf].avg_vel > stats[!rock.buf].avg_vel)
+  if (stats[rock.a].max_alt < stats[!rock.a].min_alt &&
+      stats[rock.a].avg_vel > stats[!rock.a].avg_vel)
   {
-    ++rock.samp.descent;
-    if (rock.samp.descent >= MIN_SAMP_DESCENT)
+    ++rock.samples;
+    if (rock.samples >= MIN_SAMP_DESCENT)
     {
       rock.state = DESCENT;
-      rock.samp.landing = 0;
+      rock.samples = 0;
       co2_high();
       log_msg("DEPL: Fired pyro, descending", 29);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.descent > 0)
+  else if (rock.samples > 0)
   {
-    rock.samp.descent = 0;
+    rock.samples = 0;
     return DEPL_N_DESCENT;
   }
 #endif
@@ -260,22 +252,22 @@ static inline inference_e detect_descent()
 /// and checks for altitude consistency.
 static inline inference_e detect_reef()
 {
-  if (stats[rock.buf].min_alt <= REEF_TARGET_ALT && 
-      stats[rock.buf].max_alt < stats[!rock.buf].min_alt)
+  if (stats[rock.a].min_alt <= REEF_TARGET_ALT && 
+      stats[rock.a].max_alt < stats[!rock.a].min_alt)
   {
-    ++rock.samp.landing;
-    if (rock.samp.landing >= MIN_SAMP_REEF)
+    ++rock.samples;
+    if (rock.samples>= MIN_SAMP_REEF)
     {
       rock.state = REEF;
-      rock.samp.idle = 0;
+      rock.samples = 0;
       reef_low();
       log_msg("DEPL: Expanded parachute", 25);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.landing > 0)
+  else if (rock.samples > 0)
   {
-    rock.samp.landing = 0;
+    rock.samples = 0;
     return DEPL_N_REEF;
   }
 #endif
@@ -287,25 +279,25 @@ static inline inference_e detect_reef()
 /// beyond allowed tolerance thresholds.
 static inline inference_e detect_landed()
 {
-  float dh = stats[rock.buf].min_alt - stats[!rock.buf].min_alt;
-  float dv = stats[rock.buf].avg_vel - stats[!rock.buf].avg_vel;
-  float da = stats[rock.buf].avg_vax - stats[!rock.buf].avg_vax;
+  float dh = stats[rock.a].min_alt - stats[!rock.a].min_alt;
+  float dv = stats[rock.a].avg_vel - stats[!rock.a].avg_vel;
+  float da = stats[rock.a].avg_vax - stats[!rock.a].avg_vax;
 
   if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
-    ++rock.samp.idle;
-    if (rock.samp.idle >= MIN_SAMP_LANDED)
+    ++rock.samples;
+    if (rock.samples >= MIN_SAMP_LANDED)
     {
       rock.state = LANDED;
       log_msg("DEPL: Rocket landed", 20);
     }
   }
 #if defined CONSECUTIVE_CONFIRMS
-  else if (rock.samp.idle > 0)
+  else if (rock.samples > 0)
   {
-    rock.samp.idle = 0;
+    rock.samples = 0;
     return DEPL_N_LANDED;
   }
 #endif
@@ -317,15 +309,15 @@ static inline inference_e detect_landed()
 /// and triggers checks to prevent premature transitions.
 static inline inference_e infer_rocket_state()
 {
-  inference_e st = refresh_stats();
+  inference_e st = fetch_ukf();
 
   if (st == DEPL_OK) {
     /* Skip other branches */
   } else if (st == DATA_NONE) {
-    rock.warn = st;
+    monitor.warn = st;
     return DEPL_OK;
   } else if (st > DEPL_OK) {
-    rock.warn = st;
+    monitor.warn = st;
   } else if (st < DEPL_OK) {
     return st;
   }
@@ -395,16 +387,16 @@ static inline void try_recover_sensors()
 /// Thresholds are configurable in deployment.h.
 static inline void bad_inference_handler(inference_e inf)
 {
-  ++rock.retry;
-  log_err("DEPL: bad inference #%u (code %d)", rock.retry, inf);
+  ++monitor.retry;
+  log_err("DEPL: bad inference #%u (code %d)", monitor.retry, inf);
 
-  if (rock.retry >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
+  if (monitor.retry >= PRE_RECOV_RETRIES + PRE_ABORT_RETRIES)
   {
-    rock.abort |= AUTO_ABORT;
-    log_err("DEPL: aborting cycle (%u retries)", rock.retry);
+    monitor.abort |= AUTO_ABORT;
+    log_err("DEPL: aborting cycle (%u retries)", monitor.retry);
   }
-  else if (rock.retry >= PRE_RECOV_RETRIES &&
-           rock.retry % RECOVERY_INTERVAL == 0)
+  else if (monitor.retry >= PRE_RECOV_RETRIES &&
+           monitor.retry % RECOVERY_INTERVAL == 0)
   {
     try_recover_sensors();
   }
@@ -416,19 +408,19 @@ static inline void manual_mode()
   log_msg("DEPL: Entering manual mode", 27);
 
   while (SEDS_ARE_COOL) {
-    if (rock.cmd == FIRE_PYRO &&
-        !(rock.abort & PYRO_FIRED))
+    if (monitor.cmd == FIRE_PYRO &&
+        !(monitor.abort & PYRO_FIRED))
     {
       co2_high();
-      rock.abort |= PYRO_FIRED;
+      monitor.abort |= PYRO_FIRED;
     }
-    else if (rock.cmd == FIRE_REEF &&
-             rock.abort & PYRO_FIRED)
+    else if (monitor.cmd == FIRE_REEF &&
+             monitor.abort & PYRO_FIRED)
     {
       reef_high();
       return;
     }
-    else if (rock.cmd == SHUTDOWN) return;
+    else if (monitor.cmd == SHUTDOWN) return;
 
     tx_thread_sleep(DEPLOYMENT_THREAD_SLEEP * 2);
   }
@@ -447,12 +439,12 @@ void deployment_thread_entry(ULONG cycle)
     reef_low();
     rock.state = IDLE;
   } else {
-    rock.abort &= ~AUTO_ABORT;
-    rock.warn = DEPL_OK;
-    rock.retry = 0u;
+    monitor.abort &= ~AUTO_ABORT;
+    monitor.warn = DEPL_OK;
+    monitor.retry = 0u;
   }
 
-  while (!rock.abort) {
+  while (!monitor.abort) {
     inference_e inf = infer_rocket_state();
 
     if (inf == DATA_NONE) {
@@ -460,11 +452,11 @@ void deployment_thread_entry(ULONG cycle)
       continue;
     } else if (inf < DEPL_OK) {
       bad_inference_handler(inf);
-    } else if (rock.warn != DEPL_OK) {
-      rock.warn = DEPL_OK;
+    } else if (monitor.warn != DEPL_OK) {
+      monitor.warn = DEPL_OK;
       log_err("DEPL: non-critical warning code %d", inf);
-    } else if (rock.retry > 0) {
-      rock.retry = 0u;
+    } else if (monitor.retry > 0) {
+      monitor.retry = 0u;
       log_msg("DEPL: recovered from error", 27);
     }
 
@@ -472,7 +464,7 @@ void deployment_thread_entry(ULONG cycle)
   }
 
 #if DEPLOYMENT_RESTART_ON_FAIL > 0
-  if (rock.abort & MANUAL_ABORT || cycle >= MAX_CYCLES) {
+  if (monitor.abort & MANUAL_ABORT || cycle >= MAX_CYCLES) {
     manual_mode();
 
     /* Directed by            Fuad

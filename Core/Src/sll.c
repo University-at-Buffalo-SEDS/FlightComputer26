@@ -66,7 +66,7 @@ void sll_consume() // several samples
 
   if (t != top_cached) {
 
-    for (uint_fast8_t i = 0; t != top_cached && i < MAX_SAMPLE; ++i)
+    for (uint_fast8_t i = 0; t != top_cached && i < DATA_CAP; ++i)
     {
       uint_fast8_t k = t;
       t = next[k];
