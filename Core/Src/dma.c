@@ -2,7 +2,6 @@
  * Interrupt-based sensor data collection.
  */
 
-#include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
