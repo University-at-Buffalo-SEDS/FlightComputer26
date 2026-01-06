@@ -8,18 +8,56 @@
 #include <math.h>
 
 #include "ukf.h"
+#include "deployment.h"
 
 TX_THREAD ukf_thread;
 ULONG ukf_thread_stack[UKF_THREAD_STACK_SIZE];
 
-/// Public ring and counter for deployment.
-filter_t ring[UKF_RING_SIZE] = {0};
-atomic_uint_fast8_t newdata = 0;
+static filter_t ring[UKF_RING_SIZE] = {0};
+
+/// 0-7:  amount of new entries since last ukf_fetch()
+/// 8-15: reader start index (set and cleared in ^)
+static atomic_uint_fast16_t mask = 0;
 
 /// Last recorded time for each UKF timer user.
 static uint32_t ukf_time[Time_Users] = {0};
 
-/* General helpers */
+
+/* ------ Public API ------ */
+
+/// Homemade lock-free data acquisition from UKF ring.
+uint_fast8_t ukf_fetch(filter_t *buf)
+{
+  static uint_fast8_t idx = 0;
+
+  uint_fast8_t n;
+  uint_fast16_t i = idx;
+
+  /* Fetch and clear new entries counter and store current index */
+  n = (uint_fast8_t)atomic_exchange_explicit(&mask, i << 8,
+                                            memory_order_acq_rel);
+  if (!n) goto finish;
+  if (n > DATA_CAP)
+  {
+    /* Copy DATA_CAP most recent elements */
+    i = (i + n - DATA_CAP) & UKF_RING_MASK;
+    n = DATA_CAP;
+  }
+
+  for (uint_fast8_t k = 0; k < n; ++k)
+  {
+    buf[k] = ring[i];
+    i = (i + 1) & UKF_RING_MASK;
+  }
+
+finish:
+  /* Always clear busy start index */
+  atomic_fetch_or_explicit(&mask, 0xFF00u, memory_order_release);
+  return n;
+}
+
+
+/* ------ Helpers ------ */
 
 /// Reports ms elapsed since last call for each user.
 /// Does not handle u32 wrap (flight assumed < 49 days :D).
@@ -37,7 +75,8 @@ static inline void ukf_initialize_time()
     ukf_time[u] = hal_time_ms();
 }
 
-/* Prediction tools */
+
+/* ------ Prediction ------ */
 
 /// Transforms state vector into sensor measurement.
 static inline void ukf_measurement(const state_vec_t *restrict vec,
@@ -129,11 +168,12 @@ static inline void ukf_predict(const state_vec_t *restrict vec,
   }
 }
 
+
+/* ------ UKF task ------ */
+
 void ukf_thread_entry(ULONG input)
 {
   (void)input;
-
-  log_msg_sync("UKF: starting thread", 21);
 
   ukf_initialize_time();
 
@@ -165,5 +205,7 @@ void create_ukf_thread(void)
 
   if (st != TX_SUCCESS) {
     log_die("Failed to create UKF thread: %u", (unsigned)st);
+  } else {
+    log_msg_sync("UKF: starting thread", 21);
   }
 }

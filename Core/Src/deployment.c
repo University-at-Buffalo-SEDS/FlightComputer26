@@ -33,10 +33,11 @@ state_e current_flight_state() { return rock.state; }
 /// First command should be 'ABORT' to enter manual mode.
 void deployment_send_command(command_e command)
 {
-  if (command == ABORT)
+  if (command == ABORT) {
     monitor.abort |= MANUAL_ABORT;
-  else
+  } else {
     monitor.cmd = command;
+  }
 }
 
 
@@ -82,27 +83,13 @@ static inline void acc_avg(fetch_t *ft, float val, max, min,
 /// Returns DATA_NONE if ring has no new values, > 0 if some data
 /// was rejected but new stats_t was formed, and < 0 if provided
 /// valid data was not enough to form a complete stats_t;
-static inline inference_e fetch_ukf()
+static inline inference_e refresh_stats()
 {
-  static uint_fast8_t i = 0;
   static filter_t data[DATA_CAP];
 
-  uint_fast8_t n = atomic_exchange_explicit(&newdata, 0,
-                                            memory_order_acquire);
-  if (!n) return DATA_NONE;
-  if (n > DATA_CAP)
-  {
-    i = (i + n - DATA_CAP) & UKF_RING_MASK;
-    n = DATA_CAP;
-  }
-
-  uint_fast8_t k = 0;
-  for (; k < n; ++k)
-  {
-    // TODO what if UKF currently writes ring[i]?
-    data[k] = ring[i];
-    i = (i + 1) & UKF_RING_MASK;
-  }
+  uint_fast8_t k = ukf_fetch(data);
+  if (!k)
+    return DATA_NONE;
 
   rock.a = !rock.a;
   fetch_t ft = { DATA_OFFSET, 0 };
@@ -309,7 +296,7 @@ static inline inference_e detect_landed()
 /// and triggers checks to prevent premature transitions.
 static inline inference_e infer_rocket_state()
 {
-  inference_e st = fetch_ukf();
+  inference_e st = refresh_stats();
 
   if (st == DEPL_OK) {
     /* Skip other branches */
@@ -501,8 +488,9 @@ void create_deployment_thread(void)
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
-  if (st != TX_SUCCESS)
+  if (st != TX_SUCCESS) {
     log_die("Failed to create deployment thread: %u", (unsigned)st);
-  else
+  } else {
     log_msg_sync("Starting deployment thread", 27);
+  }
 }
