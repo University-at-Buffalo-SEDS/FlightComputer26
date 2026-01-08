@@ -1,49 +1,57 @@
-// Includes consumer API
+/*
+ * Direct Memory Access header and API.
+ */
+
+#ifndef DMA_H
+#define DMA_H
 
 #include <stdint.h>
-#include <stdatomic.h>
+
+
+/* ------ DMA / sensor defs ------  */
 
 #define SENSOR_BUF_SIZE 8
 
-#define BUF_UNCLAIMED UINT8_MAX
-
 #define DMA_RX_NULL UINT8_MAX
 
-/* Typedefs */
+#define RX0_DONE 0x07
+#define RX1_DONE (RX0_DONE << 4)
 
+
+/* ------ Containers ------ */
+
+/// Discriminants must comply with decode_ptr() dev[].
 typedef enum {
-  NONE = 0,
-  BAROMETER = 1,
-  GYROSCOPE = 2,
-  ACCELEROMETER = 3,
-} expected_e;
+  BAROMETER = 0,
+  GYROSCOPE = 1,
+  ACCELEROMETER = 2,
+} device_e;
 
+/* Generic measurement containers */
+typedef struct { float x, y, z; } coords_t;
+typedef struct { float alt, temp; } baro_t;
+typedef struct { int16_t x, y, z; } gyro_t;
+
+/// Transferable raw data unit
 typedef struct {
-  expected_e type;
-  union {
-    float baro[2];
-    int16_t gyro[3];
-    float accel[3];
-  } data;
+  baro_t baro;
+  gyro_t gyro;
+  coords_t accl;
 } payload_t;
 
+/// Global return status
 typedef enum {
   DMA_OK,
-  DMA_BUSY,
-  DMA_EMPTY,
-  DMA_GENERR
+  DMA_WAIT,
+  DMA_BADARG
 } dma_e;
 
-typedef struct {
-  atomic_uint_fast8_t r;
-  atomic_uint_fast8_t w;
-  atomic_uint_fast8_t t[2];
-} dma_t;
 
-/* Globals */
+/* ------ Public API ------ */
 
-/*
- * Reads the latest payload entry.
- * Returns DMA_OK (0) on success and > 0 on failure.
- */
-dma_e dma_read_latest(payload_t *buf);
+/// Tries to fetch data from DMA rxbuf into provided buffer.
+/// Context: sensor task.
+dma_e dma_try_fetch(payload_t *buf);
+
+
+#endif // DMA_H
