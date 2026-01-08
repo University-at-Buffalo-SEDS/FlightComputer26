@@ -90,11 +90,12 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
 /* ------ ISR ------ */
 
-/// Attempts to initialize DMA transfer on 'curr' buffer.
+/// Attempts to initialize DMA transfer on '!curr' buffer.
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   HAL_StatusTypeDef st;
-  uint_fast8_t i = !atomic_load_explicit(&curr, memory_order_acquire);
+  uint_fast8_t i;
+  i = !atomic_load_explicit(&curr, memory_order_acquire);
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
