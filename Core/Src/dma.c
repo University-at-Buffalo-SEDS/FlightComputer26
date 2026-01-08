@@ -137,7 +137,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 /// Tries to fetch data from DMA rxbuf into provided buffer.
 /// Context: sensor task.
-dma_e dma_try_fetch(payload_t *buf)
+dma_e dma_try_fetch(payload_t *restrict buf)
 {
   static uint_fast8_t i = 0;
 
