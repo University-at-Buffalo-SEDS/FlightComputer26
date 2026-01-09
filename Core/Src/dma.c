@@ -175,7 +175,7 @@ dma_e dma_try_fetch(payload_t *restrict buf)
   uint_fast8_t flag = (i) ? 0x0Fu : 0xF0u;
   /* Clear bits for the buffer just read. 
    * Relaxed is used because DMA currently writes to !i,
-   * meaning it must observe this 'AND' only after buf switch.*/
+   * meaning it must observe this 'AND' only after buf switch. */
   atomic_fetch_and_explicit(&mask, flag, memory_order_relaxed);
 
   /* Switch 'curr' buffer for the next time.
