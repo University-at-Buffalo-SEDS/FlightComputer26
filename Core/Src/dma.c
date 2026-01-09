@@ -9,17 +9,16 @@
 #include <stdatomic.h>
 
 #include "platform.h"
-#include "tx_api.h"
 #include "dma.h"
 
 
 /// Each device data readiness mask for two buffers.
 /// Baro, Gyro, Accel, and Unused Bit (in this order).
 /// B G A 0 | B G A 0
-static atomic_uint_fast8_t mask = 0;
+static atomic_uint_fast8_t is_complete = 0;
 
 /// Rx buffer marked for fetching from task context.
-static atomic_uint_fast8_t curr = 0;
+static atomic_uint_fast8_t read_next = 0;
 
 /// Separate Tx buffers for each sensor.
 static const uint8_t tx[3][SENSOR_BUF_SIZE] = {
@@ -71,7 +70,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   finish_transfer(t);
 
   uint_fast8_t flag = 1u << (i*4 + t);
-  atomic_fetch_or_explicit(&mask, flag, memory_order_release);
+  atomic_fetch_or_explicit(&is_complete, flag, memory_order_release);
 }
 
 /// Finish transfer but do not publish flag (drop sample).
@@ -91,12 +90,12 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
 /* ------ ISR ------ */
 
-/// Attempts to initialize DMA transfer on '!curr' buffer.
+/// Attempts to initialize DMA transfer.
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   HAL_StatusTypeDef st;
   uint_fast8_t i;
-  i = !atomic_load_explicit(&curr, memory_order_acquire);
+  i = !atomic_load_explicit(&read_next, memory_order_acquire);
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
@@ -141,24 +140,24 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 dma_e dma_try_fetch(payload_t *restrict buf)
 {
   static uint_fast8_t i = 0;
+  static uint_fast8_t not_ready[2] = {0};
 
   if (!buf) return DMA_BADARG;
 
   uint_fast8_t m;
-  m = atomic_load_explicit(&mask, memory_order_acquire);
+  m = atomic_load_explicit(&is_complete, memory_order_acquire);
 
-  uint_fast8_t rx0 = (m & RX0_DONE) == RX0_DONE;
-  uint_fast8_t rx1 = (m & RX1_DONE) == RX1_DONE;
+  not_ready[0] = (m & RX0_DONE) != RX0_DONE;
+  not_ready[1] = (m & RX1_DONE) != RX1_DONE;
 
-  /* Fallback: another buffer is ready => switch and
+  /* Fallback: if another buffer is ready => switch and
    * wait for ongoing transfers to finish. This will
    * be the case the first time this function is called. */
-  if ((i == 0 && !rx0 && rx1) || (i == 1 && !rx1 && rx0)) {
-    i = atomic_fetch_xor_explicit(&curr, 1u, memory_order_release);
-    tx_thread_sleep(SENSOR_WAIT);
-  } else {
-    /* None is ready */
-    return DMA_WAIT;
+  if (not_ready[i]) {
+    if (not_ready[!i])
+      return DMA_WAIT;
+    i = atomic_fetch_xor_explicit(&read_next, 1u, memory_order_release);
+    tx_thread_sleep(FINISH_ACTIVE_TRANSFERS);
   }
   
   buf->baro.alt  = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
@@ -173,13 +172,11 @@ dma_e dma_try_fetch(payload_t *restrict buf)
   buf->accl.z = F16(rx[i][2][6], rx[i][2][7]);  
 
   uint_fast8_t flag = (i) ? 0x0Fu : 0xF0u;
-  /* Clear bits for the buffer just read. 
-   * Relaxed is used because DMA currently writes to !i,
+  /* Relaxed is used because DMA currently writes to !i,
    * meaning it must observe this 'AND' only after buf switch. */
-  atomic_fetch_and_explicit(&mask, flag, memory_order_relaxed);
+  atomic_fetch_and_explicit(&is_complete, flag, memory_order_relaxed);
 
-  /* Switch 'curr' buffer for the next time.
-   * Release is used because only this function writes 'curr'. */
-  i = atomic_fetch_xor_explicit(&curr, 1u, memory_order_release);
+  /* Release is used because only this function writes 'curr'. */
+  i = atomic_fetch_xor_explicit(&read_next, 1u, memory_order_release);
   return DMA_OK;
 }
