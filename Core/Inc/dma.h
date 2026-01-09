@@ -17,6 +17,8 @@
 #define RX0_DONE 0x07
 #define RX1_DONE (RX0_DONE << 4)
 
+#define SENSOR_WAIT 15
+
 
 /* ------ Containers ------ */
 

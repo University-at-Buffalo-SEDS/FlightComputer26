@@ -9,6 +9,7 @@
 #include <stdatomic.h>
 
 #include "platform.h"
+#include "tx_api.h"
 #include "dma.h"
 
 
@@ -146,9 +147,17 @@ dma_e dma_try_fetch(payload_t *restrict buf)
   uint_fast8_t m;
   m = atomic_load_explicit(&mask, memory_order_acquire);
 
-  if ((i == 0 && (m & RX0_DONE) != RX0_DONE) ||
-      (i == 1 && (m & RX1_DONE) != RX1_DONE))
-  {
+  uint_fast8_t rx0 = (m & RX0_DONE) == RX0_DONE;
+  uint_fast8_t rx1 = (m & RX1_DONE) == RX1_DONE;
+
+  /* Fallback: another buffer is ready => switch and
+   * wait for ongoing transfers to finish. This will
+   * be the case the first time this function is called. */
+  if ((i == 0 && !rx0 && rx1) || (i == 1 && !rx1 && rx0)) {
+    i = atomic_fetch_xor_explicit(&curr, 1u, memory_order_release);
+    tx_thread_sleep(SENSOR_WAIT);
+  } else {
+    /* None is ready */
     return DMA_WAIT;
   }
   
