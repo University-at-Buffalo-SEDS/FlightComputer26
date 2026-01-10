@@ -22,6 +22,12 @@
     _x < _y ? _x : _y;  \
   })
 
+/* FC '26 GPIO port maps */
+
+#define PYRO_PORT GPIOB
+#define CO2_PIN   GPIO_PIN_5
+#define REEF_PIN  GPIO_PIN_6
+
 /* ThreadX API includes */
 
 #include "tx_api.h"
@@ -131,6 +137,26 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define init_gyro() gyro_init(&hspi1)
 #define init_accel() accel_init(&hspi1)
 
+#define finish_transfer(device) \
+  ({                            \
+    switch (device) {           \
+      case BAROMETER:           \
+        BARO_CS_HIGH(); break;  \
+      case GYROSCOPE:           \
+        GYRO_CS_HIGH(); break;  \
+      case ACCELEROMETER:       \
+        ACCEL_CS_HIGH(); break; \
+      default: return;          \
+    }                           \
+  })
+
+#define terminate_transfers() \
+  ({                          \
+    BARO_CS_HIGH();           \
+    GYRO_CS_HIGH();           \
+    ACCEL_CS_HIGH();          \
+  })
+
 /* DMA transmit-receive */
 
 #define dma_spi_txrx(txbuf, rxbuf, size)              \
@@ -170,13 +196,5 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define __DMB() (void)0
 #endif // DMB support
 
-/* Deployment specific fake Kalman struct 
- * (remove when Kalman API is exposed) */
-
-typedef struct {
-  float alt;
-  float vel;
-  float vax;
-} filter_t;
 
 #endif // PLATFORM_H
