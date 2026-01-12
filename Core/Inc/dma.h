@@ -51,7 +51,7 @@ typedef enum {
 
 /// Tries to fetch data from DMA rxbuf into provided buffer.
 /// Context: sensor task.
-dma_e dma_try_fetch(payload_t *restrict buf);
+dma_e dma_try_fetch(sensor_meas_t *restrict buf);
 
 
 #endif // DMA_H
