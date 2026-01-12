@@ -24,7 +24,6 @@
 /* USER CODE BEGIN Includes */
 #include "ux_api.h"
 #include "ux_device_class_cdc_acm.h"
-#include "deployment.h"
 #include <stdint.h>
 #include <stdio.h>
 

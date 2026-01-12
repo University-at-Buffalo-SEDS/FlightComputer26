@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "dma.h"
 #include "platform.h"
 
 
@@ -136,7 +137,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 /// Tries to fetch data from DMA rxbuf into provided buffer.
 /// Context: sensor task.
-dma_e dma_try_fetch(payload_t *restrict buf)
+dma_e dma_try_fetch(sensor_meas_t *restrict buf)
 {
   static uint_fast8_t i = 0;
   static uint_fast8_t not_ready[2] = {0};
@@ -159,12 +160,12 @@ dma_e dma_try_fetch(payload_t *restrict buf)
     tx_thread_sleep(FINISH_ACTIVE_TRANSFERS);
   }
   
-  buf->baro.alt  = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
-  buf->baro.temp = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
+  buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
+  buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
 
-  buf->gyro.x = I16(rx[i][1][1], rx[i][1][2]);
-  buf->gyro.y = I16(rx[i][1][3], rx[i][1][4]);
-  buf->gyro.z = I16(rx[i][1][5], rx[i][1][6]);
+  buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
+  buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
+  buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
 
   buf->accl.x = F16(rx[i][2][2], rx[i][2][3]);
   buf->accl.y = F16(rx[i][2][4], rx[i][2][5]);

@@ -5,9 +5,6 @@
 #ifndef DMA_H
 #define DMA_H
 
-#ifndef DMA_H
-#define DMA_H
-
 #include <stdint.h>
 
 
@@ -34,15 +31,13 @@ typedef enum {
 
 /* Generic measurement containers */
 typedef struct { float x, y, z; } coords_t;
-typedef struct { float alt, temp; } baro_t;
-typedef struct { int16_t x, y, z; } gyro_t;
+typedef struct { float p, t, alt; } baro_t;
 
 /// Transferable raw data unit
 typedef struct {
   baro_t baro;
-  gyro_t gyro;
-  coords_t accl;
-} payload_t;
+  coords_t gyro, accl;
+} sensor_meas_t;
 
 /// Global return status
 typedef enum {

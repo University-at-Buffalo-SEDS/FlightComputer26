@@ -9,30 +9,30 @@ void telemetry_thread_entry(ULONG initial_input);
 void create_telemetry_thread(void);
 /* ------ Telemetry Thread ------ */
 
-/* ------ Deployment Thread ------ */
-#define DEPLOYMENT_THREAD_SLEEP       60
-#define DEPLOYMENT_THREAD_PRIORITY    6
-#define DEPLOYMENT_THREAD_INPUT       0u
-#define DEPLOYMENT_THREAD_STACK_SIZE  6144u
-#define DEPLOYMENT_THREAD_RETRIES     3u
-#define DEPLOYMENT_RESTART_ON_FAIL    1
+/* ------ Recovery Task ------ */
+#define RECOVERY_INPUT 0
+#define RECOVERY_PRIORITY 10
+#define RECOVERY_STACK_BYTES 2048
+#define RECOVERY_STACK_ULONG (RECOVERY_STACK_BYTES / sizeof(ULONG))
 
-extern TX_THREAD deployment_thread;
-extern ULONG deployment_thread_stack[];
+extern TX_QUEUE shared;
+extern TX_THREAD recovery_task;
+extern ULONG recovery_stack[];
 
-void deployment_thread_entry(ULONG cycle);
-void create_deployment_thread(void);
-/* ------ Deployment Thread ------ */
+void recovery_entry(ULONG flag);
+void create_recovery_task(void);
+/* ------ Recovery Task ------ */
 
-/* ------ UKF Thread ------ */
-#define UKF_THREAD_SLEEP      45
-#define UKF_THREAD_PRIORITY   3
-#define UKF_THREAD_INPUT      0UL
-#define UKF_THREAD_STACK_SIZE 6144u
+/* ------ Prediction Task ------ */
+#define PREDICT_INPUT 0
+#define PREDICT_SLEEP 45
+#define PREDICT_PRIORITY 4
+#define PREDICT_STACK_BYTES 8192
+#define PREDICT_STACK_ULONG (PREDICT_STACK_BYTES / sizeof(ULONG))
 
-extern TX_THREAD ukf_thread;
-extern ULONG ukf_thread_stack[];
+extern TX_THREAD predict_task;
+extern ULONG predict_stack[];
 
-void ukf_thread_entry(ULONG input);
-void create_ukf_thread(void);
-/* ------ UKF Thread ------ */
+void predict_entry(ULONG last);
+void create_predict_task(void);
+/* ------ Prediction Task ------ */

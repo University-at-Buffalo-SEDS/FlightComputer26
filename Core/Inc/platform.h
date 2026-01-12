@@ -6,20 +6,26 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-/* Max/min helpers with double-eval safety */
+/* Numerical helpers with double-eval safety */
 
-#define MAX(x, y)       \
+#define Max(x, y)       \
   ({                    \
     typeof(x) _x = (x); \
     typeof(y) _y = (y); \
     _x > _y ? _x : _y;  \
   })
 
-#define MIN(x, y)       \
+#define Min(x, y)       \
   ({                    \
     typeof(x) _x = (x); \
     typeof(y) _y = (y); \
     _x < _y ? _x : _y;  \
+  })
+
+#define Abs(x)          \
+  ({                    \
+    typeof(x) _d = (x); \
+    _d >= 0 ? _d : -_d; \
   })
 
 /* FC '26 GPIO port maps */

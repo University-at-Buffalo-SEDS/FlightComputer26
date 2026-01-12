@@ -49,7 +49,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
 )
 
 # Add project symbols (macros)
@@ -102,8 +102,6 @@ if(TEST_ON_HOST)
         tests/emu-core.c
         tests/emu-drivers.c
         tests/emu-sensors.c
-        Core/Src/ukf.c
-        Core/Src/deployment.c
     )
     set(ENABLE_TELEMETRY OFF CACHE BOOL "" FORCE)
     add_executable(fctest ${HOST_TEST_SOURCES} tests/run-tests.c)
