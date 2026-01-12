@@ -31,7 +31,7 @@ typedef enum {
 
 /* Generic measurement containers */
 typedef struct { float x, y, z; } coords_t;
-typedef struct { float alt, temp; } baro_t;
+typedef struct { float p, t, alt; } baro_t;
 
 /// Transferable raw data unit
 typedef struct {
@@ -51,7 +51,7 @@ typedef enum {
 
 /// Tries to fetch data from DMA rxbuf into provided buffer.
 /// Context: sensor task.
-dma_e dma_try_fetch(payload_t *restrict buf);
+dma_e dma_try_fetch(sensor_meas_t *restrict buf);
 
 
 #endif // DMA_H

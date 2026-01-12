@@ -4,11 +4,11 @@
  * Consumer: single - sensor task.
  */
 
-#include "dma.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "dma.h"
 #include "platform.h"
 
 
@@ -160,8 +160,8 @@ dma_e dma_try_fetch(sensor_meas_t *restrict buf)
     tx_thread_sleep(FINISH_ACTIVE_TRANSFERS);
   }
   
-  buf->baro.alt  = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
-  buf->baro.temp = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
+  buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
+  buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
 
   buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
   buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
