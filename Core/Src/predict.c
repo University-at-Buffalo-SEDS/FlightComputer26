@@ -36,7 +36,7 @@ static uint32_t local_time[Time_Users] = {0};
 
 /// Double-buffering is more memory efficient, but
 /// currently it is tricky to implement properly.
-void predict_put(const sensor_meas_t *restrict buf)
+void predict_put(const sensor_meas_t *buf)
 {
   static uint_fast8_t idx = 0;
 
@@ -56,7 +56,7 @@ void predict_put(const sensor_meas_t *restrict buf)
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
-void compensate(sensor_meas_t *restrict buf)
+void compensate(sensor_meas_t *buf)
 {
   buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
   buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
@@ -72,7 +72,7 @@ void compensate(sensor_meas_t *restrict buf)
 
 /// Single-fetch version of previously designed
 /// multiple-fetch algorithm.
-uint_fast8_t fetch(sensor_meas_t *restrict buf)
+uint_fast8_t fetch(sensor_meas_t *buf)
 {
   static uint_fast8_t idx = 0;
 
@@ -160,7 +160,7 @@ static inline float invsqrtf(float x)
 
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
-static inline void detect_launch(const state_vec_t *restrict vec,
+static inline void detect_launch(const state_vec_t *vec,
                                  uint_fast8_t last)
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
@@ -231,7 +231,7 @@ static inline void detect_burnout(const state_vec_t *restrict vec,
 
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
-static inline void detect_apogee(const state_vec_t *restrict vec,
+static inline void detect_apogee(const state_vec_t *vec,
                                  uint_fast8_t last)
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
@@ -333,7 +333,7 @@ static inline void detect_landed(const state_vec_t *restrict vec,
 ///       2. Discuss bounds in predict.h
 ///       3. Discuss transition conditions
 ///       4. Discuss amount of samples
-static inline void evaluate(const state_vec_t *restrict vec,
+static inline void evaluate(const state_vec_t *vec,
                             uint_fast8_t last)
 {
   static uint_fast8_t samples = 0;
@@ -361,8 +361,8 @@ static inline void evaluate(const state_vec_t *restrict vec,
 /* ------ Unscented Kalman Filter ------ */
 
 /// Transforms state vector into sensor measurement.
-static inline void measurement(const state_vec_t *restrict vec,
-                               sensor_meas_t *restrict out)
+static inline void measurement(const state_vec_t *vec,
+                               sensor_meas_t *out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -399,7 +399,7 @@ static inline void measurement(const state_vec_t *restrict vec,
 }
 
 /// Transforms input vector into next-sample prediction.
-static inline void predict(state_vec_t *restrict vec)
+static inline void predict(state_vec_t *vec)
 {
   const float dt = FSEC(elapsed_ms(Predict));
 
@@ -448,8 +448,8 @@ static inline void predict(state_vec_t *restrict vec)
   }
 }
 
-static inline void ascentKF(const sensor_meas_t *restrict meas, // z_0
-                            state_vec_t *restrict vec, // x_0
+static inline void ascentKF(state_vec_t *vec, // x_0
+                            const sensor_meas_t *meas, // z_0
                             float *restrict state_cov, // P_0
                             float *restrict noise_cov, // Q
                             float *restrict meas_cov) // R
@@ -457,8 +457,8 @@ static inline void ascentKF(const sensor_meas_t *restrict meas, // z_0
   // TODO
 }
 
-static inline void descentKF(const sensor_meas_t *restrict meas, // z_0
-                             state_vec_t *restrict vec, // x_0
+static inline void descentKF(state_vec_t *vec, // x_0
+                             const sensor_meas_t *meas, // z_0
                              float *restrict state_cov, // P_0
                              float *restrict noise_cov, // Q
                              float *restrict meas_cov) // R
@@ -467,8 +467,7 @@ static inline void descentKF(const sensor_meas_t *restrict meas, // z_0
 }
 
 /// Runner that holds large static arrays.
-static inline void run_ukf(state_vec_t *vec,
-                           sensor_meas_t *meas)
+static inline void run_ukf(state_vec_t *vec, sensor_meas_t *meas)
 {
   /* Covariance matrices */
   static float state_cov[16][16] = {0}; // P_0
@@ -476,10 +475,10 @@ static inline void run_ukf(state_vec_t *vec,
   static float meas_cov [16][7]  = {0}; // R
 
   if (state < APOGEE) {
-    ascentKF(meas, vec, &state_cov[0][0],
+    ascentKF(vec, meas, &state_cov[0][0],
              &noise_cov[0][0], &meas_cov[0][0]);
   } else {
-    descentKF(meas, vec, &state_cov[0][0],
+    descentKF(vec, meas, &state_cov[0][0],
               &noise_cov[0][0], &meas_cov[0][0]);
   }
 }

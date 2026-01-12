@@ -137,5 +137,9 @@ typedef struct {
 /// Enqueues raw data set for processing by UKF.
 void predict_put(const sensor_meas_t *buf);
 
+/// Aggregates sensor compensation functions.
+/// Run before reporting and publishing data.
+void compensate(sensor_meas_t *buf);
+
 
 #endif // UKF_H
