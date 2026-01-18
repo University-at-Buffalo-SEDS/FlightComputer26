@@ -132,7 +132,7 @@ static inline uint32_t elapsed_ms(time_user_e u)
 }
 
 /// Updates time for each user to prevent large first returns.
-static inline void initialize_time()
+static inline void predict_init()
 {
   for (time_user_e u = 0; u < Time_Users; ++u)
   {
@@ -174,24 +174,24 @@ static inline void detect_launch(const state_vec_t *vec,
 
 /// Monitors height and velocity increase consistency.
 static inline void detect_ascent(const state_vec_t *restrict vec,
-                                 uint_fast8_t *restrict samples,
+                                 uint_fast8_t *restrict sampl,
                                  uint_fast8_t last)
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
   {
-    ++*samples;
-    if (*samples >= MIN_SAMP_ASCENT)
+    ++*sampl;
+    if (*sampl >= MIN_SAMP_ASCENT)
     {
       state = ASCENT;
-      *samples = 0;
+      *sampl = 0;
       log_msg("DEPL: Launch confirmed", 23);
     }
   }
 #if CONSECUTIVE_CONFIRMS > 0
-  else if (*samples > 0)
+  else if (*sampl > 0)
   {
-    *samples = 0;
+    *sampl = 0;
     cmd_e cmd = NOT_LAUNCH;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -203,7 +203,7 @@ static inline void detect_ascent(const state_vec_t *restrict vec,
 /// Checks for height increase and velocity decrease
 /// consistency.
 static inline void detect_burnout(const state_vec_t *restrict vec,
-                                  uint_fast8_t *restrict samples,
+                                  uint_fast8_t *restrict sampl,
                                   uint_fast8_t last)
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
@@ -211,18 +211,18 @@ static inline void detect_burnout(const state_vec_t *restrict vec,
       vec[last].p.z > vec[last].p.z &&
       vec[last].v.z < vec[!last].v.z)
   {
-    ++*samples;
-    if (*samples >= MIN_SAMP_BURNOUT)
+    ++*sampl;
+    if (*sampl >= MIN_SAMP_BURNOUT)
     {
       state = BURNOUT;
-      *samples = 0;
+      *sampl = 0;
       log_msg("DEPL: Watching for apogee", 26);
     }
   }
 #if CONSECUTIVE_CONFIRMS > 0
-  else if (*samples > 0)
+  else if (*sampl > 0)
   {
-    *samples = 0;
+    *sampl = 0;
     cmd_e cmd = NOT_BURNOUT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -245,25 +245,25 @@ static inline void detect_apogee(const state_vec_t *vec,
 
 /// Monitors for decreasing altitude and increasing velocity.
 static inline void detect_descent(const state_vec_t *restrict vec,
-                                  uint_fast8_t *restrict samples,
+                                  uint_fast8_t *restrict sampl,
                                   uint_fast8_t last)
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
   {
-    ++*samples;
-    if (*samples >= MIN_SAMP_DESCENT)
+    ++*sampl;
+    if (*sampl >= MIN_SAMP_DESCENT)
     {
       state = DESCENT;
-      *samples = 0;
+      *sampl = 0;
       co2_high();
       log_msg("DEPL: Fired pyro, descending", 29);
     }
   }
 #if CONSECUTIVE_CONFIRMS > 0
-  else if (*samples > 0)
+  else if (*sampl > 0)
   {
-    *samples = 0;
+    *sampl = 0;
     cmd_e cmd = NOT_DESCENT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -273,25 +273,25 @@ static inline void detect_descent(const state_vec_t *restrict vec,
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
 static inline void detect_reef(const state_vec_t *restrict vec,
-                               uint_fast8_t *restrict samples,
+                               uint_fast8_t *restrict sampl,
                                uint_fast8_t last)
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
   {
-    ++*samples;
-    if (*samples>= MIN_SAMP_REEF)
+    ++*sampl;
+    if (*sampl>= MIN_SAMP_REEF)
     {
       state = REEF;
-      *samples = 0;
+      *sampl = 0;
       reef_low();
       log_msg("DEPL: Expanded parachute", 25);
     }
   }
 #if CONSECUTIVE_CONFIRMS > 0
-  else if (*samples > 0)
+  else if (*sampl > 0)
   {
-    *samples = 0;
+    *sampl = 0;
     cmd_e cmd = NOT_REEF;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -301,7 +301,7 @@ static inline void detect_reef(const state_vec_t *restrict vec,
 /// Monitors all statistical metrics to not deviate
 /// beyond allowed tolerance thresholds.
 static inline void detect_landed(const state_vec_t *restrict vec,
-                                 uint_fast8_t *restrict samples,
+                                 uint_fast8_t *restrict sampl,
                                  uint_fast8_t last)
 {
   float dh = vec[last].p.z - vec[!last].p.z;
@@ -312,49 +312,21 @@ static inline void detect_landed(const state_vec_t *restrict vec,
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
-    ++*samples;
-    if (*samples >= MIN_SAMP_LANDED)
+    ++*sampl;
+    if (*sampl >= MIN_SAMP_LANDED)
     {
       state = LANDED;
       log_msg("DEPL: Rocket landed", 20);
     }
   }
 #if CONSECUTIVE_CONFIRMS > 0
-  else if (*samples > 0)
+  else if (*sampl > 0)
   {
-    samples = 0;
+    sampl = 0;
     cmd_e cmd = NOT_LANDED;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
-}
-
-/// TODO: 1. State regression
-///       2. Discuss bounds in predict.h
-///       3. Discuss transition conditions
-///       4. Discuss amount of samples
-static inline void evaluate(const state_vec_t *vec,
-                            uint_fast8_t last)
-{
-  static uint_fast8_t samples = 0;
-
-  switch (state) {
-    case IDLE:
-      return detect_launch(vec, last);
-    case LAUNCH:
-      return detect_ascent(vec, &samples, last);
-    case ASCENT:
-      return detect_burnout(vec, &samples, last);
-    case BURNOUT:
-      return detect_apogee(vec, last);
-    case APOGEE:
-      return detect_descent(vec, &samples, last);
-    case DESCENT:
-      return detect_reef(vec, &samples, last);
-    case REEF:
-      return detect_landed(vec, &samples, last);
-    default: return;
-  }
 }
 
 
@@ -448,39 +420,21 @@ static inline void predict(state_vec_t *vec)
   }
 }
 
+/* Static covariance matrices */
+static float state_cov[16][16] = {0}; // P_0
+static float noise_cov[16][16] = {0}; // Q
+static float meas_cov [16][7]  = {0}; // R
+
 static inline void ascentKF(state_vec_t *vec, // x_0
-                            const sensor_meas_t *meas, // z_0
-                            float *restrict state_cov, // P_0
-                            float *restrict noise_cov, // Q
-                            float *restrict meas_cov) // R
+                            const sensor_meas_t *meas) // z_0
 {
   // TODO
 }
 
 static inline void descentKF(state_vec_t *vec, // x_0
-                             const sensor_meas_t *meas, // z_0
-                             float *restrict state_cov, // P_0
-                             float *restrict noise_cov, // Q
-                             float *restrict meas_cov) // R
+                             const sensor_meas_t *meas) // z_0
 {
   // TODO
-}
-
-/// Runner that holds large static arrays.
-static inline void run_ukf(state_vec_t *vec, sensor_meas_t *meas)
-{
-  /* Covariance matrices */
-  static float state_cov[16][16] = {0}; // P_0
-  static float noise_cov[16][16] = {0}; // Q
-  static float meas_cov [16][7]  = {0}; // R
-
-  if (state < APOGEE) {
-    ascentKF(vec, meas, &state_cov[0][0],
-             &noise_cov[0][0], &meas_cov[0][0]);
-  } else {
-    descentKF(vec, meas, &state_cov[0][0],
-              &noise_cov[0][0], &meas_cov[0][0]);
-  }
 }
 
 
@@ -489,11 +443,12 @@ static inline void run_ukf(state_vec_t *vec, sensor_meas_t *meas)
 /// High-level overview of data evaluation cycle.
 void predict_entry(ULONG last)
 {
-  sensor_meas_t raw;
   state_vec_t vec[2] = {0};
+  sensor_meas_t raw = {0};
+  uint_fast8_t sampl = 0;
 
   last = 0;
-  initialize_time();
+  predict_init();
 
   while (SEDS_ARE_COOL)
   {
@@ -504,9 +459,27 @@ void predict_entry(ULONG last)
     }
 
     last = !last;
-    run_ukf(&vec[last], &raw);
 
-    evaluate(vec, last);
+    state < APOGEE ? ascentKF(&vec[last], &raw) :
+                     descentKF(&vec[last], &raw);
+
+    switch (state) {
+      case IDLE:
+        detect_launch(vec, last);
+      case LAUNCH:
+        detect_ascent(vec, &sampl, last);
+      case ASCENT:
+        detect_burnout(vec, &sampl, last);
+      case BURNOUT:
+        detect_apogee(vec, last);
+      case APOGEE:
+        detect_descent(vec, &sampl, last);
+      case DESCENT:
+        detect_reef(vec, &sampl, last);
+      case REEF:
+        detect_landed(vec, &sampl, last);
+      case LANDED: break;
+    }
   }
 }
 
