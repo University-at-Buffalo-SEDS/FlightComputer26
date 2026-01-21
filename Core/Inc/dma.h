@@ -14,10 +14,11 @@
 
 #define DMA_RX_NULL UINT8_MAX
 
-#define RX0_DONE 0x07
-#define RX1_DONE (RX0_DONE << 4)
+#define BARO_DONE 0x01
+#define GYRO_DONE 0x02
+#define ACCL_DONE 0x04
 
-#define FINISH_ACTIVE_TRANSFERS 15
+#define RX_DONE 0x07
 
 
 /* ------ Containers ------ */
@@ -39,19 +40,13 @@ typedef struct {
   coords_t gyro, accl;
 } sensor_meas_t;
 
-/// Global return status
-typedef enum {
-  DMA_OK,
-  DMA_WAIT,
-  DMA_BADARG
-} dma_e;
-
 
 /* ------ Public API ------ */
 
-/// Tries to fetch data from DMA rxbuf into provided buffer.
-/// Context: sensor task.
-dma_e dma_try_fetch(sensor_meas_t *buf);
+/// Fetches whatever is available in a free (tm) DMA buffer.
+/// Returns 1 when all 3 sensor buckets have been filled,
+/// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
+int dma_try_fetch(sensor_meas_t *buf);
 
 
 #endif // DMA_H
