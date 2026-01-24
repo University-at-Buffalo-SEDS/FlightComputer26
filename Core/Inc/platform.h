@@ -6,6 +6,8 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#define SEDS_ARE_COOL 1
+
 /* Numerical helpers with double-eval safety */
 
 #define Max(x, y)       \

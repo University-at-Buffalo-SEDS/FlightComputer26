@@ -53,6 +53,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/predict.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sensor.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/recovery.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/app_threadx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_it.c

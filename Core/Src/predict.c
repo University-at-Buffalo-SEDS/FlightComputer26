@@ -466,26 +466,32 @@ void predict_entry(ULONG last)
     switch (state) {
       case IDLE:
         detect_launch(vec, last);
+        break;
       case LAUNCH:
         detect_ascent(vec, &sampl, last);
+        break;
       case ASCENT:
         detect_burnout(vec, &sampl, last);
+        break;
       case BURNOUT:
         detect_apogee(vec, last);
+        break;
       case APOGEE:
         detect_descent(vec, &sampl, last);
+        break;
       case DESCENT:
         detect_reef(vec, &sampl, last);
+        break;
       case REEF:
         detect_landed(vec, &sampl, last);
+        break;
       case LANDED: break;
     }
   }
 }
 
-/// Creates a non-preemptive UKF thread
+/// Creates a non-preemptive UKF task
 /// with defined parameters. Called manually.
-/// Provides its entry point with a throwaway input.
 ///
 /// Stack size and priority are configurable in FC-Threads.h.
 void create_predict_task(void)

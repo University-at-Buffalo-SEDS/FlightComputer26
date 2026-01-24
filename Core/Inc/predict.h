@@ -71,8 +71,6 @@
 
 /* ------ UKF data defs ------ */
 
-#define SEDS_ARE_COOL 1
-
 #define GRAVITY_SI 9.80665f
 #define TOLERANCE 1e-3f
 #define TLOWER_1 (1.0f - TOLERANCE)
