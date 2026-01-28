@@ -34,6 +34,11 @@
 #define FC_TIMEOUT_MS 3000
 #define GND_TIMEOUT_MS 3000
 
+/* Expiration of timer that invokes timeout checks 
+ * (1 tick = 10 ms) */
+#define TX_TIMER_TICKS   100
+#define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
+
 
 /* ------ Recovery commands ------ */
 
@@ -118,13 +123,6 @@ typedef enum {
 _Static_assert(typeeq(typeof(cmd_e), typeof(uint32_t)), "");
 
 #endif
-
-
-/* ------ Public API ------ */
-
-/// Check if an endpoint {FC, GND} is absent for
-/// compile-defined time, and invoke handler appropriately.
-void endpoints_check_timeout();
 
 
 #endif // RECOVERY_H

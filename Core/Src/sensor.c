@@ -27,8 +27,6 @@ void sensor_entry(ULONG input)
 
   while (SEDS_ARE_COOL)
   {
-    endpoints_check_timeout();
-
     if (!dma_try_fetch(&payload))
     {
       tx_thread_sleep(SENSOR_SLEEP);

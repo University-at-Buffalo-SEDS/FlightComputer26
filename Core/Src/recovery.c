@@ -26,6 +26,7 @@ uint32_t local_time[Time_Users] = {0};
 
 /* ------ Local definitions ------ */
 
+static TX_TIMER endpoints;
 static TX_SEMAPHORE unread;
 static uint_fast8_t failures = 0;
 
@@ -200,6 +201,22 @@ void recovery_entry(ULONG flag)
   }
 }
 
+/// Check if an endpoint {FC, GND} is absent for
+/// compile-defined time, and invoke handler appropriately.
+static void check_endpoints(ULONG id)
+{
+  (void)id;
+
+  if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
+  {
+    handle_timeout(Recovery_FC);
+  }
+  if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
+  {
+    handle_timeout(Recovery_GND);
+  }
+}
+
 /// Relies exclusively on TX primitives.
 void create_recovery_task(void)
 {
@@ -232,21 +249,11 @@ void create_recovery_task(void)
   if (st != TX_SUCCESS) {
     log_die("Failed to create unread semaphore");
   }
-}
 
-
-/* ------ Public API ------ */
-
-/// Check if an endpoint {FC, GND} is absent for
-/// compile-defined time, and invoke handler appropriately.
-void endpoints_check_timeout()
-{
-  if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
-  {
-    handle_timeout(Recovery_FC);
-  }
-  if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
-  {
-    handle_timeout(Recovery_GND);
+  st = tx_timer_create(&endpoints, "Endpoints timerout timer",
+                       check_endpoints, 0, TX_TIMER_INITIAL,
+                       TX_TIMER_TICKS, TX_AUTO_ACTIVATE);
+  if (st != TX_SUCCESS) {
+    log_die("Failed to create timeout check timer");
   }
 }
