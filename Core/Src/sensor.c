@@ -1,7 +1,7 @@
 /* Sensor task
  *
- * Uses API of DMA, Telemetry, and Predict modules
- * to serve as a Flight Computer coordination node.
+ * Uses API of DMA, Telemetry, Predict, and Recovery modules
+ * to serve as the Flight Computer's coordination module.
  *
  * Software model: this task should be trivial to
  * be able to demonstrate routing across rocket modules.

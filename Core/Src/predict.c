@@ -432,7 +432,7 @@ void predict_entry(ULONG last)
 
   while (SEDS_ARE_COOL)
   {
-    if (!fetch(&raw) || validate(&raw) < RAW_DATA)
+    if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
       tx_thread_sleep(PREDICT_SLEEP);
       continue;
