@@ -20,8 +20,11 @@ TX_QUEUE shared;
 TX_THREAD recovery_task;
 ULONG recovery_stack[RECOVERY_STACK_ULONG];
 
-/// Last recorded time for each UKF timer user.
+/// Last recorded time for each timer user.
 uint32_t local_time[Time_Users] = {0};
+
+
+/* ------ Local definitions ------ */
 
 static TX_SEMAPHORE unread;
 static uint_fast8_t failures = 0;
@@ -42,6 +45,8 @@ typedef enum {
   BAD_BARO = 3,
 } recov_t;
 
+
+/* ------ Recovery logic ------ */
 
 /// Wake up recovery loop.
 static void queue_handler(TX_QUEUE *q)
@@ -128,17 +133,9 @@ static inline void process_raw_data_code(cmd_e code)
 /// Decodes message and calls appropriate handler.
 static inline void decode(cmd_e cmd, ULONG *flag)
 {
-  uint32_t interval;
-
   if (cmd & FC_MASK) /* <--- FC section */
   {
-    interval = elapsed_ms(Recovery_FC);
-
-    if (cmd & SYNC) {
-      return;
-    } else if (interval > FC_TIMEOUT_MS) {
-      return handle_timeout(Recovery_FC);
-    }
+    timer_update(Recovery_FC);
 
     cmd &= ~FC_MASK; // Clear the mask
 
@@ -158,15 +155,12 @@ static inline void decode(cmd_e cmd, ULONG *flag)
   }
   else /* <--- GND section */
   {
-    interval = elapsed_ms(Recovery_GND);
+    timer_update(Recovery_GND);
 
     if (cmd & SYNC) {
-      return;
-    } else if (interval > GND_TIMEOUT_MS) {
-      return handle_timeout(Recovery_GND);
+      return; // Successful sync
     }
-
-    if (cmd & ACTION)
+    else if (cmd & ACTION)
     {
       process_action(cmd, flag);
     }
@@ -237,5 +231,22 @@ void create_recovery_task(void)
   st = tx_semaphore_create(&unread, "Unread messages", 0);
   if (st != TX_SUCCESS) {
     log_die("Failed to create unread semaphore");
+  }
+}
+
+
+/* ------ Public API ------ */
+
+/// Check if an endpoint {FC, GND} is absent for
+/// compile-defined time, and invoke handler appropriately.
+void endpoints_check_timeout()
+{
+  if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
+  {
+    handle_timeout(Recovery_FC);
+  }
+  if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
+  {
+    handle_timeout(Recovery_GND);
   }
 }

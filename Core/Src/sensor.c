@@ -11,6 +11,7 @@
 
 #include "platform.h"
 #include "predict.h"
+#include "recovery.h"
 
 TX_THREAD sensor_task;
 ULONG sensor_stack[SENSOR_STACK_ULONG];
@@ -26,6 +27,8 @@ void sensor_entry(ULONG input)
 
   while (SEDS_ARE_COOL)
   {
+    endpoints_check_timeout();
+
     if (!dma_try_fetch(&payload))
     {
       tx_thread_sleep(SENSOR_SLEEP);

@@ -6,6 +6,7 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include <stdint.h>
 #define SEDS_ARE_COOL 1
 
 
@@ -227,23 +228,40 @@ typedef enum {
 
 /// Last recorded time for each UKF timer user.
 /// Defined in recovery.c to avoid multiple linkage.
+/// u32 wrap is not handled (flight assumed < 49 days :D).
 extern uint32_t local_time[Time_Users];
 
-/// Reports ms elapsed since last call for each user.
-/// Does not handle u32 wrap (flight assumed < 49 days :D).
-static inline uint32_t elapsed_ms(time_user_e u)
+/// Report time elapsed since last call to either 
+/// timer_fetch_update or timer_update,
+/// and set local time to current HAL tick (ms).
+static inline uint32_t timer_fetch_update(time_user_e u)
 {
   uint32_t prev = local_time[u];
   local_time[u] = hal_time_ms();
   return local_time[u] - prev;
 }
 
+/// Set local time to current HAL tick (ms).
+static inline void timer_update(time_user_e u)
+{
+  local_time[u] = hal_time_ms();
+}
+
+/// Report time elapsed since last call to either 
+/// timer_fetch_update or timer_update.
+static inline uint32_t timer_fetch(time_user_e u)
+{
+  return hal_time_ms() - local_time[u];
+}
+
 /// Updates time for each user to prevent large first returns.
 static inline void timer_init()
 {
+  uint32_t init_point = hal_time_ms();
+
   for (time_user_e u = 0; u < Time_Users; ++u)
   {
-    local_time[u] = hal_time_ms();
+    local_time[u] = init_point;
   }
 }
 

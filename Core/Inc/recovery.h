@@ -86,18 +86,18 @@ typedef enum {
   /* Data evaluation codes */
   DATA_EVALUATION = (1u << 5),
 
-  NOT_LAUNCH  = (1u << 5) + 1,
-  NOT_BURNOUT = (1u << 5) + 2,
-  NOT_DESCENT = (1u << 5) + 3,
-  NOT_REEF    = (1u << 5) + 4,
-  NOT_LANDED  = (1u << 5) + 5,
+  NOT_LAUNCH  = DATA_EVALUATION + 1,
+  NOT_BURNOUT = DATA_EVALUATION + 2,
+  NOT_DESCENT = DATA_EVALUATION + 3,
+  NOT_REEF    = DATA_EVALUATION + 4,
+  NOT_LANDED  = DATA_EVALUATION + 5,
   
   /* Actionanle commands */
   ACTION = (1u << 6),
 
-  FIRE_PYRO = (1u << 6) + 1,
-  FIRE_REEF = (1u << 6) + 2,
-  RECOVER   = (1u << 6) + 3,
+  FIRE_PYRO = ACTION + 1,
+  FIRE_REEF = ACTION + 2,
+  RECOVER   = ACTION + 3,
 
   /* ... */
 
@@ -118,6 +118,13 @@ typedef enum {
 _Static_assert(typeeq(typeof(cmd_e), typeof(uint32_t)), "");
 
 #endif
+
+
+/* ------ Public API ------ */
+
+/// Check if an endpoint {FC, GND} is absent for
+/// compile-defined time, and invoke handler appropriately.
+void endpoints_check_timeout();
 
 
 #endif // RECOVERY_H

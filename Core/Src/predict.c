@@ -353,7 +353,7 @@ static inline void measurement(const state_vec_t *vec,
 /// Transforms input vector into next-sample prediction.
 static inline void predict(state_vec_t *vec)
 {
-  const float dt = FSEC(elapsed_ms(Predict));
+  const float dt = FSEC(timer_fetch_update(Predict));
 
   const float fact = 0.5f * dt;
   const float dvx = dt * vec->a.x;
