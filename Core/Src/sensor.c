@@ -15,9 +15,6 @@
 TX_THREAD sensor_task;
 ULONG sensor_stack[SENSOR_STACK_ULONG];
 
-#define log_measurement(type, buf) \
-  log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
-
 
 /* ------ Sensor Task ------ */
 

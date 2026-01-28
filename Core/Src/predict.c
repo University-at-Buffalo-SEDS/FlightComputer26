@@ -28,9 +28,6 @@ static sensor_meas_t payload[RING_SIZE] = {0};
 /// 8-15: consumer locked index
 static atomic_uint_fast16_t mask = 0;
 
-/// Last recorded time for each UKF timer user.
-static uint32_t local_time[Time_Users] = {0};
-
 
 /* ------ Public API ------ */
 
@@ -98,7 +95,7 @@ finish:
 /// Validates one raw measurement against sanity bounds.
 static inline int_fast8_t validate(sensor_meas_t *raw)
 {
-  cmd_e st = CMD_NONE;
+  cmd_e st = RAW_DATA;
 
   if (raw->baro.alt > MAX_ALT || raw->baro.alt < MIN_ALT)
     st += RAW_BAD_ALT;
@@ -107,6 +104,7 @@ static inline int_fast8_t validate(sensor_meas_t *raw)
   if (raw->accl.z > MAX_VAX || raw->accl.z < MIN_VAX)
     st += RAW_BAD_VAX;
 
+  /* But gyroscope data is used in whole by UKF */
   if (raw->gyro.x > MAX_ANG || raw->gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
 
@@ -116,28 +114,10 @@ static inline int_fast8_t validate(sensor_meas_t *raw)
   if (raw->gyro.z > MAX_ANG || raw->gyro.z < MIN_ANG)
     st += RAW_BAD_ANG_Z;
 
-  if (st < 0)
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
+  st = FC_MSG(st);
+  tx_queue_send(&shared, &st, TX_NO_WAIT);
 
   return st;
-}
-
-/// Reports ms elapsed since last call for each user.
-/// Does not handle u32 wrap (flight assumed < 49 days :D).
-static inline uint32_t elapsed_ms(time_user_e u)
-{
-  uint32_t prev = local_time[u];
-  local_time[u] = hal_time_ms();
-  return local_time[u] - prev;
-}
-
-/// Updates time for each user to prevent large first returns.
-static inline void predict_init()
-{
-  for (time_user_e u = 0; u < Time_Users; ++u)
-  {
-    local_time[u] = hal_time_ms();
-  }
 }
 
 /// ARM fast math is accurate but does not have inverse.
@@ -448,11 +428,11 @@ void predict_entry(ULONG last)
   uint_fast8_t sampl = 0;
 
   last = 0;
-  predict_init();
+  timer_init();
 
   while (SEDS_ARE_COOL)
   {
-    if (!fetch(&raw) || validate(&raw) < 0)
+    if (!fetch(&raw) || validate(&raw) < RAW_DATA)
     {
       tx_thread_sleep(PREDICT_SLEEP);
       continue;

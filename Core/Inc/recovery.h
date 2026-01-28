@@ -1,46 +1,123 @@
 /*
- * Recovery enum definition.
+ * Recovery enum definition and config.
  * Values are passed through TX queue.
  */
 
 #ifndef RECOVERY_H
 #define RECOVERY_H
 
-#include "predict.h"
+#include <stdint.h>
 
-/// Used to adjust bad data reporting
-/// range based on a reasonable buffer size.
-#define DATA_MASK (DATA_CAP + 1)
+
+/* ------ User configuration ------ */
+
+#define FAILS_TO_REINIT 10
+#define FAILS_TO_ABORT  40
+
+#define ACCUMULATE_FAILURES 0
+
+
+/* ------ Endpoint identifiers: FC, GND ------ */
+
+/// 2s complement awareness: as negative codes
+/// can only originate from the FC, checking
+/// against the incoming message MSB is reliable.
+#define FC_MASK (1u << 31)
+
+/// Mark general commands as coming from FC.
+/// Use this for cmd_e values > 0.
+#define FC_MSG(message) (message | FC_MASK)
+
+/* ------ Endpoint timeouts ------ */
+
+/* Mirrors Ground Station timeouts */
+#define FC_TIMEOUT_MS 3000
+#define GND_TIMEOUT_MS 3000
+
+
+/* ------ Recovery commands ------ */
 
 /// Command or warning/error code for recovery.
-typedef enum {
-  /* Bad sensor measurement codes (critical) */
-  RAW_BAD_ALT   = -5,
-  RAW_BAD_ANG_Z = -4,
-  RAW_BAD_ANG_Y = -3,
-  RAW_BAD_ANG_X = -2,
-  RAW_BAD_VAX   = -1,
+/// Guideline for including your custom messages:
+/// 
+/// 1. Mark your section with a variant of appropriate
+/// label. Put that variant as the next-largest power
+/// of 2. Then add your variants on top of that mark.
+///
+/// 2. In either FC or GND sections of recovery.c decode(),
+/// add a check against your section mark BEFORE other branches.
+///
+/// 3. Inside this check, call the function to handle
+/// your added variants.
+/// 
+/// You can send a command to recovery like this:
+///
+/// #include "FC-Threads.h"
+/// cmd_e command = FIRE_PYRO;
+/// tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+///
+/// Wait option depends on whether you want to drop
+/// the value if queue is full (unlikely). 
+///
+/// NOTE: if you are sending command from FC,
+/// mask it with FC_MSG(command). Otherwise - UB!
 
-  /* Reference point */
-  CMD_NONE = 0,
+#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
+/*
+ * In the version of C we are using, this is a GNU extension.
+ */
+typedef enum : uint32_t {
+
+#else
+
+typedef enum {
+
+#endif
+
+  /* Raw data codes (additive) */
+  RAW_DATA = 0,
+
+  RAW_BAD_ALT   = 1u,
+  RAW_BAD_ANG_Z = (1u << 1),
+  RAW_BAD_ANG_Y = (1u << 2),
+  RAW_BAD_ANG_X = (1u << 3),
+  RAW_BAD_VAX   = (1u << 4),  
+
+  /* Data evaluation codes */
+  DATA_EVALUATION = (1u << 5),
+
+  NOT_LAUNCH  = (1u << 5) + 1,
+  NOT_BURNOUT = (1u << 5) + 2,
+  NOT_DESCENT = (1u << 5) + 3,
+  NOT_REEF    = (1u << 5) + 4,
+  NOT_LANDED  = (1u << 5) + 5,
   
-  /* Commands */
-  FIRE_PYRO = 1,
-  FIRE_REEF = 2,
-  RECOVER   = 3,
-  
-  /* Unconfirmed state transitions (non-critical) */
-  NOT_LAUNCH  = 11,
-  NOT_BURNOUT = 12,
-  NOT_DESCENT = 13,
-  NOT_REEF    = 14,
-  NOT_LANDED  = 15,
+  /* Actionanle commands */
+  ACTION = (1u << 6),
+
+  FIRE_PYRO = (1u << 6) + 1,
+  FIRE_REEF = (1u << 6) + 2,
+  RECOVER   = (1u << 6) + 3,
+
+  /* ... */
+
+  /* Synchronization event
+   * The same code for both FC and GND
+   * because masking is already in effect */
+  SYNC = (1u << 30),
 } cmd_e;
 
-// Not needed if we validate one sample per UKF iteration
-// #define typeeq(a, b) __builtin_types_compatible_p(a, b)
 
-// /// Since we stack error codes, require int for cmd_e.
-// _Static_assert(typeeq(typeof(cmd_e), typeof(int)), "");
+/* For non-GNU C < 23, prevent UB at compile-time */
+
+#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
+/*
+ * Positive 32-bit value required (TX queue and recovery semantics).
+ */
+#define typeeq(a, b) __builtin_types_compatible_p(a, b)
+_Static_assert(typeeq(typeof(cmd_e), typeof(uint32_t)), "");
+
+#endif
+
 
 #endif // RECOVERY_H

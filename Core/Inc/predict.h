@@ -65,9 +65,6 @@
 
 #define VALID_DATA (VALID_ALT | VALID_VEL | VALID_VAX)
 
-/* Base offset for reporting bad data */
-#define DATA_OFFSET -10
-
 
 /* ------ UKF data defs ------ */
 
@@ -85,14 +82,6 @@
 
 
 /* ------ UKF Containers ------ */
-
-/// Relative time users
-typedef enum {
-  Predict,
-
-  Time_Users
-} time_user_e;
-
 
 typedef union {
   float f;

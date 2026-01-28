@@ -8,7 +8,8 @@
 
 #define SEDS_ARE_COOL 1
 
-/* Numerical helpers with double-eval safety */
+
+/* ------ Numerical helpers ------ */
 
 #define Max(x, y)       \
   ({                    \
@@ -30,19 +31,22 @@
     _d >= 0 ? _d : -_d; \
   })
 
-/* FC '26 GPIO port maps */
+
+/* ------ FC '26 GPIO port maps ------ */
 
 #define PYRO_PORT GPIOB
 #define CO2_PIN   GPIO_PIN_5
 #define REEF_PIN  GPIO_PIN_6
 
-/* ThreadX API includes */
+
+/* ------ ThreadX API includes ------ */
 
 #include "tx_api.h"
 #include "tx_port.h"
 #include "FC-Threads.h"
 
-/* Telemetry API abstraction */
+
+/* ------ Telemetry API abstraction ------ */
 
 #include <sedsprintf.h>
 #include "telemetry.h"
@@ -54,6 +58,9 @@
 #define log_msg(msg, size)                                  \
   log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
                              (msg), (size), sizeof(char))
+
+#define log_measurement(type, buf)                          \
+  log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
 
 #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
@@ -89,7 +96,8 @@
 #endif // GNUC
 #endif // >= C23
 
-/* HAAL (hardware abstraction abstraction layer) <3 */
+
+/* ------ HAL Aliases ------ */
 
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_def.h"
@@ -134,7 +142,14 @@ extern DCACHE_HandleTypeDef hdcache1;
                              (uint32_t *)(buf),       \
                              (size)))
 
-/* Sensor drivers and data collection */
+/* DMA transmit-receive */
+
+#define dma_spi_txrx(txbuf, rxbuf, size)              \
+  (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
+                               (rxbuf), (size)))
+
+
+/* ------ Sensor drivers and data collection ------ */
 
 #include "gyro.h"
 #include "accel.h"
@@ -165,12 +180,6 @@ extern DCACHE_HandleTypeDef hdcache1;
     ACCEL_CS_HIGH();          \
   })
 
-/* DMA transmit-receive */
-
-#define dma_spi_txrx(txbuf, rxbuf, size)              \
-  (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
-                               (rxbuf), (size)))
-
 /* Identification bytes for DMA Tx buffers */
 
 #define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BMP390_SPI_READ_BIT))
@@ -195,14 +204,48 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define F16(b0, b1) ((float)I16(b0, b1))
 
-/* Data memory barrier
- * (#else branch is to be invented :D) */
+
+
+/* ------ Data memory barrier ------ */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
 #include "cmsis_compiler.h"
 #else
 #define __DMB() (void)0
 #endif // DMB support
+
+
+/* ------ On-board relative timer implementation ------ */
+
+typedef enum {
+  Predict,
+  Recovery_FC,
+  Recovery_GND,
+
+  Time_Users
+} time_user_e;
+
+/// Last recorded time for each UKF timer user.
+/// Defined in recovery.c to avoid multiple linkage.
+extern uint32_t local_time[Time_Users];
+
+/// Reports ms elapsed since last call for each user.
+/// Does not handle u32 wrap (flight assumed < 49 days :D).
+static inline uint32_t elapsed_ms(time_user_e u)
+{
+  uint32_t prev = local_time[u];
+  local_time[u] = hal_time_ms();
+  return local_time[u] - prev;
+}
+
+/// Updates time for each user to prevent large first returns.
+static inline void timer_init()
+{
+  for (time_user_e u = 0; u < Time_Users; ++u)
+  {
+    local_time[u] = hal_time_ms();
+  }
+}
 
 
 #endif // PLATFORM_H
