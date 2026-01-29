@@ -7,6 +7,15 @@
 #define RECOVERY_H
 
 #include <stdint.h>
+#include <stdatomic.h>
+
+#include "platform.h"
+
+/// Header declaration of the recovery queue
+extern TX_QUEUE shared;
+
+/// Run time configuration mask
+extern atomic_uint_least32_t config;
 
 
 /* ------ User configuration ------ */
@@ -39,6 +48,20 @@
 #define TX_TIMER_TICKS   100
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
+/* ------ Run time configuration flags ------ */
+
+enum global_config {
+  CHECKS_COMPLETE  = 0,
+  FORCE_ALT_CHECKS = 1u,
+  ACCUMULATE_FAILS = 1u << 1,
+  ABORT_PREDICTION = 1u << 2,
+  SAFE_EXPAND_REEF = 1u << 3,
+  PYRO_REQ_CONFIRM = 1u << 4,
+  REINIT_ATTEMPTED = 1u << 5,
+  CONSECUTIVE_SAMP = 1u << 6,
+};
+
+
 
 /* ------ Recovery commands ------ */
 
@@ -47,25 +70,26 @@
 /// 
 /// 1. Mark your section with a variant of appropriate
 /// label. Put that variant as the next-largest power
-/// of 2. Then add your variants on top of that mark.
+/// of 2. Then add your variants by incrementing that mark.
 ///
 /// 2. In either FC or GND sections of recovery.c decode(),
-/// add a check against your section mark BEFORE other branches.
+/// add a check against your section mark as a top 'if'
+/// statement (so it executes before other checks).
 ///
-/// 3. Inside this check, call the function to handle
+/// 3. Inside this check, call your function to handle
 /// your added variants.
 /// 
-/// You can send a command to recovery like this:
+/// You can send a command to recovery like this
+/// (assume firing pyro from the ground station):
 ///
-/// #include "FC-Threads.h"
-/// enum command command = FIRE_PYRO;
+/// enum command cmd = FIRE_PYRO;
 /// tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
 ///
 /// Wait option depends on whether you want to drop
 /// the value if queue is full (unlikely). 
 ///
-/// NOTE: if you are sending command from FC,
-/// mask it with FC_MSG(command). Otherwise - UB!
+/// NOTE: if you are sending a message from FC,
+/// mask it with FC_MSG(_variant_). Otherwise - UB!
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
 /*
@@ -108,7 +132,7 @@ enum command {
 
   /* Synchronization event
    * The same code for both FC and GND
-   * because masking is already in effect */
+   * because masking is in effect */
   SYNC = (1u << 30),
 };
 
@@ -123,6 +147,14 @@ enum command {
 _Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
 
 #endif
+
+
+/* ------ User run time configuration ------ */
+
+/// Run time config applied on boot.
+/// Call this function once (before creating tasks).
+/// Users are welcome to edit this function.
+void user_runtime_config();
 
 
 #endif // RECOVERY_H

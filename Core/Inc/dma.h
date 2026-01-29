@@ -28,6 +28,8 @@ enum device {
   BAROMETER = 0,
   GYROSCOPE = 1,
   ACCELEROMETER = 2,
+
+  DEVICES = 3,
 };
 
 /* Generic measurement containers */

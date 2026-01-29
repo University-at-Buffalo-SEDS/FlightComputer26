@@ -17,15 +17,12 @@
 
 /* ------ Local configuration ------ */
 
-#define DATA_CAP 4
-
 #define MIN_SAMP_ASCENT   6
 #define MIN_SAMP_BURNOUT  6
 #define MIN_SAMP_DESCENT  6
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   12
 
-#define CONSECUTIVE_CONFIRMS 1
 /* Delay in ThreadX ticks */
 #define LAUNCH_CONFIRM_DELAY 25
 #define APOGEE_CONFIRM_DELAY 75
@@ -118,13 +115,11 @@ struct stats {
   float min_alt, max_alt, avg_vel, avg_vax;
 };
 
-/// Run time data evaluation paramters bitfield
+/// Replica of global config paramters but as local bitfield
 struct op_mode {
-  unsigned force_alt_checks : 1;
-  unsigned accumulate_fails : 1;
-  unsigned abort_prediction : 1;
-  unsigned can_expand_reef  : 1;
+  unsigned safe_expand_reef : 1;
   unsigned pyro_req_confirm : 1;
+  unsigned consecutive_samp : 1;
 };
 
 

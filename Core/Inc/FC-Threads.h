@@ -15,7 +15,6 @@ void create_telemetry_thread(void);
 #define RECOVERY_STACK_BYTES 2048
 #define RECOVERY_STACK_ULONG (RECOVERY_STACK_BYTES / sizeof(ULONG))
 
-extern TX_QUEUE shared;
 extern TX_THREAD recovery_task;
 extern ULONG recovery_stack[];
 
@@ -38,11 +37,11 @@ void create_predict_task(void);
 /* ------ Prediction Task ------ */
 
 /* ------ Distribution Task ------ */
-#define SENSOR_INPUT 0
-#define SENSOR_SLEEP 20
-#define SENSOR_PRIORITY 5
-#define SENSOR_STACK_BYTES 2048
-#define SENSOR_STACK_ULONG (SENSOR_STACK_BYTES / sizeof(ULONG))
+#define DISTRIB_INPUT 0
+#define DISTRIB_SLEEP 20
+#define DISTRIB_PRIORITY 5
+#define DISTRIB_STACK_BYTES 2048
+#define DISTRIB_STACK_ULONG (DISTRIB_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD distribution_task;
 extern ULONG distribution_stack[];

@@ -12,15 +12,13 @@
 #include "platform.h"
 #include "recovery.h"
 #include "dma.h"
-#include "tx_api.h"
 
 TX_THREAD predict_task;
 ULONG predict_stack[PREDICT_STACK_ULONG];
 
+/// Current flight state
 enum state state = IDLE;
 
-/// Run time data evaluation paramters bitfield
-struct op_mode mode = {0};
 
 /* ------ Static ------ */
 
@@ -30,6 +28,9 @@ static struct measurement payload[RING_SIZE] = {0};
 /// 0-7:  amount of new entries
 /// 8-15: consumer locked index
 static atomic_uint_fast16_t mask = 0;
+
+/// Local module config bitmask
+static struct op_mode mode = {0};
 
 
 /* ------ Public API ------ */
@@ -146,9 +147,15 @@ static inline float invsqrtf(float x)
 static inline void
 evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
 {
+  /* If we aren't yet ascending or not descending, return.
+   * First condition is to guard against noise while idle. */
   if (state < ASCENT || vec[last].p.z > vec[!last].p.z) {
-    /* If we aren't yet ascending or not descending, return.
-     * First condition is to guard against noise while idle. */
+    /* If we were waiting on confirmation BUT config mandates
+     * confirmations to be consecutive, reset the flag */
+    if (mode.consecutive_samp && mode.pyro_req_confirm) {
+      mode.pyro_req_confirm = 0;
+    }
+
     return;
   }
 
@@ -156,7 +163,7 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
   {
     /* We somehow missed the moment to expand parachute.
       * Do NOT release control until reef is fired */
-    if (mode.can_expand_reef)
+    if (mode.safe_expand_reef)
     {
       reef_high();
       log_msg("FC: ! urgently expanding reef", 29);
@@ -167,7 +174,7 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
       * What is going on!!? Perform full sequence. */ 
       co2_high();
       log_msg("FC: ! urgently firing PYRO->REEF", 34);
-      mode.can_expand_reef = 1;
+      mode.safe_expand_reef = 1;
       tx_thread_sleep(100); // sleep for 1 sec
       reef_high();
     }
@@ -181,7 +188,7 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
   else
   {
     co2_high();
-    mode.can_expand_reef = 1;
+    mode.safe_expand_reef = 1;
   }
 }
 
@@ -216,14 +223,12 @@ detect_ascent(const struct state_vec *restrict vec,
       log_msg("DEPL: Launch confirmed", 23);
     }
   }
-#if CONSECUTIVE_CONFIRMS > 0
-  else if (*sampl > 0)
+  else if (mode.consecutive_samp && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_LAUNCH;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-#endif
 }
 
 /// Monitors if minimum threshold for velocity and
@@ -247,14 +252,12 @@ detect_burnout(const struct state_vec *restrict vec,
       log_msg("DEPL: Watching for apogee", 26);
     }
   }
-#if CONSECUTIVE_CONFIRMS > 0
-  else if (*sampl > 0)
+  else if (mode.consecutive_samp && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_BURNOUT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-#endif
 }
 
 /// Initially monitors for continuing burnout and
@@ -288,14 +291,12 @@ detect_descent(const struct state_vec *restrict vec,
       log_msg("DEPL: Fired pyro, descending", 29);
     }
   }
-#if CONSECUTIVE_CONFIRMS > 0
-  else if (*sampl > 0)
+  else if (mode.consecutive_samp && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_DESCENT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-#endif
 }
 
 /// Monitors for falling below a specific altitude,
@@ -316,14 +317,12 @@ detect_reef(const struct state_vec *restrict vec,
       log_msg("DEPL: Expanded parachute", 25);
     }
   }
-#if CONSECUTIVE_CONFIRMS > 0
-  else if (*sampl > 0)
+  else if (mode.consecutive_samp && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_REEF;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-#endif
 }
 
 /// Monitors all statistical metrics to not deviate
@@ -347,14 +346,12 @@ detect_landed(const struct state_vec *restrict vec,
       log_msg("DEPL: Rocket landed", 20);
     }
   }
-#if CONSECUTIVE_CONFIRMS > 0
-  else if (*sampl > 0)
+  else if (mode.consecutive_samp && *sampl > 0)
   {
     sampl = 0;
     enum command cmd = NOT_LANDED;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-#endif
 }
 
 
@@ -471,6 +468,25 @@ descentKF(struct state_vec *vec, const struct measurement *meas)
 
 /* ------ Prediction Task ------ */
 
+/// Evaluates run time config in order of decreasing severity
+static inline enum global_config
+runtime_checks(const struct state_vec *vec,
+               uint_fast8_t last, uint_least32_t conf)
+{
+  if (conf & ABORT_PREDICTION) {
+    return ABORT_PREDICTION;
+  }
+  
+  mode.safe_expand_reef = (conf & SAFE_EXPAND_REEF) ? 1 : 0;
+  mode.consecutive_samp = (conf & CONSECUTIVE_SAMP) ? 1 : 0;
+
+  if (conf & FORCE_ALT_CHECKS) {
+    evaluate_altitude(vec, last);
+  }
+
+  return CHECKS_COMPLETE;
+}
+
 /// High-level overview of data evaluation cycle.
 void predict_entry(ULONG last)
 {
@@ -493,8 +509,12 @@ void predict_entry(ULONG last)
     state < APOGEE ? ascentKF(&vec[last], &raw) :
                      descentKF(&vec[last], &raw);
 
-    if (mode.force_alt_checks) {
-      evaluate_altitude(vec, last);
+    uint_least32_t conf;
+    conf = atomic_load_explicit(&config, memory_order_acquire);
+
+    if (runtime_checks(vec, last, conf) == ABORT_PREDICTION) {
+      /* Read abort flag in config, shutdown thread */
+      return;
     }
 
     switch (state) {

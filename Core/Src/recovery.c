@@ -12,10 +12,12 @@
  */
 
 #include <stdint.h>
+#include <stdatomic.h>
 
 #include "platform.h"
 #include "predict.h"
 #include "recovery.h"
+#include "dma.h"
 
 TX_QUEUE shared;
 TX_THREAD recovery_task;
@@ -24,9 +26,24 @@ ULONG recovery_stack[RECOVERY_STACK_ULONG];
 /// Last recorded time for each timer user.
 uint32_t local_time[Time_Users] = {0};
 
-/// Run time data evaluation paramters bitfield
-extern struct op_mode mode;
-extern enum state state;
+/// Run time configuration mask
+atomic_uint_least32_t config = 0;
+
+
+/* ------ User run time configuration ------ */
+
+/// Run time config applied on boot.
+/// Call this function once (before creating tasks).
+/// Users are welcome to edit this function.
+void user_runtime_config()
+{
+  uint_least32_t mode = 0;
+
+  /* TODO discuss defaults */
+  mode |= CONSECUTIVE_SAMP;
+
+  atomic_store_explicit(&config, mode, memory_order_release);
+}
 
 
 /* ------ Local definitions ------ */
@@ -39,17 +56,6 @@ static uint_fast8_t failures = 0;
 #define QADDR (VOID *)0x20010000
 #define QSIZE 128
 
-/// Deployment masks
-#define F_PYRO 0x01u
-#define REINIT 0x10u
-
-/// For sensor reinitialization.
-typedef enum {
-  RECOV_OK = 0,
-  BAD_ACCL = 1,
-  BAD_GYRO = 2,
-  BAD_BARO = 3,
-} recov_t;
 
 
 /* ------ Recovery logic ------ */
@@ -64,39 +70,44 @@ static void queue_handler(TX_QUEUE *q)
 /// Synchronously initializes each sensor.
 static inline void try_reinit_sensors()
 {
-  recov_t st = RECOV_OK;
+  enum device faulty = DEVICES;
 
   log_msg("Recovery: trying to reinit sensors", 35);
 
   __disable_irq();
 
   if (init_baro() != HAL_OK)
-    st += BAD_BARO;
+    faulty *= BAROMETER;
 
   if (init_gyro() != HAL_OK)
-    st += BAD_GYRO;
+    faulty -= GYROSCOPE;
 
   if (init_accel() != HAL_OK)
-    st += BAD_ACCL;
+    faulty -= ACCELEROMETER;
 
   __enable_irq();
   
-  if (st == RECOV_OK) {
+  if (faulty == DEVICES) {
     log_msg("Recovery: reinit OK", 20);
   } else {
-    log_err("Recovery: reinit failed (%d)", st);
+    log_err("Recovery: reinit failed (%d)", faulty);
   }
 }
 
 static inline void abortion_due_failures()
 {
   // TODO to be discussed
-  mode.abort_prediction = 1;
+  uint_least32_t mode = 0;
+  mode |= ABORT_PREDICTION;
+  atomic_fetch_or_explicit(&config, mode, memory_order_release);
 }
 
+/// Set cautionary and emergency flags on timeout
 static inline void
 handle_timeout(enum fc_timer endpoint)
 {
+  uint_least32_t mode = 0;
+
   switch (endpoint)
   {
     case Recovery_FC:
@@ -104,32 +115,34 @@ handle_timeout(enum fc_timer endpoint)
       break;
 
     case Recovery_GND:
-      mode.force_alt_checks = 1;
-      mode.accumulate_fails = 1;
+      mode |= FORCE_ALT_CHECKS;
+      mode |= ACCUMULATE_FAILS;
       break;
 
     default: break;
   }
+
+  atomic_fetch_or_explicit(&config, mode, memory_order_release);
 }
 
 // Process general command from either endpoint.
 static inline void
-process_action(enum command cmd, ULONG *flag)
+process_action(enum command cmd, ULONG *conf)
 {
   switch (cmd) {
     case FIRE_PYRO:
       co2_high();
-      *flag |= F_PYRO;
+      *conf |= SAFE_EXPAND_REEF;
       return;
 
     case FIRE_REEF:
-      if (*flag & F_PYRO)
+      if (*conf & SAFE_EXPAND_REEF)
         reef_high();
       return;
 
     case RECOVER:
       try_reinit_sensors();
-      *flag |= REINIT;
+      *conf |= REINIT_ATTEMPTED;
       return;
 
     default: break;
@@ -138,68 +151,69 @@ process_action(enum command cmd, ULONG *flag)
 
 /// Checks whether raw data report is OK.
 static inline void
-process_raw_data_code(enum command code)
+process_raw_data_code(enum command code, ULONG *conf)
 {
-  if (code != RAW_DATA) {
+  if (code != RAW_DATA)
+  {
     ++failures;
     log_err("Recovery: bad sensor reading (%d)", code);
   }
-#if ACCUMULATE_FAILURES <= 0
-  else /* RAW_DATA is sent when raw data looks good */
+  else if (!(*conf & ACCUMULATE_FAILS))
   {
+    /* RAW_DATA is sent when raw data looks good */
     failures = 0;
   }
-#endif
 }
 
-/// Decodes message and calls appropriate handler.
+/// Decodes message from the Flight Computer.
 static inline void
-decode(enum command cmd, ULONG *flag)
+decode_fc(enum command cmd, ULONG *conf)
 {
-  if (cmd & FC_MASK) /* <--- FC section */
+  timer_update(Recovery_FC);
+
+  if (cmd & ACTION)
   {
-    timer_update(Recovery_FC);
-
-    cmd &= ~FC_MASK; // Clear the mask
-
-    if (cmd & ACTION)
-    {
-      process_action(cmd, flag);
-    }
-    else if (cmd & DATA_EVALUATION)
-    {
-      /* Report: does not need processing function */
-      log_err("Recovery: received warning (%d)", cmd);
-    }
-    else /* if we have raw data report */
-    {
-      process_raw_data_code(cmd);
-    }
+    process_action(cmd, conf);
   }
-  else /* <--- GND section */
+  else if (cmd & DATA_EVALUATION)
   {
-    timer_update(Recovery_GND);
+    /* Report: does not need processing function */
+    log_err("Recovery: received warning (%d)", cmd);
+  }
+  else /* if we have raw data report */
+  {
+    process_raw_data_code(cmd, conf);
+  }
+}
 
-    if (cmd & SYNC) {
-      return; // Successful sync
-    }
-    else if (cmd & ACTION)
-    {
-      process_action(cmd, flag);
-    }
-    else /* Programmer's mistake, codes < ACTION are FC-only */
-    {
-      log_msg("Recovery: undefined command or code", 36);
-    }
+/// Decodes message from the Ground Station.
+static inline void
+decode_gnd(enum command cmd, ULONG *conf)
+{
+  timer_update(Recovery_GND);
+
+  if (cmd & SYNC)
+  {
+    return; // Successful sync
+  }
+  else if (cmd & ACTION)
+  {
+    process_action(cmd, conf);
+  }
+  else /* Programmer's mistake, codes < ACTION are FC-only */
+  {
+    log_msg("Recovery: undefined command or code", 36);
   }
 }
 
 /// Suspend on semaphore until a new message arrives.
 /// Does not waste MCU cycles if queue if empty.
 /// See page 68 of Azure RTOS ThreadX User Guide, Feb 2020.
-void recovery_entry(ULONG flag)
+///
+/// Recovery task should never return.
+void recovery_entry(ULONG conf)
 {
-  flag = 0;
+  conf = 0;
 
   while (SEDS_ARE_COOL) {
     enum command cmd;
@@ -213,7 +227,12 @@ void recovery_entry(ULONG flag)
       continue;
     }
 
-    decode(cmd, &flag);
+    if (cmd & FC_MASK) {
+      /* Clear endpoint bit before decoding */
+      decode_fc(cmd & ~FC_MASK, &conf);
+    } else {
+      decode_gnd(cmd, &conf);
+    }
 
     if (failures >= FAILS_TO_ABORT) {
       abortion_due_failures();
@@ -239,7 +258,10 @@ static void check_endpoints(ULONG id)
   }
 }
 
-/// Relies exclusively on TX primitives.
+/// Creates a non-preemptive Recovery Task
+/// with defined parameters. Called manually.
+///
+/// Stack size and priority are configurable in FC-Threads.h.
 void create_recovery_task(void)
 {
   UINT st = tx_thread_create(&recovery_task,

@@ -14,7 +14,7 @@
 #include "recovery.h"
 
 TX_THREAD distribution_task;
-ULONG distribution_stack[SENSOR_STACK_ULONG];
+ULONG distribution_stack[DISTRIB_STACK_ULONG];
 
 
 /* ------ Distribution Task ------ */
@@ -31,7 +31,7 @@ void distribution_entry(ULONG input)
   {
     if (!dma_try_fetch(&payload))
     {
-      tx_thread_sleep(SENSOR_SLEEP);
+      tx_thread_sleep(DISTRIB_SLEEP);
       continue;
     }
 
@@ -57,12 +57,12 @@ void create_distribution_task(void)
   UINT st = tx_thread_create(&distribution_task,
                              "Distribution Task",
                              distribution_entry,
-                             SENSOR_INPUT,
+                             DISTRIB_INPUT,
                              distribution_stack,
-                             SENSOR_STACK_BYTES,
-                             SENSOR_PRIORITY,
+                             DISTRIB_STACK_BYTES,
+                             DISTRIB_PRIORITY,
                              /* No preemption */
-                             SENSOR_PRIORITY,
+                             DISTRIB_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 

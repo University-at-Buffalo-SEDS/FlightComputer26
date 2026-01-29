@@ -7,6 +7,8 @@
 #define PLATFORM_H
 
 #include <stdint.h>
+#include <stdatomic.h>
+
 #define SEDS_ARE_COOL 1
 
 
@@ -121,7 +123,12 @@ extern DCACHE_HandleTypeDef hdcache1;
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
 #define co2_high()                                          \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
+  ({                                                        \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
+    /* Always guarantee that all tasks observe PYRO fire */ \
+    atomic_fetch_or_explicit(&config, SAFE_EXPAND_REEF,     \
+                             memory_order_release);         \
+  })
 
 #define reef_low()                                          \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
