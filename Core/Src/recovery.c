@@ -117,6 +117,7 @@ handle_timeout(enum fc_timer endpoint)
     case Recovery_GND:
       mode |= FORCE_ALT_CHECKS;
       mode |= ACCUMULATE_FAILS;
+      mode &= ~CONSECUTIVE_SAMP;
       break;
 
     default: break;

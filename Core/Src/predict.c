@@ -119,6 +119,10 @@ static inline int_fast8_t validate(struct measurement *raw)
     st += RAW_BAD_ANG_Z;
 
   st = FC_MSG(st);
+  /*
+   * Even if data has been successfully validated,
+   * send 'OK' signal in order to maintain heartbeat.
+   */
   tx_queue_send(&shared, &st, TX_NO_WAIT);
 
   return st;
