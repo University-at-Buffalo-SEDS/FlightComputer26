@@ -1,7 +1,7 @@
 /*
  * Direct Memory Access implementation.
  * Sensors: Barometer, Gyroscope, Accelerometer.
- * Consumer: single - sensor task.
+ * Consumer: single - Distribution Task.
  */
 
 #include <stddef.h>

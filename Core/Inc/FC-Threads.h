@@ -37,16 +37,16 @@ void predict_entry(ULONG last);
 void create_predict_task(void);
 /* ------ Prediction Task ------ */
 
-/* ------ Sensor Task ------ */
+/* ------ Distribution Task ------ */
 #define SENSOR_INPUT 0
 #define SENSOR_SLEEP 20
 #define SENSOR_PRIORITY 5
 #define SENSOR_STACK_BYTES 2048
 #define SENSOR_STACK_ULONG (SENSOR_STACK_BYTES / sizeof(ULONG))
 
-extern TX_THREAD sensor_task;
-extern ULONG sensor_stack[];
+extern TX_THREAD distribution_task;
+extern ULONG distribution_stack[];
 
-void sensor_entry(ULONG input);
-void create_sensor_task(void);
-/* ------ Sensor Task ------ */
+void distribution_entry(ULONG input);
+void create_distribution_task(void);
+/* ------ Distribution Task ------ */

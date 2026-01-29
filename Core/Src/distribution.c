@@ -1,4 +1,4 @@
-/* Sensor task
+/* Distribution Task
  *
  * Uses API of DMA, Telemetry, Predict, and Recovery modules
  * to serve as the Flight Computer's coordination module.
@@ -13,14 +13,14 @@
 #include "predict.h"
 #include "recovery.h"
 
-TX_THREAD sensor_task;
-ULONG sensor_stack[SENSOR_STACK_ULONG];
+TX_THREAD distribution_task;
+ULONG distribution_stack[SENSOR_STACK_ULONG];
 
 
-/* ------ Sensor Task ------ */
+/* ------ Distribution Task ------ */
 
 /// An overview of raw data path inside rocket.
-void sensor_entry(ULONG input)
+void distribution_entry(ULONG input)
 {
   (void)input;
   timer_init();
@@ -43,21 +43,22 @@ void sensor_entry(ULONG input)
     log_measurement(SEDS_DT_ACCEL_DATA, &payload);
 
     /// TODO: When merged with telemetry_handlers, log to SD.
+    /// and pass messages from fdcan to recovery queue.
   }
 }
 
-/// Creates a non-preemptive sensor task
+/// Creates a non-preemptive Distribution Task
 /// with defined parameters. Called manually.
 /// Provides its entry point with a throwaway input.
 ///
 /// Stack size and priority are configurable in FC-Threads.h.
-void create_sensor_task(void)
+void create_distribution_task(void)
 {
-  UINT st = tx_thread_create(&sensor_task,
-                             "Sensor Task",
-                             sensor_entry,
+  UINT st = tx_thread_create(&distribution_task,
+                             "Distribution Task",
+                             distribution_entry,
                              SENSOR_INPUT,
-                             sensor_stack,
+                             distribution_stack,
                              SENSOR_STACK_BYTES,
                              SENSOR_PRIORITY,
                              /* No preemption */
@@ -66,6 +67,6 @@ void create_sensor_task(void)
                              TX_AUTO_START);
 
   if (st != TX_SUCCESS) {
-    log_die("Failed to create Sensor Task: %u", (unsigned)st);
+    log_die("Failed to create Distribution Task: %u", (unsigned)st);
   }
 }

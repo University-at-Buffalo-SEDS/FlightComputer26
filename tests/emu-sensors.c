@@ -1,5 +1,5 @@
 /*
- * Tools for sensor task emulation.
+ * Tools for Distribution Task emulation.
  */
 
 #include <math.h>
