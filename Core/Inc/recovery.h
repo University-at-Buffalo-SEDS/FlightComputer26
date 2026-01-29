@@ -25,7 +25,7 @@
 #define FC_MASK (1u << 31)
 
 /// Mark general commands as coming from FC.
-/// Use this for cmd_e values > 0.
+/// Use this for enum command values > 0.
 #define FC_MSG(message) (message | FC_MASK)
 
 /* ------ Endpoint timeouts ------ */
@@ -58,7 +58,7 @@
 /// You can send a command to recovery like this:
 ///
 /// #include "FC-Threads.h"
-/// cmd_e command = FIRE_PYRO;
+/// enum command command = FIRE_PYRO;
 /// tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
 ///
 /// Wait option depends on whether you want to drop
@@ -71,11 +71,11 @@
 /*
  * In the version of C we are using, this is a GNU extension.
  */
-typedef enum : uint32_t {
+enum command : uint32_t {
 
 #else
 
-typedef enum {
+enum command {
 
 #endif
 
@@ -110,7 +110,7 @@ typedef enum {
    * The same code for both FC and GND
    * because masking is already in effect */
   SYNC = (1u << 30),
-} cmd_e;
+};
 
 
 /* For non-GNU C < 23, prevent UB at compile-time */
@@ -120,7 +120,7 @@ typedef enum {
  * Positive 32-bit value required (TX queue and recovery semantics).
  */
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
-_Static_assert(typeeq(typeof(cmd_e), typeof(uint32_t)), "");
+_Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
 
 #endif
 

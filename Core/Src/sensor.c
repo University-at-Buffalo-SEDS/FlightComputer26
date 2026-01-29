@@ -23,7 +23,7 @@ ULONG sensor_stack[SENSOR_STACK_ULONG];
 void sensor_entry(ULONG input)
 {
   (void)input;
-  sensor_meas_t payload = {0};
+  struct measurement payload = {0};
 
   while (SEDS_ARE_COOL)
   {

@@ -137,7 +137,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /// Fetches whatever is available in a free (tm) DMA buffer.
 /// Returns 1 when all 3 sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
-int dma_try_fetch(sensor_meas_t *buf)
+int dma_try_fetch(struct measurement *buf)
 {
   static uint_fast8_t i = 1;
   static uint_fast8_t cache = 0;

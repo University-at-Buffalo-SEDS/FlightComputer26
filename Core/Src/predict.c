@@ -12,17 +12,20 @@
 #include "platform.h"
 #include "recovery.h"
 #include "dma.h"
+#include "tx_api.h"
 
 TX_THREAD predict_task;
 ULONG predict_stack[PREDICT_STACK_ULONG];
 
-state_e state = IDLE;
+enum state state = IDLE;
 
+/// Run time data evaluation paramters bitfield
+struct op_mode mode = {0};
 
 /* ------ Static ------ */
 
 /// Raw data ring.
-static sensor_meas_t payload[RING_SIZE] = {0};
+static struct measurement payload[RING_SIZE] = {0};
 
 /// 0-7:  amount of new entries
 /// 8-15: consumer locked index
@@ -33,7 +36,7 @@ static atomic_uint_fast16_t mask = 0;
 
 /// Double-buffering is more memory efficient, but
 /// currently it is tricky to implement properly.
-void predict_put(const sensor_meas_t *buf)
+void predict_put(const struct measurement *buf)
 {
   static uint_fast8_t idx = 0;
 
@@ -53,7 +56,7 @@ void predict_put(const sensor_meas_t *buf)
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
-void compensate(sensor_meas_t *buf)
+void compensate(struct measurement *buf)
 {
   buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
   buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
@@ -69,7 +72,7 @@ void compensate(sensor_meas_t *buf)
 
 /// Single-fetch version of previously designed
 /// multiple-fetch algorithm.
-uint_fast8_t fetch(sensor_meas_t *buf)
+uint_fast8_t fetch(struct measurement *buf)
 {
   static uint_fast8_t idx = 0;
 
@@ -93,9 +96,9 @@ finish:
 }
 
 /// Validates one raw measurement against sanity bounds.
-static inline int_fast8_t validate(sensor_meas_t *raw)
+static inline int_fast8_t validate(struct measurement *raw)
 {
-  cmd_e st = RAW_DATA;
+  enum command st = RAW_DATA;
 
   if (raw->baro.alt > MAX_ALT || raw->baro.alt < MIN_ALT)
     st += RAW_BAD_ALT;
@@ -124,7 +127,7 @@ static inline int_fast8_t validate(sensor_meas_t *raw)
 static inline float invsqrtf(float x)
 {
   /* Brought right from Quake 3 Arena! */
-  bithack_u k = {.f = x};
+  union bithack k = {.f = x};
   k.d = 0x5f3759df - (k.d >> 1);
 
   /* Newton-Raphson alg */
@@ -136,12 +139,57 @@ static inline float invsqrtf(float x)
 }
 
 
-/* ------ State machine ------ */
+/* ------ Data evaluation ------ */
+
+/// Cautiously examine altitude changes
+/// in order to make an immediate decision.
+static inline void
+evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
+{
+  if (state < ASCENT || vec[last].p.z > vec[!last].p.z) {
+    /* If we aren't yet ascending or not descending, return.
+     * First condition is to guard against noise while idle. */
+    return;
+  }
+
+  if (vec[last].p.z <= REEF_TARGET_ALT)
+  {
+    /* We somehow missed the moment to expand parachute.
+      * Do NOT release control until reef is fired */
+    if (mode.can_expand_reef)
+    {
+      reef_high();
+      log_msg("FC: ! urgently expanding reef", 29);
+    }
+    else
+    {
+      /* We didn't even expand parachute to that moment.
+      * What is going on!!? Perform full sequence. */ 
+      co2_high();
+      log_msg("FC: ! urgently firing PYRO->REEF", 34);
+      mode.can_expand_reef = 1;
+      tx_thread_sleep(100); // sleep for 1 sec
+      reef_high();
+    }
+  }
+  else if (!mode.pyro_req_confirm)
+  {
+    /* Request one confirmation of decreasing height,
+      * then fire PYRO. */
+    mode.pyro_req_confirm = 1;
+  }
+  else
+  {
+    co2_high();
+    mode.can_expand_reef = 1;
+  }
+}
+
 
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
-static inline void detect_launch(const state_vec_t *vec,
-                                 uint_fast8_t last)
+static inline void
+detect_launch(const struct state_vec *vec, uint_fast8_t last)
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
@@ -153,9 +201,9 @@ static inline void detect_launch(const state_vec_t *vec,
 }
 
 /// Monitors height and velocity increase consistency.
-static inline void detect_ascent(const state_vec_t *restrict vec,
-                                 uint_fast8_t *restrict sampl,
-                                 uint_fast8_t last)
+static inline void
+detect_ascent(const struct state_vec *restrict vec,
+              uint_fast8_t *restrict sampl, uint_fast8_t last)
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
@@ -172,7 +220,7 @@ static inline void detect_ascent(const state_vec_t *restrict vec,
   else if (*sampl > 0)
   {
     *sampl = 0;
-    cmd_e cmd = NOT_LAUNCH;
+    enum command cmd = NOT_LAUNCH;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
@@ -182,7 +230,7 @@ static inline void detect_ascent(const state_vec_t *restrict vec,
 /// maximum threshold for acceleration were passed.
 /// Checks for height increase and velocity decrease
 /// consistency.
-static inline void detect_burnout(const state_vec_t *restrict vec,
+static inline void detect_burnout(const struct state_vec *restrict vec,
                                   uint_fast8_t *restrict sampl,
                                   uint_fast8_t last)
 {
@@ -203,7 +251,7 @@ static inline void detect_burnout(const state_vec_t *restrict vec,
   else if (*sampl > 0)
   {
     *sampl = 0;
-    cmd_e cmd = NOT_BURNOUT;
+    enum command cmd = NOT_BURNOUT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
@@ -211,7 +259,7 @@ static inline void detect_burnout(const state_vec_t *restrict vec,
 
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
-static inline void detect_apogee(const state_vec_t *vec,
+static inline void detect_apogee(const struct state_vec *vec,
                                  uint_fast8_t last)
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
@@ -224,7 +272,7 @@ static inline void detect_apogee(const state_vec_t *vec,
 }
 
 /// Monitors for decreasing altitude and increasing velocity.
-static inline void detect_descent(const state_vec_t *restrict vec,
+static inline void detect_descent(const struct state_vec *restrict vec,
                                   uint_fast8_t *restrict sampl,
                                   uint_fast8_t last)
 {
@@ -244,7 +292,7 @@ static inline void detect_descent(const state_vec_t *restrict vec,
   else if (*sampl > 0)
   {
     *sampl = 0;
-    cmd_e cmd = NOT_DESCENT;
+    enum command cmd = NOT_DESCENT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
@@ -252,7 +300,7 @@ static inline void detect_descent(const state_vec_t *restrict vec,
 
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
-static inline void detect_reef(const state_vec_t *restrict vec,
+static inline void detect_reef(const struct state_vec *restrict vec,
                                uint_fast8_t *restrict sampl,
                                uint_fast8_t last)
 {
@@ -272,7 +320,7 @@ static inline void detect_reef(const state_vec_t *restrict vec,
   else if (*sampl > 0)
   {
     *sampl = 0;
-    cmd_e cmd = NOT_REEF;
+    enum command cmd = NOT_REEF;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
@@ -280,7 +328,7 @@ static inline void detect_reef(const state_vec_t *restrict vec,
 
 /// Monitors all statistical metrics to not deviate
 /// beyond allowed tolerance thresholds.
-static inline void detect_landed(const state_vec_t *restrict vec,
+static inline void detect_landed(const struct state_vec *restrict vec,
                                  uint_fast8_t *restrict sampl,
                                  uint_fast8_t last)
 {
@@ -303,7 +351,7 @@ static inline void detect_landed(const state_vec_t *restrict vec,
   else if (*sampl > 0)
   {
     sampl = 0;
-    cmd_e cmd = NOT_LANDED;
+    enum command cmd = NOT_LANDED;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 #endif
@@ -313,8 +361,8 @@ static inline void detect_landed(const state_vec_t *restrict vec,
 /* ------ Unscented Kalman Filter ------ */
 
 /// Transforms state vector into sensor measurement.
-static inline void measurement(const state_vec_t *vec,
-                               sensor_meas_t *out)
+static inline void measurement(const struct state_vec *vec,
+                               struct measurement *out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -351,7 +399,7 @@ static inline void measurement(const state_vec_t *vec,
 }
 
 /// Transforms input vector into next-sample prediction.
-static inline void predict(state_vec_t *vec)
+static inline void predict(struct state_vec *vec)
 {
   const float dt = FSEC(timer_fetch_update(Predict));
 
@@ -363,7 +411,7 @@ static inline void predict(state_vec_t *vec)
   const float vty = dt * vec->v.y;
   const float vtz = dt * vec->v.z;
 
-  const quaternion_t old = vec->qv;
+  const struct quaternion old = vec->qv;
 
   vec->v.x += dvx;
   vec->v.y += dvy;
@@ -405,14 +453,14 @@ static float state_cov[16][16] = {0}; // P_0
 static float noise_cov[16][16] = {0}; // Q
 static float meas_cov [16][7]  = {0}; // R
 
-static inline void ascentKF(state_vec_t *vec, // x_0
-                            const sensor_meas_t *meas) // z_0
+static inline void ascentKF(struct state_vec *vec, // x_0
+                            const struct measurement *meas) // z_0
 {
   // TODO
 }
 
-static inline void descentKF(state_vec_t *vec, // x_0
-                             const sensor_meas_t *meas) // z_0
+static inline void descentKF(struct state_vec *vec, // x_0
+                             const struct measurement *meas) // z_0
 {
   // TODO
 }
@@ -423,8 +471,8 @@ static inline void descentKF(state_vec_t *vec, // x_0
 /// High-level overview of data evaluation cycle.
 void predict_entry(ULONG last)
 {
-  state_vec_t vec[2] = {0};
-  sensor_meas_t raw = {0};
+  struct state_vec vec[2] = {0};
+  struct measurement raw = {0};
   uint_fast8_t sampl = 0;
 
   last = 0;
@@ -442,6 +490,10 @@ void predict_entry(ULONG last)
 
     state < APOGEE ? ascentKF(&vec[last], &raw) :
                      descentKF(&vec[last], &raw);
+
+    if (mode.force_alt_checks) {
+      evaluate_altitude(vec, last);
+    }
 
     switch (state) {
       case IDLE:

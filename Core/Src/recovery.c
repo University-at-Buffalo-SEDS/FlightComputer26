@@ -4,7 +4,7 @@
  * For example, to send FIRE_PYRO to recovery:
  *
  * #include "FC-Threads.h"
- * cmd_e command = FIRE_PYRO;
+ * enum command command = FIRE_PYRO;
  * tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
  *
  * Wait option depends on whether you want to drop
@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "platform.h"
+#include "predict.h"
 #include "recovery.h"
 
 TX_QUEUE shared;
@@ -22,6 +23,10 @@ ULONG recovery_stack[RECOVERY_STACK_ULONG];
 
 /// Last recorded time for each timer user.
 uint32_t local_time[Time_Users] = {0};
+
+/// Run time data evaluation paramters bitfield
+extern struct op_mode mode;
+extern enum state state;
 
 
 /* ------ Local definitions ------ */
@@ -85,16 +90,29 @@ static inline void try_reinit_sensors()
 
 static inline void abortion_due_failures()
 {
-  // TODO
+  // TODO to be discussed
+  mode.abort_prediction = 1;
 }
 
-static inline void handle_timeout(time_user_e endpoint)
+static inline void handle_timeout(enum fc_timer endpoint)
 {
-  // TODO
+  switch (endpoint)
+  {
+    case Recovery_FC:
+      /* TODO to be discussed */
+      break;
+
+    case Recovery_GND:
+      mode.force_alt_checks = 1;
+      mode.accumulate_fails = 1;
+      break;
+
+    default: break;
+  }
 }
 
 // Process general command from either endpoint.
-static inline void process_action(cmd_e cmd, ULONG *flag)
+static inline void process_action(enum command cmd, ULONG *flag)
 {
   switch (cmd) {
     case FIRE_PYRO:
@@ -117,7 +135,7 @@ static inline void process_action(cmd_e cmd, ULONG *flag)
 }
 
 /// Checks whether raw data report is OK.
-static inline void process_raw_data_code(cmd_e code)
+static inline void process_raw_data_code(enum command code)
 {
   if (code != RAW_DATA) {
     ++failures;
@@ -132,7 +150,7 @@ static inline void process_raw_data_code(cmd_e code)
 }
 
 /// Decodes message and calls appropriate handler.
-static inline void decode(cmd_e cmd, ULONG *flag)
+static inline void decode(enum command cmd, ULONG *flag)
 {
   if (cmd & FC_MASK) /* <--- FC section */
   {
@@ -180,7 +198,7 @@ void recovery_entry(ULONG flag)
   flag = 0;
 
   while (SEDS_ARE_COOL) {
-    cmd_e cmd;
+    enum command cmd;
 
     /* Thread suspension */
     tx_semaphore_get(&unread, TX_WAIT_FOREVER);

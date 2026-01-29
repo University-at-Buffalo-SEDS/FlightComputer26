@@ -9,12 +9,12 @@
 #include "platform.h"
 #include "deployment.h"
 
-static inline void test_normal_flight(state_e until_state)
+static inline void test_normal_flight(enum state until_state)
 {
   // TODO
 }
 
-static inline void test_total_failure(state_e failing_state)
+static inline void test_total_failure(enum state failing_state)
 {
   test_normal_flight(failing_state);
   // TODO
@@ -31,7 +31,7 @@ int main()
   /* User configuation */
   const int testing_scenario = 0;
   const int num_deviations = 10;
-  const state_e failing_state = LAUNCH;
+  const enum state failing_state = LAUNCH;
   const unsigned int ticks_idling = 100;
 
   emu_init();

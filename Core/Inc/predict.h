@@ -83,25 +83,25 @@
 
 /* ------ UKF Containers ------ */
 
-typedef union {
+union bithack {
   float f;
   uint32_t d;
-} bithack_u;
+};
 
-typedef struct {
+struct quaternion {
   float q1, q2, q3, q4;
-} quaternion_t;
+};
 
-typedef struct {
-  coords_t p, v, a, w;
-  quaternion_t qv;
-} state_vec_t;
+struct state_vec {
+  struct coords p, v, a, w;
+  struct quaternion qv;
+};
 
 
-/* ------ State machine containers ------ */
+/* ------ Data evaluation containers ------ */
 
 /// In-flight rocket states only since used internally.
-typedef enum {
+enum state {
   IDLE,
   LAUNCH,
   ASCENT,
@@ -110,23 +110,32 @@ typedef enum {
   DESCENT,
   REEF,
   LANDED,
-} state_e;
+};
 
 /// Averaged representation of a single
 /// UKF evaluation that is easier to decide on.
-typedef struct {
+struct stats {
   float min_alt, max_alt, avg_vel, avg_vax;
-} stats_t;
+};
+
+/// Run time data evaluation paramters bitfield
+struct op_mode {
+  unsigned force_alt_checks : 1;
+  unsigned accumulate_fails : 1;
+  unsigned abort_prediction : 1;
+  unsigned can_expand_reef  : 1;
+  unsigned pyro_req_confirm : 1;
+};
 
 
 /* ------ Public API ------ */
 
 /// Enqueues raw data set for processing by UKF.
-void predict_put(const sensor_meas_t *buf);
+void predict_put(const struct measurement *buf);
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
-void compensate(sensor_meas_t *buf);
+void compensate(struct measurement *buf);
 
 
-#endif // UKF_H
+#endif // PREDICT_H

@@ -218,13 +218,13 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* ------ On-board relative timer implementation ------ */
 
-typedef enum {
+enum fc_timer {
   Predict,
   Recovery_FC,
   Recovery_GND,
 
   Time_Users
-} time_user_e;
+} ;
 
 /// Last recorded time for each UKF timer user.
 /// Defined in recovery.c to avoid multiple linkage.
@@ -234,7 +234,7 @@ extern uint32_t local_time[Time_Users];
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,
 /// and set local time to current HAL tick (ms).
-static inline uint32_t timer_fetch_update(time_user_e u)
+static inline uint32_t timer_fetch_update(enum fc_timer u)
 {
   uint32_t prev = local_time[u];
   local_time[u] = hal_time_ms();
@@ -242,14 +242,14 @@ static inline uint32_t timer_fetch_update(time_user_e u)
 }
 
 /// Set local time to current HAL tick (ms).
-static inline void timer_update(time_user_e u)
+static inline void timer_update(enum fc_timer u)
 {
   local_time[u] = hal_time_ms();
 }
 
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update.
-static inline uint32_t timer_fetch(time_user_e u)
+static inline uint32_t timer_fetch(enum fc_timer u)
 {
   return hal_time_ms() - local_time[u];
 }
@@ -259,7 +259,7 @@ static inline void timer_init()
 {
   uint32_t init_point = hal_time_ms();
 
-  for (time_user_e u = 0; u < Time_Users; ++u)
+  for (enum fc_timer u = 0; u < Time_Users; ++u)
   {
     local_time[u] = init_point;
   }

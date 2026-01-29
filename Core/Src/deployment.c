@@ -21,13 +21,13 @@ static flight_t rock = {0};
 static monitor_t monitor = {0};
 
 /// Generalized UKF metrics (double buffering).
-static stats_t stats[2] = {0};
+static struct stats stats[2] = {0};
 
 
 /* ------ Public API ------ */
 
 /// Does not cover states before rocket is ready to launch.
-state_e current_flight_state() { return rock.state; }
+enum state current_flight_state() { return rock.state; }
 
 /// Send enum-specified command to deployment.
 /// First command should be 'ABORT' to enter manual mode.
@@ -77,12 +77,12 @@ static inline void acc_avg(fetch_t *ft, float val, max, min,
 }
 
 /// Checks 1 to 4 new values in ring against sanity boundaries,
-/// and averages valid values as defined in stats_t (deployment.h).
+/// and averages valid values as defined in struct stats (deployment.h).
 /// Partially valid samples are supported.
 ///
 /// Returns DATA_NONE if ring has no new values, > 0 if some data
-/// was rejected but new stats_t was formed, and < 0 if provided
-/// valid data was not enough to form a complete stats_t;
+/// was rejected but new struct stats was formed, and < 0 if provided
+/// valid data was not enough to form a complete struct stats;
 static inline inference_e refresh_stats()
 {
   static filter_t data[DATA_CAP];
