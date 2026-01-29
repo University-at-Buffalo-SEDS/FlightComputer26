@@ -94,7 +94,8 @@ static inline void abortion_due_failures()
   mode.abort_prediction = 1;
 }
 
-static inline void handle_timeout(enum fc_timer endpoint)
+static inline void
+handle_timeout(enum fc_timer endpoint)
 {
   switch (endpoint)
   {
@@ -112,7 +113,8 @@ static inline void handle_timeout(enum fc_timer endpoint)
 }
 
 // Process general command from either endpoint.
-static inline void process_action(enum command cmd, ULONG *flag)
+static inline void
+process_action(enum command cmd, ULONG *flag)
 {
   switch (cmd) {
     case FIRE_PYRO:
@@ -135,7 +137,8 @@ static inline void process_action(enum command cmd, ULONG *flag)
 }
 
 /// Checks whether raw data report is OK.
-static inline void process_raw_data_code(enum command code)
+static inline void
+process_raw_data_code(enum command code)
 {
   if (code != RAW_DATA) {
     ++failures;
@@ -150,7 +153,8 @@ static inline void process_raw_data_code(enum command code)
 }
 
 /// Decodes message and calls appropriate handler.
-static inline void decode(enum command cmd, ULONG *flag)
+static inline void
+decode(enum command cmd, ULONG *flag)
 {
   if (cmd & FC_MASK) /* <--- FC section */
   {

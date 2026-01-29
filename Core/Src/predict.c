@@ -230,9 +230,9 @@ detect_ascent(const struct state_vec *restrict vec,
 /// maximum threshold for acceleration were passed.
 /// Checks for height increase and velocity decrease
 /// consistency.
-static inline void detect_burnout(const struct state_vec *restrict vec,
-                                  uint_fast8_t *restrict sampl,
-                                  uint_fast8_t last)
+static inline void
+detect_burnout(const struct state_vec *restrict vec,
+               uint_fast8_t *restrict sampl, uint_fast8_t last)
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
       vec[last].a.z <= BURNOUT_MAX_VAX &&
@@ -259,8 +259,8 @@ static inline void detect_burnout(const struct state_vec *restrict vec,
 
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
-static inline void detect_apogee(const struct state_vec *vec,
-                                 uint_fast8_t last)
+static inline void
+detect_apogee(const struct state_vec *vec, uint_fast8_t last)
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
@@ -272,9 +272,9 @@ static inline void detect_apogee(const struct state_vec *vec,
 }
 
 /// Monitors for decreasing altitude and increasing velocity.
-static inline void detect_descent(const struct state_vec *restrict vec,
-                                  uint_fast8_t *restrict sampl,
-                                  uint_fast8_t last)
+static inline void
+detect_descent(const struct state_vec *restrict vec,
+               uint_fast8_t *restrict sampl, uint_fast8_t last)
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
@@ -300,9 +300,9 @@ static inline void detect_descent(const struct state_vec *restrict vec,
 
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
-static inline void detect_reef(const struct state_vec *restrict vec,
-                               uint_fast8_t *restrict sampl,
-                               uint_fast8_t last)
+static inline void
+detect_reef(const struct state_vec *restrict vec,
+            uint_fast8_t *restrict sampl, uint_fast8_t last)
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
@@ -328,9 +328,9 @@ static inline void detect_reef(const struct state_vec *restrict vec,
 
 /// Monitors all statistical metrics to not deviate
 /// beyond allowed tolerance thresholds.
-static inline void detect_landed(const struct state_vec *restrict vec,
-                                 uint_fast8_t *restrict sampl,
-                                 uint_fast8_t last)
+static inline void
+detect_landed(const struct state_vec *restrict vec,
+              uint_fast8_t *restrict sampl, uint_fast8_t last)
 {
   float dh = vec[last].p.z - vec[!last].p.z;
   float dv = vec[last].v.z - vec[!last].v.z;
@@ -361,8 +361,8 @@ static inline void detect_landed(const struct state_vec *restrict vec,
 /* ------ Unscented Kalman Filter ------ */
 
 /// Transforms state vector into sensor measurement.
-static inline void measurement(const struct state_vec *vec,
-                               struct measurement *out)
+static inline void
+measurement(const struct state_vec *vec, struct measurement *out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -449,18 +449,21 @@ static inline void predict(struct state_vec *vec)
 }
 
 /* Static covariance matrices */
+
 static float state_cov[16][16] = {0}; // P_0
 static float noise_cov[16][16] = {0}; // Q
 static float meas_cov [16][7]  = {0}; // R
 
-static inline void ascentKF(struct state_vec *vec, // x_0
-                            const struct measurement *meas) // z_0
+/// Ascent Kalman Filter (ascentKF.m)
+static inline void
+ascentKF(struct state_vec *vec, const struct measurement *meas)
 {
   // TODO
 }
 
-static inline void descentKF(struct state_vec *vec, // x_0
-                             const struct measurement *meas) // z_0
+/// Descent Kalman Filter (descentKF.m)
+static inline void
+descentKF(struct state_vec *vec, const struct measurement *meas)
 {
   // TODO
 }
@@ -476,7 +479,6 @@ void predict_entry(ULONG last)
   uint_fast8_t sampl = 0;
 
   last = 0;
-  timer_init();
 
   while (SEDS_ARE_COOL)
   {

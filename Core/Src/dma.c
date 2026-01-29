@@ -34,7 +34,8 @@ static uint8_t rx[2][3][SENSOR_BUF_SIZE] = {0};
 /// Determines active buffer and device type from pointer offset.
 /// Returns DMA_RX_NULL if p is NULL or does not point inside rx.
 /// Context: callbacks.
-static inline uint_fast8_t decode_ptr(uint8_t *p, uint_fast8_t *type)
+static inline uint_fast8_t
+decode_ptr(uint8_t *p, uint_fast8_t *type)
 {
   static const uint_fast8_t buf[2 * 3] = {0, 0, 0, 1, 1, 1};
   static const uint_fast8_t dev[2 * 3] = {0, 1, 2, 0, 1, 2};
