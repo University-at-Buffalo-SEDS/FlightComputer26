@@ -146,7 +146,12 @@ validate(const struct measurement *raw)
   if (raw->baro.alt > MAX_ALT || raw->baro.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-  /* Vertical acceleration is a dominating metric */
+  if (raw->accl.x > MAX_VAX || raw->accl.x < MIN_VAX)
+    st += RAW_BAD_VAX;
+
+  if (raw->accl.y > MAX_VAX || raw->accl.y < MIN_VAX)
+    st += RAW_BAD_VAX;
+  
   if (raw->accl.z > MAX_VAX || raw->accl.z < MIN_VAX)
     st += RAW_BAD_VAX;
 

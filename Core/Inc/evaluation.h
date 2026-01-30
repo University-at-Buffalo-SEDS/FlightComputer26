@@ -18,11 +18,11 @@
 
 /* ------ Local configuration ------ */
 
-#define MIN_SAMP_ASCENT   6
-#define MIN_SAMP_BURNOUT  6
-#define MIN_SAMP_DESCENT  6
-#define MIN_SAMP_REEF     4
-#define MIN_SAMP_LANDED   12
+#define MIN_SAMP_ASCENT   3
+#define MIN_SAMP_BURNOUT  3
+#define MIN_SAMP_DESCENT  3
+#define MIN_SAMP_REEF     2
+#define MIN_SAMP_LANDED   3
 
 /* Delay in ThreadX ticks */
 #define LAUNCH_CONFIRM_DELAY 25
@@ -41,12 +41,12 @@
 #define MIN_VAX -(GRAVITY_SI * 12.0f)
 
 #define LAUNCH_MIN_VEL  8.0f
-#define LAUNCH_MIN_VAX  5.0f
+#define LAUNCH_MIN_VAX  10.0f
 
 #define BURNOUT_MIN_VEL 12.0f
-#define BURNOUT_MAX_VAX 1.5f
+#define BURNOUT_MAX_VAX -3.0f
 
-#define APOGEE_MAX_VEL  4.0f
+#define APOGEE_MAX_VEL -3.0f
 
 #define REEF_TARGET_ALT 457.2f
 
