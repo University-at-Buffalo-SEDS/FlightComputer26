@@ -191,24 +191,24 @@ int dma_try_fetch(struct measurement *buf)
 
   if (!buf) return -1;
 
-  cache |= is_complete[i];
-
-  if (cache & BARO_DONE) {
+  if (is_complete[i] & BARO_DONE) {
     buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
     buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
   }
-  if (cache & GYRO_DONE) {
+  if (is_complete[i] & GYRO_DONE) {
     buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
     buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
     buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
   }
-  if (cache & ACCL_DONE) {
+  if (is_complete[i] & ACCL_DONE) {
     buf->accl.x = F16(rx[i][2][2], rx[i][2][3]);
     buf->accl.y = F16(rx[i][2][4], rx[i][2][5]);
     buf->accl.z = F16(rx[i][2][6], rx[i][2][7]);  
   }
-  
+
+  cache |= is_complete[i];
   is_complete[i] = 0;
+  
   atomic_store_explicit(&in_transfer, i, memory_order_release);
   i ^= 1;
 
