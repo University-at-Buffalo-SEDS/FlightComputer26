@@ -75,7 +75,6 @@
 #include <string.h>
 #pragma GCC diagnostic ignored "-Warray-bounds"
 
-
 #if !defined(UX_STANDALONE)
 #include "tx_api.h"
 #else
