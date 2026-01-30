@@ -99,7 +99,7 @@ enum seds_atomic_mo {
 #include "cmsis_compiler.h"
 
 #else
-#define __DMB() atomic_thread_fence(memory_order_acq_rel)
+#define __DMB() atomic_thread_fence(AcqRel)
 
 #endif // DMB support
 

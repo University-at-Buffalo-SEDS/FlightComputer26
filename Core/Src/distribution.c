@@ -44,7 +44,7 @@ ULONG distribution_stack[DISTRIB_STACK_ULONG];
 
 /// CAN bus subscriber that puts messages into the FC queue. 
 static void
-fc_distributor(const uint8_t *data, size_t len, void *user)
+on_can_frame(const uint8_t *data, size_t len, void *user)
 {
   if (user != &distribution_task || !len || !(len & 3)) {
     /* Not the intended recepient,
@@ -105,7 +105,7 @@ void distribution_entry(ULONG input)
 /// Stack size and priority are configurable in FC-Threads.h.
 void create_distribution_task(void)
 {
-  UINT st = /*can_bus_subscribe_rx(fc_distributor, &distribution_entry)*/0;
+  UINT st = /*can_bus_subscribe_rx(on_can_frame, &distribution_entry)*/0;
 
   if (st != HAL_OK) {
     log_die("FC:DIST: failed to subscribe to CAN bus (%u)", st);

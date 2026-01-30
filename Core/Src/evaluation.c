@@ -67,32 +67,15 @@ static struct measurement payload[RING_SIZE] = {0};
 
 /// 0-7:  amount of new entries,
 /// 8-15: 'consumer locked' index
-static atomic_uint_fast16_t mask = 0;
+/// The latter is 255 (FF) when consumer doesn't
+/// is not reading the buffer.
+static atomic_uint_fast16_t mask = 0xFF00u;
 
 /// Local module config bitmask
 static struct op_mode mode = {0};
 
 
 /* ------ Public API ------ */
-
-/// Double-buffering is more memory efficient, but
-/// currently it is tricky to implement properly.
-void evaluation_put(const struct measurement *buf)
-{
-  static fu8 idx = 0;
-
-  fu8 i = idx;
-  
-  payload[i] = *buf;
-  i = (i + 1) & RING_MASK;
-
-  fu8 cons = load(&mask, Acq) >> 8;
-
-  if (i != cons) {
-    fetch_add(&mask, 1, Rel);
-    idx = i;
-  }
-}
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
@@ -107,12 +90,31 @@ void compensate(struct measurement *buf)
   buf->accl.z *= MG;
 }
 
+/// Writes one raw sample to the evaluation ring buffer.
+void evaluation_put(const struct measurement *buf)
+{
+  static fu8 idx = 0;
 
-/* ------ Helpers ------ */
+  fu8 i = idx;
+  
+  payload[i] = *buf;
 
-/// Single-fetch version of previously designed
-/// multiple-fetch algorithm.
-fu8 fetch(struct measurement *buf)
+  i = (i + 1) & RING_MASK;
+  fu8 cons = load(&mask, Acq) >> 8;
+
+  if (i != cons) {
+    fetch_add(&mask, 1, Rel);
+    idx = i;
+  }
+}
+
+
+/* ------ Local helpers ------ */
+
+/// Fetches one value from the ring buffer.
+/// Returns the amount of new entries added since last call.
+static inline fu8
+fetch(struct measurement *buf)
 {
   static fu8 idx = 0;
 
@@ -125,18 +127,19 @@ fu8 fetch(struct measurement *buf)
   if (!n) goto finish;
 
   i = (i + n - 1) & RING_MASK;
-  n = 1;
+  idx = i;
 
   *buf = payload[i];
 
 finish:
-  /* Always clear busy index */
-  fetch_or(&mask, 0xFF00u, Rel);
+  /* Always clear busy index (relaxed) */
+  fetch_or(&mask, 0xFF00u, Rlx);
   return n;
 }
 
 /// Validates one raw measurement against sanity bounds.
-static inline fi8 validate(struct measurement *raw)
+static inline fu8
+validate(const struct measurement *raw)
 {
   enum command st = RAW_DATA;
 
@@ -167,7 +170,7 @@ static inline fi8 validate(struct measurement *raw)
   return st;
 }
 
-/// ARM fast math is accurate but does not have inverse.
+/// Inverse square root function using bithack.
 static inline float invsqrtf(float x)
 {
   /* Brought right from Quake 3 Arena! */
