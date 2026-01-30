@@ -24,21 +24,23 @@
 /* ------ Containers ------ */
 
 /// Discriminants must comply with decode_ptr() dev[].
-typedef enum {
+enum device {
   BAROMETER = 0,
   GYROSCOPE = 1,
   ACCELEROMETER = 2,
-} device_e;
+
+  DEVICES = 3,
+};
 
 /* Generic measurement containers */
-typedef struct { float x, y, z; } coords_t;
-typedef struct { float p, t, alt; } baro_t;
+struct coords { float x, y, z; };
+struct baro { float p, t, alt; };
 
 /// Transferable raw data unit
-typedef struct {
-  baro_t baro;
-  coords_t gyro, accl;
-} sensor_meas_t;
+struct measurement {
+  struct baro baro;
+  struct coords gyro, accl;
+};
 
 
 /* ------ Public API ------ */
@@ -46,7 +48,7 @@ typedef struct {
 /// Fetches whatever is available in a free (tm) DMA buffer.
 /// Returns 1 when all 3 sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
-int dma_try_fetch(sensor_meas_t *buf);
+int dma_try_fetch(struct measurement *buf);
 
 
 #endif // DMA_H
