@@ -15,7 +15,7 @@
 #include <stdatomic.h>
 
 #include "platform.h"
-#include "predict.h"
+#include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
 
@@ -72,7 +72,7 @@ static inline void try_reinit_sensors()
 {
   enum device faulty = DEVICES;
 
-  log_msg("Recovery: trying to reinit sensors", 35);
+  log_msg("FC:RECV: trying to reinit sensors", 35);
 
   __disable_irq();
 
@@ -88,9 +88,9 @@ static inline void try_reinit_sensors()
   __enable_irq();
   
   if (faulty == DEVICES) {
-    log_msg("Recovery: reinit OK", 20);
+    log_msg("FC:RECV: reinit OK", 20);
   } else {
-    log_err("Recovery: reinit failed (%d)", faulty);
+    log_err("FC:RECV: reinit failed (%d)", faulty);
   }
 }
 
@@ -157,7 +157,7 @@ process_raw_data_code(enum command code, ULONG *conf)
   if (code != RAW_DATA)
   {
     ++failures;
-    log_err("Recovery: bad sensor reading (%d)", code);
+    log_err("FC:RECV: bad sensor reading (%d)", code);
   }
   else if (!(*conf & ACCUMULATE_FAILS))
   {
@@ -178,8 +178,8 @@ decode_fc(enum command cmd, ULONG *conf)
   }
   else if (cmd & DATA_EVALUATION)
   {
-    /* Report: does not need processing function */
-    log_err("Recovery: received warning (%d)", cmd);
+    /* Report. Does not need processing function */
+    log_err("FC:RECV: received warning (%d)", cmd);
   }
   else /* if we have raw data report */
   {
@@ -191,11 +191,11 @@ decode_fc(enum command cmd, ULONG *conf)
 static inline void
 decode_gnd(enum command cmd, ULONG *conf)
 {
-  timer_update(Recovery_GND);
-
-  if (cmd & SYNC)
-  {
-    return; // Successful sync
+  timer_update(Recovery_GND); // <---.
+                              //     |
+  if (cmd & SYNC)             //     |
+  {                           //     |
+    return; // Successful sync ------`
   }
   else if (cmd & ACTION)
   {
@@ -203,7 +203,7 @@ decode_gnd(enum command cmd, ULONG *conf)
   }
   else /* Programmer's mistake, codes < ACTION are FC-only */
   {
-    log_msg("Recovery: undefined command or code", 36);
+    log_err("FC:RECV: undefined command or code (%u)", cmd);
   }
 }
 
@@ -223,7 +223,7 @@ void recovery_entry(ULONG conf)
     tx_semaphore_get(&unread, TX_WAIT_FOREVER);
     
     if (tx_queue_receive(&shared, &cmd,
-        TX_WAIT_FOREVER) != TX_SUCCESS)
+        TX_WAIT_FOREVER) != TX_SUCCESS || !cmd)
     {
       continue;
     }
@@ -277,28 +277,28 @@ void create_recovery_task(void)
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
   if (st != TX_SUCCESS) {
-    log_die("Failed to create Recovery Task");
+    log_die("FC:RECV: failed to create task (%u)", st);
   }
 
-  st = tx_queue_create(&shared, "Shared queue", 1, QADDR, QSIZE);
+  st = tx_queue_create(&shared, "Message queue", 1, QADDR, QSIZE);
   if (st != TX_SUCCESS) {
-    log_die("Failed to create shared queue");
+    log_die("FC:RECV: failed to create queue (%u)", st);
   }
 
   st = tx_queue_send_notify(&shared, queue_handler);
   if (st != TX_SUCCESS) {
-    log_die("Failed to subscribe to shared queue");
+    log_die("FC:RECV: failed to subscribe to queue (%u)", st);
   }
 
-  st = tx_semaphore_create(&unread, "Unread messages", 0);
+  st = tx_semaphore_create(&unread, "Messages in queue", 0);
   if (st != TX_SUCCESS) {
-    log_die("Failed to create unread semaphore");
+    log_die("FC:RECV: failed to create semaphore (%u)", st);
   }
 
-  st = tx_timer_create(&endpoints, "Endpoints timerout timer",
+  st = tx_timer_create(&endpoints, "Endpoints timeout timer",
                        check_endpoints, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_AUTO_ACTIVATE);
   if (st != TX_SUCCESS) {
-    log_die("Failed to create timeout check timer");
+    log_die("FC:RECV: failed to create timer (%u)", st);
   }
 }

@@ -52,7 +52,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/accel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/predict.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/evaluation.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/distribution.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/recovery.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/app_threadx.c

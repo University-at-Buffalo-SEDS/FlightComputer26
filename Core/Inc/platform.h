@@ -204,6 +204,10 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Driver-specific data conversions */
 
+#define U32(b0, b1, b2, b3)                                         \
+  (((uint32_t)(b2) << 24) | ((uint32_t)(b2) << 16) |                \
+   ((uint32_t)(b1) << 8 ) |  (uint32_t)(b0))
+
 #define U24(b0, b1, b2)                                             \
   (((uint32_t)(b2) << 16) | ((uint32_t)(b1) << 8) | (uint32_t)(b0))
 

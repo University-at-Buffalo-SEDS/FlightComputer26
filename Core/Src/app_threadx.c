@@ -26,7 +26,7 @@
 #include "main.h"
 #include "sedsprintf.h"
 #include "telemetry.h"
-#include "predict.h"
+#include "evaluation.h"
 #include "recovery.h"
 #include "FC-Threads.h"
 #include "tx_api.h"
@@ -84,7 +84,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   create_recovery_task();
   create_distribution_task();
   create_telemetry_thread();
-  create_predict_task();
+  create_evaluation_task();
 
   /* USER CODE END App_ThreadX_Init */
 

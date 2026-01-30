@@ -8,13 +8,13 @@
 
 #include "dsp/fast_math_functions.h"
 
-#include "predict.h"
+#include "evaluation.h"
 #include "platform.h"
 #include "recovery.h"
 #include "dma.h"
 
-TX_THREAD predict_task;
-ULONG predict_stack[PREDICT_STACK_ULONG];
+TX_THREAD evaluation_task;
+ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /// Current flight state
 enum state state = IDLE;
@@ -170,14 +170,14 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
     if (mode.safe_expand_reef)
     {
       reef_high();
-      log_msg("FC: ! urgently expanding reef", 29);
+      log_msg("FC:EVAL: urgently expanding reef", 33);
     }
     else
     {
       /* We didn't even expand parachute to that moment.
       * What is going on!!? Perform full sequence. */ 
       co2_high();
-      log_msg("FC: ! urgently firing PYRO->REEF", 34);
+      log_msg("FC:EVAL: urgently firing PYRO->REEF", 36);
       mode.safe_expand_reef = 1;
       tx_thread_sleep(100); // sleep for 1 sec
       reef_high();
@@ -206,7 +206,7 @@ detect_launch(const struct state_vec *vec, uint_fast8_t last)
       vec[last].a.z >= LAUNCH_MIN_VAX)
   {
     state = LAUNCH;
-    log_msg("DEPL: Launch detected", 22);
+    log_msg("FC:EVAL: launch detected", 25);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -224,7 +224,7 @@ detect_ascent(const struct state_vec *restrict vec,
     {
       state = ASCENT;
       *sampl = 0;
-      log_msg("DEPL: Launch confirmed", 23);
+      log_msg("FC:EVAL: launch confirmed", 26);
     }
   }
   else if (mode.consecutive_samp && *sampl > 0)
@@ -253,7 +253,7 @@ detect_burnout(const struct state_vec *restrict vec,
     {
       state = BURNOUT;
       *sampl = 0;
-      log_msg("DEPL: Watching for apogee", 26);
+      log_msg("FC:EVAL: watching for apogee", 29);
     }
   }
   else if (mode.consecutive_samp && *sampl > 0)
@@ -273,7 +273,7 @@ detect_apogee(const struct state_vec *vec, uint_fast8_t last)
       vec[last].v.z < vec[!last].v.z)
   {
     state = APOGEE;
-    log_msg("DEPL: Approaching apogee", 25);
+    log_msg("FC:EVAL: approaching apogee", 28);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -292,7 +292,7 @@ detect_descent(const struct state_vec *restrict vec,
       state = DESCENT;
       *sampl = 0;
       co2_high();
-      log_msg("DEPL: Fired pyro, descending", 29);
+      log_msg("FC:EVAL: fired pyro, descending", 32);
     }
   }
   else if (mode.consecutive_samp && *sampl > 0)
@@ -318,7 +318,7 @@ detect_reef(const struct state_vec *restrict vec,
       state = REEF;
       *sampl = 0;
       reef_low();
-      log_msg("DEPL: Expanded parachute", 25);
+      log_msg("FC:EVAL: expanded parachute", 28);
     }
   }
   else if (mode.consecutive_samp && *sampl > 0)
@@ -347,7 +347,7 @@ detect_landed(const struct state_vec *restrict vec,
     if (*sampl >= MIN_SAMP_LANDED)
     {
       state = LANDED;
-      log_msg("DEPL: Rocket landed", 20);
+      log_msg("FC:EVAL: rocket landed", 23);
     }
   }
   else if (mode.consecutive_samp && *sampl > 0)
@@ -492,7 +492,7 @@ runtime_checks(const struct state_vec *vec,
 }
 
 /// High-level overview of data evaluation cycle.
-void predict_entry(ULONG last)
+void evaluation_entry(ULONG last)
 {
   struct state_vec vec[2] = {0};
   struct measurement raw = {0};
@@ -504,7 +504,7 @@ void predict_entry(ULONG last)
   {
     if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
-      tx_thread_sleep(PREDICT_SLEEP);
+      tx_thread_sleep(EVAL_SLEEP);
       continue;
     }
 
@@ -548,25 +548,25 @@ void predict_entry(ULONG last)
   }
 }
 
-/// Creates a non-preemptive UKF task
+/// Creates a non-preemptive evaluation task
 /// with defined parameters. Called manually.
 ///
 /// Stack size and priority are configurable in FC-Threads.h.
-void create_predict_task(void)
+void create_evaluation_task(void)
 {
-  UINT st = tx_thread_create(&predict_task,
-                             "Prediction Task",
-                             predict_entry,
-                             PREDICT_INPUT,
-                             predict_stack,
-                             PREDICT_STACK_BYTES,
-                             PREDICT_PRIORITY,
+  UINT st = tx_thread_create(&evaluation_task,
+                             "Evaluation Task",
+                             evaluation_entry,
+                             EVAL_INPUT,
+                             evaluation_stack,
+                             EVAL_STACK_BYTES,
+                             EVAL_PRIORITY,
                              /* No preemption */
-                             PREDICT_PRIORITY,
+                             EVAL_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
   if (st != TX_SUCCESS) {
-    log_die("Failed to create Prediction Task: %u", (unsigned)st);
+    log_die("FC:EVAL: failed to create evaluation task %u", st);
   }
 }

@@ -23,17 +23,17 @@ void create_recovery_task(void);
 /* ------ Recovery Task ------ */
 
 /* ------ Prediction Task ------ */
-#define PREDICT_INPUT 0
-#define PREDICT_SLEEP 45
-#define PREDICT_PRIORITY 4
-#define PREDICT_STACK_BYTES 8192
-#define PREDICT_STACK_ULONG (PREDICT_STACK_BYTES / sizeof(ULONG))
+#define EVAL_INPUT 0
+#define EVAL_SLEEP 45
+#define EVAL_PRIORITY 4
+#define EVAL_STACK_BYTES 8192
+#define EVAL_STACK_ULONG (EVAL_STACK_BYTES / sizeof(ULONG))
 
-extern TX_THREAD predict_task;
-extern ULONG predict_stack[];
+extern TX_THREAD evaluation_task;
+extern ULONG evaluation_stack[];
 
-void predict_entry(ULONG last);
-void create_predict_task(void);
+void evaluation_entry(ULONG last);
+void create_evaluation_task(void);
 /* ------ Prediction Task ------ */
 
 /* ------ Distribution Task ------ */

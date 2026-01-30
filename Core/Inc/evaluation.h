@@ -2,11 +2,12 @@
  * Data evaluation header and API.
  */
 
-#ifndef PREDICT_H
-#define PREDICT_H
+#ifndef EVAL_H
+#define EVAL_H
+
+#include <stdint.h>
 
 #include "dma.h"
-#include <stdint.h>
 
 #ifdef PL_HOST
 #include "../../tests/platform.h"
@@ -133,4 +134,4 @@ void predict_put(const struct measurement *buf);
 void compensate(struct measurement *buf);
 
 
-#endif // PREDICT_H
+#endif // EVAL_H
