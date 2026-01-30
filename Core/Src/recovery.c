@@ -65,7 +65,7 @@ void user_runtime_config()
   /* TODO discuss defaults */
   mode |= CONSECUTIVE_SAMP;
 
-  atomic_store_explicit(&config, mode, memory_order_release);
+  store(&config, mode, Rel);
 }
 
 
@@ -73,9 +73,9 @@ void user_runtime_config()
 
 static TX_TIMER endpoints;
 static TX_SEMAPHORE unread;
-static uint_fast8_t failures = 0;
+static fu8 failures = 0;
 
-/// Queue of 32 ints that begins in the middle of SRAM1
+/// Queue of 32 uints that begins in the middle of SRAM1
 #define QADDR (VOID *)0x20010000
 #define QSIZE 128
 
@@ -147,7 +147,7 @@ handle_timeout(enum fc_timer endpoint)
     default: break;
   }
 
-  atomic_fetch_or_explicit(&config, mode, memory_order_release);
+  fetch_or(&config, mode, Rel);
 }
 
 // Process general command from either endpoint.
@@ -240,7 +240,7 @@ void recovery_entry(ULONG conf)
 {
   conf = 0;
 
-  while (SEDS_ARE_COOL) {
+  task_main_loop {
     enum command cmd;
 
     /* Thread suspension */

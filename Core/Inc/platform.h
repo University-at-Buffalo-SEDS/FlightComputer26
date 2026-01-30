@@ -1,6 +1,21 @@
 /*
- * Platform abstraction header (HAL, Drivers, ThreadX, Telemetry).
- * Used for the embedded (target) profile.
+ * Shared platform header
+ *
+ * The purpose of this file is to unify the Flight
+ * Computer board API and helpers, providing a single
+ * point of reference and modification. This file also
+ * enables easier conditional compilation and poisoning.
+ *
+ * This header provides the following components the
+ * DMA, Distribution, Evaluation, and Recovery modules:
+ *
+ * - Type-safe Max, Min, and Abs helper macros;
+ * - GPIO and EXTI port mappings;
+ * - ThreadX, HAL, sedsprintf_rs, and driver includes;
+ * - Variadic aliases for select sedsprintf_rs functions;
+ * - Aliases for select HAL and driver functions;
+ * - Shared inlined timer implementation with single storage;
+ * - Misc aliases and includes as required by the modules.
  */
 
 #ifndef PLATFORM_H
@@ -8,8 +23,6 @@
 
 #include <stdint.h>
 #include <stdatomic.h>
-
-#define SEDS_ARE_COOL 1
 
 
 /* ------ Numerical helpers ------ */
@@ -33,6 +46,62 @@
     typeof(x) _d = (x); \
     _d >= 0 ? _d : -_d; \
   })
+
+
+/* ------ Platform integer aliases ----- */
+
+/* This fastN type is needed if, for example, our libc
+ * implementation defines integers (u)uintN_t to be less
+ * than N bits. Minimum width guarantees are then provided
+ * by (u)int_fastN_t and (u)int_leastN_t types, with
+ * the former being considered the fastest on our platform,
+ * and the latter - the smallest given minimum size. */
+
+typedef uint_fast8_t  fu8;
+typedef uint_fast16_t fu16;
+typedef uint_fast32_t fu32;
+
+typedef int_fast8_t  fi8;
+typedef int_fast16_t fi16;
+typedef int_fast32_t fi32;
+
+
+/* ------ Atomic ops and MO aliases ------ */
+
+enum seds_atomic_mo {
+  Rlx    = memory_order_relaxed,
+  Con    = memory_order_consume,
+  Acq    = memory_order_acquire,
+  Rel    = memory_order_release,
+  AcqRel = memory_order_acq_rel,
+  SeqCst = memory_order_seq_cst
+};
+
+#define load        atomic_load_explicit
+#define store       atomic_store_explicit
+#define swap        atomic_exchange_explicit
+#define fetch_add   atomic_fetch_add_explicit
+#define fetch_sub   atomic_fetch_sub_explicit
+#define fetch_and   atomic_fetch_and_explicit
+#define fetch_or    atomic_fetch_or_explicit
+#define fetch_xor   atomic_fetch_xor_explicit
+#define cas_weak    atomic_compare_exchange_weak_explicit
+#define cas_strong  atomic_compare_exchange_strong_explicit
+
+
+/* ------ Task utilities ------ */
+
+#define task_main_loop for (;;)
+
+/* Data memory barrier */
+
+#if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
+#include "cmsis_compiler.h"
+
+#else
+#define __DMB() atomic_thread_fence(memory_order_acq_rel)
+
+#endif // DMB support
 
 
 /* ------ FC '26 GPIO port maps ------ */
@@ -217,16 +286,6 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define F16(b0, b1) ((float)I16(b0, b1))
 
 
-
-/* ------ Data memory barrier ------ */
-
-#if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
-#include "cmsis_compiler.h"
-#else
-#define __DMB() (void)0
-#endif // DMB support
-
-
 /* ------ On-board relative timer implementation ------ */
 
 enum fc_timer {
@@ -235,7 +294,7 @@ enum fc_timer {
   Recovery_GND,
 
   Time_Users
-} ;
+};
 
 /// Last recorded time for each UKF timer user.
 /// Defined in recovery.c to avoid multiple linkage.

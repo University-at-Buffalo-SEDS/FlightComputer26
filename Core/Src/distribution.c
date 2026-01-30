@@ -52,7 +52,7 @@ fc_distributor(const uint8_t *data, size_t len, void *user)
     return;
   }
 
-  for (uint_fast8_t k = 0; k < len; k += sizeof(uint32_t))
+  for (fu8 k = 0; k < len; k += sizeof(uint32_t))
   {
     uint32_t msg = U32(data[k], data[k+1], data[k+2], data[k+3]);
     UINT st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
@@ -74,8 +74,7 @@ void distribution_entry(ULONG input)
   
   struct measurement payload = {0};
 
-  while (SEDS_ARE_COOL)
-  {
+  task_main_loop {
     /*can_bus_process_rx()*/
 
     if (!dma_try_fetch(&payload))

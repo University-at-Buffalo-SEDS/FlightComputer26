@@ -79,18 +79,17 @@ static struct op_mode mode = {0};
 /// currently it is tricky to implement properly.
 void evaluation_put(const struct measurement *buf)
 {
-  static uint_fast8_t idx = 0;
+  static fu8 idx = 0;
 
-  uint_fast8_t i = idx;
+  fu8 i = idx;
   
   payload[i] = *buf;
   i = (i + 1) & RING_MASK;
 
-  uint_fast8_t cons;
-  cons = atomic_load_explicit(&mask, memory_order_acquire) >> 8;
+  fu8 cons = load(&mask, Acq) >> 8;
 
   if (i != cons) {
-    atomic_fetch_add_explicit(&mask, 1, memory_order_release);
+    fetch_add(&mask, 1, Rel);
     idx = i;
   }
 }
@@ -113,16 +112,16 @@ void compensate(struct measurement *buf)
 
 /// Single-fetch version of previously designed
 /// multiple-fetch algorithm.
-uint_fast8_t fetch(struct measurement *buf)
+fu8 fetch(struct measurement *buf)
 {
-  static uint_fast8_t idx = 0;
+  static fu8 idx = 0;
 
-  uint_fast8_t n;
-  uint_fast16_t i = idx;
+  fu16 i = idx;
 
-  /* Fetch and clear new entries counter and store current index */
-  n = (uint_fast8_t)atomic_exchange_explicit(&mask, i << 8,
-                                             memory_order_acq_rel);
+  /* Fetch and clear new entries counter
+   * and store current index */
+  fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
+  
   if (!n) goto finish;
 
   i = (i + n - 1) & RING_MASK;
@@ -132,12 +131,12 @@ uint_fast8_t fetch(struct measurement *buf)
 
 finish:
   /* Always clear busy index */
-  atomic_fetch_or_explicit(&mask, 0xFF00u, memory_order_release);
+  fetch_or(&mask, 0xFF00u, Rel);
   return n;
 }
 
 /// Validates one raw measurement against sanity bounds.
-static inline int_fast8_t validate(struct measurement *raw)
+static inline fi8 validate(struct measurement *raw)
 {
   enum command st = RAW_DATA;
 
@@ -189,7 +188,7 @@ static inline float invsqrtf(float x)
 /// Cautiously examine altitude changes
 /// in order to make an immediate decision.
 static inline void
-evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
+evaluate_altitude(const struct state_vec *vec, fu8 last)
 {
   /* If we aren't yet ascending or not descending, return.
    * First condition is to guard against noise while idle. */
@@ -240,7 +239,7 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
 static inline void
-detect_launch(const struct state_vec *vec, uint_fast8_t last)
+detect_launch(const struct state_vec *vec, fu8 last)
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
@@ -254,7 +253,7 @@ detect_launch(const struct state_vec *vec, uint_fast8_t last)
 /// Monitors height and velocity increase consistency.
 static inline void
 detect_ascent(const struct state_vec *restrict vec,
-              uint_fast8_t *restrict sampl, uint_fast8_t last)
+              fu8 *restrict sampl, fu8 last)
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
@@ -281,7 +280,7 @@ detect_ascent(const struct state_vec *restrict vec,
 /// consistency.
 static inline void
 detect_burnout(const struct state_vec *restrict vec,
-               uint_fast8_t *restrict sampl, uint_fast8_t last)
+               fu8 *restrict sampl, fu8 last)
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
       vec[last].a.z <= BURNOUT_MAX_VAX &&
@@ -307,7 +306,7 @@ detect_burnout(const struct state_vec *restrict vec,
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
 static inline void
-detect_apogee(const struct state_vec *vec, uint_fast8_t last)
+detect_apogee(const struct state_vec *vec, fu8 last)
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
@@ -321,7 +320,7 @@ detect_apogee(const struct state_vec *vec, uint_fast8_t last)
 /// Monitors for decreasing altitude and increasing velocity.
 static inline void
 detect_descent(const struct state_vec *restrict vec,
-               uint_fast8_t *restrict sampl, uint_fast8_t last)
+               fu8 *restrict sampl, fu8 last)
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
@@ -347,7 +346,7 @@ detect_descent(const struct state_vec *restrict vec,
 /// and checks for altitude consistency.
 static inline void
 detect_reef(const struct state_vec *restrict vec,
-            uint_fast8_t *restrict sampl, uint_fast8_t last)
+            fu8 *restrict sampl, fu8 last)
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
@@ -373,7 +372,7 @@ detect_reef(const struct state_vec *restrict vec,
 /// beyond allowed tolerance thresholds.
 static inline void
 detect_landed(const struct state_vec *restrict vec,
-              uint_fast8_t *restrict sampl, uint_fast8_t last)
+              fu8 *restrict sampl, fu8 last)
 {
   float dh = vec[last].p.z - vec[!last].p.z;
   float dv = vec[last].v.z - vec[!last].v.z;
@@ -403,7 +402,8 @@ detect_landed(const struct state_vec *restrict vec,
 
 /// Transforms state vector into sensor measurement.
 static inline void
-measurement(const struct state_vec *vec, struct measurement *out)
+measurement(const struct state_vec *restrict vec,
+            struct measurement *restrict out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -515,7 +515,7 @@ descentKF(struct state_vec *vec, const struct measurement *meas)
 /// Locally copies and evaluates global run time config
 static inline void
 runtime_checks(const struct state_vec *vec,
-               uint_fast8_t last, uint_least32_t conf)
+               fu8 last, uint_least32_t conf)
 {  
   mode.safe_expand_reef = (conf & SAFE_EXPAND_REEF) ? 1 : 0;
   mode.consecutive_samp = (conf & CONSECUTIVE_SAMP) ? 1 : 0;
@@ -530,12 +530,11 @@ void evaluation_entry(ULONG last)
 {
   struct state_vec vec[2] = {0};
   struct measurement raw = {0};
-  uint_fast8_t sampl = 0;
+  fu8 sampl = 0;
 
   last = 0;
 
-  while (SEDS_ARE_COOL)
-  {
+  task_main_loop {
     if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
       tx_thread_sleep(EVAL_SLEEP);
@@ -544,13 +543,10 @@ void evaluation_entry(ULONG last)
 
     last = !last;
 
-    flight < APOGEE ? ascentKF(&vec[last], &raw) :
-                     descentKF(&vec[last], &raw);
+    flight < APOGEE ? ascentKF (&vec[last], &raw) :
+                      descentKF(&vec[last], &raw) ;
 
-    uint_least32_t conf;
-    conf = atomic_load_explicit(&config, memory_order_acquire);
-
-    runtime_checks(vec, last, conf);
+    runtime_checks(vec, last, load(&config, Acq));
 
     switch (flight) {
       case IDLE:

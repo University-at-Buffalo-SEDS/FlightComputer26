@@ -74,7 +74,7 @@
 #define RING_SIZE 8
 #define RING_MASK (RING_SIZE - 1)
 
-#define FSEC(ms) ((float)(ms) / 1000.0f)
+#define FSEC(ms) ((float)(ms) * 0.001f)
 
 #define NR_ITERATIONS 1
 
@@ -116,7 +116,8 @@ struct stats {
   float min_alt, max_alt, avg_vel, avg_vax;
 };
 
-/// Replica of global config paramters but as local bitfield
+/// Replica of several global config paramters
+/// but as a locally accessed bitfield
 struct op_mode {
   unsigned safe_expand_reef : 1;
   unsigned pyro_req_confirm : 1;

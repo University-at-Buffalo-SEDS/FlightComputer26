@@ -39,7 +39,7 @@ static inline void sanitize(float *val, float bound)
  */
 static float noise(float mu, float sigma)
 {
-  static uint_fast8_t is_cached = 0;
+  static fu8 is_cached = 0;
   static double cache;
 
   double u, v, s;
