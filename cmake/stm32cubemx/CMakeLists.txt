@@ -48,13 +48,15 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/dma.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_thread.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry.c 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_hooks.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/accel.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/evaluation.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/distribution.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/recovery.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sd_card.c 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/can_bus.c 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_hooks.c 
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/app_threadx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_hal_msp.c

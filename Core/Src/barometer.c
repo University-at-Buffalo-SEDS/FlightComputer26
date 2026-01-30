@@ -89,7 +89,7 @@ static HAL_StatusTypeDef read_trim_pars(SPI_HandleTypeDef *hspi) {
   int8_t nvm_par_p10 = (int8_t)raw[19];
   int8_t nvm_par_p11 = (int8_t)raw[20];
 
-  // Convert to float (matches your Arduino code)
+  // Convert to float (matches the Arduino code)
   calib_data.par_t1 = (float)nvm_par_t1 / powf(2.0f, -8.0f); // nvm * 256
   calib_data.par_t2 = (float)nvm_par_t2 / powf(2.0f, 30.0f);
   calib_data.par_t3 = (float)nvm_par_t3 / powf(2.0f, 48.0f);
