@@ -1,6 +1,46 @@
 /*
- * Data predicition and evaluation task.
- * Target scenario is one physical thread and scheduler.
+ * Evaluation Task
+ * 
+ * This task consists of two major parts:
+ * UKF (Unscented Kalman Filter) and Prediction.
+ *
+ * The shared ring buffer is actively filled by the
+ * Distribution task with compensated raw data taken
+ * from DMA buffers. Upon entering its main loop,
+ * this task copies the most recently available pack
+ * of measurements (baro, gyro, accel), and checks
+ * them against sanity boundaries. Regardless of the
+ * outcome of this evaluation, a status code (a success
+ * or bad data report) is passed to the Recovery Task
+ * queue in order to maintain internal FC heartbeat.
+ * If there was bad data, the task will take another
+ * (always newer) buffer from the ring or wait if 
+ * there is no one available (unlikely).
+ *
+ * Then this task updates its local configuration
+ * from the global one (for later non-atomic access),
+ * and evaluates certain options if possible (such as
+ * FORCE_ALT_CHECKS, which direct to always monitor
+ * altitude changes, regardless of current state).
+ *
+ * Depending on whether apogee is reached, the raw
+ * and presumably valid data is passed to the either
+ * of Ascent or Descent variants of the Kalman Filter.
+ * This is where this task will be stuck for a while,
+ * despite my attempts to use fast math and maintain
+ * cache friednliness in math operations. This is why
+ * UKF and Prediction tasks are combined in sequential
+ * logic: losing one processed vector due to async
+ * would be timewise expensive.
+ *
+ * Then, depending on current flight state and run time
+ * parameters, the processed vector is evaluated using
+ * one of the checking functions. Some of them require
+ * several confirmations of the observation and thus
+ * will need several iterations of the Kalman Filter.
+ *
+ * Unless Earth's gravity becomes like that on Jupiter,
+ * we don't need to rush here!
  */
 
 #include <stdint.h>
@@ -17,7 +57,7 @@ TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /// Current flight state
-enum state state = IDLE;
+enum state flight = IDLE;
 
 
 /* ------ Static ------ */
@@ -25,8 +65,8 @@ enum state state = IDLE;
 /// Raw data ring.
 static struct measurement payload[RING_SIZE] = {0};
 
-/// 0-7:  amount of new entries
-/// 8-15: consumer locked index
+/// 0-7:  amount of new entries,
+/// 8-15: 'consumer locked' index
 static atomic_uint_fast16_t mask = 0;
 
 /// Local module config bitmask
@@ -37,7 +77,7 @@ static struct op_mode mode = {0};
 
 /// Double-buffering is more memory efficient, but
 /// currently it is tricky to implement properly.
-void predict_put(const struct measurement *buf)
+void evaluation_put(const struct measurement *buf)
 {
   static uint_fast8_t idx = 0;
 
@@ -153,7 +193,7 @@ evaluate_altitude(const struct state_vec *vec, uint_fast8_t last)
 {
   /* If we aren't yet ascending or not descending, return.
    * First condition is to guard against noise while idle. */
-  if (state < ASCENT || vec[last].p.z > vec[!last].p.z) {
+  if (flight < ASCENT || vec[last].p.z > vec[!last].p.z) {
     /* If we were waiting on confirmation BUT config mandates
      * confirmations to be consecutive, reset the flag */
     if (mode.consecutive_samp && mode.pyro_req_confirm) {
@@ -205,7 +245,7 @@ detect_launch(const struct state_vec *vec, uint_fast8_t last)
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
   {
-    state = LAUNCH;
+    flight = LAUNCH;
     log_msg("FC:EVAL: launch detected", 25);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
@@ -222,7 +262,7 @@ detect_ascent(const struct state_vec *restrict vec,
     ++*sampl;
     if (*sampl >= MIN_SAMP_ASCENT)
     {
-      state = ASCENT;
+      flight = ASCENT;
       *sampl = 0;
       log_msg("FC:EVAL: launch confirmed", 26);
     }
@@ -251,7 +291,7 @@ detect_burnout(const struct state_vec *restrict vec,
     ++*sampl;
     if (*sampl >= MIN_SAMP_BURNOUT)
     {
-      state = BURNOUT;
+      flight = BURNOUT;
       *sampl = 0;
       log_msg("FC:EVAL: watching for apogee", 29);
     }
@@ -272,7 +312,7 @@ detect_apogee(const struct state_vec *vec, uint_fast8_t last)
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
   {
-    state = APOGEE;
+    flight = APOGEE;
     log_msg("FC:EVAL: approaching apogee", 28);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -289,7 +329,7 @@ detect_descent(const struct state_vec *restrict vec,
     ++*sampl;
     if (*sampl >= MIN_SAMP_DESCENT)
     {
-      state = DESCENT;
+      flight = DESCENT;
       *sampl = 0;
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
@@ -315,7 +355,7 @@ detect_reef(const struct state_vec *restrict vec,
     ++*sampl;
     if (*sampl>= MIN_SAMP_REEF)
     {
-      state = REEF;
+      flight = REEF;
       *sampl = 0;
       reef_low();
       log_msg("FC:EVAL: expanded parachute", 28);
@@ -346,7 +386,7 @@ detect_landed(const struct state_vec *restrict vec,
     ++*sampl;
     if (*sampl >= MIN_SAMP_LANDED)
     {
-      state = LANDED;
+      flight = LANDED;
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
@@ -472,23 +512,17 @@ descentKF(struct state_vec *vec, const struct measurement *meas)
 
 /* ------ Prediction Task ------ */
 
-/// Evaluates run time config in order of decreasing severity
-static inline enum global_config
+/// Locally copies and evaluates global run time config
+static inline void
 runtime_checks(const struct state_vec *vec,
                uint_fast8_t last, uint_least32_t conf)
-{
-  if (conf & ABORT_PREDICTION) {
-    return ABORT_PREDICTION;
-  }
-  
+{  
   mode.safe_expand_reef = (conf & SAFE_EXPAND_REEF) ? 1 : 0;
   mode.consecutive_samp = (conf & CONSECUTIVE_SAMP) ? 1 : 0;
 
   if (conf & FORCE_ALT_CHECKS) {
     evaluate_altitude(vec, last);
   }
-
-  return CHECKS_COMPLETE;
 }
 
 /// High-level overview of data evaluation cycle.
@@ -510,18 +544,15 @@ void evaluation_entry(ULONG last)
 
     last = !last;
 
-    state < APOGEE ? ascentKF(&vec[last], &raw) :
+    flight < APOGEE ? ascentKF(&vec[last], &raw) :
                      descentKF(&vec[last], &raw);
 
     uint_least32_t conf;
     conf = atomic_load_explicit(&config, memory_order_acquire);
 
-    if (runtime_checks(vec, last, conf) == ABORT_PREDICTION) {
-      /* Read abort flag in config, shutdown thread */
-      return;
-    }
+    runtime_checks(vec, last, conf);
 
-    switch (state) {
+    switch (flight) {
       case IDLE:
         detect_launch(vec, last);
         break;

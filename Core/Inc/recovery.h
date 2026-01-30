@@ -37,30 +37,42 @@ extern atomic_uint_least32_t config;
 /// Use this for enum command values > 0.
 #define FC_MSG(message) (message | FC_MASK)
 
+
 /* ------ Endpoint timeouts ------ */
 
 /* Mirrors Ground Station timeouts */
-#define FC_TIMEOUT_MS 3000
-#define GND_TIMEOUT_MS 3000
+#define FC_TIMEOUT_MS 4000
+#define GND_TIMEOUT_MS 4000
 
 /* Expiration of timer that invokes timeout checks 
  * (1 tick = 10 ms) */
 #define TX_TIMER_TICKS   100
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
+
 /* ------ Run time configuration flags ------ */
 
-enum global_config {
-  CHECKS_COMPLETE  = 0,
+#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
+/*
+ * In the version of C we are using, this is a GNU extension.
+ */
+enum g_conf : uint_least32_t {
+
+#else
+enum g_conf {
+
+#endif
+
+  CHECKS_COMPLETE = 0, // Do not modify
+
+  /* Options (currently max 32) */
   FORCE_ALT_CHECKS = 1u,
   ACCUMULATE_FAILS = 1u << 1,
-  ABORT_PREDICTION = 1u << 2,
+  DISTRIB_EMERGENT = 1u << 2,
   SAFE_EXPAND_REEF = 1u << 3,
-  PYRO_REQ_CONFIRM = 1u << 4,
-  REINIT_ATTEMPTED = 1u << 5,
-  CONSECUTIVE_SAMP = 1u << 6,
+  REINIT_ATTEMPTED = 1u << 4,
+  CONSECUTIVE_SAMP = 1u << 5,
 };
-
 
 
 /* ------ Recovery commands ------ */
@@ -92,13 +104,9 @@ enum global_config {
 /// mask it with FC_MSG(_variant_). Otherwise - UB!
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-/*
- * In the version of C we are using, this is a GNU extension.
- */
 enum command : uint32_t {
 
 #else
-
 enum command {
 
 #endif
@@ -144,7 +152,9 @@ enum command {
  * Positive 32-bit value required (TX queue and recovery semantics).
  */
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
+
 _Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
+_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 
 #endif
 

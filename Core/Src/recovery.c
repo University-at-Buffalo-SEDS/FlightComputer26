@@ -1,14 +1,37 @@
 /*
- * Recovery and command execution.
+ * Recovery Task
  *
- * For example, to send FIRE_PYRO to recovery:
+ * This task suspends on a counting semaphore
+ * and when resumed, drains the message queue.
+ * The messages are then interpreted depending
+ * on the MSB designating the endpoint - FC or GND.
+ * When a message appears in the queue, a callback
+ * is invoked that increments the value in semaphore.
  *
- * #include "FC-Threads.h"
- * enum command command = FIRE_PYRO;
+ * This task also includes a timer callback that
+ * checks for timeout of both FC and GND. If timeout
+ * occurs (i.e., this task did not receive a signal)
+ * for 4 seconds, a handler is invoked that changes
+ * global runtime configuration, which other tasks
+ * read and locally update on every iteration. The
+ * ThreadX timer is set to expire every second.
+ *
+ * The function user_runtime_config is provided,
+ * where users can specify the default configuration.
+ * The list of options can be found in recovery.h ->
+ * -> "Run time configuration flags".
+ *
+ * You can send a command to recovery like this
+ * (assume firing pyro from the ground station):
+ *
+ * enum command cmd = FIRE_PYRO;
  * tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
  *
  * Wait option depends on whether you want to drop
  * the value if queue is full (unlikely). 
+ *
+ * NOTE: if you are sending a message from FC,
+ * mask it with FC_MSG(_variant_). Otherwise - UB!
  */
 
 #include <stdint.h>
@@ -57,7 +80,6 @@ static uint_fast8_t failures = 0;
 #define QSIZE 128
 
 
-
 /* ------ Recovery logic ------ */
 
 /// Wake up recovery loop.
@@ -76,14 +98,15 @@ static inline void try_reinit_sensors()
 
   __disable_irq();
 
-  if (init_baro() != HAL_OK)
+  if (init_baro() != HAL_OK) {
     faulty *= BAROMETER;
-
-  if (init_gyro() != HAL_OK)
+  }
+  if (init_gyro() != HAL_OK) {
     faulty -= GYROSCOPE;
-
-  if (init_accel() != HAL_OK)
+  }
+  if (init_accel() != HAL_OK) {
     faulty -= ACCELEROMETER;
+  }
 
   __enable_irq();
   
@@ -94,12 +117,12 @@ static inline void try_reinit_sensors()
   }
 }
 
-static inline void abortion_due_failures()
+/// Scenario when Flight Computer itself decides to abort.
+static inline void auto_abort()
 {
   // TODO to be discussed
-  uint_least32_t mode = 0;
-  mode |= ABORT_PREDICTION;
-  atomic_fetch_or_explicit(&config, mode, memory_order_release);
+  
+  
 }
 
 /// Set cautionary and emergency flags on timeout
@@ -112,6 +135,7 @@ handle_timeout(enum fc_timer endpoint)
   {
     case Recovery_FC:
       /* TODO to be discussed */
+      auto_abort();
       break;
 
     case Recovery_GND:
@@ -236,7 +260,7 @@ void recovery_entry(ULONG conf)
     }
 
     if (failures >= FAILS_TO_ABORT) {
-      abortion_due_failures();
+      auto_abort();
     } else if (failures >= FAILS_TO_REINIT) {
       try_reinit_sensors();
     }

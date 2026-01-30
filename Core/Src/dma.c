@@ -1,7 +1,52 @@
 /*
- * Direct Memory Access implementation.
- * Sensors: Barometer, Gyroscope, Accelerometer.
- * Consumer: single - Distribution Task.
+ * Direct Memory Access implementation
+ *
+ * Sensors:  Barometer, Gyroscope, Accelerometer
+ * Consumer: Distribution Task
+ *
+ * This module implements the HAL Interrupt Service
+ * Routine and two DMA transfer callbacks for
+ * completion and error handling.
+ *
+ * The ISR is called by HAL after it receivies a signal
+ * on one or two of the designated (by Avionics Hardware)
+ * GPIO pins. Depedning on the pin, a DMA transfer is
+ * initiated for a corresponding device into one of two
+ * receive buffers. The device's CS pin is set low.
+ *
+ * One such buffer consists of 3 sections (for each device).
+ * Every time a completion callback receives, it will:
+ *
+ * 1. Infer the buffer and section (thus the device type)
+ *    by calculating pointer offset from the beginning of
+ *    the receive buffer (*).
+ * 2. If the pointer matches any valid section, invalidate
+ *    data cache for that section and pull the CS pin of
+ *    the corresponding device high.
+ *    [!] If the offset is beyond the Receive buffers, it
+ *        will pull CS pins of ALL device up, thus possibly
+ *        terminating active transfers.
+ * 3. Set the 'ready' flag for the concerned section (device).
+ *
+ * (*) "Shaky pointer math, America's favorite!"
+ *                               (C) Justin Myer, UB SEDS 2026
+ *
+ * The error callback will perform the same sequence of events
+ * EXCEPT for invalidating data cache and setting 'ready' flag.
+ *
+ * The consumer will read whatever is reported as 'ready' by the
+ * completion callback into the provided buffer, and THEN (after
+ * reading) atomically switch the active buffer using rel/acq
+ * semantics on ARM. Such sequence of events avoids waiting for
+ * the remaining DMA transfers to complete -- when the caller
+ * returns to the buffer previously switched to, all transfers
+ * will be completeed and flags set for that buffer. This also
+ * avoids using memory orderings on the 'ready' flags, as they
+ * are separate for each buffer.
+ *
+ * If, on any call, the fetch function determines that it filled
+ * all the sections of the provided argument buffer, it will
+ * report this to the caller, allowing it to proceed.
  */
 
 #include <stddef.h>
@@ -43,8 +88,9 @@ decode_ptr(uint8_t *p, uint_fast8_t *type)
   if (!p) return DMA_RX_NULL;
 
   ptrdiff_t offset = p - &rx[0][0][0];
-  if (offset < 0 || offset >= sizeof(rx))
+  if (offset < 0 || offset >= sizeof(rx)) {
     return DMA_RX_NULL;
+  }
 
   /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
   uint_fast8_t idx = (uint_fast8_t)offset >> 3;

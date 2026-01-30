@@ -1,7 +1,27 @@
-/* Distribution Task
+/*
+ * Distribution Task
  *
  * Uses API of DMA, Telemetry, Predict, Recovery, and CAN
  * to serve as the Flight Computer coordination module.
+ *
+ * This task subscribes a callback to the CAN bus driver,
+ * and calls its depletion function in the beginning of
+ * each iteration. Before entering its main loop, this task
+ * also sets time for the each FC user to the current tick.
+ *
+ * When fetching a pack of data (barometer, gyroscope, and
+ * accelerometer readings) from DMA buffers, it is not
+ * guaranteed that all three readings will be ready at once.
+ * The underlying DMA fetch function is thus called repetedly
+ * from the main loop until it (the function) notifies the
+ * caller (this task) that the buffer is ready and it can
+ * proceed. This is made to simplify synchronization within
+ * the Interrupt Service Routine, where ThreadX API, and
+ * therefore its wait/wake service, is unavailable.
+ *
+ * The data is then passed for preliminary compensation 
+ * (provided by device drivers), and placed inside the
+ * data evaluation buffer and telemetry (UART and SD) queues.
  *
  * Software model: this task should be trivial to
  * be able to demonstrate routing across rocket modules.
@@ -65,14 +85,13 @@ void distribution_entry(ULONG input)
     }
 
     compensate(&payload);
-    predict_put(&payload);
+    evaluation_put(&payload);
 
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload);
-    log_measurement(SEDS_DT_GYRO_DATA, &payload);
-    log_measurement(SEDS_DT_ACCEL_DATA, &payload);
+    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+    log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.accl);
 
     /// TODO: When merged with telemetry_handlers, log to SD.
-    /// and pass messages from fdcan to recovery queue.
   }
 
   /* Assert unreachable

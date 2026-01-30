@@ -127,7 +127,7 @@ struct op_mode {
 /* ------ Public API ------ */
 
 /// Enqueues raw data set for processing by UKF.
-void predict_put(const struct measurement *buf);
+void evaluation_put(const struct measurement *buf);
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
