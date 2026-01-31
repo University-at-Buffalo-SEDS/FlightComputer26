@@ -54,7 +54,6 @@
 #include "dma.h"
 
 TX_THREAD evaluation_task;
-TX_SEMAPHORE start_eval;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /// Current flight state
@@ -73,7 +72,7 @@ static struct measurement payload[RING_SIZE] = {0};
 static atomic_uint_fast16_t mask = 0xFF00u;
 
 /// Local module config bitmask
-static struct op_mode mode = {0};
+static fu16 mode = 0;
 
 
 /* ------ Public API ------ */
@@ -203,8 +202,8 @@ evaluate_altitude(const struct state_vec *vec, fu8 last)
   if (flight < ASCENT || vec[last].p.z > vec[!last].p.z) {
     /* If we were waiting on confirmation BUT config mandates
      * confirmations to be consecutive, reset the flag */
-    if (mode.consecutive_samp && mode.pyro_req_confirm) {
-      mode.pyro_req_confirm = 0;
+    if (mode & CONSECUTIVE_SAMP && mode & PYRO_REQ_CONFIRM) {
+      mode &= ~PYRO_REQ_CONFIRM;
     }
 
     return;
@@ -214,7 +213,7 @@ evaluate_altitude(const struct state_vec *vec, fu8 last)
   {
     /* We somehow missed the moment to expand parachute.
       * Do NOT release control until reef is fired */
-    if (mode.safe_expand_reef)
+    if (mode & SAFE_EXPAND_REEF)
     {
       reef_high();
       log_msg("FC:EVAL: urgently expanding reef", 33);
@@ -225,21 +224,21 @@ evaluate_altitude(const struct state_vec *vec, fu8 last)
       * What is going on!!? Perform full sequence. */ 
       co2_high();
       log_msg("FC:EVAL: urgently firing PYRO->REEF", 36);
-      mode.safe_expand_reef = 1;
+      mode |= SAFE_EXPAND_REEF;
       tx_thread_sleep(100); // sleep for 1 sec
       reef_high();
     }
   }
-  else if (!mode.pyro_req_confirm)
+  else if (!(mode & PYRO_REQ_CONFIRM))
   {
     /* Request one confirmation of decreasing height,
       * then fire PYRO. */
-    mode.pyro_req_confirm = 1;
+    mode |= PYRO_REQ_CONFIRM;
   }
   else
   {
     co2_high();
-    mode.safe_expand_reef = 1;
+    mode |= SAFE_EXPAND_REEF;
   }
 }
 
@@ -274,7 +273,7 @@ detect_ascent(const struct state_vec *restrict vec,
       log_msg("FC:EVAL: launch confirmed", 26);
     }
   }
-  else if (mode.consecutive_samp && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_LAUNCH;
@@ -303,7 +302,7 @@ detect_burnout(const struct state_vec *restrict vec,
       log_msg("FC:EVAL: watching for apogee", 29);
     }
   }
-  else if (mode.consecutive_samp && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_BURNOUT;
@@ -342,7 +341,7 @@ detect_descent(const struct state_vec *restrict vec,
       log_msg("FC:EVAL: fired pyro, descending", 32);
     }
   }
-  else if (mode.consecutive_samp && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_DESCENT;
@@ -368,7 +367,7 @@ detect_reef(const struct state_vec *restrict vec,
       log_msg("FC:EVAL: expanded parachute", 28);
     }
   }
-  else if (mode.consecutive_samp && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
   {
     *sampl = 0;
     enum command cmd = NOT_REEF;
@@ -397,7 +396,7 @@ detect_landed(const struct state_vec *restrict vec,
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
-  else if (mode.consecutive_samp && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
   {
     sampl = 0;
     enum command cmd = NOT_LANDED;
@@ -450,6 +449,10 @@ measurement(const struct state_vec *restrict vec,
 /// Transforms input vector into next-sample prediction.
 static inline void predict(struct state_vec *vec)
 {
+  /* Needed for divisibility test by a power of 2
+   * overflow is OK */
+  static fu8 iter = 0;
+
   const float dt = FSEC(timer_fetch_update(Predict));
 
   const float fact = 0.5f * dt;
@@ -483,18 +486,26 @@ static inline void predict(struct state_vec *vec)
                         vec->w.y * old.q2 - \
                         vec->w.x * old.q3);
 
-  const float expr = vec->qv.q1 * vec->qv.q1 + \
-                     vec->qv.q2 * vec->qv.q2 + \
-                     vec->qv.q3 * vec->qv.q3 + \
-                     vec->qv.q4 * vec->qv.q4;
-
-  if (expr < TLOWER_1 || expr > TUPPER_1) {
-    const float norm = invsqrtf(expr);
-    vec->qv.q1 *= norm;
-    vec->qv.q2 *= norm;
-    vec->qv.q3 *= norm;
-    vec->qv.q4 *= norm;
+  if ( mode & RENORM_QUATERN_1                  ||
+      (mode & RENORM_QUATERN_2 && !(iter & 1u)) ||
+      (mode & RENORM_QUATERN_4 && !(iter & 3u)) ||
+      (mode & RENORM_QUATERN_8 && !(iter & 7u)))
+  {
+    const float expr = vec->qv.q1 * vec->qv.q1 + \
+                       vec->qv.q2 * vec->qv.q2 + \
+                       vec->qv.q3 * vec->qv.q3 + \
+                       vec->qv.q4 * vec->qv.q4;
+    
+    if (expr < TLOWER_1 || expr > TUPPER_1) {
+      const float norm = invsqrtf(expr);
+      vec->qv.q1 *= norm;
+      vec->qv.q2 *= norm;
+      vec->qv.q3 *= norm;
+      vec->qv.q4 *= norm;
+    }
   }
+
+  ++iter;
 }
 
 /* Static covariance matrices */
@@ -522,41 +533,39 @@ descentKF(struct state_vec *vec, const struct measurement *meas)
 
 /// Locally copies and evaluates global run time config
 static inline void
-runtime_checks(const struct state_vec *vec,
-               fu8 last, uint_least32_t conf)
+runtime_checks(const struct state_vec *vec, fu8 last)
 {  
-  mode.safe_expand_reef = (conf & SAFE_EXPAND_REEF) ? 1 : 0;
-  mode.consecutive_samp = (conf & CONSECUTIVE_SAMP) ? 1 : 0;
+  mode = load(&config, Acq);
 
-  if (conf & FORCE_ALT_CHECKS) {
+  if (mode & FORCE_ALT_CHECKS) {
     evaluate_altitude(vec, last);
   }
 }
 
 /// High-level overview of data evaluation cycle.
-void evaluation_entry(ULONG last)
+void evaluation_entry(ULONG input)
 {
-  struct state_vec vec[2] = {0};
-  struct measurement raw = {0};
-  fu8 sampl = 0;
+  (void) input;
 
-  last = 0;
-
-  /* Suspend until recovery task signals */
-  tx_semaphore_get(&start_eval, TX_WAIT_FOREVER);
+  log_msg("FC:EVAL: received launch signal", 32);
 
   /* Signal distribution task to enter main cycle */
   fetch_or(&config, ENTER_DIST_CYCLE, Rel);
 
-  log_msg("FC:EVAL: received launch signal", 32);
+  struct state_vec vec[2] = {0};
+  struct measurement raw = {0};
+
+  fu8 last = 0;
+  fu8 samp = 0;
+  flight = IDLE;
+
+  // yield to sensor task
   
   /* Begin counting down elapsed time for 
   * KF kinematic equations (predict function) */
-  timer_update(Predict);
+  timer_update(Predict);  
   
-  flight = IDLE;
-  
-  task_loop (DO_NOT_EXIT)
+  task_loop (mode & ABORT_EVALUATION)
   {
     if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
@@ -569,39 +578,36 @@ void evaluation_entry(ULONG last)
     flight < APOGEE ? ascentKF (&vec[last], &raw) :
                       descentKF(&vec[last], &raw) ;
 
-    runtime_checks(vec, last, load(&config, Acq));
+    runtime_checks(vec, last);
 
     switch (flight) {
       case IDLE:
         detect_launch(vec, last);
         break;
       case LAUNCH:
-        detect_ascent(vec, &sampl, last);
+        detect_ascent(vec, &samp, last);
         break;
       case ASCENT:
-        detect_burnout(vec, &sampl, last);
+        detect_burnout(vec, &samp, last);
         break;
       case BURNOUT:
         detect_apogee(vec, last);
         break;
       case APOGEE:
-        detect_descent(vec, &sampl, last);
+        detect_descent(vec, &samp, last);
         break;
       case DESCENT:
-        detect_reef(vec, &sampl, last);
+        detect_reef(vec, &samp, last);
         break;
       case REEF:
-        detect_landed(vec, &sampl, last);
+        detect_landed(vec, &samp, last);
         break;
       default: break;
     }
   }
 }
 
-/// Creates a non-preemptive evaluation task
-/// with defined parameters. Called manually.
-///
-/// Stack size and priority are configurable in FC-Threads.h.
+
 void create_evaluation_task(void)
 {
   UINT st = tx_thread_create(&evaluation_task,
@@ -611,17 +617,12 @@ void create_evaluation_task(void)
                              evaluation_stack,
                              EVAL_STACK_BYTES,
                              EVAL_PRIORITY,
-                             /* No preemption */
+                             /* No preemption threshold */
                              EVAL_PRIORITY,
                              TX_NO_TIME_SLICE,
-                             TX_AUTO_START);
+                             TX_DONT_START);
 
   if (st != TX_SUCCESS) {
     log_die("FC:EVAL: failed to create evaluation task %u", st);
-  }
-
-  st = tx_semaphore_create(&start_eval, "START signal", 0);
-  if (st != TX_SUCCESS) {
-    log_die("FC:EVAL: failed to create semaphore (%u)", st);
   }
 }

@@ -10,15 +10,15 @@ void create_telemetry_thread(void);
 /* ------ Telemetry Thread ------ */
 
 /* ------ Recovery Task ------ */
-#define RECOVERY_INPUT 0
-#define RECOVERY_PRIORITY 10
-#define RECOVERY_STACK_BYTES 2048
-#define RECOVERY_STACK_ULONG (RECOVERY_STACK_BYTES / sizeof(ULONG))
+#define RECV_INPUT 0
+#define RECV_PRIORITY 10
+#define RECV_STACK_BYTES 2048
+#define RECV_STACK_ULONG (RECV_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD recovery_task;
 extern ULONG recovery_stack[];
 
-void recovery_entry(ULONG flag);
+void recovery_entry(ULONG input);
 void create_recovery_task(void);
 /* ------ Recovery Task ------ */
 
@@ -32,16 +32,16 @@ void create_recovery_task(void);
 extern TX_THREAD evaluation_task;
 extern ULONG evaluation_stack[];
 
-void evaluation_entry(ULONG last);
+void evaluation_entry(ULONG input);
 void create_evaluation_task(void);
 /* ------ Prediction Task ------ */
 
 /* ------ Distribution Task ------ */
-#define DISTRIB_INPUT 0
-#define DISTRIB_SLEEP 20
-#define DISTRIB_PRIORITY 5
-#define DISTRIB_STACK_BYTES 2048
-#define DISTRIB_STACK_ULONG (DISTRIB_STACK_BYTES / sizeof(ULONG))
+#define DIST_INPUT 0
+#define DIST_SLEEP 20
+#define DIST_PRIORITY 5
+#define DIST_STACK_BYTES 2048
+#define DIST_STACK_ULONG (DIST_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD distribution_task;
 extern ULONG distribution_stack[];

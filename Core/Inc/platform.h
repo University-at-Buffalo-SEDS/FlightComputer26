@@ -195,8 +195,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define hal_time_ms() HAL_GetTick()
 
-/* Parachute deployment definitions
- * This can also be used for manual emergency deployment */
+/* Parachute deployment functions */
 
 #define co2_low()                                           \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)

@@ -44,36 +44,26 @@
 
 TX_QUEUE shared;
 TX_THREAD recovery_task;
-ULONG recovery_stack[RECOVERY_STACK_ULONG];
+ULONG recovery_stack[RECV_STACK_ULONG];
 
 /// Last recorded time for each timer user.
 uint32_t local_time[Time_Users] = {0};
 
 /// Run time configuration mask
-atomic_uint_least32_t config = 0;
-
-
-/* ------ User run time configuration ------ */
-
-/// Run time config applied on boot.
-/// Call this function once (before creating tasks).
-/// Users are welcome to edit this function.
-void user_runtime_config()
-{
-  uint_least32_t mode = 0;
-
-  /* TODO discuss defaults */
-  mode |= CONSECUTIVE_SAMP;
-
-  store(&config, mode, Rel);
-}
+/// Recovery task cannot be preempted and thus
+/// can access this config non-atomically
+atomic_uint_least32_t config = DEFAULT_OPTIONS;
 
 
 /* ------ Local definitions ------ */
 
 static TX_TIMER endpoints;
 static TX_SEMAPHORE unread;
+
 static fu8 failures = 0;
+
+static fu8 to_abort  = TO_ABORT;
+static fu8 to_reinit = TO_REINIT;
 
 /// Queue of 32 uints that begins in the middle of SRAM1
 #define QADDR (VOID *)0x20010000
@@ -121,8 +111,6 @@ static inline void try_reinit_sensors()
 static inline void auto_abort()
 {
   // TODO to be discussed
-  
-  
 }
 
 /// Set cautionary and emergency flags on timeout
@@ -152,28 +140,27 @@ handle_timeout(enum fc_timer endpoint)
 
 // Process general command from either endpoint.
 static inline void
-process_action(enum command cmd, ULONG *conf)
+process_action(enum command cmd)
 {
   switch (cmd) {
     case FIRE_PYRO:
       co2_high();
-      *conf |= SAFE_EXPAND_REEF;
       return;
 
     case FIRE_REEF:
-      if (*conf & SAFE_EXPAND_REEF)
+      if (config & SAFE_EXPAND_REEF)
         reef_high();
       return;
 
     case RECOVER:
       try_reinit_sensors();
-      *conf |= REINIT_ATTEMPTED;
       return;
 
     case START:
-      /* Wake evaluation task 
+      /* Start evaluation task 
        * This begins launch chain */
-      tx_semaphore_put(&start_eval);
+      tx_thread_resume(&evaluation_task);
+      tx_thread_relinquish();
       return;
 
     default: break;
@@ -182,62 +169,53 @@ process_action(enum command cmd, ULONG *conf)
 
 /// Checks whether raw data report is OK.
 static inline void
-process_raw_data_code(enum command code, ULONG *conf)
+process_raw_data_code(enum command code)
 {
   if (code != RAW_DATA)
   {
     ++failures;
     log_err("FC:RECV: bad sensor reading (%d)", code);
   }
-  else if (!(*conf & ACCUMULATE_FAILS))
+  else if (!(config & ACCUMULATE_FAILS))
   {
     /* RAW_DATA is sent when raw data looks good */
     failures = 0;
   }
 }
 
-/// Decodes message from the Flight Computer.
+/// Decodes commands, message, or code from
+/// the Flight Computer and the Ground Station.
 static inline void
-decode_fc(enum command cmd, ULONG *conf)
+decode(enum command cmd)
 {
-  timer_update(Recovery_FC); // <----.
-                             //      |
-  if (cmd & SYNC)            //      |
-  {                          //      |
-    return; // Successful sync ------`
+  timer_update(cmd & FC_MASK ? Recovery_FC : Recovery_GND);
+                  //                       ^
+  if (cmd & SYNC) //                       |
+  {         //                             |
+    return; // Successful heartbeat -------`
+  }
+  else if (cmd & AUTO_REINIT_BOUNDS)
+  {
+    /* Clear flag; what is left is the new bound */
+    to_reinit = cmd & ~AUTO_REINIT_BOUNDS;
+  }
+  else if (cmd & AUTO_ABORT_BOUNDS)
+  {
+    to_abort = cmd & ~AUTO_ABORT_BOUNDS;
   }
   else if (cmd & ACTION)
   {
-    process_action(cmd, conf);
+    process_action(cmd & ~FC_MASK);
   }
   else if (cmd & DATA_EVALUATION)
   {
-    /* Report. Does not need processing function */
+    /* Data evaluation reports unconfirmed states.
+     * For bookkeeping. */
     log_err("FC:RECV: received warning (%d)", cmd);
   }
-  else /* if we have raw data report */
+  else /* Likely raw data report */
   {
-    process_raw_data_code(cmd, conf);
-  }
-}
-
-/// Decodes message from the Ground Station.
-static inline void
-decode_gnd(enum command cmd, ULONG *conf)
-{
-  timer_update(Recovery_GND); // <---.
-                              //     |
-  if (cmd & SYNC)             //     |
-  {                           //     |
-    return; // Successful sync ------`
-  }
-  else if (cmd & ACTION)
-  {
-    process_action(cmd, conf);
-  }
-  else /* Programmer's mistake, codes < ACTION are FC-only */
-  {
-    log_err("FC:RECV: undefined command or code (%u)", cmd);
+    process_raw_data_code(cmd & ~FC_MASK);
   }
 }
 
@@ -246,9 +224,9 @@ decode_gnd(enum command cmd, ULONG *conf)
 /// See page 68 of Azure RTOS ThreadX User Guide, Feb 2020.
 ///
 /// Recovery task should never return.
-void recovery_entry(ULONG conf)
+void recovery_entry(ULONG input)
 {
-  conf = 0;
+  (void) input;
 
   task_loop (DO_NOT_EXIT)
   {
@@ -263,16 +241,11 @@ void recovery_entry(ULONG conf)
       continue;
     }
 
-    if (cmd & FC_MASK) {
-      /* Clear endpoint bit before decoding */
-      decode_fc(cmd & ~FC_MASK, &conf);
-    } else {
-      decode_gnd(cmd, &conf);
-    }
+    decode(cmd);
 
-    if (failures >= FAILS_TO_ABORT) {
+    if (failures >= to_abort) {
       auto_abort();
-    } else if (failures >= FAILS_TO_REINIT) {
+    } else if (failures >= to_reinit) {
       try_reinit_sensors();
     }
   }
@@ -282,7 +255,7 @@ void recovery_entry(ULONG conf)
 /// compile-defined time, and invoke handler appropriately.
 static void check_endpoints(ULONG id)
 {
-  (void)id;
+  (void) id;
 
   if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
   {
@@ -303,12 +276,12 @@ void create_recovery_task(void)
   UINT st = tx_thread_create(&recovery_task,
                              "Recovery Task",
                              recovery_entry,
-                             RECOVERY_INPUT,
+                             RECV_INPUT,
                              recovery_stack,
-                             RECOVERY_STACK_BYTES,
-                             RECOVERY_PRIORITY,
+                             RECV_STACK_BYTES,
+                             RECV_PRIORITY,
                              /* No preemption */
-                             RECOVERY_PRIORITY,
+                             RECV_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
   if (st != TX_SUCCESS) {

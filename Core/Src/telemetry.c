@@ -9,7 +9,6 @@
 #include <string.h>
 #include "sd_card.h"
 #include "can_bus.h"
-#include "distribution.h"
 
 #ifndef TELEMETRY_ENABLED
 

@@ -54,7 +54,7 @@
 #include "recovery.h"
 
 TX_THREAD distribution_task;
-ULONG distribution_stack[DISTRIB_STACK_ULONG];
+ULONG distribution_stack[DIST_STACK_ULONG];
 
 
 /* ------ FC packet handler ------ */
@@ -66,7 +66,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
   UINT st = TX_SUCCESS;
 
   if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
-      !pkt->payload || !pkt->payload_len || !(pkt->payload_len & 3))
+      !pkt->payload || !pkt->payload_len || pkt->payload_len & 3u)
   {
     return SEDS_HANDLER_ERROR;
   }
@@ -125,29 +125,30 @@ pilot_validate(const struct measurement *data)
 /// the loop, this function performs final sanity checks
 /// and sends ignition signal to the Valve board.
 static inline void
-pre_launch(struct measurement *payload, ULONG *flag)
+pre_launch(struct measurement *payload)
 {
+  fu8 st = 0;
   enum command cmd = FC_MSG(SYNC);
 
   task_loop (load(&config, Acq) & ENTER_DIST_CYCLE)
   {
-    *flag = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
-    if (*flag != TX_SUCCESS) {
-      log_err("FC:DIST: internal heartbeat failed (%u)", *flag);
+    if (st != TX_SUCCESS) {
+      log_err("FC:DIST: internal heartbeat failed (%u)", st);
     }
 
     if (!dma_try_fetch(payload))
     {
-      tx_thread_sleep(DISTRIB_SLEEP / 2);
+      tx_thread_sleep(DIST_SLEEP / 2);
       continue;
     }
 
     compensate(payload);
-    *flag = pilot_validate(payload);
+    st = pilot_validate(payload);
 
-    if (*flag != RAW_DATA) {
-      log_err("FC:DIST: (PILOT) malformed data (%u)", *flag);
+    if (st != RAW_DATA) {
+      log_err("FC:DIST: (PILOT) malformed data (%u)", st);
     }
 
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload->baro);
@@ -164,19 +165,21 @@ pre_launch(struct measurement *payload, ULONG *flag)
 
 
 /// An overview of Flight Computer data distribution.
-void distribution_entry(ULONG flag)
+void distribution_entry(ULONG input)
 {
+  (void) input;
+
   struct measurement payload = {0};
 
   /* Enter pre-launch loop */
-  pre_launch(&payload, &flag);
+  pre_launch(&payload);
 
   /* Normal post-launch operation begins */
   task_loop (DO_NOT_EXIT)
   {
     if (!dma_try_fetch(&payload))
     {
-      tx_thread_sleep(DISTRIB_SLEEP);
+      tx_thread_sleep(DIST_SLEEP);
       continue;
     }
 
@@ -199,12 +202,12 @@ void create_distribution_task(void)
   UINT st = tx_thread_create(&distribution_task,
                              "Distribution Task",
                              distribution_entry,
-                             DISTRIB_INPUT,
+                             DIST_INPUT,
                              distribution_stack,
-                             DISTRIB_STACK_BYTES,
-                             DISTRIB_PRIORITY,
+                             DIST_STACK_BYTES,
+                             DIST_PRIORITY,
                              /* No preemption */
-                             DISTRIB_PRIORITY,
+                             DIST_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 

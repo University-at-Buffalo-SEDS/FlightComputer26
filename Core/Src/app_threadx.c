@@ -79,7 +79,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
-  user_runtime_config();
 
   create_recovery_task();
   create_distribution_task();

@@ -10,8 +10,6 @@
 #include "dma.h"
 #include "platform.h"
 
-extern TX_SEMAPHORE start_eval;
-
 
 /* ------ Local configuration ------ */
 
@@ -112,14 +110,6 @@ enum state {
 /// UKF evaluation that is easier to decide on.
 struct stats {
   float min_alt, max_alt, avg_vel, avg_vax;
-};
-
-/// Replica of several global config paramters
-/// but as a locally accessed bitfield
-struct op_mode {
-  unsigned safe_expand_reef : 1;
-  unsigned pyro_req_confirm : 1;
-  unsigned consecutive_samp : 1;
 };
 
 

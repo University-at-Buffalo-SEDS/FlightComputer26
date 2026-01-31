@@ -18,12 +18,10 @@ extern TX_QUEUE shared;
 extern atomic_uint_least32_t config;
 
 
-/* ------ User configuration ------ */
+/* ------ Default thresholds for bad data reports  ------ */
 
-#define FAILS_TO_REINIT 10
-#define FAILS_TO_ABORT  40
-
-#define ACCUMULATE_FAILURES 0
+#define TO_REINIT 10
+#define TO_ABORT  40
 
 
 /* ------ Endpoint identifiers: FC, GND ------ */
@@ -63,16 +61,28 @@ enum g_conf {
 
 #endif
 
-  CHECKS_COMPLETE = 0, // Do not modify
+  CHECKS_COMPLETE = 0, /* Reserved */
 
-  /* Options (currently max 32) */
+  /* Evaluation options */
   FORCE_ALT_CHECKS = 1u,
-  ACCUMULATE_FAILS = 1u << 1,
-  DISTRIB_EMERGENT = 1u << 2,
-  SAFE_EXPAND_REEF = 1u << 3,
-  REINIT_ATTEMPTED = 1u << 4,
-  CONSECUTIVE_SAMP = 1u << 5,
-  ENTER_DIST_CYCLE = 1u << 6,
+  CONSECUTIVE_SAMP = 1u << 1,
+  SAFE_EXPAND_REEF = 1u << 2,
+  REINIT_ATTEMPTED = 1u << 3,
+  PYRO_REQ_CONFIRM = 1u << 4,
+  /* If neither is set: 
+   * renormalize quaternion vector every time */
+  RENORM_QUATERN_1 = 1u << 5,
+  RENORM_QUATERN_2 = 1u << 6,
+  RENORM_QUATERN_4 = 1u << 7,
+  RENORM_QUATERN_8 = 1u << 8,
+  ABORT_EVALUATION = 1u << 9,
+
+  /* Distribution options */
+  DISTRIB_EMERGENT = 1u << 10,
+  ENTER_DIST_CYCLE = 1u << 11,
+
+  /* Recovery options */
+  ACCUMULATE_FAILS = 1u << 12,
 };
 
 
@@ -140,6 +150,20 @@ enum command {
   RECOVER   = ACTION + 3, 
   START     = ACTION + 4,
 
+  /* Run time Bounds for abort */
+  AUTO_ABORT_BOUNDS = (1u << 9),
+
+  ABORT_10 = AUTO_ABORT_BOUNDS + 10,
+  ABORT_20 = AUTO_ABORT_BOUNDS + 25,
+  ABORT_50 = AUTO_ABORT_BOUNDS + 50,
+
+  /* Run time Bounds for reinit */
+  AUTO_REINIT_BOUNDS = (1u << 10),
+
+  REINIT_5  = AUTO_REINIT_BOUNDS + 5,
+  REINIT_12 = AUTO_REINIT_BOUNDS + 12,
+  REINIT_20 = AUTO_REINIT_BOUNDS + 20,
+
   /* ... */
 
   /* Synchronization event
@@ -157,18 +181,20 @@ enum command {
  */
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
 
-_Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
-_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
+_Static_assert(typeeq(typeof(enum command), typeof(uint_least32_t)), "");
+_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint_least32_t)), "");
 
 #endif
 
 
-/* ------ User run time configuration ------ */
+/* ------ User default configuration ------ */
 
-/// Run time config applied on boot.
-/// Call this function once (before creating tasks).
-/// Users are welcome to edit this function.
-void user_runtime_config();
+/// Run time config options applied on boot.
+/// Users are welcome to edit the defaults here.
+#define DEFAULT_OPTIONS ( (uint_least32_t) (0     \
+                          | CONSECUTIVE_SAMP      \
+                          | RENORM_QUATERN_1      \
+                        ) )
 
 
 #endif // RECOVERY_H
