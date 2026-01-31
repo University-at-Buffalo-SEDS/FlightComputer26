@@ -54,10 +54,11 @@
 #include "dma.h"
 
 TX_THREAD evaluation_task;
+TX_SEMAPHORE start_eval;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /// Current flight state
-enum state flight = IDLE;
+enum state flight = SUSPENDED;
 
 
 /* ------ Static ------ */
@@ -147,15 +148,14 @@ validate(const struct measurement *raw)
     st += RAW_BAD_ALT;
 
   if (raw->accl.x > MAX_VAX || raw->accl.x < MIN_VAX)
-    st += RAW_BAD_VAX;
+    st += RAW_BAD_VAX_X;
 
   if (raw->accl.y > MAX_VAX || raw->accl.y < MIN_VAX)
-    st += RAW_BAD_VAX;
+    st += RAW_BAD_VAX_Y;
   
   if (raw->accl.z > MAX_VAX || raw->accl.z < MIN_VAX)
-    st += RAW_BAD_VAX;
+    st += RAW_BAD_VAX_Z;
 
-  /* But gyroscope data is used in whole by UKF */
   if (raw->gyro.x > MAX_ANG || raw->gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
 
@@ -542,7 +542,22 @@ void evaluation_entry(ULONG last)
 
   last = 0;
 
-  task_main_loop {
+  /* Suspend until recovery task signals */
+  tx_semaphore_get(&start_eval, TX_WAIT_FOREVER);
+
+  /* Signal distribution task to enter main cycle */
+  fetch_or(&config, ENTER_DIST_CYCLE, Rel);
+
+  log_msg("FC:EVAL: received launch signal", 32);
+  
+  /* Begin counting down elapsed time for 
+  * KF kinematic equations (predict function) */
+  timer_update(Predict);
+  
+  flight = IDLE;
+  
+  task_loop (DO_NOT_EXIT)
+  {
     if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
       tx_thread_sleep(EVAL_SLEEP);
@@ -578,7 +593,7 @@ void evaluation_entry(ULONG last)
       case REEF:
         detect_landed(vec, &sampl, last);
         break;
-      case LANDED: break;
+      default: break;
     }
   }
 }
@@ -603,5 +618,10 @@ void create_evaluation_task(void)
 
   if (st != TX_SUCCESS) {
     log_die("FC:EVAL: failed to create evaluation task %u", st);
+  }
+
+  st = tx_semaphore_create(&start_eval, "START signal", 0);
+  if (st != TX_SUCCESS) {
+    log_die("FC:EVAL: failed to create semaphore (%u)", st);
   }
 }

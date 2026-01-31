@@ -72,6 +72,7 @@ enum g_conf {
   SAFE_EXPAND_REEF = 1u << 3,
   REINIT_ATTEMPTED = 1u << 4,
   CONSECUTIVE_SAMP = 1u << 5,
+  ENTER_DIST_CYCLE = 1u << 6,
 };
 
 
@@ -115,13 +116,15 @@ enum command {
   RAW_DATA = 0,
 
   RAW_BAD_ALT   = 1u,
-  RAW_BAD_ANG_Z = (1u << 1),
+  RAW_BAD_ANG_X = (1u << 1),
   RAW_BAD_ANG_Y = (1u << 2),
-  RAW_BAD_ANG_X = (1u << 3),
-  RAW_BAD_VAX   = (1u << 4),  
+  RAW_BAD_ANG_Z = (1u << 3),
+  RAW_BAD_VAX_X = (1u << 4),  
+  RAW_BAD_VAX_Y = (1u << 5),
+  RAW_BAD_VAX_Z = (1u << 6),
 
   /* Data evaluation codes */
-  DATA_EVALUATION = (1u << 5),
+  DATA_EVALUATION = (1u << 7),
 
   NOT_LAUNCH  = DATA_EVALUATION + 1,
   NOT_BURNOUT = DATA_EVALUATION + 2,
@@ -130,11 +133,12 @@ enum command {
   NOT_LANDED  = DATA_EVALUATION + 5,
   
   /* Actionanle commands */
-  ACTION = (1u << 6),
+  ACTION = (1u << 8),
 
   FIRE_PYRO = ACTION + 1,
   FIRE_REEF = ACTION + 2,
-  RECOVER   = ACTION + 3,
+  RECOVER   = ACTION + 3, 
+  START     = ACTION + 4,
 
   /* ... */
 

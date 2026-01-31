@@ -8,12 +8,9 @@
 #include <stdint.h>
 
 #include "dma.h"
-
-#ifdef PL_HOST
-#include "../../tests/platform.h"
-#else
 #include "platform.h"
-#endif
+
+extern TX_SEMAPHORE start_eval;
 
 
 /* ------ Local configuration ------ */
@@ -100,6 +97,7 @@ struct state_vec {
 
 /// In-flight rocket states only since used internally.
 enum state {
+  SUSPENDED,
   IDLE,
   LAUNCH,
   ASCENT,

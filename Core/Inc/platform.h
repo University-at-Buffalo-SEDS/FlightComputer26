@@ -91,7 +91,8 @@ enum seds_atomic_mo {
 
 /* ------ Task utilities ------ */
 
-#define task_main_loop for (;;)
+#define DO_NOT_EXIT 0
+#define task_loop(exit_predicate) while (!(exit_predicate))
 
 /* Data memory barrier */
 
@@ -134,7 +135,7 @@ enum seds_atomic_mo {
 #define log_measurement(type, buf)                          \
   log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
 
-#if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
@@ -145,7 +146,7 @@ enum seds_atomic_mo {
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #else
-#ifdef __GNUC__
+#if defined(__GNUC__)
 
 #define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt, ##__VA_ARGS__)
@@ -165,8 +166,17 @@ enum seds_atomic_mo {
 
 #define log_die(fmt, ...) die(fmt, __VA_ARGS__)
 
-#endif // GNUC
+#endif // GNU C
 #endif // >= C23
+
+/* Ignition request from the Valve board over telemetry */
+
+#define request_ignition()                                  \
+  ({                                                        \
+    float dummy = 1.0f;                                     \
+    log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,        \
+                              &dummy, 1, sizeof(float));    \
+  })
 
 
 /* ------ HAL Aliases ------ */
@@ -194,9 +204,8 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define co2_high()                                          \
   ({                                                        \
     HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
-    /* Always guarantee that all tasks observe PYRO fire */ \
-    atomic_fetch_or_explicit(&config, SAFE_EXPAND_REEF,     \
-                             memory_order_release);         \
+    /* Always guarantee all tasks observe PYRO fire */      \
+    fetch_or(&config, SAFE_EXPAND_REEF, Rel);               \
   })
 
 #define reef_low()                                          \
@@ -322,17 +331,6 @@ static inline void timer_update(enum fc_timer u)
 static inline uint32_t timer_fetch(enum fc_timer u)
 {
   return hal_time_ms() - local_time[u];
-}
-
-/// Updates time for each user to prevent large first returns.
-static inline void timer_init()
-{
-  uint32_t init_point = hal_time_ms();
-
-  for (enum fc_timer u = 0; u < Time_Users; ++u)
-  {
-    local_time[u] = init_point;
-  }
 }
 
 

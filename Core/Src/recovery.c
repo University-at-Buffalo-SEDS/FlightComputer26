@@ -170,6 +170,12 @@ process_action(enum command cmd, ULONG *conf)
       *conf |= REINIT_ATTEMPTED;
       return;
 
+    case START:
+      /* Wake evaluation task 
+       * This begins launch chain */
+      tx_semaphore_put(&start_eval);
+      return;
+
     default: break;
   }
 }
@@ -194,9 +200,13 @@ process_raw_data_code(enum command code, ULONG *conf)
 static inline void
 decode_fc(enum command cmd, ULONG *conf)
 {
-  timer_update(Recovery_FC);
-
-  if (cmd & ACTION)
+  timer_update(Recovery_FC); // <----.
+                             //      |
+  if (cmd & SYNC)            //      |
+  {                          //      |
+    return; // Successful sync ------`
+  }
+  else if (cmd & ACTION)
   {
     process_action(cmd, conf);
   }
@@ -240,7 +250,8 @@ void recovery_entry(ULONG conf)
 {
   conf = 0;
 
-  task_main_loop {
+  task_loop (DO_NOT_EXIT)
+  {
     enum command cmd;
 
     /* Thread suspension */

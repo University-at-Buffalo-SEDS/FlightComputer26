@@ -9,6 +9,7 @@
 #include <string.h>
 #include "sd_card.h"
 #include "can_bus.h"
+#include "distribution.h"
 
 #ifndef TELEMETRY_ENABLED
 
@@ -118,6 +119,9 @@ SedsResult init_telemetry_router(void) {
   const SedsLocalEndpointDesc locals[] = {
       {.endpoint = SEDS_EP_SD_CARD,
        .packet_handler = on_sd_packet,
+       .user = NULL},
+      {.endpoint = SEDS_EP_FLIGHT_CONTROLLER,
+       .packet_handler = on_fc_packet,
        .user = NULL},
   };
 

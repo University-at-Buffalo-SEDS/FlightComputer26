@@ -1,13 +1,30 @@
 /*
  * Distribution Task
  *
- * Uses API of DMA, Telemetry, Predict, Recovery, and CAN
+ * Uses API of DMA, Telemetry, Predict, and Recovery
  * to serve as the Flight Computer coordination module.
  *
- * This task subscribes a callback to the CAN bus driver,
- * and calls its depletion function in the beginning of
- * each iteration. Before entering its main loop, this task
- * also sets time for the each FC user to the current tick.
+ * This task includes a packet handler that is comptime
+ * subscribed to messages incoming to the FLIGHT_CONTROLLER
+ * endpoint. This handler deposits messages into the Recovery
+ * queue.
+ *
+ * Before entering the normal operation (flight) loop,
+ * this task runs a pilot (demo) loop that fetches and
+ * validates data but does not evaluate it. This is needed
+ * in order to verify that sensors are functional and to inform
+ * the Ground Station of any issues.
+ *
+ * The pilot loop is left and ignition is requested from the
+ * Valve board upon receiving the 'ENTER_DIST_CYCLE' atomic
+ * flag from the Evaluation Task, which sets this flag after
+ * being (in turn) woken on a semaphore by the Recovery Task,
+ * which sends it (in turn) after receiving the 'START' signal
+ * on its queue, which (in turn) is deposited there by the
+ * telemetry handler (below), being (in turn) invoked when
+ * a local instance of the telemetry router receives a frame
+ * over CAN bus. This allows for sequential and safe module
+ * initialization and consent.
  *
  * When fetching a pack of data (barometer, gyroscope, and
  * accelerometer readings) from DMA buffers, it is not
@@ -40,43 +57,123 @@ TX_THREAD distribution_task;
 ULONG distribution_stack[DISTRIB_STACK_ULONG];
 
 
-/* ------ CAN bus subscriber ------ */
+/* ------ FC packet handler ------ */
 
-/// CAN bus subscriber that puts messages into the FC queue. 
-static void
-on_can_frame(const uint8_t *data, size_t len, void *user)
+/// Deposits messages into the recovery queue.
+SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 {
-  if (user != &distribution_task || !len || !(len & 3)) {
-    /* Not the intended recepient,
-     * or the payload length isn't divisible by 4 */
-    return;
-  }
+  (void) user;
+  UINT st = TX_SUCCESS;
 
-  for (fu8 k = 0; k < len; k += sizeof(uint32_t))
+  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
+      !pkt->payload || !pkt->payload_len || !(pkt->payload_len & 3))
   {
-    uint32_t msg = U32(data[k], data[k+1], data[k+2], data[k+3]);
-    UINT st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
-
-    if (st != TX_SUCCESS) {
-      log_err("FC:DIST: failed to enqueue message %u (%u)", msg, st);
-    }
+    return SEDS_HANDLER_ERROR;
   }
+
+  for (fu8 k = 0; k < pkt->payload_len; k += sizeof(uint32_t))
+  {
+    uint32_t msg = U32(pkt->payload[k],   pkt->payload[k+1],
+                       pkt->payload[k+2], pkt->payload[k+3]);
+
+    st += tx_queue_send(&shared, &msg, TX_NO_WAIT);
+  }
+
+  return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
+}
+
+
+/* ------ Local helpers ------ */
+
+/// Locally validate data but do not send reports
+/// to the queue. Needed for pre-launch evaluation
+/// before crew decides to issue the START command.
+static inline fu8
+pilot_validate(const struct measurement *data)
+{
+  enum command st = RAW_DATA;
+  
+  if (data->baro.alt > MAX_ALT || data->baro.alt < MIN_ALT)
+    st += RAW_BAD_ALT;
+
+  if (data->accl.x > MAX_VAX || data->accl.x < MIN_VAX)
+    st += RAW_BAD_VAX_X;
+
+  if (data->accl.y > MAX_VAX || data->accl.y < MIN_VAX)
+    st += RAW_BAD_VAX_Y;
+  
+  if (data->accl.z > MAX_VAX || data->accl.z < MIN_VAX)
+    st += RAW_BAD_VAX_Z;
+
+  if (data->gyro.x > MAX_ANG || data->gyro.x < MIN_ANG)
+    st += RAW_BAD_ANG_X;
+
+  if (data->gyro.y > MAX_ANG || data->gyro.y < MIN_ANG)
+    st += RAW_BAD_ANG_Y;
+
+  if (data->gyro.z > MAX_ANG || data->gyro.z < MIN_ANG)
+    st += RAW_BAD_ANG_Z;
+
+  return st;
 }
 
 
 /* ------ Distribution Task ------ */
 
-/// An overview of raw data path inside rocket.
-void distribution_entry(ULONG input)
+/// Distribution loop that executes before the Flight
+/// Computer receives command to launch. After exiting
+/// the loop, this function performs final sanity checks
+/// and sends ignition signal to the Valve board.
+static inline void
+pre_launch(struct measurement *payload, ULONG *flag)
 {
-  (void)input;
-  timer_init();
-  
+  enum command cmd = FC_MSG(SYNC);
+
+  task_loop (load(&config, Acq) & ENTER_DIST_CYCLE)
+  {
+    *flag = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+
+    if (*flag != TX_SUCCESS) {
+      log_err("FC:DIST: internal heartbeat failed (%u)", *flag);
+    }
+
+    if (!dma_try_fetch(payload))
+    {
+      tx_thread_sleep(DISTRIB_SLEEP / 2);
+      continue;
+    }
+
+    compensate(payload);
+    *flag = pilot_validate(payload);
+
+    if (*flag != RAW_DATA) {
+      log_err("FC:DIST: (PILOT) malformed data (%u)", *flag);
+    }
+
+    log_measurement(SEDS_DT_BAROMETER_DATA, &payload->baro);
+    log_measurement(SEDS_DT_GYRO_DATA,      &payload->gyro);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &payload->accl);
+  }
+
+  /* Request Valve board to ignite the engine.
+   * Repeat until the signal is delivered. */
+  task_loop (request_ignition() == SEDS_OK);
+
+  log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
+}
+
+
+/// An overview of Flight Computer data distribution.
+void distribution_entry(ULONG flag)
+{
   struct measurement payload = {0};
 
-  task_main_loop {
-    /*can_bus_process_rx()*/
+  /* Enter pre-launch loop */
+  pre_launch(&payload, &flag);
 
+  /* Normal post-launch operation begins */
+  task_loop (DO_NOT_EXIT)
+  {
     if (!dma_try_fetch(&payload))
     {
       tx_thread_sleep(DISTRIB_SLEEP);
@@ -89,13 +186,7 @@ void distribution_entry(ULONG input)
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
     log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
     log_measurement(SEDS_DT_ACCEL_DATA,     &payload.accl);
-
-    /// TODO: When merged with telemetry_handlers, log to SD.
   }
-
-  /* Assert unreachable
-   *(void)
-   *can_bus_unsubscribe_rx(fc_distributor, &distribution_entry)*/
 }
 
 /// Creates a non-preemptive Distribution Task
@@ -105,23 +196,17 @@ void distribution_entry(ULONG input)
 /// Stack size and priority are configurable in FC-Threads.h.
 void create_distribution_task(void)
 {
-  UINT st = /*can_bus_subscribe_rx(on_can_frame, &distribution_entry)*/0;
-
-  if (st != HAL_OK) {
-    log_die("FC:DIST: failed to subscribe to CAN bus (%u)", st);
-  }
-
-  st = tx_thread_create(&distribution_task,
-                        "Distribution Task",
-                        distribution_entry,
-                        DISTRIB_INPUT,
-                        distribution_stack,
-                        DISTRIB_STACK_BYTES,
-                        DISTRIB_PRIORITY,
-                        /* No preemption */
-                        DISTRIB_PRIORITY,
-                        TX_NO_TIME_SLICE,
-                        TX_AUTO_START);
+  UINT st = tx_thread_create(&distribution_task,
+                             "Distribution Task",
+                             distribution_entry,
+                             DISTRIB_INPUT,
+                             distribution_stack,
+                             DISTRIB_STACK_BYTES,
+                             DISTRIB_PRIORITY,
+                             /* No preemption */
+                             DISTRIB_PRIORITY,
+                             TX_NO_TIME_SLICE,
+                             TX_AUTO_START);
 
   if (st != TX_SUCCESS) {
     log_die("FC:DIST: failed to create task (%u)", st);
