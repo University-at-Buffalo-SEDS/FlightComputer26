@@ -37,7 +37,7 @@ void create_telemetry_thread(void)
                                    TELEMETRY_THREAD_STACK_SIZE,
                                    5,    // priority
                                    5,    // preemption threshold
-                                   TX_NO_TIME_SLICE,
+                                   20,   // time slice
                                    TX_AUTO_START);
 
     if (status != TX_SUCCESS) {

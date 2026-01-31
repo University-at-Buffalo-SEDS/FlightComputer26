@@ -140,7 +140,7 @@ pre_launch(struct measurement *payload)
 
     if (!dma_try_fetch(payload))
     {
-      tx_thread_sleep(DIST_SLEEP / 2);
+      tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
@@ -163,8 +163,8 @@ pre_launch(struct measurement *payload)
   log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
 }
 
-
-/// An overview of Flight Computer data distribution.
+/// Distribution task entry that also serves as
+/// an overview of the Flight Computer data distribution.
 void distribution_entry(ULONG input)
 {
   (void) input;
@@ -179,7 +179,7 @@ void distribution_entry(ULONG input)
   {
     if (!dma_try_fetch(&payload))
     {
-      tx_thread_sleep(DIST_SLEEP);
+      tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
@@ -192,11 +192,10 @@ void distribution_entry(ULONG input)
   }
 }
 
-/// Creates a non-preemptive Distribution Task
-/// with defined parameters. Called manually.
-/// Provides its entry point with a throwaway input.
-///
-/// Stack size and priority are configurable in FC-Threads.h.
+/// Creates a preemptive, non-cooperative Distribution task
+/// with defined parameters. This task only sleeps for a very
+/// short time if sensor measurements have not yet appeared
+/// in full capacity in the DMA buffers. 
 void create_distribution_task(void)
 {
   UINT st = tx_thread_create(&distribution_task,
@@ -206,7 +205,7 @@ void create_distribution_task(void)
                              distribution_stack,
                              DIST_STACK_BYTES,
                              DIST_PRIORITY,
-                             /* No preemption */
+                             /* No preemption threshold */
                              DIST_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);

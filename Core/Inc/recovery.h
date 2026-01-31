@@ -145,10 +145,13 @@ enum command {
   /* Actionanle commands */
   ACTION = (1u << 8),
 
-  FIRE_PYRO = ACTION + 1,
-  FIRE_REEF = ACTION + 2,
-  RECOVER   = ACTION + 3, 
-  START     = ACTION + 4,
+  FIRE_PYRO   = ACTION + 1,
+  FIRE_REEF   = ACTION + 2,
+  RECOVER     = ACTION + 3, 
+  START       = ACTION + 4,
+  EVAL_RELAX  = ACTION + 5,
+  EVAL_FOCUS  = ACTION + 6,
+  EVAL_ABORT  = ACTION + 7,
 
   /* Run time Bounds for abort */
   AUTO_ABORT_BOUNDS = (1u << 9),

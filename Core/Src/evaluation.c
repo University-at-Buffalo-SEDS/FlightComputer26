@@ -242,7 +242,6 @@ evaluate_altitude(const struct state_vec *vec, fu8 last)
   }
 }
 
-
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
 static inline void
@@ -529,18 +528,7 @@ descentKF(struct state_vec *vec, const struct measurement *meas)
 }
 
 
-/* ------ Prediction Task ------ */
-
-/// Locally copies and evaluates global run time config
-static inline void
-runtime_checks(const struct state_vec *vec, fu8 last)
-{  
-  mode = load(&config, Acq);
-
-  if (mode & FORCE_ALT_CHECKS) {
-    evaluate_altitude(vec, last);
-  }
-}
+/* ------ Evaluation Task ------ */
 
 /// High-level overview of data evaluation cycle.
 void evaluation_entry(ULONG input)
@@ -558,8 +546,6 @@ void evaluation_entry(ULONG input)
   fu8 last = 0;
   fu8 samp = 0;
   flight = IDLE;
-
-  // yield to sensor task
   
   /* Begin counting down elapsed time for 
   * KF kinematic equations (predict function) */
@@ -567,9 +553,12 @@ void evaluation_entry(ULONG input)
   
   task_loop (mode & ABORT_EVALUATION)
   {
+    /* See if there are any changes in config */
+    mode = load(&config, Acq);
+
     if (!fetch(&raw) || validate(&raw) > RAW_DATA)
     {
-      tx_thread_sleep(EVAL_SLEEP);
+      tx_thread_sleep(EVAL_SLEEP_NO_DATA);
       continue;
     }
 
@@ -578,7 +567,13 @@ void evaluation_entry(ULONG input)
     flight < APOGEE ? ascentKF (&vec[last], &raw) :
                       descentKF(&vec[last], &raw) ;
 
-    runtime_checks(vec, last);
+    /* See if there are any changes in config */
+    tx_thread_sleep(EVAL_SLEEP_RT_CONF);
+    mode = load(&config, Acq);
+
+    if (mode & FORCE_ALT_CHECKS) {
+      evaluate_altitude(vec, last);
+    }
 
     switch (flight) {
       case IDLE:
@@ -604,10 +599,16 @@ void evaluation_entry(ULONG input)
         break;
       default: break;
     }
+
+    /* Cycle Distribution and Telemetry tasks */
+    tx_thread_relinquish();
   }
 }
 
-
+/// Creates a configurably-preemptive, cooperative
+/// Evaluation task with defined parameters.
+/// This task does not start automatically and is
+/// instead resumer by the Recovery task.
 void create_evaluation_task(void)
 {
   UINT st = tx_thread_create(&evaluation_task,
@@ -617,9 +618,8 @@ void create_evaluation_task(void)
                              evaluation_stack,
                              EVAL_STACK_BYTES,
                              EVAL_PRIORITY,
-                             /* No preemption threshold */
-                             EVAL_PRIORITY,
-                             TX_NO_TIME_SLICE,
+                             EVAL_PREEMPT_THRESHOLD,
+                             EVAL_TIME_SLICE,
                              TX_DONT_START);
 
   if (st != TX_SUCCESS) {

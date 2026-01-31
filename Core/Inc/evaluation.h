@@ -2,8 +2,8 @@
  * Data evaluation header and API.
  */
 
-#ifndef EVAL_H
-#define EVAL_H
+#ifndef EVALUATION_H
+#define EVALUATION_H
 
 #include <stdint.h>
 
@@ -123,4 +123,4 @@ void evaluation_put(const struct measurement *buf);
 void compensate(struct measurement *buf);
 
 
-#endif // EVAL_H
+#endif // EVALUATION_H

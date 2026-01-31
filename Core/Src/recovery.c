@@ -75,7 +75,9 @@ static fu8 to_reinit = TO_REINIT;
 /// Wake up recovery loop.
 static void queue_handler(TX_QUEUE *q)
 {
-  if (q != &shared) return;
+  if (q != &shared) {
+    return;
+  }
   tx_semaphore_put(&unread);
 }
 
@@ -117,8 +119,6 @@ static inline void auto_abort()
 static inline void
 handle_timeout(enum fc_timer endpoint)
 {
-  uint_least32_t mode = 0;
-
   switch (endpoint)
   {
     case Recovery_FC:
@@ -127,29 +127,30 @@ handle_timeout(enum fc_timer endpoint)
       break;
 
     case Recovery_GND:
-      mode |= FORCE_ALT_CHECKS;
-      mode |= ACCUMULATE_FAILS;
-      mode &= ~CONSECUTIVE_SAMP;
+      config |= FORCE_ALT_CHECKS;
+      config |= ACCUMULATE_FAILS;
+      config &= ~CONSECUTIVE_SAMP;
       break;
 
     default: break;
   }
-
-  fetch_or(&config, mode, Rel);
 }
 
-// Process general command from either endpoint.
+/// Process general command from either endpoint.
 static inline void
 process_action(enum command cmd)
 {
+  UINT eval_old_pt;
+
   switch (cmd) {
     case FIRE_PYRO:
       co2_high();
       return;
 
     case FIRE_REEF:
-      if (config & SAFE_EXPAND_REEF)
+      if (config & SAFE_EXPAND_REEF) {
         reef_high();
+      }
       return;
 
     case RECOVER:
@@ -157,11 +158,33 @@ process_action(enum command cmd)
       return;
 
     case START:
-      /* Start evaluation task 
-       * This begins launch chain */
+      /* Start Evaluation task. 
+       * This begins rocket launch chain. */
       tx_thread_resume(&evaluation_task);
       tx_thread_relinquish();
       return;
+
+    case EVAL_RELAX:
+      /* Allow preempting of Evaluation
+       * task inside Kalman Filter. */
+      tx_thread_preemption_change(&evaluation_task,
+                                  EVAL_PRIORITY,
+                                  &eval_old_pt);
+      return;
+
+    case EVAL_FOCUS:
+      /* Rectrict preemption of Evaluation
+       * task inside Kalman Filter. */
+      tx_thread_preemption_change(&evaluation_task,
+                                  EVAL_PREEMPT_THRESHOLD,
+                                  &eval_old_pt);
+      return;
+
+    case EVAL_ABORT:
+      /* Do not use ThreadX API to terminate
+       * thread to avoid doing so when it is
+       * inside HAL or ThreadX call */
+      config |= ABORT_EVALUATION;
 
     default: break;
   }
@@ -267,10 +290,7 @@ static void check_endpoints(ULONG id)
   }
 }
 
-/// Creates a non-preemptive Recovery Task
-/// with defined parameters. Called manually.
-///
-/// Stack size and priority are configurable in FC-Threads.h.
+/// Creates a non-preemptive Recovery Task with defined parameters.
 void create_recovery_task(void)
 {
   UINT st = tx_thread_create(&recovery_task,
