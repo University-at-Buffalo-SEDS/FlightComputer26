@@ -97,13 +97,13 @@ pilot_validate(const struct measurement *data)
     st += RAW_BAD_ALT;
 
   if (data->accl.x > MAX_VAX || data->accl.x < MIN_VAX)
-    st += RAW_BAD_VAX_X;
+    st += RAW_BAD_ACC_X;
 
   if (data->accl.y > MAX_VAX || data->accl.y < MIN_VAX)
-    st += RAW_BAD_VAX_Y;
+    st += RAW_BAD_ACC_Y;
   
   if (data->accl.z > MAX_VAX || data->accl.z < MIN_VAX)
-    st += RAW_BAD_VAX_Z;
+    st += RAW_BAD_ACC_Z;
 
   if (data->gyro.x > MAX_ANG || data->gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;

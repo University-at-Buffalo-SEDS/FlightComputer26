@@ -148,13 +148,13 @@ validate(const struct measurement *raw)
     st += RAW_BAD_ALT;
 
   if (raw->accl.x > MAX_VAX || raw->accl.x < MIN_VAX)
-    st += RAW_BAD_VAX_X;
+    st += RAW_BAD_ACC_X;
 
   if (raw->accl.y > MAX_VAX || raw->accl.y < MIN_VAX)
-    st += RAW_BAD_VAX_Y;
+    st += RAW_BAD_ACC_Y;
   
   if (raw->accl.z > MAX_VAX || raw->accl.z < MIN_VAX)
-    st += RAW_BAD_VAX_Z;
+    st += RAW_BAD_ACC_Z;
 
   if (raw->gyro.x > MAX_ANG || raw->gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;

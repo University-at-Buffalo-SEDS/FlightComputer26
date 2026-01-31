@@ -93,13 +93,13 @@ enum g_conf {
 /// your added variants.
 /// 
 /// You can send a command to recovery like this
-/// (assume firing pyro from the ground station):
+/// (assume trying to recover sensors from the FC):
 ///
-/// enum command cmd = FIRE_PYRO;
-/// tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+/// enum command cmd = FC_MSG(FIRE_PYRO);
+/// tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 ///
 /// Wait option depends on whether you want to drop
-/// the value if queue is full (unlikely). 
+/// the value if the queue is full (latter is unlikely). 
 ///
 /// NOTE: if you are sending a message from FC,
 /// mask it with FC_MSG(_variant_). Otherwise - UB!
@@ -119,9 +119,9 @@ enum command {
   RAW_BAD_ANG_X = (1u << 1),
   RAW_BAD_ANG_Y = (1u << 2),
   RAW_BAD_ANG_Z = (1u << 3),
-  RAW_BAD_VAX_X = (1u << 4),  
-  RAW_BAD_VAX_Y = (1u << 5),
-  RAW_BAD_VAX_Z = (1u << 6),
+  RAW_BAD_ACC_X = (1u << 4),  
+  RAW_BAD_ACC_Y = (1u << 5),
+  RAW_BAD_ACC_Z = (1u << 6),
 
   /* Data evaluation codes */
   DATA_EVALUATION = (1u << 7),
