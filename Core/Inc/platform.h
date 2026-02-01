@@ -124,6 +124,8 @@ enum seds_atomic_mo {
 #include <sedsprintf.h>
 #include "telemetry.h"
 
+#define MESSAGE_BATCHING_ENABLED -1
+
 #define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
@@ -134,6 +136,10 @@ enum seds_atomic_mo {
 
 #define log_measurement(type, buf)                          \
   log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
+
+#define log_ukf_data(buf, size)                             \
+  log_telemetry_asynchronous(SEDS_DT_KALMAN_FILTER_DATA,    \
+                             (buf), (size), sizeof(float));
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
@@ -171,11 +177,13 @@ enum seds_atomic_mo {
 
 /* Ignition request from the Valve board over telemetry */
 
+#define IGNITION_COMMAND 1
+
 #define request_ignition()                                  \
   ({                                                        \
-    float dummy = 1.0f;                                     \
+    uint8_t vcmd = IGNITION_COMMAND;                        \
     log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,        \
-                              &dummy, 1, sizeof(float));    \
+                              &vcmd, 1, sizeof(uint8_t));   \
   })
 
 

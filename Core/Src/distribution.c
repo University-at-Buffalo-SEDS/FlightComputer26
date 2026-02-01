@@ -59,11 +59,13 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 
 /* ------ FC packet handler ------ */
 
-/// Deposits messages into the recovery queue.
+/// Deposits one or multiple messages into the recovery queue.
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 {
   (void) user;
+
   UINT st = TX_SUCCESS;
+  uint_least32_t msg;
 
   if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
       !pkt->payload || !pkt->payload_len || pkt->payload_len & 3u)
@@ -71,13 +73,35 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
     return SEDS_HANDLER_ERROR;
   }
 
+#if MESSAGE_BATCHING_ENABLED > 0
+  UINT tlmt_old_pr;
+
+  /* To avoid context switch for each message put in Recovery queue,
+   * temporarily boost priority of the Telemetry task to disable
+   * preemption from the Recovery task, and revert the change after
+   * all messages are dispatched (will immediately preempt the task).
+   *
+   * NOTE: this is NOT a critical section. Switching to Recovery
+   * task after dispatching each message is safe but costly. */
+  tx_thread_priority_change(&telemetry_thread, 0, &tlmt_old_pr);
+
   for (fu8 k = 0; k < pkt->payload_len; k += sizeof(uint32_t))
   {
-    uint32_t msg = U32(pkt->payload[k],   pkt->payload[k+1],
-                       pkt->payload[k+2], pkt->payload[k+3]);
+    msg = U32(pkt->payload[k],   pkt->payload[k+1],
+              pkt->payload[k+2], pkt->payload[k+3]);
 
     st += tx_queue_send(&shared, &msg, TX_NO_WAIT);
   }
+
+  tx_thread_priority_change(&telemetry_thread, TLMT_PRIORITY, &tlmt_old_pr);
+
+#else
+  msg = U32(pkt->payload[0], pkt->payload[1],
+            pkt->payload[2], pkt->payload[3]);
+
+  st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
+
+#endif
 
   return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
 }

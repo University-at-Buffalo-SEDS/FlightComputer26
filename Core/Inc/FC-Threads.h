@@ -5,6 +5,12 @@
 extern TX_THREAD telemetry_thread;
 extern ULONG telemetry_thread_stack[];
 
+#define TLMT_INPUT 0
+#define TLMT_PRIORITY 5
+#define TLMT_TIME_SLICE 20
+#define TLMT_STACK_BYTES 8192u
+#define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
+
 void telemetry_thread_entry(ULONG initial_input);
 void create_telemetry_thread(void);
 /* ------ Telemetry Thread ------ */

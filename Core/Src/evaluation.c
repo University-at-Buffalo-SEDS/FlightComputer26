@@ -586,6 +586,8 @@ void evaluation_entry(ULONG input)
     flight < APOGEE ? ascentKF (&vec[last], &raw) :
                       descentKF(&vec[last], &raw) ;
 
+    log_ukf_data(&vec[last], sizeof(struct state_vec));
+
     /* Long Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
 
