@@ -128,7 +128,6 @@ handle_timeout(enum fc_timer endpoint)
 
     case Recovery_GND:
       config |= FORCE_ALT_CHECKS;
-      config |= ACCUMULATE_FAILS;
       config &= ~CONSECUTIVE_SAMP;
       break;
 
@@ -165,8 +164,9 @@ process_action(enum command cmd)
       return;
 
     case EVAL_RELAX:
-      /* Allow preempting of Evaluation
-       * task inside Kalman Filter. */
+      /* Allow preemption of Evaluation
+       * task while inside Kalman Filter. */
+      config &= ~EVAL_PREEMPT_OFF;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PRIORITY,
                                   &eval_old_pt);
@@ -174,7 +174,8 @@ process_action(enum command cmd)
 
     case EVAL_FOCUS:
       /* Rectrict preemption of Evaluation
-       * task inside Kalman Filter. */
+       * task while inside Kalman Filter. */
+      config |= EVAL_PREEMPT_OFF;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PREEMPT_THRESHOLD,
                                   &eval_old_pt);
@@ -199,7 +200,7 @@ process_raw_data_code(enum command code)
     ++failures;
     log_err("FC:RECV: bad sensor reading (%d)", code);
   }
-  else if (!(config & ACCUMULATE_FAILS))
+  else if (config & RESET_FAILURES)
   {
     /* RAW_DATA is sent when raw data looks good */
     failures = 0;
@@ -236,8 +237,9 @@ decode(enum command cmd)
      * For bookkeeping. */
     log_err("FC:RECV: received warning (%d)", cmd);
   }
-  else /* Likely raw data report */
+  else if (cmd & FC_MASK)
   {
+    /* Likely raw data report */
     process_raw_data_code(cmd & ~FC_MASK);
   }
 }

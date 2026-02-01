@@ -76,13 +76,14 @@ enum g_conf {
   RENORM_QUATERN_4 = 1u << 7,
   RENORM_QUATERN_8 = 1u << 8,
   ABORT_EVALUATION = 1u << 9,
+  EVAL_PREEMPT_OFF = 1u << 10,  
 
   /* Distribution options */
-  DISTRIB_EMERGENT = 1u << 10,
-  ENTER_DIST_CYCLE = 1u << 11,
+  DISTRIB_EMERGENT = 1u << 11,
+  ENTER_DIST_CYCLE = 1u << 12,
 
   /* Recovery options */
-  ACCUMULATE_FAILS = 1u << 12,
+  RESET_FAILURES = 1u << 13,
 };
 
 

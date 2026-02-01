@@ -63,15 +63,17 @@
 
 #define GRAVITY_SI 9.80665f
 #define TOLERANCE 1e-3f
-#define TLOWER_1 (1.0f - TOLERANCE)
-#define TUPPER_1 (1.0f + TOLERANCE)
+#define FTLOW(k)  ((float)k - TOLERANCE)
+#define FTHIGH(k) ((float)k + TOLERANCE)
 
-#define RING_SIZE 8
+#define RING_SIZE 4
 #define RING_MASK (RING_SIZE - 1)
 
 #define FSEC(ms) ((float)(ms) * 0.001f)
 
-#define NR_ITERATIONS 1
+#define NR_ITERATIONS 2
+
+#define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
 
 
 /* ------ UKF Containers ------ */

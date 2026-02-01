@@ -111,29 +111,48 @@ void evaluation_put(const struct measurement *buf)
 
 /* ------ Local helpers ------ */
 
+static fu8 idx = UINT_FAST8_MAX;
+
 /// Fetches one value from the ring buffer.
 /// Returns the amount of new entries added since last call.
 static inline fu8
-fetch(struct measurement *buf)
+fetch_async(struct measurement *buf)
 {
-  static fu8 idx = 0;
-
   fu16 i = idx;
 
   /* Fetch and clear new entries counter
    * and store current index */
   fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
   
-  if (!n) goto finish;
+  if (!n)
+    goto finish;
 
-  i = (i + n - 1) & RING_MASK;
+  i = (i + n) & RING_MASK;
   idx = i;
 
   *buf = payload[i];
 
 finish:
   /* Always clear busy index (relaxed) */
-  fetch_or(&mask, 0xFF00u, Rlx);
+  fetch_or(&mask, CLEAR_IDX, Rlx);
+  return n;
+}
+
+/// Fetches one value from the ring buffer.
+/// This version should only be used when preemption for
+/// the Evaluation task is disabled.
+/// Returns the amount of new entries added since last call.
+static inline fu8
+fetch_unsafe(struct measurement *buf)
+{
+  fu8 n = (fu8) mask;
+
+  if (!n)
+    return 0;
+
+  idx = (idx + n) & RING_MASK;
+  *buf = payload[idx];
+
   return n;
 }
 
@@ -449,7 +468,7 @@ measurement(const struct state_vec *restrict vec,
 static inline void predict(struct state_vec *vec)
 {
   /* Needed for divisibility test by a power of 2
-   * overflow is OK */
+   * => overflow is OK */
   static fu8 iter = 0;
 
   const float dt = FSEC(timer_fetch_update(Predict));
@@ -495,7 +514,7 @@ static inline void predict(struct state_vec *vec)
                        vec->qv.q3 * vec->qv.q3 + \
                        vec->qv.q4 * vec->qv.q4;
     
-    if (expr < TLOWER_1 || expr > TUPPER_1) {
+    if (expr < FTLOW(1) || expr > FTHIGH(1)) {
       const float norm = invsqrtf(expr);
       vec->qv.q1 *= norm;
       vec->qv.q2 *= norm;
@@ -553,10 +572,10 @@ void evaluation_entry(ULONG input)
   
   task_loop (mode & ABORT_EVALUATION)
   {
-    /* See if there are any changes in config */
-    mode = load(&config, Acq);
+    fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe(&raw)
+                                     : fetch_async(&raw);
 
-    if (!fetch(&raw) || validate(&raw) > RAW_DATA)
+    if (!st || validate(&raw) > RAW_DATA)
     {
       tx_thread_sleep(EVAL_SLEEP_NO_DATA);
       continue;
@@ -567,8 +586,10 @@ void evaluation_entry(ULONG input)
     flight < APOGEE ? ascentKF (&vec[last], &raw) :
                       descentKF(&vec[last], &raw) ;
 
-    /* See if there are any changes in config */
+    /* Long Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
+
+    /* When back, load any changes in config */
     mode = load(&config, Acq);
 
     if (mode & FORCE_ALT_CHECKS) {
@@ -600,8 +621,11 @@ void evaluation_entry(ULONG input)
       default: break;
     }
 
-    /* Cycle Distribution and Telemetry tasks */
+    /* Short cycle of Distribution and Telemetry tasks */
     tx_thread_relinquish();
+
+    /* When back, load any changes in config */
+    mode = load(&config, Acq);
   }
 }
 
