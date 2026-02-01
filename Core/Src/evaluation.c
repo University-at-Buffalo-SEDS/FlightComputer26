@@ -567,7 +567,7 @@ void evaluation_entry(ULONG input)
   flight = IDLE;
   
   /* Begin counting down elapsed time for 
-  * KF kinematic equations (predict function) */
+   * KF kinematic equations (predict function) */
   timer_update(Predict);  
   
   task_loop (mode & ABORT_EVALUATION)

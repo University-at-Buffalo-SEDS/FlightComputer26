@@ -184,8 +184,9 @@ process_action(enum command cmd)
     case EVAL_ABORT:
       /* Do not use ThreadX API to terminate
        * thread to avoid doing so when it is
-       * inside HAL or ThreadX call */
+       * inside HAL or ThreadX call. */
       config |= ABORT_EVALUATION;
+      return;
 
     default: break;
   }
@@ -253,6 +254,11 @@ void recovery_entry(ULONG input)
 {
   (void) input;
 
+  /* This task is created and ran first, and should
+   * prevent accidental timeouts due to slow SW init. */
+  timer_update(Recovery_FC);
+  timer_update(Recovery_GND);
+
   task_loop (DO_NOT_EXIT)
   {
     enum command cmd;
@@ -306,21 +312,25 @@ void create_recovery_task(void)
                              RECV_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
+
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create task (%u)", st);
   }
 
   st = tx_queue_create(&shared, "Message queue", 1, QADDR, QSIZE);
+
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create queue (%u)", st);
   }
 
   st = tx_queue_send_notify(&shared, queue_handler);
+
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to subscribe to queue (%u)", st);
   }
 
   st = tx_semaphore_create(&unread, "Messages in queue", 0);
+
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create semaphore (%u)", st);
   }
@@ -328,6 +338,7 @@ void create_recovery_task(void)
   st = tx_timer_create(&endpoints, "Endpoints timeout timer",
                        check_endpoints, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_AUTO_ACTIVATE);
+
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create timer (%u)", st);
   }

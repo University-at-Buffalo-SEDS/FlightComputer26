@@ -198,6 +198,7 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint_least32_t)), "");
 #define DEFAULT_OPTIONS ( (uint_least32_t) (0     \
                           | CONSECUTIVE_SAMP      \
                           | RENORM_QUATERN_1      \
+                          | EVAL_PREEMPT_OFF      \
                         ) )
 
 
