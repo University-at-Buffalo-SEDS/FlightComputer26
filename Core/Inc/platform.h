@@ -25,6 +25,17 @@
 #include <stdatomic.h>
 
 
+/* ------ Pre-compilation checks ------ */
+
+#if !defined(__CC_ARM)
+  #pragma message "!ARM_CC -> No ARM-specific fast math."
+#endif
+
+#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
+  #pragma message "!C23 * !GNUC -> Hacky types and variadics."
+#endif
+
+
 /* ------ Numerical helpers ------ */
 
 #define Max(x, y)       \
