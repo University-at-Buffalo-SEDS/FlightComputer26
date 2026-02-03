@@ -1,6 +1,5 @@
 /*
- * Recovery enum definition and config.
- * Values are passed through TX queue.
+ * Recovery configuration and API.
  */
 
 #ifndef RECOVERY_H

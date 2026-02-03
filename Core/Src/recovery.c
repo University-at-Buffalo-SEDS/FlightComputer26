@@ -115,26 +115,6 @@ static inline void auto_abort()
   // TODO to be discussed
 }
 
-/// Set cautionary and emergency flags on timeout
-static inline void
-handle_timeout(enum fc_timer endpoint)
-{
-  switch (endpoint)
-  {
-    case Recovery_FC:
-      /* TODO to be discussed */
-      auto_abort();
-      break;
-
-    case Recovery_GND:
-      config |= FORCE_ALT_CHECKS;
-      config &= ~CONSECUTIVE_SAMP;
-      break;
-
-    default: break;
-  }
-}
-
 /// Process general command from either endpoint.
 static inline void
 process_action(enum command cmd)
@@ -290,11 +270,15 @@ static void check_endpoints(ULONG id)
 
   if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
   {
-    handle_timeout(Recovery_FC);
+    // Really? Maybe rather restart evaluation task
+    // TODO
+    auto_abort();
   }
   if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
   {
-    handle_timeout(Recovery_GND);
+    // TODO
+    config |= FORCE_ALT_CHECKS;
+    config &= ~CONSECUTIVE_SAMP;
   }
 }
 

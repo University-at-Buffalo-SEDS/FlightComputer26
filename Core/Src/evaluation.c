@@ -2,7 +2,7 @@
  * Evaluation Task
  * 
  * This task consists of two major parts:
- * UKF (Unscented Kalman Filter) and Prediction.
+ * KF (Kalman Filter, in kalman.c) and Prediction.
  *
  * The shared ring buffer is actively filled by the
  * Distribution task with compensated raw data taken
@@ -28,7 +28,7 @@
  * of Ascent or Descent variants of the Kalman Filter.
  * This is where this task will be stuck for a while,
  * despite my attempts to use fast math and maintain
- * cache friednliness in math operations. This is why
+ * cache coherency in math operations. This is why
  * UKF and Prediction tasks are combined in sequential
  * logic: losing one processed vector due to async
  * would be timewise expensive.
@@ -46,11 +46,10 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "dsp/fast_math_functions.h"
-
 #include "evaluation.h"
 #include "platform.h"
 #include "recovery.h"
+#include "kalman.h"
 #include "dma.h"
 
 TX_THREAD evaluation_task;
@@ -58,6 +57,10 @@ ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /// Current flight state
 enum state flight = SUSPENDED;
+
+/// Module config bitmask
+/// Also used by Kalman filter 
+fu16 mode = 0;
 
 
 /* ------ Static ------ */
@@ -71,24 +74,8 @@ static struct measurement payload[RING_SIZE] = {0};
 /// is not reading the buffer.
 static atomic_uint_fast16_t mask = 0xFF00u;
 
-/// Local module config bitmask
-static fu16 mode = 0;
-
 
 /* ------ Public API ------ */
-
-/// Aggregates sensor compensation functions.
-/// Run before reporting and publishing data.
-void compensate(struct measurement *buf)
-{
-  buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
-  buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
-  buf->baro.alt = compute_relative_altitude(buf->baro.p);
-  
-  buf->accl.x *= MG;
-  buf->accl.y *= MG;
-  buf->accl.z *= MG;
-}
 
 /// Writes one raw sample to the evaluation ring buffer.
 void evaluation_put(const struct measurement *buf)
@@ -191,21 +178,6 @@ validate(const struct measurement *raw)
   tx_queue_send(&shared, &st, TX_NO_WAIT);
 
   return st;
-}
-
-/// Inverse square root function using bithack.
-static inline float invsqrtf(float x)
-{
-  /* Brought right from Quake 3 Arena! */
-  union bithack k = {.f = x};
-  k.d = 0x5f3759df - (k.d >> 1);
-
-  /* Newton-Raphson alg */
-  for (int i = 0; i < NR_ITERATIONS; ++i) {
-    k.f *= 1.5f - 0.5f * x * k.f * k.f;
-  }
-
-  return k.f;
 }
 
 
@@ -338,6 +310,7 @@ detect_apogee(const struct state_vec *vec, fu8 last)
   {
     flight = APOGEE;
     log_msg("FC:EVAL: approaching apogee", 28);
+    initialize_descent();
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -423,130 +396,6 @@ detect_landed(const struct state_vec *restrict vec,
 }
 
 
-/* ------ Unscented Kalman Filter ------ */
-
-/// Transforms state vector into sensor measurement.
-static inline void
-measurement(const struct state_vec *restrict vec,
-            struct measurement *restrict out)
-{
-  const float ag = vec->a.z + GRAVITY_SI;
-  const float qq2 = vec->qv.q2 * vec->qv.q2;
-  const float qq3 = vec->qv.q3 * vec->qv.q3;
-  const float qq4 = vec->qv.q4 * vec->qv.q4;
-
-  const float q12 = vec->qv.q1 * vec->qv.q2;
-  const float q13 = vec->qv.q1 * vec->qv.q3;
-  const float q14 = vec->qv.q1 * vec->qv.q4;
-  const float q23 = vec->qv.q2 * vec->qv.q3;
-  const float q24 = vec->qv.q2 * vec->qv.q4;
-  const float q34 = vec->qv.q3 * vec->qv.q4;
-  /* 
-   * DCM body->nav from quaternion (scalar-first w,x,y,z)
-   * Manually transposed (as used). Each value used once
-   * => array is not used to allow for compile-time folding
-   */
-  const float r11 = 1.0f - (2.0f * (qq3 + qq4));
-  const float r12 = 2.0f * (q23 + q14);
-  const float r13 = 2.0f * (q24 - q13);
-  const float r21 = 2.0f * (q23 - q14);
-  const float r22 = 1.0f - (2.0f * (qq2 + qq4));
-  const float r23 = 2.0f * (q34 + q12);
-  const float r31 = 2.0f * (q24 + q13);
-  const float r32 = 2.0f * (q34 - q12);
-  const float r33 = 1.0f - (2.0f * (qq2 + qq3));
-
-  out->accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
-  out->accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
-  out->accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
-
-  out->gyro = vec->w;
-  out->baro.alt = vec->p.z;
-}
-
-/// Transforms input vector into next-sample prediction.
-static inline void predict(struct state_vec *vec)
-{
-  /* Needed for divisibility test by a power of 2
-   * => overflow is OK */
-  static fu8 iter = 0;
-
-  const float dt = FSEC(timer_fetch_update(Predict));
-
-  const float fact = 0.5f * dt;
-  const float dvx = dt * vec->a.x;
-  const float dvy = dt * vec->a.y;
-  const float dvz = dt * vec->a.z;
-  const float vtx = dt * vec->v.x;
-  const float vty = dt * vec->v.y;
-  const float vtz = dt * vec->v.z;
-
-  const struct quaternion old = vec->qv;
-
-  vec->v.x += dvx;
-  vec->v.y += dvy;
-  vec->v.z += dvz;
-  
-  vec->p.x += vtx + (fact * dvx);
-  vec->p.y += vty + (fact * dvy);
-  vec->p.z += vtz + (fact * dvz);
-
-  vec->qv.q1 -= fact * (vec->w.x * old.q2 + \
-                        vec->w.y * old.q3 + \
-                        vec->w.z * old.q4);
-  vec->qv.q2 += fact * (vec->w.x * old.q1 + \
-                        vec->w.z * old.q3 - \
-                        vec->w.y * old.q4);
-  vec->qv.q3 += fact * (vec->w.y * old.q1 - \
-                        vec->w.z * old.q2 + \
-                        vec->w.x * old.q4);
-  vec->qv.q4 += fact * (vec->w.z * old.q1 + \
-                        vec->w.y * old.q2 - \
-                        vec->w.x * old.q3);
-
-  if ( mode & RENORM_QUATERN_1                  ||
-      (mode & RENORM_QUATERN_2 && !(iter & 1u)) ||
-      (mode & RENORM_QUATERN_4 && !(iter & 3u)) ||
-      (mode & RENORM_QUATERN_8 && !(iter & 7u)))
-  {
-    const float expr = vec->qv.q1 * vec->qv.q1 + \
-                       vec->qv.q2 * vec->qv.q2 + \
-                       vec->qv.q3 * vec->qv.q3 + \
-                       vec->qv.q4 * vec->qv.q4;
-    
-    if (expr < FTLOW(1) || expr > FTHIGH(1)) {
-      const float norm = invsqrtf(expr);
-      vec->qv.q1 *= norm;
-      vec->qv.q2 *= norm;
-      vec->qv.q3 *= norm;
-      vec->qv.q4 *= norm;
-    }
-  }
-
-  ++iter;
-}
-
-/* Static covariance matrices */
-
-static float state_cov[16][16] = {0}; // P_0
-static float noise_cov[16][16] = {0}; // Q
-static float meas_cov [16][7]  = {0}; // R
-
-/// Ascent Kalman Filter (ascentKF.m)
-static inline void
-ascentKF(struct state_vec *vec, const struct measurement *meas)
-{
-  // TODO
-}
-
-/// Descent Kalman Filter (descentKF.m)
-static inline void
-descentKF(struct state_vec *vec, const struct measurement *meas)
-{
-  // TODO
-}
-
-
 /* ------ Evaluation Task ------ */
 
 /// High-level overview of data evaluation cycle.
@@ -586,7 +435,7 @@ void evaluation_entry(ULONG input)
     flight < APOGEE ? ascentKF (&vec[last], &raw) :
                       descentKF(&vec[last], &raw) ;
 
-    log_ukf_data(&vec[last], sizeof(struct state_vec));
+    log_ukf_data(&vec[last], STATE_LOGGABLE);
 
     /* Long Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);

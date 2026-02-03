@@ -27,13 +27,14 @@
 
 /* ------ Pre-compilation checks ------ */
 
-#if !defined(__CC_ARM)
-  #pragma message "!ARM_CC -> No ARM-specific fast math."
-#endif
-
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
   #pragma message "!C23 * !GNUC -> Hacky types and variadics."
 #endif
+
+
+/* ------ Type attributes ------ */
+
+#define serial __attribute__((packed, aligned(4)))
 
 
 /* ------ Numerical helpers ------ */
@@ -317,6 +318,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 enum fc_timer {
   Predict,
+  DescentKF,
   Recovery_FC,
   Recovery_GND,
 

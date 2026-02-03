@@ -1,5 +1,5 @@
 /*
- * Direct Memory Access header and API.
+ * Direct Memory Access configuration and API.
  */
 
 #ifndef DMA_H
@@ -21,6 +21,11 @@
 #define RX_DONE 0x07
 
 
+/* ------ Serial type attributes ------ */
+
+#define serial __attribute__((packed, aligned(4)))
+
+
 /* ------ Containers ------ */
 
 /// Discriminants must comply with decode_ptr() dev[].
@@ -33,13 +38,14 @@ enum device {
 };
 
 /* Generic measurement containers */
-struct coords { float x, y, z; };
-struct baro { float p, t, alt; };
+struct serial coords { float x, y, z; }; /* Order matters */
+struct serial baro { float alt, p, t; }; /* Order matters */
 
 /// Transferable raw data unit
-struct measurement {
+struct serial measurement { /* Order matters */
+  struct coords gyro;
   struct baro baro;
-  struct coords gyro, accl;
+  struct coords accl;
 };
 
 
@@ -49,6 +55,10 @@ struct measurement {
 /// Returns 1 when all 3 sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
 int dma_try_fetch(struct measurement *buf);
+
+/// Aggregates sensor compensation functions.
+/// Run before reporting and publishing data.
+void compensate(struct measurement *buf);
 
 
 #endif // DMA_H

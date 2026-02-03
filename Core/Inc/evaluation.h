@@ -1,5 +1,5 @@
 /*
- * Data evaluation header and API.
+ * Data evaluation configuration and API.
  */
 
 #ifndef EVALUATION_H
@@ -49,6 +49,8 @@
 #define VEL_TOLER  1.5f
 #define VAX_TOLER  1.0f
 
+#define GRAVITY_SI 9.80665f
+
 
 /* ------ Data validation ------  */
 
@@ -59,38 +61,27 @@
 #define VALID_DATA (VALID_ALT | VALID_VEL | VALID_VAX)
 
 
-/* ------ UKF data defs ------ */
-
-#define GRAVITY_SI 9.80665f
-#define TOLERANCE 1e-3f
-#define FTLOW(k)  ((float)k - TOLERANCE)
-#define FTHIGH(k) ((float)k + TOLERANCE)
+/* ------ Put/fetch algorithm definitions ------ */
 
 #define RING_SIZE 4
 #define RING_MASK (RING_SIZE - 1)
 
-#define FSEC(ms) ((float)(ms) * 0.001f)
-
-#define NR_ITERATIONS 2
-
 #define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
 
 
-/* ------ UKF Containers ------ */
+/* ------ Data containers ------ */
 
-union bithack {
-  float f;
-  uint32_t d;
-};
-
-struct quaternion {
+struct serial quaternion { /* Order matters */
   float q1, q2, q3, q4;
 };
 
-struct state_vec {
+struct serial state_vec { /* Order matters */
   struct coords p, v, a, w;
   struct quaternion qv;
 };
+
+#define STATE_LOGGABLE (sizeof(struct state_vec) - \
+                        sizeof(struct quaternion))
 
 
 /* ------ Data evaluation containers ------ */
@@ -109,7 +100,7 @@ enum state {
 };
 
 /// Averaged representation of a single
-/// UKF evaluation that is easier to decide on.
+/// KF evaluation that is easier to decide on.
 struct stats {
   float min_alt, max_alt, avg_vel, avg_vax;
 };
@@ -117,12 +108,8 @@ struct stats {
 
 /* ------ Public API ------ */
 
-/// Enqueues raw data set for processing by UKF.
+/// Enqueues raw data set for processing by KF.
 void evaluation_put(const struct measurement *buf);
-
-/// Aggregates sensor compensation functions.
-/// Run before reporting and publishing data.
-void compensate(struct measurement *buf);
 
 
 #endif // EVALUATION_H

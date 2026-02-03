@@ -88,12 +88,12 @@ decode_ptr(uint8_t *p, fu8 *type)
   if (!p) return DMA_RX_NULL;
 
   ptrdiff_t offset = p - &rx[0][0][0];
-  if (offset < 0 || offset >= sizeof(rx)) {
+  if (offset < 0 || offset >= sizeof rx) {
     return DMA_RX_NULL;
   }
 
   /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
-  fu8 idx = (fu8)offset >> 3;
+  fu8 idx = (fu8)(offset) >> 3;
 
   *type = dev[idx];
   return buf[idx];
@@ -217,4 +217,17 @@ int dma_try_fetch(struct measurement *buf)
   }
 
   return 0;
+}
+
+/// Aggregates sensor compensation functions.
+/// Run before reporting or publishing data.
+void compensate(struct measurement *buf)
+{
+  buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
+  buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
+  buf->baro.alt = compute_relative_altitude(buf->baro.p);
+  
+  buf->accl.x *= MG;
+  buf->accl.y *= MG;
+  buf->accl.z *= MG;
 }
