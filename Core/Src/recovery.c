@@ -264,16 +264,37 @@ void recovery_entry(ULONG input)
 
 /// Check if an endpoint {FC, GND} is absent for
 /// compile-defined time, and invoke handler appropriately.
+/// Runs in ThreadX interrupt context.
 static void check_endpoints(ULONG id)
 {
   (void) id;
 
+  static fu8 restart_count = 0;
+
   if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
   {
-    // Really? Maybe rather restart evaluation task
-    // TODO
-    auto_abort();
+    ++restart_count;
+    if (restart_count >= MAX_RESTARTS) {
+      return auto_abort();
+    }
+
+    timer_update(Recovery_FC);
+
+    /* Whether we have launched determines
+     * which task sends heartbeat signals.
+     * Accordingly, restart this task. */
+    if (config & ENTER_DIST_CYCLE)
+    {
+      tx_thread_reset(&evaluation_task);
+      tx_thread_resume(&evaluation_task);
+    }
+    else
+    {
+      tx_thread_reset(&distribution_task);
+      tx_thread_resume(&distribution_task);
+    }
   }
+
   if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
   {
     // TODO

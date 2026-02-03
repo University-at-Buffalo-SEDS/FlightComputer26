@@ -11,12 +11,15 @@
  * invokes one of two filter based on flight state.
  * All invokations are performed synchronously.
  *
- * Most of nath functions are implemented and optimized
- * for specific types: structs measurement and state_vec.
- * However, some of the functions below can be optimized
- * by the compiler with the same degree of success. Such
- * functions have been kept as generic as it is possible
- * to avoid introducing obstructions for the compiler.
+ * This file does not implement linear algebra functions,
+ * and instead casts structs to column vectors and passes
+ * references to their wrappers to the CMSIS library.
+ *
+ * Both KF implementations share the same buffers, the size
+ * of which equals to the largest demanded size among the
+ * two filters. When the flight state switches to Apogee,
+ * the buffers are cleared and set to the default values
+ * expected by the descent filter.
  */
 
 #include <stdint.h>
@@ -88,7 +91,7 @@ union bithack {
 #endif
 
 
-/* ------ Generic math functions ------ */
+/* ------ Math functions ------ */
 
 /// Inverse square root function using bithack.
 static inline float invsqrtf(float x)
@@ -104,9 +107,6 @@ static inline float invsqrtf(float x)
 
   return k.f;
 }
-
-
-/* ------ Type-specific math functions ------ */
 
 
 /* ------ KF helper functions ------ */
@@ -263,7 +263,8 @@ void initialize_descent()
 
 /// descentKF.m
 void
-descentKF(struct state_vec *x, const struct measurement *z)
+descentKF(struct state_vec *x_0, struct state_vec *x_f,
+          const struct measurement *z)
 {
   /* Custom wrappers for the shared pools. */
   static const matrix noise = {DESC_STAT, DESC_STAT, &Q[0][0]};
@@ -275,7 +276,7 @@ descentKF(struct state_vec *x, const struct measurement *z)
   static matrix measm = {DESC_MEAS, 1, NULL};
 
   /* Set wrappers to point to given column vectors. */
-  state.pData = (float *)x;
+  state.pData = (float *)x_0;
   measm.pData = (float *)z;
 
 	const float dt = FSEC(timer_fetch_update(DescentKF));
@@ -293,7 +294,8 @@ descentKF(struct state_vec *x, const struct measurement *z)
 
 /// ascentKF.m
 void
-ascentKF(struct state_vec *vec, const struct measurement *meas)
+ascentKF(struct state_vec *x_0, struct state_vec *x_f,
+         const struct measurement *z)
 {
 	// TODO
 }

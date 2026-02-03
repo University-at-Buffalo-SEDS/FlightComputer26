@@ -189,14 +189,18 @@ pre_launch(struct measurement *payload)
 
 /// Distribution task entry that also serves as
 /// an overview of the Flight Computer data distribution.
+/// This function is idempotent and can be entered twice
+/// if critical conditions arise as deemed by Recovery task.
 void distribution_entry(ULONG input)
 {
   (void) input;
 
   struct measurement payload = {0};
 
-  /* Enter pre-launch loop */
-  pre_launch(&payload);
+  /* Enter pre-launch loop only before the Launch directive */
+  if (!(load(&config, Acq) & ENTER_DIST_CYCLE)) {
+    pre_launch(&payload);
+  }
 
   /* Normal post-launch operation begins */
   task_loop (DO_NOT_EXIT)

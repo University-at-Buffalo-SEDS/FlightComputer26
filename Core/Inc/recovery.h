@@ -22,6 +22,7 @@ extern atomic_uint_least32_t config;
 #define TO_REINIT 10
 #define TO_ABORT  40
 
+#define MAX_RESTARTS 3
 
 /* ------ Endpoint identifiers: FC, GND ------ */
 

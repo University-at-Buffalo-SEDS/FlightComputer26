@@ -74,6 +74,23 @@ static struct measurement payload[RING_SIZE] = {0};
 /// is not reading the buffer.
 static atomic_uint_fast16_t mask = 0xFF00u;
 
+/// Last state vector buffer {0, 1}
+static fu8 last = 0;
+
+/// Amount of successive samples per flight stage
+static fu8 sampl = 0;
+
+/* Addresses of the following structs and their 
+ * members are constants. When passed to external
+ * functions, address arguments are subjected to
+ * compiler and linker optimizations. */
+
+/// Current and previous state vectors
+static struct state_vec vec[2] = {0};
+
+/// Current measurement processed
+static struct measurement raw = {0};
+
 
 /* ------ Public API ------ */
 
@@ -102,8 +119,7 @@ static fu8 idx = UINT_FAST8_MAX;
 
 /// Fetches one value from the ring buffer.
 /// Returns the amount of new entries added since last call.
-static inline fu8
-fetch_async(struct measurement *buf)
+static inline fu8 fetch_async()
 {
   fu16 i = idx;
 
@@ -117,7 +133,7 @@ fetch_async(struct measurement *buf)
   i = (i + n) & RING_MASK;
   idx = i;
 
-  *buf = payload[i];
+  raw = payload[i];
 
 finish:
   /* Always clear busy index (relaxed) */
@@ -129,8 +145,7 @@ finish:
 /// This version should only be used when preemption for
 /// the Evaluation task is disabled.
 /// Returns the amount of new entries added since last call.
-static inline fu8
-fetch_unsafe(struct measurement *buf)
+static inline fu8 fetch_unsafe()
 {
   fu8 n = (fu8) mask;
 
@@ -138,36 +153,36 @@ fetch_unsafe(struct measurement *buf)
     return 0;
 
   idx = (idx + n) & RING_MASK;
-  *buf = payload[idx];
+  raw = payload[idx];
 
   return n;
 }
 
 /// Validates one raw measurement against sanity bounds.
 static inline fu8
-validate(const struct measurement *raw)
+validate()
 {
   enum command st = RAW_DATA;
 
-  if (raw->baro.alt > MAX_ALT || raw->baro.alt < MIN_ALT)
+  if (raw.baro.alt > MAX_ALT || raw.baro.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-  if (raw->accl.x > MAX_VAX || raw->accl.x < MIN_VAX)
+  if (raw.accl.x > MAX_VAX || raw.accl.x < MIN_VAX)
     st += RAW_BAD_ACC_X;
 
-  if (raw->accl.y > MAX_VAX || raw->accl.y < MIN_VAX)
+  if (raw.accl.y > MAX_VAX || raw.accl.y < MIN_VAX)
     st += RAW_BAD_ACC_Y;
   
-  if (raw->accl.z > MAX_VAX || raw->accl.z < MIN_VAX)
+  if (raw.accl.z > MAX_VAX || raw.accl.z < MIN_VAX)
     st += RAW_BAD_ACC_Z;
 
-  if (raw->gyro.x > MAX_ANG || raw->gyro.x < MIN_ANG)
+  if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
 
-  if (raw->gyro.y > MAX_ANG || raw->gyro.y < MIN_ANG)
+  if (raw.gyro.y > MAX_ANG || raw.gyro.y < MIN_ANG)
     st += RAW_BAD_ANG_Y;
 
-  if (raw->gyro.z > MAX_ANG || raw->gyro.z < MIN_ANG)
+  if (raw.gyro.z > MAX_ANG || raw.gyro.z < MIN_ANG)
     st += RAW_BAD_ANG_Z;
 
   st = FC_MSG(st);
@@ -186,7 +201,7 @@ validate(const struct measurement *raw)
 /// Cautiously examine altitude changes
 /// in order to make an immediate decision.
 static inline void
-evaluate_altitude(const struct state_vec *vec, fu8 last)
+evaluate_altitude()
 {
   /* If we aren't yet ascending or not descending, return.
    * First condition is to guard against noise while idle. */
@@ -236,7 +251,7 @@ evaluate_altitude(const struct state_vec *vec, fu8 last)
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
 static inline void
-detect_launch(const struct state_vec *vec, fu8 last)
+detect_launch()
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
@@ -249,23 +264,22 @@ detect_launch(const struct state_vec *vec, fu8 last)
 
 /// Monitors height and velocity increase consistency.
 static inline void
-detect_ascent(const struct state_vec *restrict vec,
-              fu8 *restrict sampl, fu8 last)
+detect_ascent()
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
   {
-    ++*sampl;
-    if (*sampl >= MIN_SAMP_ASCENT)
+    ++sampl;
+    if (sampl >= MIN_SAMP_ASCENT)
     {
       flight = ASCENT;
-      *sampl = 0;
+      sampl = 0;
       log_msg("FC:EVAL: launch confirmed", 26);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
   {
-    *sampl = 0;
+    sampl = 0;
     enum command cmd = NOT_LAUNCH;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -276,25 +290,24 @@ detect_ascent(const struct state_vec *restrict vec,
 /// Checks for height increase and velocity decrease
 /// consistency.
 static inline void
-detect_burnout(const struct state_vec *restrict vec,
-               fu8 *restrict sampl, fu8 last)
+detect_burnout()
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
       vec[last].a.z <= BURNOUT_MAX_VAX &&
       vec[last].p.z > vec[last].p.z &&
       vec[last].v.z < vec[!last].v.z)
   {
-    ++*sampl;
-    if (*sampl >= MIN_SAMP_BURNOUT)
+    ++sampl;
+    if (sampl >= MIN_SAMP_BURNOUT)
     {
       flight = BURNOUT;
-      *sampl = 0;
+      sampl = 0;
       log_msg("FC:EVAL: watching for apogee", 29);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
   {
-    *sampl = 0;
+    sampl = 0;
     enum command cmd = NOT_BURNOUT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -303,7 +316,7 @@ detect_burnout(const struct state_vec *restrict vec,
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
 static inline void
-detect_apogee(const struct state_vec *vec, fu8 last)
+detect_apogee()
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
@@ -317,24 +330,23 @@ detect_apogee(const struct state_vec *vec, fu8 last)
 
 /// Monitors for decreasing altitude and increasing velocity.
 static inline void
-detect_descent(const struct state_vec *restrict vec,
-               fu8 *restrict sampl, fu8 last)
+detect_descent()
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
   {
-    ++*sampl;
-    if (*sampl >= MIN_SAMP_DESCENT)
+    ++sampl;
+    if (sampl >= MIN_SAMP_DESCENT)
     {
       flight = DESCENT;
-      *sampl = 0;
+      sampl = 0;
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
   {
-    *sampl = 0;
+    sampl = 0;
     enum command cmd = NOT_DESCENT;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -343,24 +355,23 @@ detect_descent(const struct state_vec *restrict vec,
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
 static inline void
-detect_reef(const struct state_vec *restrict vec,
-            fu8 *restrict sampl, fu8 last)
+detect_reef()
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
   {
-    ++*sampl;
-    if (*sampl>= MIN_SAMP_REEF)
+    ++sampl;
+    if (sampl>= MIN_SAMP_REEF)
     {
       flight = REEF;
-      *sampl = 0;
+      sampl = 0;
       reef_low();
       log_msg("FC:EVAL: expanded parachute", 28);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
   {
-    *sampl = 0;
+    sampl = 0;
     enum command cmd = NOT_REEF;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -369,8 +380,7 @@ detect_reef(const struct state_vec *restrict vec,
 /// Monitors all statistical metrics to not deviate
 /// beyond allowed tolerance thresholds.
 static inline void
-detect_landed(const struct state_vec *restrict vec,
-              fu8 *restrict sampl, fu8 last)
+detect_landed()
 {
   float dh = vec[last].p.z - vec[!last].p.z;
   float dv = vec[last].v.z - vec[!last].v.z;
@@ -380,14 +390,14 @@ detect_landed(const struct state_vec *restrict vec,
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
-    ++*sampl;
-    if (*sampl >= MIN_SAMP_LANDED)
+    ++sampl;
+    if (sampl >= MIN_SAMP_LANDED)
     {
       flight = LANDED;
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && *sampl > 0)
+  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
   {
     sampl = 0;
     enum command cmd = NOT_LANDED;
@@ -399,75 +409,84 @@ detect_landed(const struct state_vec *restrict vec,
 /* ------ Evaluation Task ------ */
 
 /// High-level overview of data evaluation cycle.
+/// This function is idempotent and can be entered twice
+/// if critical conditions arise as deemed by Recovery task.
 void evaluation_entry(ULONG input)
 {
   (void) input;
 
-  log_msg("FC:EVAL: received launch signal", 32);
+  if (load(&config, Acq) & ENTER_DIST_CYCLE)
+  {
+    /* This is a re-entry. Discard the buffer processing
+     * which the system timed out. KF will receive older
+     * state vector and recompute new state vec into the
+     * buffer that was interrupted. */
+     last = !last;
+  }
+  else /* Initial launch command */
+  {
+    log_msg("FC:EVAL: received launch signal", 32);
+    flight = IDLE;
 
-  /* Signal distribution task to enter main cycle */
-  fetch_or(&config, ENTER_DIST_CYCLE, Rel);
+    /* Signal distribution task to enter main cycle */
+    fetch_or(&config, ENTER_DIST_CYCLE, Rel);
+  }
 
-  struct state_vec vec[2] = {0};
-  struct measurement raw = {0};
-
-  fu8 last = 0;
-  fu8 samp = 0;
-  flight = IDLE;
-  
   /* Begin counting down elapsed time for 
    * KF kinematic equations (predict function) */
   timer_update(Predict);  
   
   task_loop (mode & ABORT_EVALUATION)
   {
-    fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe(&raw)
-                                     : fetch_async(&raw);
+    fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe()
+                                     : fetch_async();
 
-    if (!st || validate(&raw) > RAW_DATA)
+    if (!st || validate() > RAW_DATA)
     {
       tx_thread_sleep(EVAL_SLEEP_NO_DATA);
       continue;
     }
 
+    /* One state vector is input (x_0), other is for output only (x_f) */
+    flight < APOGEE ? ascentKF (&vec[last], &vec[!last], &raw) :
+                      descentKF(&vec[last], &vec[!last], &raw) ;
+
     last = !last;
 
-    flight < APOGEE ? ascentKF (&vec[last], &raw) :
-                      descentKF(&vec[last], &raw) ;
-
+    /* ^^^ Log latest state vec excluding quaternions */
     log_ukf_data(&vec[last], STATE_LOGGABLE);
 
-    /* Long Distribution and Telemetry tasks */
+    /* Long cycle of Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
 
     /* When back, load any changes in config */
     mode = load(&config, Acq);
 
     if (mode & FORCE_ALT_CHECKS) {
-      evaluate_altitude(vec, last);
+      evaluate_altitude();
     }
 
     switch (flight) {
       case IDLE:
-        detect_launch(vec, last);
+        detect_launch();
         break;
       case LAUNCH:
-        detect_ascent(vec, &samp, last);
+        detect_ascent();
         break;
       case ASCENT:
-        detect_burnout(vec, &samp, last);
+        detect_burnout();
         break;
       case BURNOUT:
-        detect_apogee(vec, last);
+        detect_apogee();
         break;
       case APOGEE:
-        detect_descent(vec, &samp, last);
+        detect_descent();
         break;
       case DESCENT:
-        detect_reef(vec, &samp, last);
+        detect_reef();
         break;
       case REEF:
-        detect_landed(vec, &samp, last);
+        detect_landed();
         break;
       default: break;
     }
