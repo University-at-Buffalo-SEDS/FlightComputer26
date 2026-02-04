@@ -27,6 +27,11 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef DMA_LOCAL_TEST
+#include "platform.h"
+#include "dma.h"
+#endif
+
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
 #ifndef MIN
@@ -128,6 +133,27 @@ int main(void)
   MX_ICACHE_Init();
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
+
+/* Local test with no telemerty or threads */
+#ifdef DMA_LOCAL_TEST
+  HAL_Delay(200);
+
+  struct measurement k = {0};
+
+  while (1) {
+    if (!dma_try_fetch(&k)) {
+      HAL_Delay(20);
+      continue;
+    }
+
+    compensate(&k);
+    log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+    log_measurement(SEDS_DT_GYRO_DATA,      &k);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &k);
+  }
+
+  /* Assert unreeachable. */
+#endif
 
   /* USER CODE END 2 */
 

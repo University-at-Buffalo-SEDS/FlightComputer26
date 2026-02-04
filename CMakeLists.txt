@@ -101,3 +101,13 @@ if (ENABLE_TELEMETRY)
     add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
     target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
 endif()
+
+# DMA testing
+
+# Options defaults to OFF
+option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
+
+if (DMA_TESTING)
+    message(STATUS "Running local DMA tests (no telemetry).")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
+endif()
