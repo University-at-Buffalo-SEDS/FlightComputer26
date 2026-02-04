@@ -77,6 +77,12 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
+
+  create_recovery_task();
+  create_evaluation_task();
+  create_distribution_task()
+
+#ifdef TELEMETRY_ENABLED
   create_telemetry_thread();
 #endif
 
