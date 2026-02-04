@@ -179,7 +179,7 @@ process_raw_data_code(enum command code)
   if (code != RAW_DATA)
   {
     ++failures;
-    log_err("FC:RECV: bad sensor reading (%d)", code);
+    log_err("FC:RECV: bad sensor reading (%u)", (unsigned)code);
   }
   else if (config & RESET_FAILURES)
   {
@@ -216,7 +216,7 @@ decode(enum command cmd)
   {
     /* Data evaluation reports unconfirmed states.
      * For bookkeeping. */
-    log_err("FC:RECV: received warning (%d)", cmd);
+    log_err("FC:RECV: received warning (%u)", (unsigned)cmd);
   }
   else if (cmd & FC_MASK)
   {
@@ -295,12 +295,16 @@ static void check_endpoints(ULONG id)
     }
   }
 
+#ifdef TELEMETRY_ENABLED
+
   if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
   {
     // TODO
     config |= FORCE_ALT_CHECKS;
     config &= ~CONSECUTIVE_SAMP;
   }
+
+#endif // TELEMETRY_ENABLED
 }
 
 /// Creates a non-preemptive Recovery Task with defined parameters.

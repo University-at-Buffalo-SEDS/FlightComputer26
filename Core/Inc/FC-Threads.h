@@ -1,6 +1,8 @@
 #pragma once
 #include "tx_api.h"
 
+#ifdef TELEMETRY_ENABLED
+
 /* ------ Telemetry Thread ------ */
 extern TX_THREAD telemetry_thread;
 extern ULONG telemetry_thread_stack[];
@@ -14,6 +16,8 @@ extern ULONG telemetry_thread_stack[];
 void telemetry_thread_entry(ULONG initial_input);
 void create_telemetry_thread(void);
 /* ------ Telemetry Thread ------ */
+
+#endif // TELEMETRY_ENABLED
 
 /* ------ Recovery Task ------ */
 #define RECV_INPUT 0

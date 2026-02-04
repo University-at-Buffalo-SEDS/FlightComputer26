@@ -1,12 +1,14 @@
-#include "barometer.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "telemetry.h"
+/*
+ * BMP390 (barometer) driver.
+ */
+
 #include <stdint.h>
-#include <stdbool.h>
-#include <math.h>
 #include <string.h>
+#include <stdbool.h>
 #include <stdatomic.h>
+
+#include "platform.h"
+#include "barometer.h"
 
 // ---- Globals ----
 BMP390_calib_data_t calib_data = {0};
@@ -199,16 +201,16 @@ HAL_StatusTypeDef init_barometer(SPI_HandleTypeDef *hspi) {
     uint8_t cmd = BMP390_SOFTRESET_CMD;
     st = baro_write_reg(hspi, BARO_CMD, &cmd, 1);
     if (st != HAL_OK)
-      die("baro: failed to issue soft reset\r\n");
+      log_die("baro: failed to issue soft reset\r\n");
     HAL_Delay(BMP390_RESET_DELAY_MS);
   }
 
   // Check ID
   st = baro_read_u8(hspi, BARO_CHIP_ID, &v);
   if (st != HAL_OK)
-    die("baro: failed to read CHIP_ID\r\n");
+    log_die("baro: failed to read CHIP_ID\r\n");
   if (v != BMP390_CHIP_ID_VALUE)
-    die("baro: CHIP_ID=0x%02X (expected 0x60)\r\n", v);
+    log_die("baro: CHIP_ID=0x%02X (expected 0x60)\r\n", v);
 
   // Force 4-wire
   v = 0x00;
@@ -219,14 +221,14 @@ HAL_StatusTypeDef init_barometer(SPI_HandleTypeDef *hspi) {
   (void)baro_write_u8(hspi, BARO_PWR_CTRL, 0x00); // sleep
   HAL_Delay(BMP390_ENABLE_DELAY_MS);
   if (baro_write_u8(hspi, BARO_PWR_CTRL, BMP390_PWR_ENABLE_SENSORS) != HAL_OK)
-    die("baro: enable sensors failed\r\n");
+    log_die("baro: enable sensors failed\r\n");
   HAL_Delay(BMP390_ENABLE_DELAY_MS);
 
   // OSR/ODR
   if (baro_write_u8(hspi, BARO_OSR, BMP390_DEFAULT_OSR) != HAL_OK)
-    die("baro: write OSR failed\r\n"); // Tx1, Px2
+    log_die("baro: write OSR failed\r\n"); // Tx1, Px2
   if (baro_write_u8(hspi, BARO_ODR, BMP390_DEFAULT_ODR_SEL) != HAL_OK)
-    die("baro: write ODR failed\r\n"); // 12.5Hz
+    log_die("baro: write ODR failed\r\n"); // 12.5Hz
   HAL_Delay(BMP390_ENABLE_DELAY_MS);
 
   // NORMAL
@@ -235,13 +237,13 @@ HAL_StatusTypeDef init_barometer(SPI_HandleTypeDef *hspi) {
     (void)baro_read_u8(hspi, BARO_PWR_CTRL, &pwr);
     (void)baro_read_u8(hspi, BARO_STATUS, &status);
     (void)baro_read_u8(hspi, BARO_ERR_REG, &err);
-    die("baro: NORMAL failed, PWR_CTRL=0x%02X STATUS=0x%02X ERR=0x%02X\r\n",
+    log_die("baro: NORMAL failed, PWR_CTRL=0x%02X STATUS=0x%02X ERR=0x%02X\r\n",
         pwr, status, err);
   }
 
   // Read calibration
   if (read_trim_pars(hspi) != HAL_OK)
-    die("baro: read calibration failed\r\n");
+    log_die("baro: read calibration failed\r\n");
 
   // Let measurements settle (~2 frames)
   uint8_t odr_sel = 0;
@@ -260,7 +262,7 @@ HAL_StatusTypeDef init_barometer(SPI_HandleTypeDef *hspi) {
     HAL_Delay(10);
   }
   if (p < BMP390_BARO_VALID_MIN_PA || p > BMP390_BARO_VALID_MAX_PA)
-    die("baro: baseline pressure invalid: %.1f Pa\r\n", p);
+    log_die("baro: baseline pressure invalid: %.1f Pa\r\n", p);
 
   ground_level_pressure = p;
   return HAL_OK;

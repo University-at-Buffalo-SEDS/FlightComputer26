@@ -454,7 +454,7 @@ void evaluation_entry(ULONG input)
     last = !last;
 
     /* ^^^ Log latest state vec excluding quaternions */
-    log_ukf_data(&vec[last], STATE_LOGGABLE);
+    log_filter_data(&vec[last], STATE_LOGGABLE);
 
     /* Long cycle of Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);

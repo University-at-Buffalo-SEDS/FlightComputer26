@@ -59,6 +59,8 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 
 /* ------ FC packet handler ------ */
 
+#ifdef TELEMETRY_ENABLED
+
 /// Deposits one or multiple messages into the recovery queue.
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 {
@@ -101,10 +103,12 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 
   st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
 
-#endif
+#endif // MESSAGE_BATCHING_ENABLED
 
   return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
 }
+
+#endif // TELEMETRY_ENABLED
 
 
 /* ------ Local helpers ------ */

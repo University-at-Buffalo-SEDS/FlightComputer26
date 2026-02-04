@@ -45,6 +45,18 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+
+    ${CMAKE_SOURCE_DIR}/Core/Src/main.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/accel.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/gyro.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
 )
 
 # Add include paths
@@ -67,13 +79,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # Add user defined libraries
 )
 
-#Telemetry library
-
-set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-
-set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE) # Set target for embedded systems
-add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
-target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
+# Telemetry library
 
 # Option defaults to ON
 option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
@@ -81,36 +87,23 @@ option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
 # Print its state for debugging
 message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
 
-# Define or undefine the macro globally
-if(ENABLE_TELEMETRY)
-    add_compile_definitions(TELEMETRY_ENABLED)
-else()
-    # Not defined → disabled
-endif()
+if (ENABLE_TELEMETRY)
+    # Define or undefine the macro globally
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
 
-# Testing
+    set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
 
-# Option defaults to OFF
-option(TEST_ON_HOST "Build for testing on host machine" OFF)
+    # Set target for embedded systems
+    set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
 
-if(TEST_ON_HOST)
-    message(STATUS "Building test target for host")
-    enable_language(C)
-    include(CTest)
-    set(FC_TEST fctest)
-    set(HOST_TEST_SOURCES
-        tests/emu-core.c
-        tests/emu-drivers.c
-        tests/emu-sensors.c
+    target_sources(${PROJECT_NAME} PRIVATE
+        # Telemetry sources (FC-specific)
+
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
     )
-    set(ENABLE_TELEMETRY OFF CACHE BOOL "" FORCE)
-    add_executable(fctest ${HOST_TEST_SOURCES} tests/run-tests.c)
-    target_link_libraries(fctest PRIVATE m pthread)
-    target_include_directories(fctest PRIVATE
-        ${CMAKE_SOURCE_DIR}/tests
-        ${CMAKE_SOURCE_DIR}/Core/Inc
-    )
-    add_test(NAME ${FC_TEST} COMMAND
-        ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/fctest)
-    target_compile_definitions(fctest PRIVATE PL_HOST)
+
+    add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
+    target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
 endif()
