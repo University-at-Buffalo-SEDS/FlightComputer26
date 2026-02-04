@@ -328,7 +328,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Ignition request from the Valve board over telemetry */
 
-#define IGNITION_COMMAND 1
+/* Ground Station: backend/src/rocket_commands.rs
+ * pub enum ActuatorBoardCommands -> IgniterSequence */
+#define IGNITION_COMMAND 13
 
 static inline SedsResult _request_ignition()
 {
