@@ -60,7 +60,7 @@
 /// Each device data readiness mask for two buffers.
 /// Baro, Gyro, Accel, and unused bits (in this order).
 /// 0 0 0 0 0 A G B | 0 0 0 0 0 0 A G B
-static uint_fast8_t is_complete[2] = {0};
+static fu8 is_complete[2] = {0};
 
 /// Rx buffer marked for accepting DMA transfers.
 static atomic_uint_fast8_t in_transfer = 0;
@@ -79,21 +79,21 @@ static uint8_t rx[2][3][SENSOR_BUF_SIZE] = {0};
 /// Determines active buffer and device type from pointer offset.
 /// Returns DMA_RX_NULL if p is NULL or does not point inside rx.
 /// Context: callbacks.
-static inline uint_fast8_t
-decode_ptr(uint8_t *p, uint_fast8_t *type)
+static inline fu8
+decode_ptr(uint8_t *p, fu8 *type)
 {
-  static const uint_fast8_t buf[2 * 3] = {0, 0, 0, 1, 1, 1};
-  static const uint_fast8_t dev[2 * 3] = {0, 1, 2, 0, 1, 2};
+  static const fu8 buf[2 * 3] = {0, 0, 0, 1, 1, 1};
+  static const fu8 dev[2 * 3] = {0, 1, 2, 0, 1, 2};
 
   if (!p) return DMA_RX_NULL;
 
   ptrdiff_t offset = p - &rx[0][0][0];
-  if (offset < 0 || offset >= sizeof(rx)) {
+  if (offset < 0 || offset >= sizeof rx) {
     return DMA_RX_NULL;
   }
 
   /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
-  uint_fast8_t idx = (uint_fast8_t)offset >> 3;
+  fu8 idx = (fu8)(offset) >> 3;
 
   *type = dev[idx];
   return buf[idx];
@@ -105,8 +105,8 @@ decode_ptr(uint8_t *p, uint_fast8_t *type)
 /// Finish transfer and publish device data flag.
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-  uint_fast8_t t;
-  uint_fast8_t i = decode_ptr(hspi->pRxBuffPtr, &t);
+  fu8 t;
+  fu8 i = decode_ptr(hspi->pRxBuffPtr, &t);
 
   if (i == DMA_RX_NULL) {
     terminate_transfers();
@@ -122,8 +122,8 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 /// Finish transfer but do not publish flag (drop sample).
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
-  uint_fast8_t t;
-  uint_fast8_t i = decode_ptr(hspi->pRxBuffPtr, &t);
+  fu8 t;
+  fu8 i = decode_ptr(hspi->pRxBuffPtr, &t);
 
   if (i == DMA_RX_NULL) {
     terminate_transfers();
@@ -140,8 +140,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   HAL_StatusTypeDef st;
-  uint_fast8_t i;
-  i = atomic_load_explicit(&in_transfer, memory_order_acquire);
+  fu8 i = load(&in_transfer, Acq);
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
@@ -186,8 +185,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
 int dma_try_fetch(struct measurement *buf)
 {
-  static uint_fast8_t i = 1;
-  static uint_fast8_t cache = 0;
+  static fu8 i = 1;
+  static fu8 cache = 0;
 
   if (!buf) return -1;
 
@@ -209,7 +208,7 @@ int dma_try_fetch(struct measurement *buf)
   cache |= is_complete[i];
   is_complete[i] = 0;
   
-  atomic_store_explicit(&in_transfer, i, memory_order_release);
+  store(&in_transfer, i, Rel);
   i ^= 1;
 
   if (cache & RX_DONE) {
@@ -218,4 +217,17 @@ int dma_try_fetch(struct measurement *buf)
   }
 
   return 0;
+}
+
+/// Aggregates sensor compensation functions.
+/// Run before reporting or publishing data.
+void compensate(struct measurement *buf)
+{
+  buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
+  buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
+  buf->baro.alt = compute_relative_altitude(buf->baro.p);
+  
+  buf->accl.x *= MG;
+  buf->accl.y *= MG;
+  buf->accl.z *= MG;
 }
