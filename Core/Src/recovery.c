@@ -137,10 +137,9 @@ process_action(enum command cmd)
       return;
 
     case START:
-      /* Start Evaluation task. 
+      /* Set Evaluation task eligible for scheduling. 
        * This begins rocket launch chain. */
       tx_thread_resume(&evaluation_task);
-      tx_thread_relinquish();
       return;
 
     case EVAL_RELAX:
@@ -295,16 +294,31 @@ static void check_endpoints(ULONG id)
     }
   }
 
-#ifdef TELEMETRY_ENABLED
-
+  
   if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
   {
-    // TODO
+#ifdef TELEMETRY_ENABLED
+
+    static fu8 test_launched = 0;
+
+    if (!test_launched) {
+      /* During testing, launch on first GND timeout 
+      * (since, without telemetry, there is no GND). */
+      tx_thread_resume(&evaluation_task);
+      test_launched = 1;
+    }
+
+#else
+    /* Contact lost with Ground Station.
+     * Set options for most precision and do not
+     * accumulate failures. In fact, reset them! */
     config |= FORCE_ALT_CHECKS;
-    config &= ~CONSECUTIVE_SAMP;
-  }
+    config |= RENORM_QUATERN_1;
+    config |= RESET_FAILURES;
+    failures = 0;
 
 #endif // TELEMETRY_ENABLED
+  }
 }
 
 /// Creates a non-preemptive Recovery Task with defined parameters.

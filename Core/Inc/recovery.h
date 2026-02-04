@@ -69,9 +69,8 @@ enum g_conf {
   SAFE_EXPAND_REEF = 1u << 2,
   REINIT_ATTEMPTED = 1u << 3,
   PYRO_REQ_CONFIRM = 1u << 4,
-  /* If neither is set: 
-   * renormalize quaternion vector every time */
-  RENORM_QUATERN_1 = 1u << 5,
+
+  RENORM_QUATERN_1 = 1u << 5, /* Default */
   RENORM_QUATERN_2 = 1u << 6,
   RENORM_QUATERN_4 = 1u << 7,
   RENORM_QUATERN_8 = 1u << 8,
