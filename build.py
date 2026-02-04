@@ -21,12 +21,15 @@ PRESET:
 If none specified, defaults to Debug.
 
 OPTIONS:
-	flash - download executable to eabi
-		target (requires dfu-utils)
-	notel - disable telemetry
-        clean - cleans build folder for the
-                specified preset (or default)
-                This option takes precedence
+	flash           - download executable to eabi
+	                target (requires dfu-utils)
+	notel           - disable telemetry
+        clean           - cleans build folder for the
+                        specified preset (or default)
+                        This option takes precedence
+        dmatest         - enables local DMA testing
+                        - does not start ThreadX
+                        - prerequisite: notel
 			
 Each option defaults to OFF or its complement.
 """
@@ -46,7 +49,7 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {"flash", "notel", "clean"}
+ALL_OPTIONS     = {"flash", "notel", "clean", "dmatest"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -89,8 +92,13 @@ def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
         telemetry_flag = "-DENABLE_TELEMETRY=ON"
+        dma_test_flag  = "-DDMA_TESTING=OFF"
+
         if options["notel"]:
                 telemetry_flag = "-DENABLE_TELEMETRY=OFF"
+
+                if options["dmatest"]:
+                        dma_test_flag = "-DDMA_TESTING=ON"
 
         cmake_args = [
                 "cmake",
@@ -99,6 +107,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
                 "-DCMAKE_COMMAND=cmake",
                 telemetry_flag,
+                dma_test_flag,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

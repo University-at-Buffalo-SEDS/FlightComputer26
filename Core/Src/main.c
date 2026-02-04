@@ -29,6 +29,11 @@
 #include "can_bus.h"
 #include "sd_card.h"
 
+#ifdef DMA_LOCAL_TEST
+#include "platform.h"
+#include "dma.h"
+#endif
+
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
 
@@ -133,6 +138,28 @@ int main(void)
     /* SD Logger init failed */
     Error_Handler();
   }
+
+/* Local test with no telemerty or threads */
+#ifdef DMA_LOCAL_TEST
+  HAL_Delay(200);
+
+  struct measurement k = {0};
+
+  while (1) {
+    if (!dma_try_fetch(&k)) {
+      HAL_Delay(20);
+      continue;
+    }
+
+    compensate(&k);
+    log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+    log_measurement(SEDS_DT_GYRO_DATA,      &k);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &k);
+  }
+
+  /* Assert unreeachable. */
+#endif
+
   /* USER CODE END 2 */
 
   MX_ThreadX_Init();
