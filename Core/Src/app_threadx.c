@@ -80,7 +80,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   create_recovery_task();
   create_evaluation_task();
-  create_distribution_task()
+  create_distribution_task();
 
 #ifdef TELEMETRY_ENABLED
   create_telemetry_thread();
