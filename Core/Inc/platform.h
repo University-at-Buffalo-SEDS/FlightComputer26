@@ -153,147 +153,6 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
 #include "FC-Threads.h"
 
 
-/* ------ Telemetry API abstraction ------ */
-
-#ifdef TELEMETRY_ENABLED
-
-#include <sedsprintf.h>
-#include "telemetry.h"
-
-#define MESSAGE_BATCHING_ENABLED -1
-
-#define log_msg_sync(msg, size)                             \
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
-                            (msg), (size), sizeof(char))
-
-#define log_msg(msg, size)                                  \
-  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
-                             (msg), (size), sizeof(char))
-
-#define log_measurement(type, buf)                          \
-  log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
-
-#define log_filter_data(buf, size)                          \
-  log_telemetry_asynchronous(SEDS_DT_KALMAN_FILTER_DATA,    \
-                             (buf), (size), sizeof(float));
-
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
-
-#define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
-                           
-#define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
-
-#define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
-
-#else
-#if defined(__GNUC__)
-
-#define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, ##__VA_ARGS__)
-
-#define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, ##__VA_ARGS__)
-
-#define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
-
-#else /* Does not support 0 variadic arguments */
-
-#define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, __VA_ARGS__)
-
-#define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, __VA_ARGS__)
-
-#define log_die(fmt, ...) die(fmt, __VA_ARGS__)
-
-#endif // GNU C
-#endif // >= C23
-
-/* Ignition request from the Valve board over telemetry */
-
-#define IGNITION_COMMAND 1
-
-static inline SedsResult _request_ignition()
-{
-  uint8_t vcmd = IGNITION_COMMAND;
-  return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
-                                   &vcmd, 1, sizeof(uint8_t));
-}
-
-#define request_ignition _request_ignition
-
-#else /* Log to terminal emulator */
-
-#define SEDS_OK 0
-
-#define SEDS_DT_BAROMETER_DATA "Barometer"
-#define SEDS_DT_GYRO_DATA      "Gyroscope"
-#define SEDS_DT_ACCEL_DATA     "Accelerometer"
-
-#include <stdio.h>
-
-#define log_msg_sync(msg, size) printf("\n%s\n", (msg))
-
-#define log_msg log_msg_sync
-
-#define log_measurement(type, buf)                            \
-  do {                                                        \
-    printf("Measurement: " type "\n");                        \
-    fwrite((buf), sizeof(float), 3, stdout);                  \
-    putchar('\n');                                            \
-  } while (0)
-
-#define log_filter_data(buf, size)                            \
-  do {                                                        \
-    printf("State vector:\n");                                \
-    fwrite((buf), sizeof(float), (size), stdout);             \
-    putchar('\n');                                            \
-  } while (0)
-
-#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
-
-#define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)
-
-#define log_die(fmt, ...)                                     \
-  do {                                                        \
-    while (1) fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__); \
-  } while (0)
-
-#else
-#if defined(__GNUC__)
-
-#define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt, ##__VA_ARGS__)
-
-#define log_die(fmt, ...)                                     \
-  do {                                                        \
-    while (1) fprintf(stderr, fmt, ##__VA_ARGS__);            \
-  } while (0)
-
-#else
-
-#define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_ARGS__)
-
-#define log_die(fmt, ...)                                     \
-  do {                                                        \
-    while (1) fprintf(stderr, fmt __VA_ARGS__);               \
-  } while (0)
-
-#endif // GNU C
-#endif // >= C23
-
-#define log_err log_err_sync
-
-#define request_ignition()                                    \
-  ( (void)( printf("Ignition requested.\n") ), 0 )
-
-#endif // TELEMETRY_ENABLED
-
-
 /* ------ HAL Aliases ------ */
 
 #include "stm32h5xx_hal.h"
@@ -407,6 +266,156 @@ extern DCACHE_HandleTypeDef hdcache1;
   ((int16_t)(((uint16_t)(b1) << 8) | (uint16_t)(b0)))
 
 #define F16(b0, b1) ((float)I16(b0, b1))
+
+
+/* ------ Telemetry API abstraction ------ */
+
+#ifdef TELEMETRY_ENABLED
+
+#include <sedsprintf.h>
+#include "telemetry.h"
+
+#define MESSAGE_BATCHING_ENABLED -1
+
+#define log_msg_sync(msg, size)                             \
+  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
+                            (msg), (size), sizeof(char))
+
+#define log_msg(msg, size)                                  \
+  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
+                             (msg), (size), sizeof(char))
+
+#define log_measurement(type, buf)                          \
+  log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
+
+#define log_filter_data(buf, size)                          \
+  log_telemetry_asynchronous(SEDS_DT_KALMAN_FILTER_DATA,    \
+                             (buf), (size), sizeof(float));
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+
+#define log_err_sync(fmt, ...)                              \
+  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+                           
+#define log_err(fmt, ...)                                   \
+  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+
+#define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
+
+#else
+#if defined(__GNUC__)
+
+#define log_err_sync(fmt, ...)                              \
+  log_error_syncronous(fmt, ##__VA_ARGS__)
+
+#define log_err(fmt, ...)                                   \
+  log_error_asyncronous(fmt, ##__VA_ARGS__)
+
+#define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
+
+#else /* Does not support 0 variadic arguments */
+
+#define log_err_sync(fmt, ...)                              \
+  log_error_syncronous(fmt, __VA_ARGS__)
+
+#define log_err(fmt, ...)                                   \
+  log_error_asyncronous(fmt, __VA_ARGS__)
+
+#define log_die(fmt, ...) die(fmt, __VA_ARGS__)
+
+#endif // GNU C
+#endif // >= C23
+
+/* Ignition request from the Valve board over telemetry */
+
+#define IGNITION_COMMAND 1
+
+static inline SedsResult _request_ignition()
+{
+  uint8_t vcmd = IGNITION_COMMAND;
+  return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
+                                   &vcmd, 1, sizeof(uint8_t));
+}
+
+#define request_ignition _request_ignition
+
+#else /* Log to terminal emulator */
+
+#define SEDS_OK 0
+
+#define SEDS_DT_BAROMETER_DATA "Barometer"
+#define SEDS_DT_GYRO_DATA      "Gyroscope"
+#define SEDS_DT_ACCEL_DATA     "Accelerometer"
+
+#include <stdio.h>
+
+#define log_msg_sync(msg, size) printf("\n%s\n", (msg))
+
+#define log_msg log_msg_sync
+
+#define log_measurement(type, buf)                            \
+  do {                                                        \
+    printf("Measurement: " type "\n");                        \
+    fwrite((buf), sizeof(float), 3, stdout);                  \
+    putchar('\n');                                            \
+  } while (0)
+
+#define log_filter_data(buf, size)                            \
+  do {                                                        \
+    printf("State vector:\n");                                \
+    fwrite((buf), sizeof(float), (size), stdout);             \
+    putchar('\n');                                            \
+  } while (0)
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+
+#define log_err_sync(fmt, ...)                                \
+  fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)
+
+#define log_die(fmt, ...)                                     \
+  do {                                                        \
+    while (1) {                                               \
+      fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__);         \
+      HAL_Delay(1000);                                        \
+    }                                                         \
+  } while (0)
+
+#else
+#if defined(__GNUC__)
+
+#define log_err_sync(fmt, ...)                                \
+  fprintf(stderr, fmt, ##__VA_ARGS__)
+
+#define log_die(fmt, ...)                                     \
+  do {                                                        \
+    while (1) {                                               \
+      fprintf(stderr, fmt, ##__VA_ARGS__);                    \
+      HAL_Delay(1000);                                        \
+    }                                                         \
+  } while (0)
+
+#else /* Does not support 0 variadic arguments */
+
+#define log_err_sync(fmt, ...)                                \
+  fprintf(stderr, fmt __VA_ARGS__)
+
+#define log_die(fmt, ...)                                     \
+  do {                                                        \
+    while (1) {                                               \
+      fprintf(stderr, fmt, __VA_ARGS__);                    \
+      HAL_Delay(1000);                                        \
+    }                                                         \
+  } while (0)
+
+#endif // GNU C
+#endif // >= C23
+
+#define log_err log_err_sync
+
+#define request_ignition()                                    \
+  ( (void)( printf("Ignition requested.\n") ), 0 )
+
+#endif // TELEMETRY_ENABLED
 
 
 /* ------ On-board relative timer implementation ------ */
