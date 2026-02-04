@@ -298,7 +298,15 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
+    /* Contact lost with Ground Station.
+     * Set options for most precision and do not
+     * accumulate failures. In fact, reset them! */
+    config |= FORCE_ALT_CHECKS;
+    config |= RENORM_QUATERN_1;
+    config |= RESET_FAILURES;
+    failures = 0;
 
+#else
     static fu8 test_launched = 0;
 
     if (!test_launched) {
@@ -307,15 +315,6 @@ static void check_endpoints(ULONG id)
       tx_thread_resume(&evaluation_task);
       test_launched = 1;
     }
-
-#else
-    /* Contact lost with Ground Station.
-     * Set options for most precision and do not
-     * accumulate failures. In fact, reset them! */
-    config |= FORCE_ALT_CHECKS;
-    config |= RENORM_QUATERN_1;
-    config |= RESET_FAILURES;
-    failures = 0;
 
 #endif // TELEMETRY_ENABLED
   }
