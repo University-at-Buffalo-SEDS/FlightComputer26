@@ -44,14 +44,6 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../USBX/App/app_usbx_device.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../USBX/App/ux_device_cdc_acm.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tx_initialize_low_level.S
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/dma.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_thread.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry.c 
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/telemetry_hooks.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/accel.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/barometer.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/gyro.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/app_threadx.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32h5xx_hal_msp.c

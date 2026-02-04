@@ -45,11 +45,17 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+
+    ${CMAKE_SOURCE_DIR}/Core/Src/main.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/accel.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/gyro.c 
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
 )
 
 # Add project symbols (macros)
@@ -67,13 +73,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # Add user defined libraries
 )
 
-#Telemetry library
-
-set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-
-set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE) # Set target for embedded systems
-add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
-target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
+# Telemetry library
 
 # Option defaults to ON
 option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
@@ -81,9 +81,23 @@ option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
 # Print its state for debugging
 message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
 
-# Define or undefine the macro globally
-if(ENABLE_TELEMETRY)
-    add_compile_definitions(TELEMETRY_ENABLED)
-else()
-    # Not defined → disabled
+if (ENABLE_TELEMETRY)
+    # Define or undefine the macro globally
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
+
+    set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
+
+    # Set target for embedded systems
+    set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
+
+    target_sources(${PROJECT_NAME} PRIVATE
+        # Telemetry sources (FC-specific)
+
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
+    )
+
+    add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
+    target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
 endif()
