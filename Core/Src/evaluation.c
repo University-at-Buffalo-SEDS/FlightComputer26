@@ -434,16 +434,30 @@ void evaluation_entry(ULONG input)
 
   /* Begin counting down elapsed time for 
    * KF kinematic equations (predict function) */
-  timer_update(Predict);  
+  timer_update(flight < APOGEE ? AscentKF : DescentKF);  
   
   task_loop (mode & ABORT_EVALUATION)
   {
+    /* Fetch & validate operate on static buffers => no args. */
+
     fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe()
                                      : fetch_async();
 
-    if (!st || validate() > RAW_DATA)
-    {
+    if (st == 0) {
       tx_thread_sleep(EVAL_SLEEP_NO_DATA);
+      continue;
+    }
+
+    st = validate();
+
+    if (st > 0) {
+      /* Depending on comptime config (sleep intervals
+       * and thread time slices), relinquishing may
+       * return control back to this thread faster than
+       * sleeping. Here, we retry not because the producer
+       * is slow, but because the data is invalid. Thus
+       * we want producer to run for its minimum (1 slice). */
+      tx_thread_relinquish();
       continue;
     }
 

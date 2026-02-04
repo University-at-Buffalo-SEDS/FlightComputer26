@@ -412,7 +412,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 /* ------ On-board relative timer implementation ------ */
 
 enum fc_timer {
-  Predict,
+  AscentKF,
   DescentKF,
   Recovery_FC,
   Recovery_GND,

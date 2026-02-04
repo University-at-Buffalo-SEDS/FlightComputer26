@@ -152,7 +152,7 @@ predict(struct state_vec *vec)
    * => overflow is OK */
   static fu8 iter = 0;
 
-  const float dt = FSEC(timer_fetch_update(Predict));
+  const float dt = FSEC(timer_fetch_update(AscentKF));
 
   const float fact = 0.5f * dt;
   const float dvx = dt * vec->a.x;
