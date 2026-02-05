@@ -149,6 +149,8 @@ enum command {
   EVAL_RELAX  = ACTION + 5,
   EVAL_FOCUS  = ACTION + 6,
   EVAL_ABORT  = ACTION + 7,
+  ALT_CHECKS  = ACTION + 8,
+  ACCUM_FAILS = ACTION + 9,
 
   /* Run time Bounds for abort */
   AUTO_ABORT_BOUNDS = (1u << 9),
@@ -163,6 +165,14 @@ enum command {
   REINIT_5  = AUTO_REINIT_BOUNDS + 5,
   REINIT_12 = AUTO_REINIT_BOUNDS + 12,
   REINIT_20 = AUTO_REINIT_BOUNDS + 20,
+
+  /* Run time KF config options */
+  KF_OP_MODE = (1u << 11),
+
+  CMD_RENORM_QUATERN_1 = KF_OP_MODE + 1,
+  CMD_RENORM_QUATERN_2 = KF_OP_MODE + 2,
+  CMD_RENORM_QUATERN_4 = KF_OP_MODE + 4,
+  CMD_RENORM_QUATERN_8 = KF_OP_MODE + 8,
 
   /* ... */
 

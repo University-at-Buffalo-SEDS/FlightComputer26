@@ -164,6 +164,14 @@ process_action(enum command cmd)
       config |= ABORT_EVALUATION;
       return;
 
+    case ALT_CHECKS:
+      config |= FORCE_ALT_CHECKS;
+      return;
+
+    case ACCUM_FAILS:
+      config |= ACCUM_FAILS;
+      return;
+
     default: break;
   }
 }
@@ -194,6 +202,11 @@ decode(enum command cmd)
   if (cmd & SYNC) //                       |
   {         //                             |
     return; // Successful heartbeat -------`
+  }
+  else if (cmd & KF_OP_MODE)
+  {
+    /* Clear flag; what is left is the new step */
+    config |= (cmd & ~KF_OP_MODE);
   }
   else if (cmd & AUTO_REINIT_BOUNDS)
   {

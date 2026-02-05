@@ -54,9 +54,97 @@ TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
 
 
-/* ------ FC packet handler ------ */
-
 #ifdef TELEMETRY_ENABLED
+
+/* ------ FC packet handling ------ */
+
+#if TELEMETRY_CMD_COMPAT > 0
+
+#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
+enum remote_cmd_compat : fu8 {
+
+#else
+enum command {
+
+#endif
+
+  Launch,
+  Fire_Parachute,
+  Expand_Parachute,
+  Reinitialize_Sensors,
+
+  /* Preempt Evaluation per its time slice. */
+  Evaluation_Relax,
+
+  /* Do not preempt Evaluation
+   * during resource-heavy KF iteration. */
+  Evaluation_Focus,
+
+  /* Log but do not evaluate data. Ends Evaluation task. */
+  Evaluation_Abort,
+
+  /* Regardless of state evaluated, monitor
+   * altitude changes. */
+  Always_Check_Altitude,
+
+  /* How often to renormalize quaternion column.
+   * The number is directly proportional to the
+   * speed of the Predict step of Ascent KF.
+   *
+   * Why having this? Ascent KF is much richer 
+   * and slower than Descent KF. */
+  Renormalize_Every_1,
+  Renormalize_Every_2,
+  Renormalize_Every_4,
+  Renormalize_Every_8,
+
+  /* Whether to NOT reset fail count on a clean data report. 
+   * DANGER ZONE: only enable this if Flight Computer is
+   * under complete and reliable control from the ground. */
+  Accumulate_Failures,
+
+  /* How many failures should trigger reinit / Eval abort */
+  Fails_To_Reinit_5,
+  Fails_To_Reinit_12,
+  Fails_To_Reinit_20,
+  Fails_To_Abort_10,
+  Fails_To_Abort_20,
+  Fails_To_Abort_50,
+
+  Compat_Commands,
+};
+
+#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
+  _Static_assert(sizeof(enum remote_cmd_compat) == sizeof(uint8_t), "");
+#endif
+
+/// Single mapping that avoids sequential match.
+/// Order is dictated by enum above.
+static const enum command cmdmap[Compat_Commands] = {
+  START, FIRE_PYRO, FIRE_REEF, RECOVER, EVAL_RELAX, EVAL_FOCUS,
+  EVAL_ABORT, ALT_CHECKS, CMD_RENORM_QUATERN_1, CMD_RENORM_QUATERN_2,
+  CMD_RENORM_QUATERN_4, CMD_RENORM_QUATERN_8, ACCUM_FAILS, REINIT_5,
+  REINIT_12, REINIT_20, ABORT_10, ABORT_20, ABORT_50,
+};
+
+#define MIN_CMD_SIZE 1 /* Message code transmitted (1 byte) */
+
+static inline enum command decode_cmd(const uint8_t *raw)
+{
+  return cmdmap[*raw];
+}
+
+#else
+
+#define MIN_CMD_SIZE 4 /* Message itself transmitted (4 bytes) */
+
+static inline enum command decode_cmd(const uint8_t *raw)
+{
+  return (enum command) U32(raw[0], raw[1], raw[2], raw[3]);
+}
+
+#endif // TELEMETRY_CMD_COMPAT
+
 
 /// Deposits one or multiple messages into the recovery queue.
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
@@ -64,10 +152,10 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
   (void) user;
 
   UINT st = TX_SUCCESS;
-  fu32 msg;
+  enum command msg;
 
-  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
-      !pkt->payload || !pkt->payload_len || pkt->payload_len & 3u)
+  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER || !pkt->payload
+      || !pkt->payload_len || pkt->payload_len & (MIN_CMD_SIZE - 1))
   {
     return SEDS_HANDLER_ERROR;
   }
@@ -84,20 +172,16 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
    * task after dispatching each message is safe but costly. */
   tx_thread_priority_change(&telemetry_thread, 0, &tlmt_old_pr);
 
-  for (fu8 k = 0; k < pkt->payload_len; k += sizeof(fu32))
+  for (fu16 k = 0; k < pkt->payload_len; k += MIN_CMD_SIZE)
   {
-    msg = U32(pkt->payload[k],   pkt->payload[k+1],
-              pkt->payload[k+2], pkt->payload[k+3]);
-
+    msg = decode_cmd(pkt->payload + k);
     st += tx_queue_send(&shared, &msg, TX_NO_WAIT);
   }
 
   tx_thread_priority_change(&telemetry_thread, TLMT_PRIORITY, &tlmt_old_pr);
 
 #else
-  msg = U32(pkt->payload[0], pkt->payload[1],
-            pkt->payload[2], pkt->payload[3]);
-
+  msg = decode_cmd(pkt->payload);
   st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
 
 #endif // MESSAGE_BATCHING_ENABLED
