@@ -49,12 +49,8 @@
  * report this to the caller, allowing it to proceed.
  */
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdatomic.h>
-
-#include "dma.h"
 #include "platform.h"
+#include "dma.h"
 
 
 /// Each device data readiness mask for two buffers.
