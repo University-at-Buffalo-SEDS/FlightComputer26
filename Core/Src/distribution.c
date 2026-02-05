@@ -58,7 +58,7 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 
 /* ------ FC packet handling ------ */
 
-#if TELEMETRY_CMD_COMPAT > 0
+#ifdef TELEMETRY_CMD_COMPAT
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
 enum remote_cmd_compat : fu8 {
@@ -160,7 +160,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
     return SEDS_HANDLER_ERROR;
   }
 
-#if MESSAGE_BATCHING_ENABLED > 0
+#ifdef MESSAGE_BATCHING_ENABLED
   UINT tlmt_old_pr;
 
   /* To avoid context switch for each message put in Recovery queue,

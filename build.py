@@ -22,16 +22,29 @@ If none specified, defaults to Debug.
 
 OPTIONS:
 	flash           - download executable to eabi
-	                target (requires dfu-utils)
-	notel           - disable telemetry
+	                - target (requires dfu-utils)
+
+	notel           - disable telemetry, redirect 
+                        - output to terminal emulator;
+                        - disables message handling
+
         clean           - cleans build folder for the
-                        specified preset (or default)
-                        This option takes precedence
+                        - specified preset (or default);
+                        - option has highest precedence
+
         dmatest         - enables local DMA testing
                         - does not start ThreadX
                         - prerequisite: notel
+
+        fullcmd         - expect full FC commands in
+                        - handler and not byte codes;
+                        - prerequisite: telemetry
+
+        batching        - handle potentially several
+                        - batched messages in handler;
+                        - prerequisite: telemetry
 			
-Each option defaults to OFF or its complement.
+Each option defaults to its complement.
 """
 
 from __future__ import annotations
@@ -49,7 +62,7 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {"flash", "notel", "clean", "dmatest"}
+ALL_OPTIONS     = {"flash", "notel", "clean", "dmatest", "fullcmd", "batching"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -91,14 +104,20 @@ def parse(argv: list[str]):
 def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
+        batching_flag  = "-DMESSAGE_BATCHING=OFF"
         telemetry_flag = "-DENABLE_TELEMETRY=ON"
+        tcompat_flag   = "-DTELEMETRY_COMPAT=ON"
         dma_test_flag  = "-DDMA_TESTING=OFF"
 
         if options["notel"]:
                 telemetry_flag = "-DENABLE_TELEMETRY=OFF"
-
                 if options["dmatest"]:
                         dma_test_flag = "-DDMA_TESTING=ON"
+        else:
+                if options["fullcmd"]:
+                        tcompat_flag = "-DTELEMETRY_COMPAT=OFF"
+                if options["batching"]:
+                        batching_flag  = "-DMESSAGE_BATCHING=ON"
 
         cmake_args = [
                 "cmake",
@@ -108,6 +127,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_COMMAND=cmake",
                 telemetry_flag,
                 dma_test_flag,
+                batching_flag,
+                tcompat_flag,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

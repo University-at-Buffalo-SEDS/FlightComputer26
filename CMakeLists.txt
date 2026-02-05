@@ -108,9 +108,27 @@ if (ENABLE_TELEMETRY)
     target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
 endif()
 
+# Packet handling options
+
+# Option defaults to OFF
+option(MESSAGE_BATCHING "Handle batched messages in FC handler." OFF)
+message(STATUS "Message batching: ${MESSAGE_BATCHING}")
+
+if (MESSAGE_BATCHING)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
+endif()
+
+# Option defaults to ON
+option(TELEMETRY_COMPAT "FC command compatibility with 1-byte payload." ON)
+message(STATUS "Command compatibility: ${TELEMETRY_COMPAT}")
+
+if (TELEMETRY_COMPAT)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_CMD_COMPAT)
+endif()
+
 # DMA testing
 
-# Options defaults to OFF
+# Option defaults to OFF
 option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
 
 if (DMA_TESTING)

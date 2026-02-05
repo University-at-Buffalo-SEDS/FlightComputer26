@@ -326,9 +326,6 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include <sedsprintf.h>
 #include "telemetry.h"
 
-#define MESSAGE_BATCHING_ENABLED -1
-#define TELEMETRY_CMD_COMPAT     1
-
 #define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
