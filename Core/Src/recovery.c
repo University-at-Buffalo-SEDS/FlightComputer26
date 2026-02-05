@@ -49,7 +49,7 @@ fu32 local_time[Time_Users] = {0};
 /// Run time configuration mask
 /// Recovery task cannot be preempted and thus
 /// can access this config non-atomically
-atomic_uint_least32_t config = DEFAULT_OPTIONS;
+atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
 
 /* ------ Local definitions ------ */
