@@ -46,9 +46,6 @@
  * with the respective APIs themselves.
  */
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
@@ -67,7 +64,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
   (void) user;
 
   UINT st = TX_SUCCESS;
-  uint_least32_t msg;
+  fu32 msg;
 
   if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
       !pkt->payload || !pkt->payload_len || pkt->payload_len & 3u)
@@ -87,7 +84,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
    * task after dispatching each message is safe but costly. */
   tx_thread_priority_change(&telemetry_thread, 0, &tlmt_old_pr);
 
-  for (fu8 k = 0; k < pkt->payload_len; k += sizeof(uint32_t))
+  for (fu8 k = 0; k < pkt->payload_len; k += sizeof(fu32))
   {
     msg = U32(pkt->payload[k],   pkt->payload[k+1],
               pkt->payload[k+2], pkt->payload[k+3]);

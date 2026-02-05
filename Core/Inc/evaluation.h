@@ -5,8 +5,6 @@
 #ifndef EVALUATION_H
 #define EVALUATION_H
 
-#include <stdint.h>
-
 #include "dma.h"
 #include "platform.h"
 

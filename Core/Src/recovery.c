@@ -34,9 +34,6 @@
  * mask it with FC_MSG(_variant_). Otherwise - UB!
  */
 
-#include <stdint.h>
-#include <stdatomic.h>
-
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
@@ -47,7 +44,7 @@ TX_THREAD recovery_task;
 ULONG recovery_stack[RECV_STACK_ULONG];
 
 /// Last recorded time for each timer user.
-uint32_t local_time[Time_Users] = {0};
+fu32 local_time[Time_Users] = {0};
 
 /// Run time configuration mask
 /// Recovery task cannot be preempted and thus
@@ -192,7 +189,7 @@ process_raw_data_code(enum command code)
 static inline void
 decode(enum command cmd)
 {
-  timer_update(cmd & FC_MASK ? Recovery_FC : Recovery_GND);
+  timer_update(cmd & FC_MASK ? HeartbeatFC : HeartbeatGND);
                   //                       ^
   if (cmd & SYNC) //                       |
   {         //                             |
@@ -235,8 +232,8 @@ void recovery_entry(ULONG input)
 
   /* This task is created and ran first, and should
    * prevent accidental timeouts due to slow SW init. */
-  timer_update(Recovery_FC);
-  timer_update(Recovery_GND);
+  timer_update(HeartbeatFC);
+  timer_update(HeartbeatGND);
 
   task_loop (DO_NOT_EXIT)
   {
@@ -270,14 +267,14 @@ static void check_endpoints(ULONG id)
 
   static fu8 restart_count = 0;
 
-  if (timer_fetch(Recovery_FC) > FC_TIMEOUT_MS)
+  if (timer_fetch(HeartbeatFC) > FC_TIMEOUT_MS)
   {
     ++restart_count;
     if (restart_count >= MAX_RESTARTS) {
       return auto_abort();
     }
 
-    timer_update(Recovery_FC);
+    timer_update(HeartbeatFC);
 
     /* Whether we have launched determines
      * which task sends heartbeat signals.
@@ -295,7 +292,7 @@ static void check_endpoints(ULONG id)
   }
 
   
-  if (timer_fetch(Recovery_GND) > GND_TIMEOUT_MS)
+  if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
     /* Contact lost with Ground Station.
@@ -311,7 +308,7 @@ static void check_endpoints(ULONG id)
 
     if (!test_launched) {
       /* During testing, launch on first GND timeout 
-      * (since, without telemetry, there is no GND). */
+       * (since, without telemetry, there is no GND). */
       tx_thread_resume(&evaluation_task);
       test_launched = 1;
     }
@@ -330,7 +327,7 @@ void create_recovery_task(void)
                              recovery_stack,
                              RECV_STACK_BYTES,
                              RECV_PRIORITY,
-                             /* No preemption */
+                             /* No preemption threshold */
                              RECV_PRIORITY,
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);

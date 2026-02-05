@@ -17,19 +17,43 @@
  * - Aliases for select HAL and driver functions;
  * - Shared inlined timer implementation with single storage;
  * - Misc aliases and includes as required by the modules.
+ *
+ * This header should be included in all high-level Flight Computer
+ * logic except for drivers, middleware, and utilized libraries (*),
+ * which are considered to be the platform this header abstracts away.
+ *
+ * (*) Libraries include vendor, bundled, external, and optional,
+ *     but exclude RTOS, as the FC makes use of ThreadX scheduling.
  */
 
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+
+/* ------ Bundled std headers used ------ */
+
+#include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
+#include <string.h>
 
 
 /* ------ Pre-compilation checks ------ */
 
+#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
+  #error "C11 or later required for atomic and generics."
+#endif
+
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-  #pragma message "!C23 * !GNUC -> Hacky types and variadics."
+  #warning "!C23 * !GNUC -> Hacky types and variadics."
+#endif
+
+#define CM_PTR 0xFFFFFFFFUL
+
+_Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
+
+#ifndef STM32H523xx
+  #error "STM32H523xx series MCU required."
 #endif
 
 
@@ -79,6 +103,32 @@ enum seds_atomic_mo {
 #define cas_strong  atomic_compare_exchange_strong_explicit
 
 
+/* ------ ARM fast math bundled library ------ */
+
+#include "dsp/fast_math_functions.h"
+#include "dsp/matrix_functions.h"
+
+/* CMSIS matrix aliases for convenience */
+typedef arm_matrix_instance_f32 matrix;
+
+/* If used without ARM CC, will degrade to math.h sqrtf(),
+  * which will emit a single VSQRT.F32 FPU instruction.
+  *
+  * developer.arm.com:
+  * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
+  *
+  * There is no such instruction for inverse square root
+  * => bithack + Newton-Raphson below to avoid FP division. */
+#define vsqrt     arm_sqrt_f32;
+
+/* These functions take pointers to arm_matrix_instance_f32;
+  * this is the reason there are wrappers inside KF functions. */
+#define chol			arm_mat_cholesky_f32
+#define transpose arm_mat_trans_f32
+#define xmul 			arm_mat_mult_f32
+#define xadd			arm_mat_add_f32
+
+
 /* ------ Numerical helpers ------ */
 
 #include <math.h>
@@ -126,6 +176,7 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
 /* ------ Task utilities ------ */
 
 #define DO_NOT_EXIT 0
+
 #define task_loop(exit_predicate) while (!(exit_predicate))
 
 /* Data memory barrier */
@@ -328,18 +379,16 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Ignition request from the Valve board over telemetry */
 
-/* Ground Station: backend/src/rocket_commands.rs
+/* Ground Station repo: backend/src/rocket_commands.rs
  * pub enum ActuatorBoardCommands -> IgniterSequence */
 #define IGNITION_COMMAND 13
 
-static inline SedsResult _request_ignition()
+static inline SedsResult request_ignition()
 {
   uint8_t vcmd = IGNITION_COMMAND;
   return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
                                    &vcmd, 1, sizeof(uint8_t));
 }
-
-#define request_ignition _request_ignition
 
 #else /* Log to terminal emulator */
 
@@ -404,7 +453,7 @@ static inline SedsResult _request_ignition()
 #define log_die(fmt, ...)                                     \
   do {                                                        \
     while (1) {                                               \
-      fprintf(stderr, fmt, __VA_ARGS__);                    \
+      fprintf(stderr, fmt, __VA_ARGS__);                      \
       HAL_Delay(1000);                                        \
     }                                                         \
   } while (0)
@@ -415,7 +464,7 @@ static inline SedsResult _request_ignition()
 #define log_err log_err_sync
 
 #define request_ignition()                                    \
-  ( (void)( printf("Ignition requested.\n") ), 0 )
+  ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
 
 #endif // TELEMETRY_ENABLED
 
@@ -425,8 +474,8 @@ static inline SedsResult _request_ignition()
 enum fc_timer {
   AscentKF,
   DescentKF,
-  Recovery_FC,
-  Recovery_GND,
+  HeartbeatFC,
+  HeartbeatGND,
 
   Time_Users
 };
@@ -434,14 +483,14 @@ enum fc_timer {
 /// Last recorded time for each UKF timer user.
 /// Defined in recovery.c to avoid multiple linkage.
 /// u32 wrap is not handled (flight assumed < 49 days :D).
-extern uint32_t local_time[Time_Users];
+extern fu32 local_time[Time_Users];
 
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,
 /// and set local time to current HAL tick (ms).
-static inline uint32_t timer_fetch_update(enum fc_timer u)
+static inline fu32 timer_fetch_update(enum fc_timer u)
 {
-  uint32_t prev = local_time[u];
+  fu32 prev = local_time[u];
   local_time[u] = hal_time_ms();
   return local_time[u] - prev;
 }
@@ -454,7 +503,7 @@ static inline void timer_update(enum fc_timer u)
 
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update.
-static inline uint32_t timer_fetch(enum fc_timer u)
+static inline fu32 timer_fetch(enum fc_timer u)
 {
   return hal_time_ms() - local_time[u];
 }

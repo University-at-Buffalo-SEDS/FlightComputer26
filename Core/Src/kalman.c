@@ -22,12 +22,6 @@
  * expected by the descent filter.
  */
 
-#include <stdint.h>
-#include <string.h>
-
-#include "dsp/fast_math_functions.h"
-#include "dsp/matrix_functions.h"
-
 #include "evaluation.h"
 #include "recovery.h"
 #include "platform.h"
@@ -63,26 +57,6 @@ union bithack {
   float f;
   uint32_t d;
 };
-
-/* CMSIS matrix aliases for convenience */
-typedef arm_matrix_instance_f32 matrix;
-
-/* If used without ARM CC, will degrade to math.h sqrtf(),
-  * which will emit a single VSQRT.F32 FPU instruction.
-  *
-  * developer.arm.com:
-  * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
-  *
-  * There is no such instruction for inverse square root
-  * => bithack + Newton-Raphson below to avoid FP division. */
-#define vsqrt     arm_sqrt_f32;
-
-/* These functions take pointers to arm_matrix_instance_f32;
-  * this is the reason there are wrappers inside KF functions. */
-#define chol			arm_mat_cholesky_f32
-#define transpose arm_mat_trans_f32
-#define xmul 			arm_mat_mult_f32
-#define xadd			arm_mat_add_f32
 
 
 /* ------ Math functions ------ */

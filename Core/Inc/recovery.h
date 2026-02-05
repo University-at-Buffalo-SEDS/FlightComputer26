@@ -5,16 +5,13 @@
 #ifndef RECOVERY_H
 #define RECOVERY_H
 
-#include <stdint.h>
-#include <stdatomic.h>
-
 #include "platform.h"
 
 /// Header declaration of the recovery queue
 extern TX_QUEUE shared;
 
 /// Run time configuration mask
-extern atomic_uint_least32_t config;
+extern atomic_uint_fast32_t config;
 
 
 /* ------ Default thresholds for bad data reports  ------ */
@@ -54,7 +51,7 @@ extern atomic_uint_least32_t config;
 /*
  * In the version of C we are using, this is a GNU extension.
  */
-enum g_conf : uint_least32_t {
+enum g_conf : fu32 {
 
 #else
 enum g_conf {
@@ -115,7 +112,7 @@ enum g_conf {
 /// mask it with FC_MSG(_variant_). Otherwise - UB!
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum command : uint32_t {
+enum command : fu32 {
 
 #else
 enum command {
@@ -184,8 +181,8 @@ enum command {
  */
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
 
-_Static_assert(typeeq(typeof(enum command), typeof(uint_least32_t)), "");
-_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint_least32_t)), "");
+_Static_assert(typeeq(typeof(enum command), typeof(fu32)), "");
+_Static_assert(typeeq(typeof(enum g_conf),  typeof(fu32)), "");
 
 #endif
 
@@ -194,7 +191,7 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint_least32_t)), "");
 
 /// Run time config options applied on boot.
 /// Users are welcome to edit the defaults here.
-#define DEFAULT_OPTIONS ( (uint_least32_t) (0     \
+#define DEFAULT_OPTIONS ( (fu32) (0               \
                           | CONSECUTIVE_SAMP      \
                           | RENORM_QUATERN_1      \
                           | EVAL_PREEMPT_OFF      \

@@ -43,9 +43,6 @@
  * we don't need to rush here!
  */
 
-#include <stdint.h>
-#include <stdatomic.h>
-
 #include "evaluation.h"
 #include "platform.h"
 #include "recovery.h"
