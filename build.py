@@ -24,7 +24,7 @@ OPTIONS:
 	flash           - download executable to eabi
 	                - target (requires dfu-utils)
 
-	notel           - disable telemetry, redirect 
+	notelemetry     - disable telemetry, redirect 
                         - output to terminal emulator;
                         - disables message handling
 
@@ -34,7 +34,7 @@ OPTIONS:
 
         dmatest         - enables local DMA testing
                         - does not start ThreadX
-                        - prerequisite: notel
+                        - prerequisite: notelemetry
 
         fullcmd         - expect full FC commands in
                         - handler and not byte codes;
@@ -43,6 +43,10 @@ OPTIONS:
         batching        - handle potentially several
                         - batched messages in handler;
                         - prerequisite: telemetry
+
+        configure       - configure specified preset
+                        - with given options, but do
+                        - not build the project
 			
 Each option defaults to its complement.
 """
@@ -62,7 +66,15 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {"flash", "notel", "clean", "dmatest", "fullcmd", "batching"}
+ALL_OPTIONS     = {     
+                        "flash",
+                        "notelemetry",
+                        "clean",
+                        "dmatest",
+                        "fullcmd",
+                        "batching",
+                        "configure"
+                        }
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -109,7 +121,7 @@ def configure(buildir: Path, preset: str, options: dict):
         tcompat_flag   = "-DTELEMETRY_COMPAT=ON"
         dma_test_flag  = "-DDMA_TESTING=OFF"
 
-        if options["notel"]:
+        if options["notelemetry"]:
                 telemetry_flag = "-DENABLE_TELEMETRY=OFF"
                 if options["dmatest"]:
                         dma_test_flag = "-DDMA_TESTING=ON"
@@ -194,6 +206,10 @@ def main() -> None:
                 return
 
         configure(buildir, preset, options)
+
+        if options["configure"]:
+                return
+
         build(buildir)
 
         executable = objcopy(buildir)
