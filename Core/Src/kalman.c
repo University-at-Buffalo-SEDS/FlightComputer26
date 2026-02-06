@@ -232,7 +232,7 @@ void initialize_descent()
 /// descentKF.m
 void
 descentKF(struct state_vec *x_0, struct state_vec *x_f,
-          const struct measurement *z)
+          const struct descent *z)
 {
   /* Custom wrappers for the shared pools. */
   static const matrix noise = {DESC_STAT, DESC_STAT, &Q[0][0]};
@@ -263,7 +263,7 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 /// ascentKF.m
 void
 ascentKF(struct state_vec *x_0, struct state_vec *x_f,
-         const struct measurement *z)
+         const struct measm_z *z)
 {
 	// TODO
 }

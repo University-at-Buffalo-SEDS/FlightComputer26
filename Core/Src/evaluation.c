@@ -52,9 +52,6 @@
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
-/// Current flight state
-enum state flight = SUSPENDED;
-
 /// Module config bitmask
 /// Also used by Kalman filter 
 fu16 mode = 0;
@@ -63,7 +60,7 @@ fu16 mode = 0;
 /* ------ Static ------ */
 
 /// Raw data ring.
-static struct measurement payload[RING_SIZE] = {0};
+static struct measm_z payload[RING_SIZE] = {0};
 
 /// 0-7:  amount of new entries,
 /// 8-15: 'consumer locked' index
@@ -77,6 +74,9 @@ static fu8 last = 0;
 /// Amount of successive samples per flight stage
 static fu8 sampl = 0;
 
+/// Current flight state
+static enum state flight = SUSPENDED;
+
 /* Addresses of the following structs and their 
  * members are constants. When passed to external
  * functions, address arguments are subjected to
@@ -85,8 +85,8 @@ static fu8 sampl = 0;
 /// Current and previous state vectors
 static struct state_vec vec[2] = {0};
 
-/// Current measurement processed
-static struct measurement raw = {0};
+/// Latest local measurement (trimmed of temperature and pressure)
+static struct measm_z raw = {0};
 
 
 /* ------ Public API ------ */
@@ -98,7 +98,8 @@ void evaluation_put(const struct measurement *buf)
 
   fu8 i = idx;
   
-  payload[i] = *buf;
+  /* Trim temperature and pressure */
+  memcpy(&payload[i], buf, sizeof(struct measm_z));
 
   i = (i + 1) & RING_MASK;
   fu8 cons = load(&mask, Acq) >> 8;
@@ -155,24 +156,47 @@ static inline fu8 fetch_unsafe()
   return n;
 }
 
+#ifdef MEASM_VALIDATE
+
 /// Validates one raw measurement against sanity bounds.
 static inline fu8
 validate()
 {
   enum command st = RAW_DATA;
 
-  if (raw.baro.alt > MAX_ALT || raw.baro.alt < MIN_ALT)
+  if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-  if (raw.accl.x > MAX_VAX || raw.accl.x < MIN_VAX)
-    st += RAW_BAD_ACC_X;
+#ifdef GPS_AVAILABLE
+  if (flight < APOGEE)
+  {
+#endif
 
-  if (raw.accl.y > MAX_VAX || raw.accl.y < MIN_VAX)
-    st += RAW_BAD_ACC_Y;
+    if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
+      st += RAW_BAD_ACC_X;
+
+    if (raw.d.axis.accl.y > MAX_VAX || raw.d.axis.accl.y < MIN_VAX)
+      st += RAW_BAD_ACC_Y;
   
-  if (raw.accl.z > MAX_VAX || raw.accl.z < MIN_VAX)
-    st += RAW_BAD_ACC_Z;
+    if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
+      st += RAW_BAD_ACC_Z;
 
+#ifdef GPS_AVAILABLE
+  }
+  else
+  {
+    if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X)
+      st += RAW_BAD_GPS_X;
+
+    if (raw.d.axis.gps.y > MAX_GPS_Y || raw.d.axis.gps.y < MIN_GPS_Y)
+      st += RAW_BAD_GPS_Y;
+  
+    if (raw.d.axis.gps.z > MAX_GPS_Z || raw.d.axis.gps.z < MIN_GPS_Z)
+      st += RAW_BAD_GPS_Z;
+  }
+
+#endif // GPS_AVAILABLE
+  
   if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
 
@@ -191,6 +215,8 @@ validate()
 
   return st;
 }
+
+#endif // MEASM_VALIDATE
 
 
 /* ------ Data evaluation ------ */
@@ -320,7 +346,12 @@ detect_apogee()
   {
     flight = APOGEE;
     log_msg("FC:EVAL: approaching apogee", 28);
+
+#ifdef GPS_AVAILABLE
     initialize_descent();
+    
+#endif // GPS_AVAILABLE
+
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -445,6 +476,7 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
+#ifdef MEASM_VALIDATE
     st = validate();
 
     if (st > 0) {
@@ -458,9 +490,17 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
+#endif // MEASM_VALIDATE
+
     /* One state vector is input (x_0), other is for output only (x_f) */
-    flight < APOGEE ? ascentKF (&vec[last], &vec[!last], &raw) :
-                      descentKF(&vec[last], &vec[!last], &raw) ;
+#ifdef GPS_AVAILABLE
+    flight < APOGEE ? ascentKF (&vec[last], &vec[!last], &raw)  :
+                      descentKF(&vec[last], &vec[!last], &raw.d);
+
+#else
+    ascentKF(&vec[last], &vec[!last], &raw);
+
+#endif // GPS_AVAILABLE
 
     last = !last;
 

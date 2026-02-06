@@ -108,6 +108,7 @@ if (ENABLE_TELEMETRY)
     target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
 endif()
 
+
 # Packet handling options
 
 # Option defaults to OFF
@@ -125,6 +126,23 @@ message(STATUS "Command compatibility: ${TELEMETRY_COMPAT}")
 if (TELEMETRY_COMPAT)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_CMD_COMPAT)
 endif()
+
+# Option defaults to ON
+option(EXTERNAL_GPS "Availability of external GPS module." ON)
+message(STATUS "External GPS: ${EXTERNAL_GPS}")
+
+if (EXTERNAL_GPS)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GPS_AVAILABLE)
+endif()
+
+# Option defaults to ON
+option(SANITY_CHECKS "Data validation before passing to KF." ON)
+message(STATUS "Data validation: ${SANITY_CHECKS}")
+
+if (SANITY_CHECKS)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MEASM_VALIDATE)
+endif()
+
 
 # DMA testing
 

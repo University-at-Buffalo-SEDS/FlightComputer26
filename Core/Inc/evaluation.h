@@ -33,6 +33,17 @@
 #define MIN_ANG -MAX_ANG
 #define MIN_VAX -(GRAVITY_SI * 12.0f)
 
+#define LAUNCH_SITE_LATT 0 // TODO
+#define LAUNCH_SITE_LONG 0
+
+#define MIN_GPS_X 0 // TODO
+#define MIN_GPS_Y 0 // TODO
+#define MIN_GPS_Z 0 // TODO
+
+#define MAX_GPS_X 0 // TODO
+#define MAX_GPS_Y 0 // TODO
+#define MAX_GPS_Z 0 // TODO
+
 #define LAUNCH_MIN_VEL  8.0f
 #define LAUNCH_MIN_VAX  10.0f
 
@@ -76,6 +87,22 @@ struct serial quaternion { /* Order matters */
 struct serial state_vec { /* Order matters */
   struct coords p, v, a, w;
   struct quaternion qv;
+};
+
+/// Piece of measm_z accepted by Descent filter
+struct serial descent { /* Order matters */
+  union {
+    struct coords accl;
+    struct coords gps;
+  } axis;
+
+  float alt;
+};
+
+/// Full measurement 
+struct serial measm_z { /* Order matters */
+  struct coords gyro;
+  struct descent d; /* Brief 'descent' */
 };
 
 #define STATE_LOGGABLE (sizeof(struct state_vec) - \

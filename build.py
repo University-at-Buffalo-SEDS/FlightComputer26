@@ -47,8 +47,16 @@ OPTIONS:
         configure       - configure specified preset
                         - with given options, but do
                         - not build the project
+
+        nogps           - absence of external GPS device;
+                        - always use Ascent Kalman filter;
+                        - True if telemetry is disabled
+
+        nosanity        - disable measurement data checks
+                        - against sanity boundaries
 			
-Each option defaults to its complement.
+If an option is not specified, then either it is not in effect
+or its complement (default per CMakeLists.txt) is in effect.
 """
 
 from __future__ import annotations
@@ -66,15 +74,8 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {     
-                        "flash",
-                        "notelemetry",
-                        "clean",
-                        "dmatest",
-                        "fullcmd",
-                        "batching",
-                        "configure"
-                        }
+ALL_OPTIONS     = {"flash", "notelemetry", "clean", "dmatest", "fullcmd",
+                        "batching", "configure", "nogps", "nosanity"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -116,13 +117,16 @@ def parse(argv: list[str]):
 def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
-        batching_flag  = "-DMESSAGE_BATCHING=OFF"
-        telemetry_flag = "-DENABLE_TELEMETRY=ON"
-        tcompat_flag   = "-DTELEMETRY_COMPAT=ON"
-        dma_test_flag  = "-DDMA_TESTING=OFF"
+        batching_flag   = "-DMESSAGE_BATCHING=OFF"
+        telemetry_flag  = "-DENABLE_TELEMETRY=ON"
+        tcompat_flag    = "-DTELEMETRY_COMPAT=ON"
+        dma_test_flag   = "-DDMA_TESTING=OFF"
+        gps_flag        = "-DEXTERNAL_GPS=ON"
+        sanity_flag     = "-DSANITY_CHECKS=ON"
 
         if options["notelemetry"]:
                 telemetry_flag = "-DENABLE_TELEMETRY=OFF"
+                gps_flag = "-DEXTERNAL_GPS=OFF"
                 if options["dmatest"]:
                         dma_test_flag = "-DDMA_TESTING=ON"
         else:
@@ -130,6 +134,11 @@ def configure(buildir: Path, preset: str, options: dict):
                         tcompat_flag = "-DTELEMETRY_COMPAT=OFF"
                 if options["batching"]:
                         batching_flag  = "-DMESSAGE_BATCHING=ON"
+                if options["nogps"]:
+                        gps_flag = "-DEXTERNAL_GPS=OFF"
+
+        if options["nosanity"]:
+                sanity_flag = "-DSANITY_CHECKS=OFF"
 
         cmake_args = [
                 "cmake",
@@ -141,6 +150,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 dma_test_flag,
                 batching_flag,
                 tcompat_flag,
+                gps_flag,
+                sanity_flag,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

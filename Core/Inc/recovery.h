@@ -129,9 +129,12 @@ enum command {
   RAW_BAD_ACC_X = (1u << 4),  
   RAW_BAD_ACC_Y = (1u << 5),
   RAW_BAD_ACC_Z = (1u << 6),
+  RAW_BAD_GPS_X = (1u << 7),
+  RAW_BAD_GPS_Y = (1u << 8),
+  RAW_BAD_GPS_Z = (1u << 9),
 
   /* Data evaluation codes */
-  DATA_EVALUATION = (1u << 7),
+  DATA_EVALUATION = (1u << 10),
 
   NOT_LAUNCH  = DATA_EVALUATION + 1,
   NOT_BURNOUT = DATA_EVALUATION + 2,
@@ -140,7 +143,7 @@ enum command {
   NOT_LANDED  = DATA_EVALUATION + 5,
   
   /* Actionanle commands */
-  ACTION = (1u << 8),
+  ACTION = (1u << 11),
 
   FIRE_PYRO   = ACTION + 1,
   FIRE_REEF   = ACTION + 2,
@@ -153,21 +156,21 @@ enum command {
   ACCUM_FAILS = ACTION + 9,
 
   /* Run time Bounds for abort */
-  AUTO_ABORT_BOUNDS = (1u << 9),
+  AUTO_ABORT_BOUNDS = (1u << 12),
 
   ABORT_10 = AUTO_ABORT_BOUNDS + 10,
   ABORT_20 = AUTO_ABORT_BOUNDS + 25,
   ABORT_50 = AUTO_ABORT_BOUNDS + 50,
 
   /* Run time Bounds for reinit */
-  AUTO_REINIT_BOUNDS = (1u << 10),
+  AUTO_REINIT_BOUNDS = (1u << 13),
 
   REINIT_5  = AUTO_REINIT_BOUNDS + 5,
   REINIT_12 = AUTO_REINIT_BOUNDS + 12,
   REINIT_20 = AUTO_REINIT_BOUNDS + 20,
 
   /* Run time KF config options */
-  KF_OP_MODE = (1u << 11),
+  KF_OP_MODE = (1u << 14),
 
   CMD_RENORM_QUATERN_1 = KF_OP_MODE + 1,
   CMD_RENORM_QUATERN_2 = KF_OP_MODE + 2,
