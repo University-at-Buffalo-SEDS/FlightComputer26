@@ -51,12 +51,12 @@ extern atomic_uint_fast32_t config;
 /*
  * In the version of C we are using, this is a GNU extension.
  */
-enum g_conf : fu32 {
+enum g_conf : uint32_t {
 
 #else
 enum g_conf {
 
-#endif
+#endif // GNU C + C23
 
   CHECKS_COMPLETE = 0, /* Reserved */
 
@@ -112,12 +112,12 @@ enum g_conf {
 /// mask it with FC_MSG(_variant_). Otherwise - UB!
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum command : fu32 {
+enum command : uint32_t {
 
 #else
 enum command {
 
-#endif
+#endif // GNU C + C23
 
   /* Raw data codes (additive) */
   RAW_DATA = 0,
@@ -194,10 +194,10 @@ enum command {
  */
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
 
-_Static_assert(typeeq(typeof(enum command), typeof(fu32)), "");
-_Static_assert(typeeq(typeof(enum g_conf),  typeof(fu32)), "");
+_Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
+_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 
-#endif
+#endif // !GNU C * < C23
 
 
 /* ------ User default configuration ------ */

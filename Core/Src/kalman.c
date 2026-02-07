@@ -203,6 +203,8 @@ static float R[M][M] = {0};
 static float H[M][M] = {0};
 
 
+#ifdef GPS_AVAILABLE
+
 /* ------ Descent Kalman filter ------ */
 
 /// Sets descent filter values in shared buffers.
@@ -256,6 +258,8 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 
 	// TODO
 }
+
+#endif // GPS_AVAILABLE
 
 
 /* ------ Ascent (unscented) Kalman filter ------ */

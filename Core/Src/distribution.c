@@ -61,12 +61,12 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 #ifdef TELEMETRY_CMD_COMPAT
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum remote_cmd_compat : fu8 {
+enum remote_cmd_compat : uint8_t {
 
 #else
 enum command {
 
-#endif
+#endif // GNU C + C23
 
   Launch,
   Fire_Parachute,
