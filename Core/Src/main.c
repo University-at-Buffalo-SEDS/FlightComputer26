@@ -141,12 +141,12 @@ int main(void)
   struct measurement k = {0};
 
   while (1) {
-    if (!dma_try_fetch(&k)) {
+    if (!dma_try_fetch(&k, 0)) {
       HAL_Delay(20);
       continue;
     }
 
-    compensate(&k);
+    compensate(&k, 0);
     log_measurement(SEDS_DT_BAROMETER_DATA, &k);
     log_measurement(SEDS_DT_GYRO_DATA,      &k);
     log_measurement(SEDS_DT_ACCEL_DATA,     &k);
