@@ -57,7 +57,7 @@ fu16 mode = 0;
 
 /// Separate flag in addition to flight state
 /// to avoid repeated comparisons in handlers.
-atomic_uint_fast8_t ascending = 1;
+atomic_uint_fast8_t unscented = 1;
 
 
 /* ------ Static ------ */
@@ -141,6 +141,7 @@ finish:
   return n;
 }
 
+
 /// Fetches one value from the ring buffer.
 /// This version should only be used when preemption for
 /// the Evaluation task is disabled.
@@ -169,10 +170,10 @@ validate()
   if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-  if (ascending)
+#ifdef GPS_AVAILABLE
+  if (unscented)
   {
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
 
     if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
       st += RAW_BAD_ACC_X;
@@ -183,7 +184,7 @@ validate()
     if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
       st += RAW_BAD_ACC_Z;
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+#if GPS_AVAILABLE
   }
   else
   {
@@ -197,7 +198,7 @@ validate()
       st += RAW_BAD_GPS_Z;
   }
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
   
   if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
@@ -243,7 +244,7 @@ evaluate_altitude()
   if (vec[last].p.z <= REEF_TARGET_ALT)
   {
     /* We somehow missed the moment to expand parachute.
-      * Do NOT release control until reef is fired */
+     * Do NOT release control until reef is fired */
     if (mode & SAFE_EXPAND_REEF)
     {
       reef_high();
@@ -251,8 +252,8 @@ evaluate_altitude()
     }
     else
     {
-      /* We didn't even expand parachute to that moment.
-      * What is going on!!? Perform full sequence. */ 
+      /* We didn't even deploy parachute to that moment.
+       * What is going on!!? Perform full sequence. */ 
       co2_high();
       log_msg("FC:EVAL: urgently firing PYRO->REEF", 36);
       mode |= SAFE_EXPAND_REEF;
@@ -273,10 +274,10 @@ evaluate_altitude()
   }
 }
 
+
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
-static inline void
-detect_launch()
+static inline void detect_launch()
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
@@ -287,9 +288,9 @@ detect_launch()
   }
 }
 
+
 /// Monitors height and velocity increase consistency.
-static inline void
-detect_ascent()
+static inline void detect_ascent()
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
@@ -309,12 +310,12 @@ detect_ascent()
   }
 }
 
+
 /// Monitors if minimum threshold for velocity and
 /// maximum threshold for acceleration were passed.
 /// Checks for height increase and velocity decrease
 /// consistency.
-static inline void
-detect_burnout()
+static inline void detect_burnout()
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
       vec[last].a.z <= BURNOUT_MAX_VAX &&
@@ -336,10 +337,10 @@ detect_burnout()
   }
 }
 
+
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
-static inline void
-detect_apogee()
+static inline void detect_apogee()
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
@@ -350,9 +351,9 @@ detect_apogee()
   }
 }
 
+
 /// Monitors for decreasing altitude and increasing velocity.
-static inline void
-detect_descent()
+static inline void detect_descent()
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
@@ -364,13 +365,13 @@ detect_descent()
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+#ifdef GPS_AVAILABLE
       if (!(load(&config, Acq) & USE_ASCENT)) {
         initialize_descent();
-        ascending = 0;
+        unscented = 0;
       }
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
     }
   }
   else if (mode & CONSECUTIVE_SAMP && sampl > 0)
@@ -381,10 +382,10 @@ detect_descent()
   }
 }
 
+
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
-static inline void
-detect_reef()
+static inline void detect_reef()
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
@@ -404,6 +405,7 @@ detect_reef()
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
+
 
 /// Monitors all statistical metrics to not deviate
 /// beyond allowed tolerance thresholds.
@@ -459,14 +461,17 @@ void evaluation_entry(ULONG input)
     fetch_or(&config, ENTER_DIST_CYCLE, Rel);
   }
 
-  /* Begin counting down elapsed time for 
-   * KF kinematic equations (predict function) */
-  timer_update(ascending ? AscentKF : DescentKF);  
+  /* Init filter and begin counting down elapsed time. */
+  if (unscented) {
+    timer_update(AscentKF);
+    initialize_ascent();
+  } else {
+    timer_update(DescentKF);  
+    initialize_descent();
+  }
   
   task_loop (mode & ABORT_EVALUATION)
   {
-    /* Fetch & validate operate on static buffers => no args. */
-
     fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe()
                                      : fetch_async();
 
@@ -492,14 +497,14 @@ void evaluation_entry(ULONG input)
 #endif // MEASM_VALIDATE
 
     /* One state vector is input (x_0), other is for output only (x_f) */
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-    ascending ? ascentKF (&vec[last], &vec[!last], &raw)  :
+#ifdef GPS_AVAILABLE
+    unscented ? ascentKF (&vec[last], &vec[!last], &raw)  :
                 descentKF(&vec[last], &vec[!last], &raw.d);
 
 #else
     ascentKF(&vec[last], &vec[!last], &raw);
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
 
     last = !last;
 
@@ -517,27 +522,13 @@ void evaluation_entry(ULONG input)
     }
 
     switch (flight) {
-      case IDLE:
-        detect_launch();
-        break;
-      case LAUNCH:
-        detect_ascent();
-        break;
-      case ASCENT:
-        detect_burnout();
-        break;
-      case BURNOUT:
-        detect_apogee();
-        break;
-      case APOGEE:
-        detect_descent();
-        break;
-      case DESCENT:
-        detect_reef();
-        break;
-      case REEF:
-        detect_landed();
-        break;
+      case IDLE:    detect_launch();  break;
+      case LAUNCH:  detect_ascent();  break;
+      case ASCENT:  detect_burnout(); break;
+      case BURNOUT: detect_apogee();  break;
+      case APOGEE:  detect_descent(); break;
+      case DESCENT: detect_reef();    break;
+      case REEF:    detect_landed();  break;
       default: break;
     }
 
@@ -548,6 +539,7 @@ void evaluation_entry(ULONG input)
     mode = load(&config, Acq);
   }
 }
+
 
 /// Creates a configurably-preemptive, cooperative
 /// Evaluation task with defined parameters.

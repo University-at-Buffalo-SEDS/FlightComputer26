@@ -42,10 +42,7 @@ struct serial baro { float alt, p, t; }; /* Order matters */
 /// Transferable raw data unit
 struct serial measurement { /* Order matters */
   struct coords gyro;
-  union {
-    struct coords accl;
-    struct coords gps;
-  } d;
+  struct coords accl;
   struct baro baro;
 };
 

@@ -14,7 +14,7 @@ extern TX_QUEUE shared;
 extern atomic_uint_fast32_t config;
 
 
-/* ------ Default thresholds for bad data reports  ------ */
+/* ------ Thresholds for bad/delayed/outdated data reports  ------ */
 
 #define TO_REINIT 10
 #define TO_ABORT  40
@@ -23,6 +23,8 @@ extern atomic_uint_fast32_t config;
 
 #define GPS_DELAY_MS 125
 #define MAX_GPS_DELAYS 16
+#define GPS_TIME_DRIFT_MS 40
+#define GPS_MAX_MALFORMED 15
 
 /* ------ Endpoint identifiers: FC, GND ------ */
 
@@ -38,8 +40,8 @@ extern atomic_uint_fast32_t config;
 
 /* ------ Endpoint timeouts ------ */
 
-/* Mirrors Ground Station timeouts */
 #define FC_TIMEOUT_MS 4000
+#define RF_TIMEOUT_MS 2000
 #define GND_TIMEOUT_MS 4000
 
 /* Expiration of timer that invokes timeout checks 
@@ -185,8 +187,8 @@ enum command {
   /* GPS data delivery codes */
   GPS_DELIVERY = (1u << 15),
 
-  GPS_DELAY    = GPS_DELIVERY + 1,
-  GPS_OUTDATED = GPS_DELIVERY + 2,
+  GPS_DELAY     = GPS_DELIVERY + 1,
+  GPS_MALFORMED = GPS_DELIVERY + 2,
 
   /* ... */
 

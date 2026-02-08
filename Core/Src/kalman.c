@@ -26,7 +26,6 @@
 #include "recovery.h"
 #include "platform.h"
 #include "kalman.h"
-#include "dma.h"
 
 /// Module config bitmask
 /// Origin: Evaluation task
@@ -82,7 +81,7 @@ static inline float invsqrtf(float x)
 /// Transforms state vector into sensor measurement.
 static inline void
 measurement(const struct state_vec *restrict vec,
-            struct measurement *restrict out)
+            struct measm_z *restrict out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -110,13 +109,14 @@ measurement(const struct state_vec *restrict vec,
   const float r32 = 2.0f * (q34 - q12);
   const float r33 = 1.0f - (2.0f * (qq2 + qq3));
 
-  out->d.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
-  out->d.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
-  out->d.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
+  out->d.axis.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
+  out->d.axis.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
+  out->d.axis.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
 
   out->gyro = vec->w;
-  out->baro.alt = vec->p.z;
+  out->d.alt = vec->p.z;
 }
+
 
 /// Transforms input vector into next-sample prediction.
 static inline void
@@ -203,7 +203,7 @@ static float R[M][M] = {0};
 static float H[M][M] = {0};
 
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE) 
+#ifdef GPS_AVAILABLE 
 
 /* ------ Descent Kalman filter ------ */
 
@@ -230,6 +230,7 @@ void initialize_descent()
   H[DESC_MEAS - 1][DESC_MEAS - 2] = 1.0f;
   R[DESC_MEAS - 1][DESC_MEAS - 1] = 100.0f;
 }
+
 
 /// descentKF.m
 void
@@ -259,10 +260,24 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 	// TODO
 }
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
 
 
 /* ------ Ascent (unscented) Kalman filter ------ */
+
+/// Sets ascent filter values in shared buffers.
+/// Called during boot and whenever the system falls back to UKF.
+void initialize_ascent() 
+{
+  memset(P, 0, sizeof P);
+  memset(Q, 0, sizeof Q);
+  memset(A, 0, sizeof A);
+  memset(R, 0, sizeof R);
+  memset(H, 0, sizeof H);
+
+  // TODO default values for ukf
+}
+
 
 /// ascentKF.m
 void

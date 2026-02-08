@@ -37,6 +37,7 @@
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
+#include "kalman.h"
 #include "dma.h"
 
 TX_QUEUE shared;
@@ -78,6 +79,7 @@ static void queue_handler(TX_QUEUE *q)
   tx_semaphore_put(&unread);
 }
 
+
 /// Synchronously initializes each sensor.
 static inline void try_reinit_sensors()
 {
@@ -106,11 +108,13 @@ static inline void try_reinit_sensors()
   }
 }
 
+
 /// Scenario when Flight Computer itself decides to abort.
 static inline void auto_abort()
 {
   // TODO to be discussed
 }
+
 
 /// Process general command from either endpoint.
 static inline void
@@ -176,6 +180,7 @@ process_action(enum command cmd)
   }
 }
 
+
 /// Checks whether raw data report is OK.
 static inline void
 process_raw_data_code(enum command code)
@@ -184,6 +189,12 @@ process_raw_data_code(enum command code)
   {
     ++failures;
     log_err("FC:RECV: bad sensor reading (%u)", (unsigned)code);
+
+    if (failures >= to_abort) {
+      auto_abort();
+    } else if (failures >= to_reinit) {
+      try_reinit_sensors();
+    }
   }
   else if (config & RESET_FAILURES)
   {
@@ -192,17 +203,39 @@ process_raw_data_code(enum command code)
   }
 }
 
+
 /// Handles delayed GPS data report.
 static inline void
 process_gps_code(enum command code)
 {
   static fu8 delay_count = 0;
+  static fu8 malformed_count = 0;
 
-  if (++delay_count >= MAX_GPS_DELAYS) {
-    config |= USE_ASCENT;
-    ascending = 1;
+  switch (code) {
+    case GPS_DELAY:
+      if (++delay_count >= MAX_GPS_DELAYS) {
+        goto force_ukf;
+      }
+      return;
+
+    case GPS_MALFORMED:
+      if (++malformed_count >= GPS_MAX_MALFORMED) {
+        goto force_ukf;
+      }
+      return;
+
+    default: return;
+  }
+
+force_ukf:
+  config |= USE_ASCENT;
+
+  if (!unscented) {
+    initialize_ascent();
+    unscented = 1;
   }
 }
+
 
 /// Decodes commands, message, or code from
 /// the Flight Computer and the Ground Station.
@@ -250,6 +283,7 @@ decode(enum command cmd)
   }
 }
 
+
 /// Suspend on semaphore until a new message arrives.
 /// Does not waste MCU cycles if queue if empty.
 /// See page 68 of Azure RTOS ThreadX User Guide, Feb 2020.
@@ -278,14 +312,9 @@ void recovery_entry(ULONG input)
     }
 
     decode(cmd);
-
-    if (failures >= to_abort) {
-      auto_abort();
-    } else if (failures >= to_reinit) {
-      try_reinit_sensors();
-    }
   }
 }
+
 
 /// Check if an endpoint {FC, GND} is absent for
 /// compile-defined time, and invoke handler appropriately.
@@ -298,8 +327,7 @@ static void check_endpoints(ULONG id)
 
   if (timer_fetch(HeartbeatFC) > FC_TIMEOUT_MS)
   {
-    ++restart_count;
-    if (restart_count >= MAX_RESTARTS) {
+    if (++restart_count >= MAX_RESTARTS) {
       return auto_abort();
     }
 
@@ -344,7 +372,21 @@ static void check_endpoints(ULONG id)
 
 #endif // TELEMETRY_ENABLED
   }
+
+#ifdef GPS_AVAILABLE
+  if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
+  {
+    config |= USE_ASCENT;
+    if (!unscented) {
+      initialize_ascent();
+      unscented = 1;
+    }
+  }
+
+#endif // GPS_AVAILABLE
+
 }
+
 
 /// Creates a non-preemptive Recovery Task with defined parameters.
 void create_recovery_task(void)

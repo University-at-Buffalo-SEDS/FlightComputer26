@@ -99,17 +99,14 @@ struct serial descent { /* Order matters */
   float alt;
 };
 
-/// Full measurement 
+/// Full measurement excluding baro temperature and pressure.
 struct serial measm_z { /* Order matters */
   struct coords gyro;
-  struct descent d; /* Brief 'descent' */
+  struct descent d; /* Brief for 'descent' */
 };
 
 #define STATE_LOGGABLE (sizeof(struct state_vec) - \
                         sizeof(struct quaternion))
-
-
-/* ------ Data evaluation containers ------ */
 
 /// In-flight rocket states only since used internally.
 enum state {
@@ -124,17 +121,11 @@ enum state {
   LANDED,
 };
 
-/// Averaged representation of a single
-/// KF evaluation that is easier to decide on.
-struct stats {
-  float min_alt, max_alt, avg_vel, avg_vax;
-};
-
 
 /* ------ Public API ------ */
 
 /// Whether to use Ascent filter
-extern atomic_uint_fast8_t ascending;
+extern atomic_uint_fast8_t unscented;
 
 /// Enqueues raw data set for processing by KF.
 void evaluation_put(const struct measurement *buf);

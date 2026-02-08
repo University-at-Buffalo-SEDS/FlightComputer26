@@ -115,6 +115,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   is_complete[i] |= 1u << t;
 }
 
+
 /// Finish transfer but do not publish flag (drop sample).
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
@@ -190,15 +191,17 @@ int dma_try_fetch(struct measurement *buf)
     buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
     buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
   }
+
   if (is_complete[i] & GYRO_DONE) {
     buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
     buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
     buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
   }
+  
   if (is_complete[i] & ACCL_DONE) {
-    buf->d.accl.x = F16(rx[i][2][2], rx[i][2][3]);
-    buf->d.accl.y = F16(rx[i][2][4], rx[i][2][5]);
-    buf->d.accl.z = F16(rx[i][2][6], rx[i][2][7]);  
+    buf->accl.x = F16(rx[i][2][2], rx[i][2][3]);
+    buf->accl.y = F16(rx[i][2][4], rx[i][2][5]);
+    buf->accl.z = F16(rx[i][2][6], rx[i][2][7]);  
   }
 
   cache |= is_complete[i];
@@ -215,6 +218,7 @@ int dma_try_fetch(struct measurement *buf)
   return 0;
 }
 
+
 /// Aggregates sensor compensation functions.
 /// Run before reporting or publishing data.
 void compensate(struct measurement *buf)
@@ -223,7 +227,7 @@ void compensate(struct measurement *buf)
   buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
   buf->baro.alt = compute_relative_altitude(buf->baro.p);
   
-  buf->d.accl.x *= MG;
-  buf->d.accl.y *= MG;
-  buf->d.accl.z *= MG;
+  buf->accl.x *= MG;
+  buf->accl.y *= MG;
+  buf->accl.z *= MG;
 }

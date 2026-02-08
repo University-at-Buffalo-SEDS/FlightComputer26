@@ -161,9 +161,11 @@ static inline enum command decode_cmd(const uint8_t *raw)
 #ifdef GPS_AVAILABLE
 
 /// Latest received GPS data + serials
+/// Serials' overflow is intentional to resynchronize
+/// RF-FC relative clocks every 256-th GPS packet.
 static struct coords gps_bucket = {0};
-static fu16 gps_prod_serial = 0;
-static fu16 gps_cons_serial = 0;
+static fu8 gps_prod_serial = 0;
+static fu8 gps_cons_serial = 0;
 
 /// Distribution and telemetry threads are
 /// scheduled equally => try plain lock for now
@@ -171,15 +173,27 @@ static fu16 gps_cons_serial = 0;
 static TX_MUTEX mu_gps;
 
 
-/// Called from telemetry thread.
+/// Called from within the Telemetry thread.
 static inline SedsResult
-handle_gps_data(const uint8_t *data, size_t len)
+handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 {
+  /// Milliseconds of UNIX epoch at boot.
+  static fu64 gps_ref_time = 0;
+
   timer_update(HeartbeatRF);
 
-  if (load(&ascending, Rlx)) {
+  if (load(&unscented, Rlx)) {
     /* GPS data is not needed. */
     return SEDS_OK;
+  }
+
+  if (gps_ref_time == 0)
+  {
+    gps_ref_time = ts*1000UL - hal_time_ms();
+  }
+  else if (ts*1000UL - gps_ref_time > GPS_TIME_DRIFT_MS)
+  {
+    log_err("FC:TLMT: warning: using outdated GPS data.");
   }
 
   tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
@@ -194,7 +208,7 @@ handle_gps_data(const uint8_t *data, size_t len)
 
 /// Replaces accel data with GPS data, if available. Otherwise hangs.
 /// Signals to Recovery task if plausible internal between GPS packets
-/// was exceeded. Called inside Distribution task.
+/// was exceeded. Called from within the Distribution task.
 static inline void fetch_gps_data()
 {
   tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
@@ -274,7 +288,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 #ifdef GPS_AVAILABLE
   else if (pkt->sender[0] == 'R')
   {
-    return handle_gps_data(pkt->payload, pkt->payload_len);
+    return handle_gps_data(pkt->payload, pkt->payload_len, pkt->timestamp);
   }
 #endif
 
@@ -394,8 +408,8 @@ void distribution_entry(ULONG input)
     log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
     log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-    if (!load(&ascending, Rlx)) {
+#ifdef GPS_AVAILABLE
+    if (!load(&unscented, Rlx)) {
       fetch_gps_data();
     }
 
