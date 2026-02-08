@@ -49,7 +49,7 @@
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
-#include "tx_api.h"
+#include "dma.h"
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
@@ -355,13 +355,13 @@ static inline void pre_launch()
       log_err("FC:DIST: internal heartbeat failed (%u)", st);
     }
 
-    if (!dma_try_fetch(&payload))
+    if (!dma_try_fetch(&payload, 0))
     {
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
-    compensate(&payload);
+    compensate(&payload, 0);
     st = pilot_validate();
 
     if (st != RAW_DATA) {
@@ -396,23 +396,33 @@ void distribution_entry(ULONG input)
   /* Normal post-launch operation begins */
   task_loop (DO_NOT_EXIT)
   {
-    if (!dma_try_fetch(&payload))
+    fu8 for_ukf = load(&unscented, Acq);
+
+    /* Do not wait for Gyro & Accel measurements if
+     * we are using Descent filter. */
+    fu8 skip_mask = for_ukf ? 0 : GYRO_DONE | ACCL_DONE;
+
+    if (!dma_try_fetch(&payload, skip_mask))
     {
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
-    compensate(&payload);
+    compensate(&payload, skip_mask);
 
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-    log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
 
-#ifdef GPS_AVAILABLE
-    if (!load(&unscented, Rlx)) {
-      fetch_gps_data();
+    if (for_ukf)
+    {
+      log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
+      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
     }
-
+#ifdef GPS_AVAILABLE
+    else
+    {
+      fetch_gps_data();
+      /* Logged by RF board. */
+    }
 #endif
 
     evaluation_put(&payload);

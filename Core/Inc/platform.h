@@ -266,11 +266,19 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "gyro.h"
 #include "accel.h"
 #include "barometer.h"
-#include "dma.h"
 
 #define init_baro()  init_barometer(&hspi1)
 #define init_gyro()  gyro_init(&hspi1)
 #define init_accel() accel_init(&hspi1)
+
+#define baro_comp_temp(temp) \
+  compensate_temperature((uint32_t)temp)
+
+#define baro_comp_pres(pres) \
+  compensate_pressure((uint32_t)pres)
+
+#define baro_calc_alt(pres) \
+  compute_relative_altitude((float)pres)
 
 #define finish_transfer(device) \
   do {                          \

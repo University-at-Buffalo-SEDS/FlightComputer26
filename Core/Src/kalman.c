@@ -26,6 +26,7 @@
 #include "recovery.h"
 #include "platform.h"
 #include "kalman.h"
+#include "dma.h"
 
 /// Module config bitmask
 /// Origin: Evaluation task

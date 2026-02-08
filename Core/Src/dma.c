@@ -178,9 +178,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /* ------ Public API ------ */
 
 /// Fetches whatever is available in a free (tm) DMA buffer.
-/// Returns 1 when all 3 sensor buckets have been filled,
+/// Returns 1 when all required sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
-int dma_try_fetch(struct measurement *buf)
+int dma_try_fetch(struct measurement *buf, fu8 skip_mask)
 {
   static fu8 i = 1;
   static fu8 cache = 0;
@@ -192,19 +192,21 @@ int dma_try_fetch(struct measurement *buf)
     buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
   }
 
-  if (is_complete[i] & GYRO_DONE) {
+  if (!(skip_mask & GYRO_DONE) && is_complete[i] & GYRO_DONE) {
     buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
     buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
     buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
   }
-  
-  if (is_complete[i] & ACCL_DONE) {
-    buf->accl.x = F16(rx[i][2][2], rx[i][2][3]);
-    buf->accl.y = F16(rx[i][2][4], rx[i][2][5]);
-    buf->accl.z = F16(rx[i][2][6], rx[i][2][7]);  
+
+  if (!(skip_mask & ACCL_DONE) && is_complete[i] & ACCL_DONE) {
+    buf->d.accl.x = F16(rx[i][2][2], rx[i][2][3]);
+    buf->d.accl.y = F16(rx[i][2][4], rx[i][2][5]);
+    buf->d.accl.z = F16(rx[i][2][6], rx[i][2][7]);  
   }
 
   cache |= is_complete[i];
+  cache |= skip_mask;
+
   is_complete[i] = 0;
   
   store(&in_transfer, i, Rel);
@@ -221,13 +223,15 @@ int dma_try_fetch(struct measurement *buf)
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting or publishing data.
-void compensate(struct measurement *buf)
+void compensate(struct measurement *buf, fu8 skip_mask)
 {
-  buf->baro.t   = compensate_temperature((uint32_t)buf->baro.t);
-  buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
-  buf->baro.alt = compute_relative_altitude(buf->baro.p);
+  buf->baro.t   = baro_comp_temp(buf->baro.t);
+  buf->baro.p   = baro_comp_pres(buf->baro.p);
+  buf->baro.alt = baro_calc_alt (buf->baro.p);
   
-  buf->accl.x *= MG;
-  buf->accl.y *= MG;
-  buf->accl.z *= MG;
+  if (!(skip_mask & ACCL_DONE)) {
+    buf->d.accl.x *= MG;
+    buf->d.accl.y *= MG;
+    buf->d.accl.z *= MG;
+  }
 }
