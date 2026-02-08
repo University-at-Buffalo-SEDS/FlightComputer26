@@ -192,6 +192,18 @@ process_raw_data_code(enum command code)
   }
 }
 
+/// Handles delayed GPS data report.
+static inline void
+process_gps_code(enum command code)
+{
+  static fu8 delay_count = 0;
+
+  if (++delay_count >= MAX_GPS_DELAYS) {
+    config |= USE_ASCENT;
+    ascending = 1;
+  }
+}
+
 /// Decodes commands, message, or code from
 /// the Flight Computer and the Ground Station.
 static inline void
@@ -202,6 +214,10 @@ decode(enum command cmd)
   if (cmd & SYNC) //                       |
   {         //                             |
     return; // Successful heartbeat -------`
+  }
+  else if (cmd & GPS_DELIVERY)
+  {
+    process_gps_code(cmd & ~FC_MASK);
   }
   else if (cmd & KF_OP_MODE)
   {

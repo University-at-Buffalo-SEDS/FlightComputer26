@@ -21,6 +21,9 @@ extern atomic_uint_fast32_t config;
 
 #define MAX_RESTARTS 3
 
+#define GPS_DELAY_MS 125
+#define MAX_GPS_DELAYS 16
+
 /* ------ Endpoint identifiers: FC, GND ------ */
 
 /// 2s complement awareness: as negative codes
@@ -73,13 +76,14 @@ enum g_conf {
   RENORM_QUATERN_8 = 1u << 8,
   ABORT_EVALUATION = 1u << 9,
   EVAL_PREEMPT_OFF = 1u << 10,  
+  FORCE_ASCENT_UKF = 1u << 11,
 
   /* Distribution options */
-  DISTRIB_EMERGENT = 1u << 11,
-  ENTER_DIST_CYCLE = 1u << 12,
+  DISTRIB_EMERGENT = 1u << 12,
+  ENTER_DIST_CYCLE = 1u << 13,
 
   /* Recovery options */
-  RESET_FAILURES = 1u << 13,
+  RESET_FAILURES = 1u << 14,
 };
 
 
@@ -154,6 +158,7 @@ enum command {
   EVAL_ABORT  = ACTION + 7,
   ALT_CHECKS  = ACTION + 8,
   ACCUM_FAILS = ACTION + 9,
+  USE_ASCENT  = ACTION + 10,
 
   /* Run time Bounds for abort */
   AUTO_ABORT_BOUNDS = (1u << 12),
@@ -176,6 +181,12 @@ enum command {
   CMD_RENORM_QUATERN_2 = KF_OP_MODE + 2,
   CMD_RENORM_QUATERN_4 = KF_OP_MODE + 4,
   CMD_RENORM_QUATERN_8 = KF_OP_MODE + 8,
+
+  /* GPS data delivery codes */
+  GPS_DELIVERY = (1u << 15),
+
+  GPS_DELAY    = GPS_DELIVERY + 1,
+  GPS_OUTDATED = GPS_DELIVERY + 2,
 
   /* ... */
 

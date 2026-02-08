@@ -52,9 +52,12 @@
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
-/// Module config bitmask
-/// Also used by Kalman filter 
+/// Module config bitmask. Global as used by Kalman filter.
 fu16 mode = 0;
+
+/// Separate flag in addition to flight state
+/// to avoid repeated comparisons in handlers.
+atomic_uint_fast8_t ascending = 1;
 
 
 /* ------ Static ------ */
@@ -64,8 +67,7 @@ static struct measm_z payload[RING_SIZE] = {0};
 
 /// 0-7:  amount of new entries,
 /// 8-15: 'consumer locked' index
-/// The latter is 255 (FF) when consumer doesn't
-/// is not reading the buffer.
+/// The latter is 255 (FF) when consumer is not reading the buffer.
 static atomic_uint_fast16_t mask = 0xFF00u;
 
 /// Last state vector buffer {0, 1}
@@ -168,7 +170,7 @@ validate()
     st += RAW_BAD_ALT;
 
 #if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-  if (flight < APOGEE)
+  if (ascending)
   {
 #endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
@@ -292,8 +294,7 @@ detect_ascent()
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
   {
-    ++sampl;
-    if (sampl >= MIN_SAMP_ASCENT)
+    if (++sampl >= MIN_SAMP_ASCENT)
     {
       flight = ASCENT;
       sampl = 0;
@@ -320,8 +321,7 @@ detect_burnout()
       vec[last].p.z > vec[last].p.z &&
       vec[last].v.z < vec[!last].v.z)
   {
-    ++sampl;
-    if (sampl >= MIN_SAMP_BURNOUT)
+    if (++sampl >= MIN_SAMP_BURNOUT)
     {
       flight = BURNOUT;
       sampl = 0;
@@ -346,12 +346,6 @@ detect_apogee()
   {
     flight = APOGEE;
     log_msg("FC:EVAL: approaching apogee", 28);
-
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-    initialize_descent();
-    
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
-
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -363,13 +357,20 @@ detect_descent()
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
   {
-    ++sampl;
-    if (sampl >= MIN_SAMP_DESCENT)
+    if (++sampl >= MIN_SAMP_DESCENT)
     {
       flight = DESCENT;
       sampl = 0;
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
+
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+      if (!(load(&config, Acq) & USE_ASCENT)) {
+        initialize_descent();
+        ascending = 0;
+      }
+
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
     }
   }
   else if (mode & CONSECUTIVE_SAMP && sampl > 0)
@@ -388,8 +389,7 @@ detect_reef()
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
   {
-    ++sampl;
-    if (sampl>= MIN_SAMP_REEF)
+    if (++sampl >= MIN_SAMP_REEF)
     {
       flight = REEF;
       sampl = 0;
@@ -418,8 +418,7 @@ detect_landed()
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
       (da <= VAX_TOLER && da >= -VAX_TOLER))
   {
-    ++sampl;
-    if (sampl >= MIN_SAMP_LANDED)
+    if (++sampl >= MIN_SAMP_LANDED)
     {
       flight = LANDED;
       log_msg("FC:EVAL: rocket landed", 23);
@@ -462,7 +461,7 @@ void evaluation_entry(ULONG input)
 
   /* Begin counting down elapsed time for 
    * KF kinematic equations (predict function) */
-  timer_update(flight < APOGEE ? AscentKF : DescentKF);  
+  timer_update(ascending ? AscentKF : DescentKF);  
   
   task_loop (mode & ABORT_EVALUATION)
   {
@@ -494,8 +493,8 @@ void evaluation_entry(ULONG input)
 
     /* One state vector is input (x_0), other is for output only (x_f) */
 #if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-    flight < APOGEE ? ascentKF (&vec[last], &vec[!last], &raw)  :
-                      descentKF(&vec[last], &vec[!last], &raw.d);
+    ascending ? ascentKF (&vec[last], &vec[!last], &raw)  :
+                descentKF(&vec[last], &vec[!last], &raw.d);
 
 #else
     ascentKF(&vec[last], &vec[!last], &raw);

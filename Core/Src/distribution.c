@@ -49,14 +49,22 @@
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
+#include "tx_api.h"
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
 
 
+/* ------ Static ------ */
+
+/// Latest logged measurement
+static struct measurement payload = {0};
+
+
 #ifdef TELEMETRY_ENABLED
 
 /* ------ FC packet handling ------ */
+
 
 #ifdef TELEMETRY_CMD_COMPAT
 
@@ -118,6 +126,7 @@ enum command {
   _Static_assert(sizeof(enum remote_cmd_compat) == sizeof(uint8_t), "");
 #endif
 
+
 /// Single mapping that avoids sequential match.
 /// Order is dictated by enum above.
 static const enum command cmdmap[Compat_Commands] = {
@@ -127,12 +136,14 @@ static const enum command cmdmap[Compat_Commands] = {
   REINIT_12, REINIT_20, ABORT_10, ABORT_20, ABORT_50,
 };
 
+
 #define MIN_CMD_SIZE 1 /* Message code transmitted (1 byte) */
 
 static inline enum command decode_cmd(const uint8_t *raw)
 {
   return cmdmap[*raw];
 }
+
 
 #else
 
@@ -143,22 +154,75 @@ static inline enum command decode_cmd(const uint8_t *raw)
   return (enum command) U32(raw[0], raw[1], raw[2], raw[3]);
 }
 
+
 #endif // TELEMETRY_CMD_COMPAT
 
 
-/// Deposits one or multiple messages into the recovery queue.
-SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
-{
-  (void) user;
+#ifdef GPS_AVAILABLE
 
+/// Latest received GPS data + serials
+static struct coords gps_bucket = {0};
+static fu16 gps_prod_serial = 0;
+static fu16 gps_cons_serial = 0;
+
+/// Distribution and telemetry threads are
+/// scheduled equally => try plain lock for now
+/// TODO: see if it creates bottlenecks in tests
+static TX_MUTEX mu_gps;
+
+
+/// Called from telemetry thread.
+static inline SedsResult
+handle_gps_data(const uint8_t *data, size_t len)
+{
+  timer_update(HeartbeatRF);
+
+  if (load(&ascending, Rlx)) {
+    /* GPS data is not needed. */
+    return SEDS_OK;
+  }
+
+  tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
+
+  memcpy(&gps_bucket, data, 3 * sizeof(float));
+  ++gps_prod_serial;
+
+  tx_mutex_put(&mu_gps);
+
+  return SEDS_OK;
+}
+
+/// Replaces accel data with GPS data, if available. Otherwise hangs.
+/// Signals to Recovery task if plausible internal between GPS packets
+/// was exceeded. Called inside Distribution task.
+static inline void fetch_gps_data()
+{
+  tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
+
+  if (gps_cons_serial == gps_prod_serial) {
+    goto finish;
+  }
+  
+  payload.d.gps = gps_bucket;
+  gps_cons_serial = gps_prod_serial;
+
+finish:
+  tx_mutex_put(&mu_gps);
+
+  if (timer_fetch_update(IntervalGPS) > GPS_DELAY_MS) {
+    enum command cmd = FC_MSG(GPS_DELAY);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  }
+}
+
+#endif // GPS_AVAILABLE
+
+/// Deposits one or multiple messages into the recovery queue.
+static inline SedsResult
+handle_gnd_command(const uint8_t *data, size_t len)
+{
   UINT st = TX_SUCCESS;
   enum command msg;
-
-  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER || !pkt->payload
-      || !pkt->payload_len || pkt->payload_len & (MIN_CMD_SIZE - 1))
-  {
-    return SEDS_HANDLER_ERROR;
-  }
 
 #ifdef MESSAGE_BATCHING_ENABLED
   UINT tlmt_old_pr;
@@ -172,22 +236,54 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
    * task after dispatching each message is safe but costly. */
   tx_thread_priority_change(&telemetry_thread, 0, &tlmt_old_pr);
 
-  for (fu16 k = 0; k < pkt->payload_len; k += MIN_CMD_SIZE)
+  for (fu16 k = 0; k < len; k += MIN_CMD_SIZE)
   {
-    msg = decode_cmd(pkt->payload + k);
+    msg = decode_cmd(data + k);
     st += tx_queue_send(&shared, &msg, TX_NO_WAIT);
   }
 
   tx_thread_priority_change(&telemetry_thread, TLMT_PRIORITY, &tlmt_old_pr);
 
 #else
-  msg = decode_cmd(pkt->payload);
+  msg = decode_cmd(data);
   st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
 
 #endif // MESSAGE_BATCHING_ENABLED
 
   return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
 }
+
+
+/// Calls appropriate handler based on sender id.
+SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
+{
+  (void) user;
+
+  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER || !pkt->payload
+      || !pkt->payload_len || !pkt->sender || !pkt->sender_len)
+  {
+    return SEDS_HANDLER_ERROR;
+  }
+
+  /* Heuristic: 'G' -> 'GS', 'R' -> 'RF' */
+  if (pkt->sender[0] == 'G')
+  {
+    return handle_gnd_command(pkt->payload, pkt->payload_len);
+  }
+
+#ifdef GPS_AVAILABLE
+  else if (pkt->sender[0] == 'R')
+  {
+    return handle_gps_data(pkt->payload, pkt->payload_len);
+  }
+#endif
+
+  else
+  {
+    return SEDS_HANDLER_ERROR;
+  }
+}
+
 
 #endif // TELEMETRY_ENABLED
 
@@ -197,30 +293,29 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 /// Locally validate data but do not send reports
 /// to the queue. Needed for pre-launch evaluation
 /// before crew decides to issue the START command.
-static inline fu8
-pilot_validate(const struct measurement *data)
+static inline fu8 pilot_validate()
 {
   enum command st = RAW_DATA;
   
-  if (data->baro.alt > MAX_ALT || data->baro.alt < MIN_ALT)
+  if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-  if (data->accl.x > MAX_VAX || data->accl.x < MIN_VAX)
+  if (payload.d.accl.x > MAX_VAX || payload.d.accl.x < MIN_VAX)
     st += RAW_BAD_ACC_X;
 
-  if (data->accl.y > MAX_VAX || data->accl.y < MIN_VAX)
+  if (payload.d.accl.y > MAX_VAX || payload.d.accl.y < MIN_VAX)
     st += RAW_BAD_ACC_Y;
   
-  if (data->accl.z > MAX_VAX || data->accl.z < MIN_VAX)
+  if (payload.d.accl.z > MAX_VAX || payload.d.accl.z < MIN_VAX)
     st += RAW_BAD_ACC_Z;
 
-  if (data->gyro.x > MAX_ANG || data->gyro.x < MIN_ANG)
+  if (payload.gyro.x > MAX_ANG || payload.gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
 
-  if (data->gyro.y > MAX_ANG || data->gyro.y < MIN_ANG)
+  if (payload.gyro.y > MAX_ANG || payload.gyro.y < MIN_ANG)
     st += RAW_BAD_ANG_Y;
 
-  if (data->gyro.z > MAX_ANG || data->gyro.z < MIN_ANG)
+  if (payload.gyro.z > MAX_ANG || payload.gyro.z < MIN_ANG)
     st += RAW_BAD_ANG_Z;
 
   return st;
@@ -233,8 +328,7 @@ pilot_validate(const struct measurement *data)
 /// Computer receives command to launch. After exiting
 /// the loop, this function performs final sanity checks
 /// and sends ignition signal to the Valve board.
-static inline void
-pre_launch(struct measurement *payload)
+static inline void pre_launch()
 {
   fu8 st = 0;
   enum command cmd = FC_MSG(SYNC);
@@ -247,22 +341,22 @@ pre_launch(struct measurement *payload)
       log_err("FC:DIST: internal heartbeat failed (%u)", st);
     }
 
-    if (!dma_try_fetch(payload))
+    if (!dma_try_fetch(&payload))
     {
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
-    compensate(payload);
-    st = pilot_validate(payload);
+    compensate(&payload);
+    st = pilot_validate();
 
     if (st != RAW_DATA) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
     }
 
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload->baro);
-    log_measurement(SEDS_DT_GYRO_DATA,      &payload->gyro);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &payload->accl);
+    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+    log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
   }
 
   /* Request Valve board to ignite the engine.
@@ -280,11 +374,9 @@ void distribution_entry(ULONG input)
 {
   (void) input;
 
-  struct measurement payload = {0};
-
   /* Enter pre-launch loop only before the Launch directive */
   if (!(load(&config, Acq) & ENTER_DIST_CYCLE)) {
-    pre_launch(&payload);
+    pre_launch();
   }
 
   /* Normal post-launch operation begins */
@@ -297,11 +389,19 @@ void distribution_entry(ULONG input)
     }
 
     compensate(&payload);
-    evaluation_put(&payload);
 
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
     log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.accl);
+    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
+
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+    if (!load(&ascending, Rlx)) {
+      fetch_gps_data();
+    }
+
+#endif
+
+    evaluation_put(&payload);
   }
 }
 
@@ -325,5 +425,11 @@ void create_distribution_task(void)
 
   if (st != TX_SUCCESS) {
     log_die("FC:DIST: failed to create task (%u)", st);
+  }
+
+  st = tx_mutex_create(&mu_gps, "GPS bucket mutex.", TX_NO_INHERIT);
+
+  if (st != TX_SUCCESS) {
+    log_die("FC:DIST: failed to create GPS bucket mutex (%u)", st);
   }
 }

@@ -133,6 +133,9 @@ struct stats {
 
 /* ------ Public API ------ */
 
+/// Whether to use Ascent filter
+extern atomic_uint_fast8_t ascending;
+
 /// Enqueues raw data set for processing by KF.
 void evaluation_put(const struct measurement *buf);
 

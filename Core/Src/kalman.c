@@ -110,9 +110,9 @@ measurement(const struct state_vec *restrict vec,
   const float r32 = 2.0f * (q34 - q12);
   const float r33 = 1.0f - (2.0f * (qq2 + qq3));
 
-  out->accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
-  out->accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
-  out->accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
+  out->d.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
+  out->d.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
+  out->d.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
 
   out->gyro = vec->w;
   out->baro.alt = vec->p.z;

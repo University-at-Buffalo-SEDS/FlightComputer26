@@ -196,9 +196,9 @@ int dma_try_fetch(struct measurement *buf)
     buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
   }
   if (is_complete[i] & ACCL_DONE) {
-    buf->accl.x = F16(rx[i][2][2], rx[i][2][3]);
-    buf->accl.y = F16(rx[i][2][4], rx[i][2][5]);
-    buf->accl.z = F16(rx[i][2][6], rx[i][2][7]);  
+    buf->d.accl.x = F16(rx[i][2][2], rx[i][2][3]);
+    buf->d.accl.y = F16(rx[i][2][4], rx[i][2][5]);
+    buf->d.accl.z = F16(rx[i][2][6], rx[i][2][7]);  
   }
 
   cache |= is_complete[i];
@@ -223,7 +223,7 @@ void compensate(struct measurement *buf)
   buf->baro.p   = compensate_pressure((uint32_t)buf->baro.p);
   buf->baro.alt = compute_relative_altitude(buf->baro.p);
   
-  buf->accl.x *= MG;
-  buf->accl.y *= MG;
-  buf->accl.z *= MG;
+  buf->d.accl.x *= MG;
+  buf->d.accl.y *= MG;
+  buf->d.accl.z *= MG;
 }

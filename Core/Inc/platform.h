@@ -473,7 +473,9 @@ enum fc_timer {
   AscentKF,
   DescentKF,
   HeartbeatFC,
+  HeartbeatRF,
   HeartbeatGND,
+  IntervalGPS,
 
   Time_Users
 };
