@@ -5,6 +5,8 @@
 #ifndef DMA_H
 #define DMA_H
 
+#include "platform.h"
+
 
 /* ------ DMA / sensor defs ------  */
 
@@ -42,8 +44,11 @@ struct serial baro { float alt, p, t; }; /* Order matters */
 /// Transferable raw data unit
 struct serial measurement { /* Order matters */
   struct coords gyro;
+  union {
+    struct coords accl;
+    struct coords gps;
+  } d;
   struct baro baro;
-  struct coords accl;
 };
 
 
@@ -52,11 +57,11 @@ struct serial measurement { /* Order matters */
 /// Fetches whatever is available in a free (tm) DMA buffer.
 /// Returns 1 when all 3 sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
-int dma_try_fetch(struct measurement *buf);
+int dma_try_fetch(struct measurement *buf, fu8 skip_mask);
 
 /// Aggregates sensor compensation functions.
 /// Run before reporting and publishing data.
-void compensate(struct measurement *buf);
+void compensate(struct measurement *buf, fu8 skip_mask);
 
 
 #endif // DMA_H

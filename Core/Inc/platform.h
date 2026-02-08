@@ -74,10 +74,12 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 typedef uint_fast8_t  fu8;
 typedef uint_fast16_t fu16;
 typedef uint_fast32_t fu32;
+typedef uint_fast64_t fu64;
 
 typedef int_fast8_t  fi8;
 typedef int_fast16_t fi16;
 typedef int_fast32_t fi32;
+typedef int_fast64_t fi64;
 
 
 /* ------ Atomic ops and MO aliases ------ */
@@ -264,11 +266,19 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "gyro.h"
 #include "accel.h"
 #include "barometer.h"
-#include "dma.h"
 
 #define init_baro()  init_barometer(&hspi1)
 #define init_gyro()  gyro_init(&hspi1)
 #define init_accel() accel_init(&hspi1)
+
+#define baro_comp_temp(temp) \
+  compensate_temperature((uint32_t)temp)
+
+#define baro_comp_pres(pres) \
+  compensate_pressure((uint32_t)pres)
+
+#define baro_calc_alt(pres) \
+  compute_relative_altitude((float)pres)
 
 #define finish_transfer(device) \
   do {                          \
@@ -325,9 +335,6 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #include <sedsprintf.h>
 #include "telemetry.h"
-
-#define MESSAGE_BATCHING_ENABLED -1
-#define TELEMETRY_CMD_COMPAT     1
 
 #define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
@@ -476,7 +483,9 @@ enum fc_timer {
   AscentKF,
   DescentKF,
   HeartbeatFC,
+  HeartbeatRF,
   HeartbeatGND,
+  IntervalGPS,
 
   Time_Users
 };
