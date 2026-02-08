@@ -203,7 +203,7 @@ static float R[M][M] = {0};
 static float H[M][M] = {0};
 
 
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE) 
 
 /* ------ Descent Kalman filter ------ */
 
@@ -259,7 +259,7 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 	// TODO
 }
 
-#endif // GPS_AVAILABLE
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
 
 /* ------ Ascent (unscented) Kalman filter ------ */

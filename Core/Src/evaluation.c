@@ -167,10 +167,10 @@ validate()
   if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
     st += RAW_BAD_ALT;
 
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
   if (flight < APOGEE)
   {
-#endif
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
     if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
       st += RAW_BAD_ACC_X;
@@ -181,7 +181,7 @@ validate()
     if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
       st += RAW_BAD_ACC_Z;
 
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
   }
   else
   {
@@ -195,7 +195,7 @@ validate()
       st += RAW_BAD_GPS_Z;
   }
 
-#endif // GPS_AVAILABLE
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
   
   if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
     st += RAW_BAD_ANG_X;
@@ -347,10 +347,10 @@ detect_apogee()
     flight = APOGEE;
     log_msg("FC:EVAL: approaching apogee", 28);
 
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
     initialize_descent();
     
-#endif // GPS_AVAILABLE
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -493,14 +493,14 @@ void evaluation_entry(ULONG input)
 #endif // MEASM_VALIDATE
 
     /* One state vector is input (x_0), other is for output only (x_f) */
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
     flight < APOGEE ? ascentKF (&vec[last], &vec[!last], &raw)  :
                       descentKF(&vec[last], &vec[!last], &raw.d);
 
 #else
     ascentKF(&vec[last], &vec[!last], &raw);
 
-#endif // GPS_AVAILABLE
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
     last = !last;
 
