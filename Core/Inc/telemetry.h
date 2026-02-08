@@ -22,9 +22,7 @@ extern RouterState g_router;
 // Transmit and radio handlers implemented in telemetry.c
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user);
 
-// Endpoint handlers
 SedsResult on_sd_packet(const SedsPacketView *pkt, void *user);
-SedsResult on_fc_packet(const SedsPacketView *pkt, void *user);
 
 // Initialize router once; safe to call multiple times.
 SedsResult init_telemetry_router(void);
@@ -46,12 +44,14 @@ SedsResult process_rx_queue(void);
 SedsResult dispatch_tx_queue_timeout(uint32_t timeout_ms);
 
 SedsResult process_rx_queue_timeout(uint32_t timeout_ms);
-
 SedsResult process_all_queues_timeout(uint32_t timeout_ms);
 
 SedsResult print_telemetry_error(int32_t error_code);
 SedsResult log_error_asyncronous(const char* fmt, ...);
 SedsResult log_error_syncronous(const char* fmt, ...);
+
+SedsResult telemetry_timesync_request(void);
+
 void die(const char *fmt, ...);
 
 #ifdef __cplusplus
