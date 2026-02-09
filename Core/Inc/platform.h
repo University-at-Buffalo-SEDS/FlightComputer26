@@ -64,12 +64,8 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 
 /* ------ Platform integer aliases ----- */
 
-/* This fastN type is needed if, for example, our libc
- * implementation defines integers (u)uintN_t to be less
- * than N bits. Minimum width guarantees are then provided
- * by (u)int_fastN_t and (u)int_leastN_t types, with
- * the former being considered the fastest on our platform,
- * and the latter - the smallest given minimum size. */
+/* Fast means the _fastest_ integer of minimum width. 
+ * Determined by the bundled library. */
 
 typedef uint_fast8_t  fu8;
 typedef uint_fast16_t fu16;
@@ -124,7 +120,7 @@ typedef arm_matrix_instance_f32 matrix;
 #define vsqrt     arm_sqrt_f32;
 
 /* These functions take pointers to arm_matrix_instance_f32;
-  * this is the reason there are wrappers inside KF functions. */
+ * this is the reason there are wrappers inside KF functions. */
 #define chol			arm_mat_cholesky_f32
 #define transpose arm_mat_trans_f32
 #define xmul 			arm_mat_mult_f32
@@ -231,7 +227,7 @@ extern DCACHE_HandleTypeDef hdcache1;
   do {                                                      \
     HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
     /* Always guarantee all tasks observe PYRO fire */      \
-    fetch_or(&config, SAFE_EXPAND_REEF, Rel);               \
+    fetch_or(&config, static_option(Parachute_Deployed), Rel);             \
   } while (0)
 
 #define reef_low()                                          \
@@ -283,11 +279,11 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define finish_transfer(device) \
   do {                          \
     switch (device) {           \
-      case BAROMETER:           \
+      case Sensor_Baro:         \
         BARO_CS_HIGH(); break;  \
-      case GYROSCOPE:           \
+      case Sensor_Gyro:         \
         GYRO_CS_HIGH(); break;  \
-      case ACCELEROMETER:       \
+      case Sensor_Accl:         \
         ACCEL_CS_HIGH(); break; \
       default: return;          \
     }                           \
@@ -498,7 +494,7 @@ extern fu32 local_time[Time_Users];
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,
 /// and set local time to current HAL tick (ms).
-static inline fu32 timer_fetch_update(enum fc_timer u)
+static inline fu32 timer_exchange(enum fc_timer u)
 {
   fu32 prev = local_time[u];
   local_time[u] = hal_time_ms();

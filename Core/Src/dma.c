@@ -28,9 +28,6 @@
  *        terminating active transfers.
  * 3. Set the 'ready' flag for the concerned section (device).
  *
- * (*) "Shaky pointer math, America's favorite!"
- *                               (C) Justin Myer, UB SEDS 2026
- *
  * The error callback will perform the same sequence of events
  * EXCEPT for invalidating data cache and setting 'ready' flag.
  *
@@ -42,11 +39,13 @@
  * returns to the buffer previously switched to, all transfers
  * will be completeed and flags set for that buffer. This also
  * avoids using memory orderings on the 'ready' flags, as they
- * are separate for each buffer.
+ * are separate for each buffer. A consumer may wish to ignore
+ * certain devices on fetch and calibration; it is achieved
+ * through passing a mask OR-ed with device flags as per dma.h.
  *
  * If, on any call, the fetch function determines that it filled
- * all the sections of the provided argument buffer, it will
- * report this to the caller, allowing it to proceed.
+ * all sections demanded by consumer of the provided argument buffer,
+ * it will report this to the caller, allowing it to proceed.
  */
 
 #include "platform.h"
@@ -78,8 +77,8 @@ static uint8_t rx[2][3][SENSOR_BUF_SIZE] = {0};
 static inline fu8
 decode_ptr(uint8_t *p, fu8 *type)
 {
-  static const fu8 buf[2 * 3] = {0, 0, 0, 1, 1, 1};
-  static const fu8 dev[2 * 3] = {0, 1, 2, 0, 1, 2};
+  static const fu8 buf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
+  static const fu8 dev[2 * Sensors] = {0, 1, 2, 0, 1, 2};
 
   if (!p) return DMA_RX_NULL;
 
