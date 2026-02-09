@@ -494,7 +494,7 @@ extern fu32 local_time[Time_Users];
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,
 /// and set local time to current HAL tick (ms).
-static inline fu32 timer_fetch_update(enum fc_timer u)
+static inline fu32 timer_exchange(enum fc_timer u)
 {
   fu32 prev = local_time[u];
   local_time[u] = hal_time_ms();

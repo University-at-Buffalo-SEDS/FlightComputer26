@@ -197,17 +197,15 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
   return SEDS_OK;
 }
 
-/// Replaces accel data with GPS data, if available. Otherwise hangs.
-/// Signals to Recovery task if plausible internal between GPS packets
-/// was exceeded. Called from within the Distribution task.
+/// Fetches latest available GPS packet, or checks for timeout.
 static inline fu8 fetch_gps_data()
 {
   tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
 
   if (gps_cons_serial == gps_prod_serial) {
-      tx_mutex_put(&mu_gps);
+    tx_mutex_put(&mu_gps);
 
-    if (timer_fetch_update(IntervalGPS) > GPS_DELAY_MS) {
+    if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
       enum command cmd = FC_MSG(GPS_DELAY);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
@@ -219,11 +217,24 @@ static inline fu8 fetch_gps_data()
   gps_cons_serial = gps_prod_serial;
 
   tx_mutex_put(&mu_gps);
+  timer_update(IntervalGPS);
 
   return 1;
 }
 
+
+/// Checks for timeout but does not fetch GPS data.
+/// Provides early inference of GPS availability.
+static inline void check_for_gps_packet()
+{
+  if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
+    enum command cmd = FC_MSG(GPS_DELAY);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  }
+}
+
 #endif // GPS_AVAILABLE
+
 
 /// Deposits one or multiple messages into the recovery queue.
 static inline SedsResult
@@ -292,9 +303,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 
 /* ------ Local helpers ------ */
 
-/// Locally validate data but do not send reports
-/// to the queue. Needed for pre-launch evaluation
-/// before crew decides to issue the START command.
+/// Locally validate all data but do not send reports to the queue.
 static inline fu8 pilot_validate()
 {
   enum command st = RAW_DATA;
@@ -340,7 +349,7 @@ static inline void pre_launch()
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
     if (st != TX_SUCCESS) {
-      log_err("FC:DIST: internal heartbeat failed (%u)", st);
+      log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
     }
 
     if (!dma_try_fetch(&payload, 0))
@@ -402,6 +411,7 @@ void distribution_entry(ULONG input)
     {
       log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+      check_for_gps_packet();
     }
 #ifdef GPS_AVAILABLE
     else

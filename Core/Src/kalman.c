@@ -134,7 +134,7 @@ predict(struct state_vec *vec)
    * => overflow is OK */
   static fu8 iter = 0;
 
-  const float dt = FSEC(timer_fetch_update(AscentKF));
+  const float dt = FSEC(timer_exchange(AscentKF));
 
   const float fact = 0.5f * dt;
   const float dvx = dt * vec->a.x;
@@ -256,7 +256,7 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
   state.pData = (float *)x_0;
   measm.pData = (float *)z;
 
-	const float dt = FSEC(timer_fetch_update(DescentKF));
+	const float dt = FSEC(timer_exchange(DescentKF));
 
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
