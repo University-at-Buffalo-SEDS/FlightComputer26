@@ -36,6 +36,7 @@ extern fu16 mode;
 /* ------ Locally used definitions ------ */
 
 #define TOLERANCE 1e-3f
+
 #define FTLOW(k)  ((float)k - TOLERANCE)
 #define FTHIGH(k) ((float)k + TOLERANCE)
 
@@ -44,8 +45,14 @@ extern fu16 mode;
 #define NR_ITERATIONS 2
 
 /* For ascent filter */
+
 #define ASC_STAT 16
 #define ASC_MEAS 7
+
+#define SIGMA_GYRO 0.1f
+#define SIGMA_GYRO_Z 1e-6f
+#define SIGMA_ACC 0.1f
+#define SIGMA_ALT 10.0f
 
 /* For descent filter */
 #define DESC_STAT 6
@@ -276,7 +283,29 @@ void initialize_ascent()
   memset(R, 0, sizeof R);
   memset(H, 0, sizeof H);
 
-  // TODO default values for ukf
+  for (fu8 k = 0; k < 3; ++k) {
+    Q[k][k] = 1e-4f;
+    Q[k + 3][k + 3] = 1e-2f;
+    Q[k + 6][k + 6] = 1e-2f;
+
+    P[k][k] = 100.0f;
+    P[k + 3][k + 3] = 25.0f;
+    P[k + 6][k + 6] = 1.0f;
+    P[k + 13][k + 13] = 0.01f;
+  }
+
+  for (fu8 k = 9; k < 9 + 4; ++k) {
+    Q[k][k] = TOLERANCE * TOLERANCE;
+    P[k][k] = TOLERANCE;
+  }
+
+  Q[13][13] = Q[14][14] = 1e-4f;
+  Q[15][15] = 1e-10f;
+
+  R[0][0] = R[1][1] = SIGMA_GYRO * SIGMA_GYRO;
+  R[2][2] = SIGMA_GYRO_Z * SIGMA_GYRO_Z;
+  R[3][3] = R[4][4] = R[5][5] = SIGMA_ACC * SIGMA_ACC;
+  R[6][6] = SIGMA_ALT * SIGMA_ALT;
 }
 
 

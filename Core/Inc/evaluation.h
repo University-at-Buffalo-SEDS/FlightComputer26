@@ -85,8 +85,9 @@ struct serial quaternion { /* Order matters */
 };
 
 struct serial state_vec { /* Order matters */
-  struct coords p, v, a, w;
+  struct coords p, v, a;
   struct quaternion qv;
+  struct coords w;
 };
 
 /// Piece of measm_z accepted by Descent filter

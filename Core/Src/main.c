@@ -26,8 +26,6 @@
 #include "ux_device_class_cdc_acm.h"
 #include <stdint.h>
 #include <stdio.h>
-#include "can_bus.h"
-#include "sd_card.h"
 
 #ifdef DMA_LOCAL_TEST
 #include "platform.h"
@@ -35,8 +33,10 @@
 #endif
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
-extern VOID fx_stm32_sd_driver(FX_MEDIA *media);
 
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -133,11 +133,6 @@ int main(void)
   MX_ICACHE_Init();
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
-  can_bus_init(&hfdcan1);
-  if (sd_logger_init("seds_log.txt", fx_stm32_sd_driver, &hsd1) != FX_SUCCESS) {
-    /* SD Logger init failed */
-    Error_Handler();
-  }
 
 /* Local test with no telemerty or threads */
 #ifdef DMA_LOCAL_TEST
@@ -146,18 +141,18 @@ int main(void)
   struct measurement k = {0};
 
   while (1) {
-    if (!dma_try_fetch(&k)) {
+    if (!dma_try_fetch(&k, 0)) {
       HAL_Delay(20);
       continue;
     }
 
-    compensate(&k);
+    compensate(&k, 0);
     log_measurement(SEDS_DT_BAROMETER_DATA, &k);
     log_measurement(SEDS_DT_GYRO_DATA,      &k);
     log_measurement(SEDS_DT_ACCEL_DATA,     &k);
   }
 
-  /* Assert unreeachable. */
+  /* Assert unreachable. */
 #endif
 
   /* USER CODE END 2 */
