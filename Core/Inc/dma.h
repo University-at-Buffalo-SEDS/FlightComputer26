@@ -21,11 +21,6 @@
 #define RX_DONE 0x07
 
 
-/* ------ Serial type attributes ------ */
-
-#define serial __attribute__((packed, aligned(4)))
-
-
 /* ------ Containers ------ */
 
 /// Discriminants must comply with decode_ptr() dev[].
