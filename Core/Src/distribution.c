@@ -84,10 +84,12 @@ enum remote_cmd_compat {
   
   /* Excludes internal config options */
   Compat_Monitor_Altitude,
-  Compat_Prohibit_Descent_KF,
+  Compat_Descent_KF_Feasible,
   Compat_Consecutive_Samples,
   Compat_Confirm_Altitude,
   Compat_Reset_Failures,
+  Compat_Validate_Measms,
+  Compat_Using_Ascent_KF,
 
   Compat_Renormalize_Quat_1,
   Compat_Renormalize_Quat_2,
@@ -114,12 +116,12 @@ enum remote_cmd_compat {
 static const enum message extmap[Compat_Messages] = {
     Deploy_Parachute,    Expand_Parachute,   Reinit_Sensors,
     Launch_Signal,       Evaluation_Relax,   Evaluation_Focus,
-    Evaluation_Abort,    Monitor_Altitude,   Prohibit_Descent_KF,
+    Evaluation_Abort,    Monitor_Altitude,   Descent_KF_Feasible,
     Consecutive_Samples, Confirm_Altitude,   Reset_Failures,
-    Renormalize_Quat_1,  Renormalize_Quat_2, Renormalize_Quat_4,
-    Renormalize_Quat_8,  Abort_After_15,     Abort_After_40,
-    Abort_After_70,      Reinit_After_12,    Reinit_After_26,
-    Reinit_After_44
+    Validate_Measms,     Using_Ascent_KF,    Renormalize_Quat_1,
+    Renormalize_Quat_2,  Renormalize_Quat_4, Renormalize_Quat_8,
+    Abort_After_15,      Abort_After_40,     Abort_After_70,
+    Reinit_After_12,     Reinit_After_26,    Reinit_After_44
 };
 
 
@@ -161,9 +163,14 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 
   timer_update(HeartbeatRF);
 
-  if (load(&unscented, Rlx)) {
+  if (load(&config, Rlx) & static_option(Using_Ascent_KF)) {
     /* GPS data is not needed. */
     return SEDS_OK;
+  }
+
+  if (len != 3 * sizeof(float)) {
+    enum message cmd = FC_MSG(GPS_Malformed);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 
   if (gps_ref_time == 0)
@@ -380,7 +387,7 @@ void distribution_entry(ULONG input)
 
   start: task_loop (DO_NOT_EXIT)
   {
-    fu8 for_ukf = load(&unscented, Acq);
+    fu8 for_ukf = load(&config, Acq) & static_option(Using_Ascent_KF);
 
     /* Do not wait for Gyro & Accel if we use Descent KF. */
     fu8 skip_mask = for_ukf ? 0 : GYRO_DONE | ACCL_DONE;
@@ -401,12 +408,14 @@ void distribution_entry(ULONG input)
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
       check_for_gps_packet();
     }
+    
 #ifdef GPS_AVAILABLE
     else
     {
       while (!fetch_gps_data())
       {
-        if (!load(&unscented, Acq)) {
+        if (load(&config, Acq) & static_option(Using_Ascent_KF))
+        {
           goto start;
         }
         /* GPS data is required for Descent filter to proceed. */

@@ -41,9 +41,6 @@
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
-/// Current filter flag that does not depend on flight state.
-atomic_uint_fast8_t unscented = 1;
-
 
 /* ------ Static ------ */
 
@@ -60,7 +57,7 @@ static fu8 last = 0;
 static struct state_vec vec[2] = {0};
 
 /// Flight stage and transition sample counter.
-static enum state flight = SUSPENDED;
+static enum state flight = Suspended;
 static fu8 sampl = 0;
 
 
@@ -131,15 +128,19 @@ static inline fu8 fetch_unsafe()
 #ifdef MEASM_VALIDATE
 
 /// Validates one measm_z against sanity bounds.
-static inline fu8 validate()
+static inline fu32 validate(fu32 mode)
 {
   enum message st = Sensor_Measm_Code;
+
+  if (!(mode & Validate_Measms)) {
+    return st;
+  }
 
   if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
     st += Bad_Altitude;
 
 #ifdef GPS_AVAILABLE
-  if (unscented)
+  if (mode & Using_Ascent_KF)
   {
 #endif
 
@@ -188,7 +189,7 @@ static inline fu8 validate()
 /// Cautiously examine altitude changes. Act in place.
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < ASCENT || vec[last].p.z > vec[!last].p.z) {
+  if (flight < Ascent || vec[last].p.z > vec[!last].p.z) {
     /* Confirms must be consecutive */
 
     if (mode & static_option(Consecutive_Samples) &&
@@ -209,8 +210,8 @@ static inline void evaluate_altitude(fu32 mode)
     {
       reef_high();
 
-      if (flight < REEF) {
-        flight = REEF;
+      if (flight < Reefing) {
+        flight = Reefing;
       }
       log_msg("FC:EVAL: urgently expanded reef", 32);
     }
@@ -220,8 +221,8 @@ static inline void evaluate_altitude(fu32 mode)
       tx_thread_sleep(100);
       reef_high();
       
-      if (flight < REEF) {
-        flight = REEF;
+      if (flight < Reefing) {
+        flight = Reefing;
       }
 
       log_msg("FC:EVAL: urgently fired PYRO->REEF", 35);
@@ -236,8 +237,8 @@ static inline void evaluate_altitude(fu32 mode)
   {
     co2_high();
 
-    if (flight < DESCENT) {
-      flight = DESCENT;
+    if (flight < Descent) {
+      flight = Descent;
     }
 
     log_msg("FC:EVAL: urgently fired pyro", 29);
@@ -252,7 +253,7 @@ static inline void detect_launch()
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
   {
-    flight = LAUNCH;
+    flight = Launch;
     log_msg("FC:EVAL: launch detected", 25);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
@@ -267,7 +268,7 @@ static inline void detect_ascent(fu32 mode)
   {
     if (++sampl >= MIN_SAMP_ASCENT)
     {
-      flight = ASCENT;
+      flight = Ascent;
       sampl = 0;
       log_msg("FC:EVAL: launch confirmed", 26);
     }
@@ -295,7 +296,7 @@ static inline void detect_burnout(fu32 mode)
   {
     if (++sampl >= MIN_SAMP_BURNOUT)
     {
-      flight = BURNOUT;
+      flight = Burnout;
       sampl = 0;
       log_msg("FC:EVAL: watching for apogee", 29);
     }
@@ -317,7 +318,7 @@ static inline void detect_apogee()
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
   {
-    flight = APOGEE;
+    flight = Apogee;
     log_msg("FC:EVAL: approaching apogee", 28);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -332,15 +333,17 @@ static inline void detect_descent(fu32 mode)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
-      flight = DESCENT;
+      flight = Descent;
       sampl = 0;
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
 
 #ifdef GPS_AVAILABLE
-      if (!(load(&config, Acq) & Prohibit_Descent_KF)) {
+      if (load(&config, Acq) & static_option(Descent_KF_Feasible))
+      {
         initialize_descent();
-        unscented = 0;
+        timer_update(DescentKF);
+        fetch_and(&config, ~static_option(Using_Ascent_KF), Rel);
       }
 
 #endif // GPS_AVAILABLE
@@ -365,7 +368,7 @@ static inline void detect_reef(fu32 mode)
   {
     if (++sampl >= MIN_SAMP_REEF)
     {
-      flight = REEF;
+      flight = Reefing;
       sampl = 0;
       reef_low();
       log_msg("FC:EVAL: expanded parachute", 28);
@@ -395,7 +398,7 @@ static inline void detect_landed(fu32 mode)
   {
     if (++sampl >= MIN_SAMP_LANDED)
     {
-      flight = LANDED;
+      flight = Landed;
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
@@ -418,7 +421,9 @@ void evaluation_entry(ULONG input)
 {
   (void) input;
 
-  if (load(&config, Acq) & Launch_Triggered)
+  fu32 mode = load(&config, Acq);
+
+  if (mode & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
      last = !last;
@@ -426,50 +431,41 @@ void evaluation_entry(ULONG input)
   else
   {
     log_msg("FC:EVAL: received launch signal", 32);
-    flight = IDLE;
+    flight = Idle;
 
     /* Signal distribution task to enter main cycle. */
     fetch_or(&config, static_option(Launch_Triggered), Rel);
   }
 
-  if (unscented) {
+  if (mode & Using_Ascent_KF) {
     timer_update(AscentKF);
     initialize_ascent();
   } else {
     timer_update(DescentKF);  
     initialize_descent();
   }
-
-  fu32 mode = load(&config, Acq);
   
   task_loop (mode & Eval_Abort_Flag)
   {
-    fu8 st = mode & Eval_Focus_Flag ? fetch_unsafe()
-                                    : fetch_async();
+    fu32 st = mode & Eval_Focus_Flag ? fetch_unsafe()
+                                     : fetch_async();
 
     if (st == 0) {
       tx_thread_sleep(EVAL_SLEEP_NO_DATA);
       continue;
     }
 
-#ifdef MEASM_VALIDATE
-    st = validate();
-#else
-    st = FC_MSG(RAW_DATA);
-#endif
-
+    st = validate(mode);
     tx_queue_send(&shared, &st, TX_NO_WAIT);
 
-#ifdef MEASM_VALIDATE
     if (st > 0) {
       tx_thread_relinquish();
       continue;
     }
-#endif
 
 #ifdef GPS_AVAILABLE
-    unscented ? ascentKF (&vec[last], &vec[!last], &raw)  :
-                descentKF(&vec[last], &vec[!last], &raw.d);
+    mode & Using_Ascent_KF ? ascentKF (&vec[last], &vec[!last], &raw)  :
+                             descentKF(&vec[last], &vec[!last], &raw.d);
 
 #else
     ascentKF(&vec[last], &vec[!last], &raw);
@@ -488,13 +484,13 @@ void evaluation_entry(ULONG input)
     }
 
     switch (flight) {
-      case IDLE:    detect_launch();      break;
-      case LAUNCH:  detect_ascent(mode);  break;
-      case ASCENT:  detect_burnout(mode); break;
-      case BURNOUT: detect_apogee();      break;
-      case APOGEE:  detect_descent(mode); break;
-      case DESCENT: detect_reef(mode);    break;
-      case REEF:    detect_landed(mode);  break;
+      case Idle:    detect_launch();      break;
+      case Launch:  detect_ascent(mode);  break;
+      case Ascent:  detect_burnout(mode); break;
+      case Burnout: detect_apogee();      break;
+      case Apogee:  detect_descent(mode); break;
+      case Descent: detect_reef(mode);    break;
+      case Reefing:    detect_landed(mode);  break;
       default: break;
     }
 

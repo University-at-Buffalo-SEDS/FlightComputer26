@@ -114,7 +114,7 @@ enum message {
   Runtime_Configuration = (1u << 29),
 
   Monitor_Altitude    = Runtime_Configuration + 1u,
-  Prohibit_Descent_KF = Runtime_Configuration + (1u << 1),
+  Descent_KF_Feasible = Runtime_Configuration + (1u << 1),
   Consecutive_Samples = Runtime_Configuration + (1u << 2),
   Parachute_Deployed  = Runtime_Configuration + (1u << 3),
   Reinit_Attempted    = Runtime_Configuration + (1u << 4),
@@ -123,6 +123,8 @@ enum message {
   Eval_Abort_Flag     = Runtime_Configuration + (1u << 7),
   Reset_Failures      = Runtime_Configuration + (1u << 8),
   Launch_Triggered    = Runtime_Configuration + (1u << 8),
+  Validate_Measms     = Runtime_Configuration + (1u << 9),
+  Using_Ascent_KF     = Runtime_Configuration + (1u << 11),
 
   Revoke_Option = Runtime_Configuration + (1u << 20),
 
@@ -183,6 +185,9 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
                           | Renormalize_Quat_1        \
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \
+                          | Validate_Measms           \
+                          | Descent_KF_Feasible       \
+                          | Using_Ascent_KF           \
                         ) )
 
 

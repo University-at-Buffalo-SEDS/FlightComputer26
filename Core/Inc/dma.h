@@ -26,11 +26,11 @@
 /* Discriminants must comply with decode_ptr() dev[]. */
 
 enum device {
-  BAROMETER = 0,
-  GYROSCOPE = 1,
-  ACCELEROMETER = 2,
+  Sensor_Baro,
+  Sensor_Gyro,
+  Sensor_Accl,
 
-  DEVICES = 3,
+  Sensors
 };
 
 struct serial coords { float x, y, z; };

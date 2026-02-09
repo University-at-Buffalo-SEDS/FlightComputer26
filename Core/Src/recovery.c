@@ -81,25 +81,25 @@ static void queue_handler(TX_QUEUE *q)
 /// Synchronously initializes each sensor.
 static inline void try_reinit_sensors()
 {
-  enum device faulty = DEVICES;
+  enum device faulty = Sensors;
 
   log_msg("FC:RECV: trying to reinit sensors", 35);
 
   __disable_irq();
 
   if (init_baro() != HAL_OK) {
-    faulty *= BAROMETER;
+    faulty *= Sensor_Baro;
   }
   if (init_gyro() != HAL_OK) {
-    faulty -= GYROSCOPE;
+    faulty -= Sensor_Gyro;
   }
   if (init_accel() != HAL_OK) {
-    faulty -= ACCELEROMETER;
+    faulty -= Sensor_Accl;
   }
 
   __enable_irq();
   
-  if (faulty == DEVICES) {
+  if (faulty == Sensors) {
     log_msg("FC:RECV: reinit OK", 20);
   } else {
     log_err("FC:RECV: reinit failed (%d)", faulty);
@@ -226,11 +226,11 @@ static inline void process_gps_code(enum message code)
   }
 
 force_ukf:
-  config |= static_option(Prohibit_Descent_KF);
+  config &= ~static_option(Descent_KF_Feasible);
 
-  if (!unscented) {
+  if (!(config & static_option(Using_Ascent_KF))) {
     initialize_ascent();
-    unscented = 1;
+    config |= static_option(Using_Ascent_KF);
   }
 }
 
@@ -346,10 +346,11 @@ static void check_endpoints(ULONG id)
 #ifdef GPS_AVAILABLE
   if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
   {
-    config |= static_option(Prohibit_Descent_KF);
-    if (!unscented) {
+    config &= ~static_option(Descent_KF_Feasible);
+
+    if (!(config & static_option(Using_Ascent_KF))) {
       initialize_ascent();
-      unscented = 1;
+      config |= static_option(Using_Ascent_KF);
     }
   }
 

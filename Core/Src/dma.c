@@ -77,8 +77,8 @@ static uint8_t rx[2][3][SENSOR_BUF_SIZE] = {0};
 static inline fu8
 decode_ptr(uint8_t *p, fu8 *type)
 {
-  static const fu8 buf[2 * 3] = {0, 0, 0, 1, 1, 1};
-  static const fu8 dev[2 * 3] = {0, 1, 2, 0, 1, 2};
+  static const fu8 buf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
+  static const fu8 dev[2 * Sensors] = {0, 1, 2, 0, 1, 2};
 
   if (!p) return DMA_RX_NULL;
 

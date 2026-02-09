@@ -279,11 +279,11 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define finish_transfer(device) \
   do {                          \
     switch (device) {           \
-      case BAROMETER:           \
+      case Sensor_Baro:         \
         BARO_CS_HIGH(); break;  \
-      case GYROSCOPE:           \
+      case Sensor_Gyro:         \
         GYRO_CS_HIGH(); break;  \
-      case ACCELEROMETER:       \
+      case Sensor_Accl:         \
         ACCEL_CS_HIGH(); break; \
       default: return;          \
     }                           \

@@ -111,22 +111,19 @@ struct serial measm_z { /* Order matters */
 
 /// In-flight rocket states only since used internally.
 enum state {
-  SUSPENDED,
-  IDLE,
-  LAUNCH,
-  ASCENT,
-  BURNOUT,
-  APOGEE,
-  DESCENT,
-  REEF,
-  LANDED,
+  Suspended,
+  Idle,
+  Launch,
+  Ascent,
+  Burnout,
+  Apogee,
+  Descent,
+  Reefing,
+  Landed,
 };
 
 
 /* ------ Public API ------ */
-
-/// Whether to use Ascent filter
-extern atomic_uint_fast8_t unscented;
 
 /// Enqueues raw data set for processing by KF.
 void evaluation_put(const struct measurement *buf);
