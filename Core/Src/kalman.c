@@ -29,8 +29,7 @@
 #include "kalman.h"
 #include "dma.h"
 
-/// Module config bitmask
-/// Origin: Evaluation task
+/// Module config bitmask from Evaluation.
 extern fu16 mode;
 
 
@@ -217,7 +216,6 @@ static float H[M][M] = {0};
 /* ------ Descent Kalman filter ------ */
 
 /// Sets descent filter values in shared buffers.
-/// Called by Evaluation task when APOGEE state is reached.
 void initialize_descent()
 {
   memset(P, 0, sizeof P);
@@ -255,16 +253,12 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
   static matrix state = {DESC_STAT, 1, NULL};
   static matrix measm = {DESC_MEAS, 1, NULL};
 
-  /* Set wrappers to point to given column vectors. */
   state.pData = (float *)x_0;
   measm.pData = (float *)z;
 
 	const float dt = FSEC(timer_fetch_update(DescentKF));
 
-  /* Set marked fields to time elapsed. */
-	A[0][APEX_A    ] = dt;
-	A[1][APEX_A + 1] = dt;
-	A[2][APEX_A + 2] = dt;
+	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
 	// TODO
 }
@@ -275,7 +269,6 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 /* ------ Ascent (unscented) Kalman filter ------ */
 
 /// Sets ascent filter values in shared buffers.
-/// Called during boot and whenever the system falls back to UKF.
 void initialize_ascent() 
 {
   memset(P, 0, sizeof P);
