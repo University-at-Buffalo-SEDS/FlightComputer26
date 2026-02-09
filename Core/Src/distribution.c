@@ -47,6 +47,7 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
+#include <sedsprintf.h>
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
@@ -171,6 +172,7 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
   if (len != 3 * sizeof(float)) {
     enum message cmd = FC_MSG(GPS_Malformed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    return SEDS_ERR;
   }
 
   if (gps_ref_time == 0)
