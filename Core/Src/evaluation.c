@@ -41,9 +41,6 @@
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
-/// Module config bitmask. Global as used by Kalman filter.
-fu16 mode = 0;
-
 /// Current filter flag that does not depend on flight state.
 atomic_uint_fast8_t unscented = 1;
 
@@ -136,10 +133,10 @@ static inline fu8 fetch_unsafe()
 /// Validates one measm_z against sanity bounds.
 static inline fu8 validate()
 {
-  enum command st = RAW_DATA;
+  enum message st = Sensor_Measm_Code;
 
   if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
-    st += RAW_BAD_ALT;
+    st += Bad_Altitude;
 
 #ifdef GPS_AVAILABLE
   if (unscented)
@@ -147,35 +144,35 @@ static inline fu8 validate()
 #endif
 
     if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
-      st += RAW_BAD_ACC_X;
+      st += Bad_Accel_X;
 
     if (raw.d.axis.accl.y > MAX_VAX || raw.d.axis.accl.y < MIN_VAX)
-      st += RAW_BAD_ACC_Y;
+      st += Bad_Accel_Y;
   
     if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
-      st += RAW_BAD_ACC_Z;
+      st += Bad_Accel_Z;
 
     if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
-      st += RAW_BAD_ANG_X;
+      st += Bad_Attitude_X;
 
     if (raw.gyro.y > MAX_ANG || raw.gyro.y < MIN_ANG)
-      st += RAW_BAD_ANG_Y;
+      st += Bad_Attitude_Y;
 
     if (raw.gyro.z > MAX_ANG || raw.gyro.z < MIN_ANG)
-      st += RAW_BAD_ANG_Z;
+      st += Bad_Attitude_Z;
 
 #if GPS_AVAILABLE
   }
   else
   {
     if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X)
-      st += RAW_BAD_GPS_X;
+      st += Bad_Lattitude;
 
     if (raw.d.axis.gps.y > MAX_GPS_Y || raw.d.axis.gps.y < MIN_GPS_Y)
-      st += RAW_BAD_GPS_Y;
+      st += Bad_Longtitude;
   
     if (raw.d.axis.gps.z > MAX_GPS_Z || raw.d.axis.gps.z < MIN_GPS_Z)
-      st += RAW_BAD_GPS_Z;
+      st += Bad_Sea_Level;
   }
 
 #endif // GPS_AVAILABLE
@@ -189,12 +186,15 @@ static inline fu8 validate()
 /* ------ Data evaluation ------ */
 
 /// Cautiously examine altitude changes. Act in place.
-static inline void evaluate_altitude()
+static inline void evaluate_altitude(fu32 mode)
 {
   if (flight < ASCENT || vec[last].p.z > vec[!last].p.z) {
     /* Confirms must be consecutive */
-    if (mode & CONSECUTIVE_SAMP && mode & PYRO_REQ_CONFIRM) {
-      mode &= ~PYRO_REQ_CONFIRM;
+
+    if (mode & static_option(Consecutive_Samples) &&
+        mode & static_option(Confirm_Altitude))
+    {
+      fetch_and(&config, ~static_option(Confirm_Altitude), Rlx);
     }
 
     return;
@@ -205,7 +205,7 @@ static inline void evaluate_altitude()
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
 
-    if (mode & SAFE_EXPAND_REEF)
+    if (mode & static_option(Parachute_Deployed))
     {
       reef_high();
 
@@ -223,14 +223,14 @@ static inline void evaluate_altitude()
       if (flight < REEF) {
         flight = REEF;
       }
-      mode |= SAFE_EXPAND_REEF;
+
       log_msg("FC:EVAL: urgently fired PYRO->REEF", 35);
     }
   }
-  else if (!(mode & PYRO_REQ_CONFIRM))
+  else if (!(mode & static_option(Confirm_Altitude)))
   {
     /* Confirm we are falling before firing CO2. */
-    mode |= PYRO_REQ_CONFIRM;
+    fetch_or(&config, Confirm_Altitude, Rlx);
   }
   else
   {
@@ -239,7 +239,7 @@ static inline void evaluate_altitude()
     if (flight < DESCENT) {
       flight = DESCENT;
     }
-    mode |= SAFE_EXPAND_REEF;
+
     log_msg("FC:EVAL: urgently fired pyro", 29);
   }
 }
@@ -260,7 +260,7 @@ static inline void detect_launch()
 
 
 /// Monitors height and velocity increase consistency.
-static inline void detect_ascent()
+static inline void detect_ascent(fu32 mode)
 {
   if (vec[last].v.z > vec[!last].v.z &&
       vec[last].p.z > vec[!last].p.z)
@@ -272,10 +272,11 @@ static inline void detect_ascent()
       log_msg("FC:EVAL: launch confirmed", 26);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
+  else if (mode & static_option(Consecutive_Samples)
+           && sampl > 0)
   {
     sampl = 0;
-    enum command cmd = NOT_LAUNCH;
+    enum message cmd = Not_Launch;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -285,7 +286,7 @@ static inline void detect_ascent()
 /// maximum threshold for acceleration were passed.
 /// Checks for height increase and velocity decrease
 /// consistency.
-static inline void detect_burnout()
+static inline void detect_burnout(fu32 mode)
 {
   if (vec[last].v.z >= BURNOUT_MIN_VEL &&
       vec[last].a.z <= BURNOUT_MAX_VAX &&
@@ -299,10 +300,11 @@ static inline void detect_burnout()
       log_msg("FC:EVAL: watching for apogee", 29);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
+  else if (mode & static_option(Consecutive_Samples)
+           && sampl > 0)
   {
     sampl = 0;
-    enum command cmd = NOT_BURNOUT;
+    enum message cmd = Not_Burnout;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -323,7 +325,7 @@ static inline void detect_apogee()
 
 
 /// Monitors for decreasing altitude and increasing velocity.
-static inline void detect_descent()
+static inline void detect_descent(fu32 mode)
 {
   if (vec[last].p.z < vec[!last].p.z &&
       vec[last].v.z > vec[!last].v.z)
@@ -336,7 +338,7 @@ static inline void detect_descent()
       log_msg("FC:EVAL: fired pyro, descending", 32);
 
 #ifdef GPS_AVAILABLE
-      if (!(load(&config, Acq) & USE_ASCENT)) {
+      if (!(load(&config, Acq) & Prohibit_Descent_KF)) {
         initialize_descent();
         unscented = 0;
       }
@@ -344,10 +346,11 @@ static inline void detect_descent()
 #endif // GPS_AVAILABLE
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
+  else if (mode & static_option(Consecutive_Samples)
+           && sampl > 0)
   {
     sampl = 0;
-    enum command cmd = NOT_DESCENT;
+    enum message cmd = Not_Descent;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -355,7 +358,7 @@ static inline void detect_descent()
 
 /// Monitors for falling below a specific altitude,
 /// and checks for altitude consistency.
-static inline void detect_reef()
+static inline void detect_reef(fu32 mode)
 {
   if (vec[last].p.z <= REEF_TARGET_ALT && 
       vec[last].p.z < vec[!last].p.z)
@@ -368,19 +371,19 @@ static inline void detect_reef()
       log_msg("FC:EVAL: expanded parachute", 28);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
+  else if (mode & static_option(Consecutive_Samples)
+           && sampl > 0)
   {
     sampl = 0;
-    enum command cmd = NOT_REEF;
+    enum message cmd = Not_Reefing;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
 
 
-/// Monitors all statistical metrics to not deviate
-/// beyond allowed tolerance thresholds.
-static inline void
-detect_landed()
+/// Monitors that all statistical metrics do not
+/// deviate beyond allowed tolerance thresholds.
+static inline void detect_landed(fu32 mode)
 {
   float dh = vec[last].p.z - vec[!last].p.z;
   float dv = vec[last].v.z - vec[!last].v.z;
@@ -396,10 +399,11 @@ detect_landed()
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
-  else if (mode & CONSECUTIVE_SAMP && sampl > 0)
+  else if (mode & static_option(Consecutive_Samples)
+           && sampl > 0)
   {
     sampl = 0;
-    enum command cmd = NOT_LANDED;
+    enum message cmd = Not_Landed;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -414,7 +418,7 @@ void evaluation_entry(ULONG input)
 {
   (void) input;
 
-  if (load(&config, Acq) & ENTER_DIST_CYCLE)
+  if (load(&config, Acq) & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
      last = !last;
@@ -425,7 +429,7 @@ void evaluation_entry(ULONG input)
     flight = IDLE;
 
     /* Signal distribution task to enter main cycle. */
-    fetch_or(&config, ENTER_DIST_CYCLE, Rel);
+    fetch_or(&config, Launch_Triggered, Rel);
   }
 
   if (unscented) {
@@ -435,11 +439,13 @@ void evaluation_entry(ULONG input)
     timer_update(DescentKF);  
     initialize_descent();
   }
+
+  fu32 mode = load(&config, Acq);
   
-  task_loop (mode & ABORT_EVALUATION)
+  task_loop (mode & Eval_Abort_Flag)
   {
-    fu8 st = mode & EVAL_PREEMPT_OFF ? fetch_unsafe()
-                                     : fetch_async();
+    fu8 st = mode & Eval_Focus_Flag ? fetch_unsafe()
+                                    : fetch_async();
 
     if (st == 0) {
       tx_thread_sleep(EVAL_SLEEP_NO_DATA);
@@ -477,18 +483,18 @@ void evaluation_entry(ULONG input)
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
     mode = load(&config, Acq);
 
-    if (mode & FORCE_ALT_CHECKS) {
-      evaluate_altitude();
+    if (mode & Monitor_Altitude) {
+      evaluate_altitude(mode);
     }
 
     switch (flight) {
-      case IDLE:    detect_launch();  break;
-      case LAUNCH:  detect_ascent();  break;
-      case ASCENT:  detect_burnout(); break;
-      case BURNOUT: detect_apogee();  break;
-      case APOGEE:  detect_descent(); break;
-      case DESCENT: detect_reef();    break;
-      case REEF:    detect_landed();  break;
+      case IDLE:    detect_launch();      break;
+      case LAUNCH:  detect_ascent(mode);  break;
+      case ASCENT:  detect_burnout(mode); break;
+      case BURNOUT: detect_apogee();      break;
+      case APOGEE:  detect_descent(mode); break;
+      case DESCENT: detect_reef(mode);    break;
+      case REEF:    detect_landed(mode);  break;
       default: break;
     }
 

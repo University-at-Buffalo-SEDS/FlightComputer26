@@ -48,6 +48,9 @@ fu32 local_time[Time_Users] = {0};
 /// Run time configuration mask.
 atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
+/// Defined and used by Ascent filter.
+extern fu8 renorm_step_mask;
+
 
 /* ------ Local definitions ------ */
 
@@ -112,56 +115,48 @@ static inline void auto_abort()
 
 
 /// Process general command from either endpoint.
-static inline void process_action(enum command cmd)
+static inline void process_action(enum message cmd)
 {
   UINT eval_old_pt;
 
   switch (cmd) {
-    case FIRE_PYRO:
+    case Deploy_Parachute:
       co2_high();
       return;
 
-    case FIRE_REEF:
-      if (config & SAFE_EXPAND_REEF) {
+    case Expand_Parachute:
+      if (config & Parachute_Deployed) {
         reef_high();
       }
       return;
 
-    case RECOVER:
+    case Reinit_Sensors:
       try_reinit_sensors();
       return;
 
-    case START:
+    case Launch_Signal:
       /* Start Evaluation and begin rocket launch chain. */
       tx_thread_resume(&evaluation_task);
       return;
 
-    case EVAL_RELAX:
+    case Evaluation_Relax:
       /* Allow preemption of Evaluation task inside KF. */
-      config &= ~EVAL_PREEMPT_OFF;
+      config &= ~Eval_Focus_Flag;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PRIORITY,
                                   &eval_old_pt);
       return;
 
-    case EVAL_FOCUS:
+    case Evaluation_Focus:
       /* Restrict preemption of Evaluation task inside KF. */
-      config |= EVAL_PREEMPT_OFF;
+      config |= Eval_Focus_Flag;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PREEMPT_THRESHOLD,
                                   &eval_old_pt);
       return;
 
-    case EVAL_ABORT:
-      config |= ABORT_EVALUATION;
-      return;
-
-    case ALT_CHECKS:
-      config |= FORCE_ALT_CHECKS;
-      return;
-
-    case ACCUM_FAILS:
-      config |= ACCUM_FAILS;
+    case Evaluation_Abort:
+      tx_thread_reset(&evaluation_task);
       return;
 
     default: break;
@@ -169,10 +164,27 @@ static inline void process_action(enum command cmd)
 }
 
 
-/// Checks whether raw data report is OK.
-static inline void process_raw_data_code(enum command code)
+/// Apply or revoke passed runtime configuration option.
+static inline void process_config(enum message code)
 {
-  if (code != RAW_DATA)
+  if (code & KF_Operation_Mode) {
+    renorm_step_mask = code & ~KF_Operation_Mode;
+  } else if (code & Abortion_Thresholds) {
+    to_abort = code & ~Abortion_Thresholds;
+  } else if (code & Reinit_Thresholds) {
+    to_reinit = code & ~Reinit_Thresholds;
+  } else if (code & Revoke_Option) {
+    config &= ~(code & ~Revoke_Option);
+  } else {
+    config |= code;
+  }
+}
+
+
+/// Checks whether raw data report is OK.
+static inline void process_report(enum message code)
+{
+  if (code != Sensor_Measm_Code)
   {
     ++failures;
     log_err("FC:RECV: bad sensor reading (%u)", (unsigned)code);
@@ -183,27 +195,27 @@ static inline void process_raw_data_code(enum command code)
       try_reinit_sensors();
     }
   }
-  else if (config & RESET_FAILURES)
+  else if (config & Reset_Failures)
   {
     failures = 0;
   }
 }
 
 
-/// Handles delayed GPS data report.
-static inline void process_gps_code(enum command code)
+/// Handles delayed or malformed GPS data report.
+static inline void process_gps_code(enum message code)
 {
   static fu8 delay_count = 0;
   static fu8 malformed_count = 0;
 
   switch (code) {
-    case GPS_DELAY:
+    case GPS_Delayed:
       if (++delay_count >= MAX_GPS_DELAYS) {
         goto force_ukf;
       }
       return;
 
-    case GPS_MALFORMED:
+    case GPS_Malformed:
       if (++malformed_count >= GPS_MAX_MALFORMED) {
         goto force_ukf;
       }
@@ -213,7 +225,7 @@ static inline void process_gps_code(enum command code)
   }
 
 force_ukf:
-  config |= USE_ASCENT;
+  config |= Prohibit_Descent_KF;
 
   if (!unscented) {
     initialize_ascent();
@@ -222,44 +234,34 @@ force_ukf:
 }
 
 
-/// Decodes commands, message, or code from
-/// the Flight Computer and the Ground Station.
-static inline void decode(enum command cmd)
+/// Decodes universal FC message from an endpoint {FC, RF, GND}.
+static inline void decode_message(enum message msg)
 {
-  timer_update(cmd & FC_MASK ? HeartbeatFC : HeartbeatGND);
-
-  if (cmd & SYNC)
+  if (msg & GroundStation_Heartbeat)
   {
-    return;
+    timer_update(HeartbeatGND);
   }
-  else if (cmd & GPS_DELIVERY)
+  else if (msg & Runtime_Configuration)
   {
-    process_gps_code(cmd & ~FC_MASK);
+    process_config(msg & ~(FC_Identifier | Runtime_Configuration));
   }
-  else if (cmd & KF_OP_MODE)
+  else if (msg & GPS_Packet_Code)
   {
-    config |= (cmd & ~KF_OP_MODE);
+    process_gps_code(msg & ~FC_Identifier);
   }
-  else if (cmd & AUTO_REINIT_BOUNDS)
+  else if (msg & Actionable_Decrees)
   {
-    to_reinit = cmd & ~AUTO_REINIT_BOUNDS;
+    process_action(msg & ~FC_Identifier);
   }
-  else if (cmd & AUTO_ABORT_BOUNDS)
+  else if (msg & Spurious_Confirmations)
   {
-    to_abort = cmd & ~AUTO_ABORT_BOUNDS;
+    msg &= ~(FC_Identifier | Spurious_Confirmations);
+    log_err("FC:RECV: unconfirmed transition: %u", (unsigned)msg);
   }
-  else if (cmd & ACTION)
+  else if (msg & FC_Identifier)
   {
-    process_action(cmd & ~FC_MASK);
-  }
-  else if (cmd & DATA_EVALUATION)
-  {
-    /* Data evaluation reported an unconfirmed state. */
-    log_err("FC:RECV: received warning (%u)", (unsigned)cmd);
-  }
-  else if (cmd & FC_MASK)
-  {
-    process_raw_data_code(cmd & ~FC_MASK);
+    timer_update(HeartbeatFC);
+    process_report(msg & ~FC_Identifier);
   }
 }
 
@@ -276,7 +278,7 @@ void recovery_entry(ULONG input)
 
   task_loop (DO_NOT_EXIT)
   {
-    enum command cmd;
+    enum message cmd;
 
     /* Thread suspension */
     tx_semaphore_get(&unread, TX_WAIT_FOREVER);
@@ -287,7 +289,7 @@ void recovery_entry(ULONG input)
       continue;
     }
 
-    decode(cmd);
+    decode_message(cmd);
   }
 }
 
@@ -308,7 +310,7 @@ static void check_endpoints(ULONG id)
 
     timer_update(HeartbeatFC);
 
-    if (config & ENTER_DIST_CYCLE)
+    if (config & Launch_Triggered)
     {
       tx_thread_reset(&evaluation_task);
       tx_thread_resume(&evaluation_task);
@@ -324,9 +326,9 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
-    config |= FORCE_ALT_CHECKS;
-    config |= RENORM_QUATERN_1;
-    config |= RESET_FAILURES;
+    config |= Monitor_Altitude;
+    config |= Reset_Failures;
+    renorm_step_mask = RENORM_STEP;
     failures = 0;
 
 #else /* FOR TESTS ONLY */
@@ -343,7 +345,7 @@ static void check_endpoints(ULONG id)
 #ifdef GPS_AVAILABLE
   if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
   {
-    config |= USE_ASCENT;
+    config |= Prohibit_Descent_KF;
     if (!unscented) {
       initialize_ascent();
       unscented = 1;

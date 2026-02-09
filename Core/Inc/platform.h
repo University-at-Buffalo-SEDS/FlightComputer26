@@ -227,7 +227,7 @@ extern DCACHE_HandleTypeDef hdcache1;
   do {                                                      \
     HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
     /* Always guarantee all tasks observe PYRO fire */      \
-    fetch_or(&config, SAFE_EXPAND_REEF, Rel);               \
+    fetch_or(&config, Parachute_Deployed, Rel);             \
   } while (0)
 
 #define reef_low()                                          \

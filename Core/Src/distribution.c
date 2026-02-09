@@ -69,57 +69,40 @@ static struct measurement payload = {0};
 enum remote_cmd_compat : uint8_t {
 
 #else
-enum command {
+enum remote_cmd_compat {
 
 #endif // GNU C + C23
 
-  Launch,
-  Fire_Parachute,
-  Expand_Parachute,
-  Reinitialize_Sensors,
+  /* Matches 'Actionable_Decrees' */
+  Compat_Deploy_Parachute,
+  Compat_Expand_Parachute,
+  Compat_Reinit_Sensors,
+  Compat_Launch_Signal,
+  Compat_Evaluation_Relax,
+  Compat_Evaluation_Focus,
+  Compat_Evaluation_Abort,
+  
+  /* Excludes internal config options */
+  Compat_Monitor_Altitude,
+  Compat_Prohibit_Descent_KF,
+  Compat_Consecutive_Samples,
+  Compat_Confirm_Altitude,
+  Compat_Reset_Failures,
 
-  /* Preempt Evaluation as per its time slice. */
-  Evaluation_Relax,
+  Compat_Renormalize_Quat_1,
+  Compat_Renormalize_Quat_2,
+  Compat_Renormalize_Quat_4,
+  Compat_Renormalize_Quat_8,
 
-  /* Do not preempt Evaluation
-   * during resource-heavy KF iteration. */
-  Evaluation_Focus,
+  Compat_Abort_After_15,
+  Compat_Abort_After_40,
+  Compat_Abort_After_70,
 
-  /* Log but do not evaluate data. Ends Evaluation task. */
-  Evaluation_Abort,
+  Compat_Reinit_After_12,
+  Compat_Reinit_After_26,
+  Compat_Reinit_After_44,
 
-  /* Regardless of state evaluated, monitor
-   * altitude changes. */
-  Always_Check_Altitude,
-
-  /* How often to renormalize quaternion column.
-   * The number is directly proportional to the
-   * speed of the Predict step of Ascent KF.
-   *
-   * Why having this? Ascent KF is much richer 
-   * and slower than Descent KF. */
-  Renormalize_Every_1,
-  Renormalize_Every_2,
-  Renormalize_Every_4,
-  Renormalize_Every_8,
-
-  /* Whether to NOT reset fail count on a clean data report. 
-   * DANGER ZONE: only enable this if Flight Computer is
-   * under complete and reliable control from the ground. */
-  Accumulate_Failures,
-
-  /* How many failures should trigger reinit / Eval abort */
-  Fails_To_Reinit_5,
-  Fails_To_Reinit_12,
-  Fails_To_Reinit_20,
-  Fails_To_Abort_10,
-  Fails_To_Abort_20,
-  Fails_To_Abort_50,
-
-  /* Manually set FC to always use unscented filter. */
-  Use_Ascent_KF,
-
-  Compat_Commands,
+  Compat_Messages
 };
 
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
@@ -127,19 +110,24 @@ enum command {
 #endif
 
 
-static const enum command cmdmap[Compat_Commands] = {
-  START, FIRE_PYRO, FIRE_REEF, RECOVER, EVAL_RELAX, EVAL_FOCUS,
-  EVAL_ABORT, ALT_CHECKS, CMD_RENORM_QUATERN_1, CMD_RENORM_QUATERN_2,
-  CMD_RENORM_QUATERN_4, CMD_RENORM_QUATERN_8, ACCUM_FAILS, REINIT_5,
-  REINIT_12, REINIT_20, ABORT_10, ABORT_20, ABORT_50, USE_ASCENT,
+/// O(1) map between byte code and FC message.
+static const enum message extmap[Compat_Messages] = {
+    Deploy_Parachute,    Expand_Parachute,   Reinit_Sensors,
+    Launch_Signal,       Evaluation_Relax,   Evaluation_Focus,
+    Evaluation_Abort,    Monitor_Altitude,   Prohibit_Descent_KF,
+    Consecutive_Samples, Confirm_Altitude,   Reset_Failures,
+    Renormalize_Quat_1,  Renormalize_Quat_2, Renormalize_Quat_4,
+    Renormalize_Quat_8,  Abort_After_15,     Abort_After_40,
+    Abort_After_70,      Reinit_After_12,    Reinit_After_26,
+    Reinit_After_44
 };
 
 
 #define MIN_CMD_SIZE 1
 
-static inline enum command decode_cmd(const uint8_t *raw)
+static inline enum message decode_cmd(const uint8_t *raw)
 {
-  return cmdmap[*raw];
+  return extmap[*raw];
 }
 
 
@@ -206,7 +194,7 @@ static inline fu8 fetch_gps_data()
     tx_mutex_put(&mu_gps);
 
     if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
-      enum command cmd = FC_MSG(GPS_DELAY);
+      enum message cmd = FC_MSG(GPS_Delayed);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
@@ -228,7 +216,7 @@ static inline fu8 fetch_gps_data()
 static inline void check_for_gps_packet()
 {
   if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
-    enum command cmd = FC_MSG(GPS_DELAY);
+    enum message cmd = FC_MSG(GPS_Delayed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -241,7 +229,7 @@ static inline SedsResult
 handle_gnd_command(const uint8_t *data, size_t len)
 {
   UINT st = TX_SUCCESS;
-  enum command msg;
+  enum message msg;
 
 #ifdef MESSAGE_BATCHING_ENABLED
   UINT tlmt_old_pr;
@@ -306,28 +294,28 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 /// Locally validate all data but do not send reports to the queue.
 static inline fu8 pilot_validate()
 {
-  enum command st = RAW_DATA;
+  enum message st = Sensor_Measm_Code;
   
   if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT)
-    st += RAW_BAD_ALT;
+    st += Bad_Altitude;
 
   if (payload.d.accl.x > MAX_VAX || payload.d.accl.x < MIN_VAX)
-    st += RAW_BAD_ACC_X;
+    st += Bad_Accel_X;
 
   if (payload.d.accl.y > MAX_VAX || payload.d.accl.y < MIN_VAX)
-    st += RAW_BAD_ACC_Y;
+    st += Bad_Accel_Y;
   
   if (payload.d.accl.z > MAX_VAX || payload.d.accl.z < MIN_VAX)
-    st += RAW_BAD_ACC_Z;
+    st += Bad_Accel_Z;
 
   if (payload.gyro.x > MAX_ANG || payload.gyro.x < MIN_ANG)
-    st += RAW_BAD_ANG_X;
+    st += Bad_Attitude_X;
 
   if (payload.gyro.y > MAX_ANG || payload.gyro.y < MIN_ANG)
-    st += RAW_BAD_ANG_Y;
+    st += Bad_Attitude_Y;
 
   if (payload.gyro.z > MAX_ANG || payload.gyro.z < MIN_ANG)
-    st += RAW_BAD_ANG_Z;
+    st += Bad_Attitude_Z;
 
   return st;
 }
@@ -342,9 +330,9 @@ static inline fu8 pilot_validate()
 static inline void pre_launch()
 {
   fu8 st = 0;
-  enum command cmd = FC_MSG(SYNC);
+  enum message cmd = FC_MSG(GroundStation_Heartbeat);
 
-  task_loop (load(&config, Acq) & ENTER_DIST_CYCLE)
+  task_loop (load(&config, Acq) & Launch_Triggered)
   {
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
@@ -361,7 +349,7 @@ static inline void pre_launch()
     compensate(&payload, 0);
     st = pilot_validate();
 
-    if (st != RAW_DATA) {
+    if (st != Sensor_Measm_Code) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
     }
 
@@ -386,11 +374,11 @@ void distribution_entry(ULONG input)
   (void) input;
 
   /* Enter pre-launch loop only once. */
-  if (!(load(&config, Acq) & ENTER_DIST_CYCLE)) {
+  if (!(load(&config, Acq) & Launch_Triggered)) {
     pre_launch();
   }
 
-  task_loop (DO_NOT_EXIT)
+  start: task_loop (DO_NOT_EXIT)
   {
     fu8 for_ukf = load(&unscented, Acq);
 
@@ -416,8 +404,11 @@ void distribution_entry(ULONG input)
 #ifdef GPS_AVAILABLE
     else
     {
-      while (!fetch_gps_data() && !load(&unscented, Acq))
+      while (!fetch_gps_data())
       {
+        if (!load(&unscented, Acq)) {
+          goto start;
+        }
         /* GPS data is required for Descent filter to proceed. */
         tx_thread_relinquish();
       }

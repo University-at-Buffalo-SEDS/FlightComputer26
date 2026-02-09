@@ -16,8 +16,9 @@ extern atomic_uint_fast32_t config;
 
 /* ------ Thresholds for bad/delayed/outdated data reports  ------ */
 
-#define TO_REINIT 10
+#define TO_REINIT 20
 #define TO_ABORT  40
+#define RENORM_STEP 0
 
 #define MAX_RESTARTS 3
 
@@ -25,11 +26,6 @@ extern atomic_uint_fast32_t config;
 #define MAX_GPS_DELAYS 16
 #define GPS_TIME_DRIFT_MS 40
 #define GPS_MAX_MALFORMED 15
-
-/* ------ Endpoint identifiers: FC, GND ------ */
-
-#define FC_MASK (1u << 31)
-#define FC_MSG(message) (message | FC_MASK)
 
 
 /* ------ Endpoint timeouts ------ */
@@ -43,147 +39,116 @@ extern atomic_uint_fast32_t config;
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
 
-/* ------ Run time configuration flags ------ */
+
+/* ------ Universal Flight Computer message ------ */
+
+/* This message format is used by the Flight Computer
+ * for internal and external communication.
+ *
+ * The general format can be summarized as follows:
+ *
+ * The MSB represents an internal FC message. If it
+ * is unset, the message came from external source.
+ * The next bit represents Ground Station heartbeat.
+ *
+ * The next set bit (can be any) represents message
+ * category, such as an Action (command) or sensor
+ * measurement code. Run time configuration category
+ * has its own subcategories, which overlap with other
+ * categories. This is acceptable because configuration
+ * category is matched first and then branched away.
+ *
+ * After category mask is removed, the subcategory
+ * variants represent directly useful values except
+ * for when literal value is not important (in this
+ * case values are 1..N). The lowest category is
+ * additive, and therefore follows exponential pattern.
+ */
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum g_conf : uint32_t {
+enum message : uint32_t {
 
 #else
-enum g_conf {
+enum message {
 
 #endif // GNU C + C23
 
-  CHECKS_COMPLETE = 0, /* Reserved */
+  Sensor_Measm_Code = 0,
 
-  /* Evaluation options */
-  FORCE_ALT_CHECKS = 1u,
-  CONSECUTIVE_SAMP = 1u << 1,
-  SAFE_EXPAND_REEF = 1u << 2,
-  REINIT_ATTEMPTED = 1u << 3,
-  PYRO_REQ_CONFIRM = 1u << 4,
+  Bad_Altitude   = 1u,
+  Bad_Attitude_X = (1u << 1),
+  Bad_Attitude_Y = (1u << 2),
+  Bad_Attitude_Z = (1u << 3),
+  Bad_Accel_X    = (1u << 4),  
+  Bad_Accel_Y    = (1u << 5),
+  Bad_Accel_Z    = (1u << 6),
+  Bad_Lattitude  = (1u << 7),
+  Bad_Longtitude = (1u << 8),
+  Bad_Sea_Level  = (1u << 9),
 
-  RENORM_QUATERN_1 = 1u << 5,
-  RENORM_QUATERN_2 = 1u << 6,
-  RENORM_QUATERN_4 = 1u << 7,
-  RENORM_QUATERN_8 = 1u << 8,
-  ABORT_EVALUATION = 1u << 9,
-  EVAL_PREEMPT_OFF = 1u << 10,  
-  FORCE_ASCENT_UKF = 1u << 11,
+  Spurious_Confirmations = (1u << 10),
 
-  /* Distribution options */
-  DISTRIB_EMERGENT = 1u << 12,
-  ENTER_DIST_CYCLE = 1u << 13,
-
-  /* Recovery options */
-  RESET_FAILURES = 1u << 14,
-};
-
-
-/* ------ Recovery commands ------ */
-
-/// Command or warning/error code for recovery.
-/// Guideline for including your custom messages:
-/// 
-/// 1. Mark your section with a variant of appropriate
-/// label. Put that variant as the next-largest power
-/// of 2. Then add your variants by incrementing that mark.
-///
-/// 2. In either FC or GND sections of recovery.c decode(),
-/// add a check against your section mark as a top 'if'
-/// statement (so it executes before other checks).
-///
-/// 3. Inside this check, call your function to handle
-/// your added variants.
-/// 
-/// You can send a command to recovery like this
-/// (assume trying to recover sensors from the FC):
-///
-/// enum command cmd = FC_MSG(FIRE_PYRO);
-/// tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-///
-/// Wait option depends on whether you want to drop
-/// the value if the queue is full (latter is unlikely). 
-///
-/// NOTE: if you are sending a message from FC,
-/// mask it with FC_MSG(_variant_). Otherwise - UB!
-
-#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum command : uint32_t {
-
-#else
-enum command {
-
-#endif // GNU C + C23
-
-  /* Raw data codes (additive) */
-  RAW_DATA = 0,
-
-  RAW_BAD_ALT   = 1u,
-  RAW_BAD_ANG_X = (1u << 1),
-  RAW_BAD_ANG_Y = (1u << 2),
-  RAW_BAD_ANG_Z = (1u << 3),
-  RAW_BAD_ACC_X = (1u << 4),  
-  RAW_BAD_ACC_Y = (1u << 5),
-  RAW_BAD_ACC_Z = (1u << 6),
-  RAW_BAD_GPS_X = (1u << 7),
-  RAW_BAD_GPS_Y = (1u << 8),
-  RAW_BAD_GPS_Z = (1u << 9),
-
-  /* Data evaluation codes */
-  DATA_EVALUATION = (1u << 10),
-
-  NOT_LAUNCH  = DATA_EVALUATION + 1,
-  NOT_BURNOUT = DATA_EVALUATION + 2,
-  NOT_DESCENT = DATA_EVALUATION + 3,
-  NOT_REEF    = DATA_EVALUATION + 4,
-  NOT_LANDED  = DATA_EVALUATION + 5,
+  Not_Launch  = Spurious_Confirmations + 1,
+  Not_Burnout = Spurious_Confirmations + 2,
+  Not_Descent = Spurious_Confirmations + 3,
+  Not_Reefing = Spurious_Confirmations + 4,
+  Not_Landed  = Spurious_Confirmations + 5,
   
-  /* Actionanle commands */
-  ACTION = (1u << 11),
+  Actionable_Decrees = (1u << 11),
 
-  FIRE_PYRO   = ACTION + 1,
-  FIRE_REEF   = ACTION + 2,
-  RECOVER     = ACTION + 3, 
-  START       = ACTION + 4,
-  EVAL_RELAX  = ACTION + 5,
-  EVAL_FOCUS  = ACTION + 6,
-  EVAL_ABORT  = ACTION + 7,
-  ALT_CHECKS  = ACTION + 8,
-  ACCUM_FAILS = ACTION + 9,
-  USE_ASCENT  = ACTION + 10,
+  Deploy_Parachute = Actionable_Decrees + 1,
+  Expand_Parachute = Actionable_Decrees + 2,
+  Reinit_Sensors   = Actionable_Decrees + 3, 
+  Launch_Signal    = Actionable_Decrees + 4,
+  Evaluation_Relax = Actionable_Decrees + 5,
+  Evaluation_Focus = Actionable_Decrees + 6,
+  Evaluation_Abort = Actionable_Decrees + 7,
 
-  /* Run time Bounds for abort */
-  AUTO_ABORT_BOUNDS = (1u << 12),
+  GPS_Packet_Code = (1u << 12),
 
-  ABORT_10 = AUTO_ABORT_BOUNDS + 10,
-  ABORT_20 = AUTO_ABORT_BOUNDS + 25,
-  ABORT_50 = AUTO_ABORT_BOUNDS + 50,
-
-  /* Run time Bounds for reinit */
-  AUTO_REINIT_BOUNDS = (1u << 13),
-
-  REINIT_5  = AUTO_REINIT_BOUNDS + 5,
-  REINIT_12 = AUTO_REINIT_BOUNDS + 12,
-  REINIT_20 = AUTO_REINIT_BOUNDS + 20,
-
-  /* Run time KF config options */
-  KF_OP_MODE = (1u << 14),
-
-  CMD_RENORM_QUATERN_1 = KF_OP_MODE + 1,
-  CMD_RENORM_QUATERN_2 = KF_OP_MODE + 2,
-  CMD_RENORM_QUATERN_4 = KF_OP_MODE + 4,
-  CMD_RENORM_QUATERN_8 = KF_OP_MODE + 8,
-
-  /* GPS data delivery codes */
-  GPS_DELIVERY = (1u << 15),
-
-  GPS_DELAY     = GPS_DELIVERY + 1,
-  GPS_MALFORMED = GPS_DELIVERY + 2,
+  GPS_Delayed   = GPS_Packet_Code + 1,
+  GPS_Malformed = GPS_Packet_Code + 2,
 
   /* ... */
 
-  /* Synchronization event for Ground Station */
-  SYNC = (1u << 30),
+  Runtime_Configuration = (1u << 29),
+
+  Monitor_Altitude    = Runtime_Configuration + 1u,
+  Prohibit_Descent_KF = Runtime_Configuration + (1u << 1),
+  Consecutive_Samples = Runtime_Configuration + (1u << 2),
+  Parachute_Deployed  = Runtime_Configuration + (1u << 3),
+  Reinit_Attempted    = Runtime_Configuration + (1u << 4),
+  Confirm_Altitude    = Runtime_Configuration + (1u << 5),
+  Eval_Focus_Flag     = Runtime_Configuration + (1u << 6),
+  Eval_Abort_Flag     = Runtime_Configuration + (1u << 7),
+  Reset_Failures      = Runtime_Configuration + (1u << 8),
+  Launch_Triggered    = Runtime_Configuration + (1u << 8),
+
+  Revoke_Option = Runtime_Configuration + (1u << 20),
+
+  KF_Operation_Mode = Runtime_Configuration + (1u << 28),
+
+  Renormalize_Quat_1 = KF_Operation_Mode + 0,
+  Renormalize_Quat_2 = KF_Operation_Mode + 1,
+  Renormalize_Quat_4 = KF_Operation_Mode + 3,
+  Renormalize_Quat_8 = KF_Operation_Mode + 7,
+
+  Abortion_Thresholds = Runtime_Configuration + (1u << 27),
+
+  Abort_After_15 = Abortion_Thresholds + 15,
+  Abort_After_40 = Abortion_Thresholds + 40,
+  Abort_After_70 = Abortion_Thresholds + 70,
+
+  Reinit_Thresholds = Runtime_Configuration + (1u << 26),
+
+  Reinit_After_12 = Reinit_Thresholds + 12,
+  Reinit_After_26 = Reinit_Thresholds + 26,
+  Reinit_After_44 = Reinit_Thresholds + 44,
+
+  /* ... */
+
+  GroundStation_Heartbeat = (1u << 30),
+  FC_Identifier = (1u << 31)
 };
 
 
@@ -199,14 +164,25 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 #endif // !GNU C * < C23
 
 
+/* ------ Endpoint identifiers: FC ------ */
+
+#define FC_MSG(message) (message | FC_Identifier)
+
+
+/* ------ Statically unflag option value ------ */
+
+#define static_option(opt) (opt & ~Runtime_Configuration)
+
+
 /* ------ User default configuration ------ */
 
 /// Run time config options applied on boot.
 /// Users are welcome to edit the defaults here.
-#define DEFAULT_OPTIONS ( (fu32) (0               \
-                          | CONSECUTIVE_SAMP      \
-                          | RENORM_QUATERN_1      \
-                          | EVAL_PREEMPT_OFF      \
+#define DEFAULT_OPTIONS ( (fu32) (0                   \
+                          | Consecutive_Samples       \
+                          | Renormalize_Quat_1        \
+                          | Eval_Focus_Flag           \
+                          | Reset_Failures            \
                         ) )
 
 

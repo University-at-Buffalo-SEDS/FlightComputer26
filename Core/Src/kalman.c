@@ -29,8 +29,9 @@
 #include "kalman.h"
 #include "dma.h"
 
-/// Module config bitmask from Evaluation.
-extern fu16 mode;
+/// Number of iterations - 1 for quaternion matrix
+/// renormalization. Set by Recovery task.
+fu8 renorm_step_mask = RENORM_STEP;
 
 
 /* ------ Locally used definitions ------ */
@@ -130,9 +131,7 @@ measurement(const struct state_vec *restrict vec,
 static inline void
 predict(struct state_vec *vec)
 {
-  /* Needed for divisibility test by a power of 2
-   * => overflow is OK */
-  static fu8 iter = 0;
+  static fu8 iteration = 0;
 
   const float dt = FSEC(timer_exchange(AscentKF));
 
@@ -167,10 +166,7 @@ predict(struct state_vec *vec)
                         vec->w.y * old.q2 - \
                         vec->w.x * old.q3);
 
-  if ( mode & RENORM_QUATERN_1                  ||
-      (mode & RENORM_QUATERN_2 && !(iter & 1u)) ||
-      (mode & RENORM_QUATERN_4 && !(iter & 3u)) ||
-      (mode & RENORM_QUATERN_8 && !(iter & 7u)))
+  if (!(iteration & renorm_step_mask))
   {
     const float expr = vec->qv.q1 * vec->qv.q1 + \
                        vec->qv.q2 * vec->qv.q2 + \
@@ -186,7 +182,7 @@ predict(struct state_vec *vec)
     }
   }
 
-  ++iter;
+  ++iteration;
 }
 
 
