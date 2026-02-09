@@ -1,9 +1,10 @@
 /*
- * Kalman filter and math functions
+ * Kalman Filters
  *
  * This file includes implementations of:
  *   - Unscented (ascent) Kalman filter;
  *	 - Regular (descent) Kalman filter;
+ *   - Covariance initialization functions;
  *	 - Context and type-specifc math functions.
  *
  * The entirety of logic in this file is executed
@@ -17,9 +18,9 @@
  *
  * Both KF implementations share the same buffers, the size
  * of which equals to the largest demanded size among the
- * two filters. When the flight state switches to Apogee,
- * the buffers are cleared and set to the default values
- * expected by the descent filter.
+ * two filters. When the filters are switched, the buffers
+ * are cleared and set to the default values expected by
+ * the newly selected filter.
  */
 
 #include "evaluation.h"

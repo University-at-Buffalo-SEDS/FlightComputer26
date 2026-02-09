@@ -1,19 +1,19 @@
 /*
  * Distribution Task
  *
- * Uses API of DMA, Telemetry, Predict, and Recovery
- * to serve as the Flight Computer coordination module.
+ * Serves as the Flight Computer coordination module.
+ * Provides telemetry handler for GND commands and GPS data. 
  *
  * This task includes a packet handler that is comptime
  * subscribed to messages incoming to the FLIGHT_CONTROLLER
  * endpoint. This handler deposits messages into the Recovery
- * queue.
+ * queue and receives GPS data from the telemetry router.
  *
  * Before entering the normal operation (flight) loop,
  * this task runs a pilot (demo) loop that fetches and
- * validates data but does not evaluate it. This is needed
- * in order to verify that sensors are functional and to inform
- * the Ground Station of any issues.
+ * validates data but does not pass it for evaluation.
+ * This is needed to verify that sensors are functional
+ * and to inform the Ground Station of any issues.
  *
  * The pilot loop is left and ignition is requested from the
  * Valve board upon receiving the 'ENTER_DIST_CYCLE' atomic
@@ -21,10 +21,8 @@
  * being (in turn) woken on a semaphore by the Recovery Task,
  * which sends it (in turn) after receiving the 'START' signal
  * on its queue, which (in turn) is deposited there by the
- * telemetry handler (below), being (in turn) invoked when
- * a local instance of the telemetry router receives a frame
- * over CAN bus. This allows for sequential and safe module
- * initialization and consent.
+ * telemetry handler (below). This allows for sequential and
+ * safe module initialization and consent.
  *
  * When fetching a pack of data (barometer, gyroscope, and
  * accelerometer readings) from DMA buffers, it is not
@@ -34,16 +32,15 @@
  * caller (this task) that the buffer is ready and it can
  * proceed. This is made to simplify synchronization within
  * the Interrupt Service Routine, where ThreadX API, and
- * therefore its wait/wake service, is unavailable.
+ * therefore its wait/wake service, is unavailable. When
+ * using Descent KF, this task will inform DMA that it can
+ * skip Accel and Gyro readings, but will yield indefinitely
+ * if no GPS data is available, until it either becomes
+ * available or Recovery task falls back to using Ascent KF.
  *
  * The data is then passed for preliminary compensation 
  * (provided by device drivers), and placed inside the
  * data evaluation buffer and telemetry (UART and SD) queues.
- *
- * Software model: this task should be trivial to
- * be able to demonstrate routing across rocket modules.
- * Synchronization and task specifics should be handled
- * with the respective APIs themselves.
  */
 
 #include "platform.h"
@@ -57,7 +54,7 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 
 /* ------ Static ------ */
 
-/// Latest logged measurement
+/// Latest logged measurement.
 static struct measurement payload = {0};
 
 
@@ -81,7 +78,7 @@ enum command {
   Expand_Parachute,
   Reinitialize_Sensors,
 
-  /* Preempt Evaluation per its time slice. */
+  /* Preempt Evaluation as per its time slice. */
   Evaluation_Relax,
 
   /* Do not preempt Evaluation
@@ -119,6 +116,9 @@ enum command {
   Fails_To_Abort_20,
   Fails_To_Abort_50,
 
+  /* Manually set FC to always use unscented filter. */
+  Use_Ascent_KF,
+
   Compat_Commands,
 };
 
@@ -127,17 +127,15 @@ enum command {
 #endif
 
 
-/// Single mapping that avoids sequential match.
-/// Order is dictated by enum above.
 static const enum command cmdmap[Compat_Commands] = {
   START, FIRE_PYRO, FIRE_REEF, RECOVER, EVAL_RELAX, EVAL_FOCUS,
   EVAL_ABORT, ALT_CHECKS, CMD_RENORM_QUATERN_1, CMD_RENORM_QUATERN_2,
   CMD_RENORM_QUATERN_4, CMD_RENORM_QUATERN_8, ACCUM_FAILS, REINIT_5,
-  REINIT_12, REINIT_20, ABORT_10, ABORT_20, ABORT_50,
+  REINIT_12, REINIT_20, ABORT_10, ABORT_20, ABORT_50, USE_ASCENT,
 };
 
 
-#define MIN_CMD_SIZE 1 /* Message code transmitted (1 byte) */
+#define MIN_CMD_SIZE 1
 
 static inline enum command decode_cmd(const uint8_t *raw)
 {
@@ -147,7 +145,7 @@ static inline enum command decode_cmd(const uint8_t *raw)
 
 #else
 
-#define MIN_CMD_SIZE 4 /* Message itself transmitted (4 bytes) */
+#define MIN_CMD_SIZE 4
 
 static inline enum command decode_cmd(const uint8_t *raw)
 {
@@ -160,16 +158,10 @@ static inline enum command decode_cmd(const uint8_t *raw)
 
 #ifdef GPS_AVAILABLE
 
-/// Latest received GPS data + serials
-/// Serials' overflow is intentional to resynchronize
-/// RF-FC relative clocks every 256-th GPS packet.
 static struct coords gps_bucket = {0};
 static fu8 gps_prod_serial = 0;
 static fu8 gps_cons_serial = 0;
 
-/// Distribution and telemetry threads are
-/// scheduled equally => try plain lock for now
-/// TODO: see if it creates bottlenecks in tests
 static TX_MUTEX mu_gps;
 
 
@@ -177,7 +169,6 @@ static TX_MUTEX mu_gps;
 static inline SedsResult
 handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 {
-  /// Milliseconds of UNIX epoch at boot.
   static fu64 gps_ref_time = 0;
 
   timer_update(HeartbeatRF);
@@ -209,24 +200,27 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 /// Replaces accel data with GPS data, if available. Otherwise hangs.
 /// Signals to Recovery task if plausible internal between GPS packets
 /// was exceeded. Called from within the Distribution task.
-static inline void fetch_gps_data()
+static inline fu8 fetch_gps_data()
 {
   tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
 
   if (gps_cons_serial == gps_prod_serial) {
-    goto finish;
+      tx_mutex_put(&mu_gps);
+
+    if (timer_fetch_update(IntervalGPS) > GPS_DELAY_MS) {
+      enum command cmd = FC_MSG(GPS_DELAY);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    }
+
+    return 0;
   }
   
   payload.d.gps = gps_bucket;
   gps_cons_serial = gps_prod_serial;
 
-finish:
   tx_mutex_put(&mu_gps);
 
-  if (timer_fetch_update(IntervalGPS) > GPS_DELAY_MS) {
-    enum command cmd = FC_MSG(GPS_DELAY);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
+  return 1;
 }
 
 #endif // GPS_AVAILABLE
@@ -241,13 +235,7 @@ handle_gnd_command(const uint8_t *data, size_t len)
 #ifdef MESSAGE_BATCHING_ENABLED
   UINT tlmt_old_pr;
 
-  /* To avoid context switch for each message put in Recovery queue,
-   * temporarily boost priority of the Telemetry task to disable
-   * preemption from the Recovery task, and revert the change after
-   * all messages are dispatched (will immediately preempt the task).
-   *
-   * NOTE: this is NOT a critical section. Switching to Recovery
-   * task after dispatching each message is safe but costly. */
+  /* This avoids context switch to Recovery when enqueueing a batch. */
   tx_thread_priority_change(&telemetry_thread, 0, &tlmt_old_pr);
 
   for (fu16 k = 0; k < len; k += MIN_CMD_SIZE)
@@ -373,33 +361,31 @@ static inline void pre_launch()
     log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
   }
 
-  /* Request Valve board to ignite the engine.
-   * Repeat until the signal is delivered. */
+  /* Request Valve board to ignite the engine. */
   task_loop (request_ignition() == SEDS_OK);
 
   log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
 }
 
+
 /// Distribution task entry that also serves as
 /// an overview of the Flight Computer data distribution.
-/// This function is idempotent and can be entered twice
-/// if critical conditions arise as deemed by Recovery task.
+/// This function is idempotent and can be reentered whenever
+/// any critical conditions arise as deemed by Recovery task.
 void distribution_entry(ULONG input)
 {
   (void) input;
 
-  /* Enter pre-launch loop only before the Launch directive */
+  /* Enter pre-launch loop only once. */
   if (!(load(&config, Acq) & ENTER_DIST_CYCLE)) {
     pre_launch();
   }
 
-  /* Normal post-launch operation begins */
   task_loop (DO_NOT_EXIT)
   {
     fu8 for_ukf = load(&unscented, Acq);
 
-    /* Do not wait for Gyro & Accel measurements if
-     * we are using Descent filter. */
+    /* Do not wait for Gyro & Accel if we use Descent KF. */
     fu8 skip_mask = for_ukf ? 0 : GYRO_DONE | ACCL_DONE;
 
     if (!dma_try_fetch(&payload, skip_mask))
@@ -420,8 +406,11 @@ void distribution_entry(ULONG input)
 #ifdef GPS_AVAILABLE
     else
     {
-      fetch_gps_data();
-      /* Logged by RF board. */
+      while (!fetch_gps_data() && !load(&unscented, Acq))
+      {
+        /* GPS data is required for Descent filter to proceed. */
+        tx_thread_relinquish();
+      }
     }
 #endif
 
@@ -429,10 +418,8 @@ void distribution_entry(ULONG input)
   }
 }
 
-/// Creates a preemptive, non-cooperative Distribution task
-/// with defined parameters. This task only sleeps for a very
-/// short time if sensor measurements have not yet appeared
-/// in full capacity in the DMA buffers. 
+
+/// Creates a preemptive, Distribution task with defined parameters.
 void create_distribution_task(void)
 {
   UINT st = tx_thread_create(&distribution_task,

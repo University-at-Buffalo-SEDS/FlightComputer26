@@ -2,45 +2,34 @@
  * Evaluation Task
  * 
  * This task consists of two major parts:
- * KF (Kalman Filter, in kalman.c) and Prediction.
+ * KF (Kalman Filters, in kalman.c) and Prediction.
  *
  * The shared ring buffer is actively filled by the
  * Distribution task with compensated raw data taken
- * from DMA buffers. Upon entering its main loop,
- * this task copies the most recently available pack
- * of measurements (baro, gyro, accel), and checks
- * them against sanity boundaries. Regardless of the
- * outcome of this evaluation, a status code (a success
- * or bad data report) is passed to the Recovery Task
- * queue in order to maintain internal FC heartbeat.
- * If there was bad data, the task will take another
- * (always newer) buffer from the ring or wait if 
- * there is no one available (unlikely).
+ * from DMA buffers (and externally received GPS data
+ * if we are running Descent filter). Upon entering
+ * its main loop, this task copies the most recent 
+ * measurements and optionally validates them.
  *
- * Then this task updates its local configuration
- * from the global one (for later non-atomic access),
- * and evaluates certain options if possible (such as
- * FORCE_ALT_CHECKS, which direct to always monitor
- * altitude changes, regardless of current state).
+ * A good, bad, or empty (if validation is disabled)
+ * report is then sent to the Recovery task, to maintain
+ * heartbeat and change malformed data counter (if any).
  *
- * Depending on whether apogee is reached, the raw
- * and presumably valid data is passed to the either
+ * Then this task updates its local configuration from
+ * the global one set by the Recovery task. The config
+ * affects speed, operation capacity, verbosity, and
+ * precision of both the KF and the Prediction parts.
+ * The full list of available Evaluation options can
+ * be found in recovery.h. 
+ *
+ * If valid, data vector is then passed to the either
  * of Ascent or Descent variants of the Kalman Filter.
- * This is where this task will be stuck for a while,
- * despite my attempts to use fast math and maintain
- * cache coherency in math operations. This is why
- * UKF and Prediction tasks are combined in sequential
- * logic: losing one processed vector due to async
- * would be timewise expensive.
  *
  * Then, depending on current flight state and run time
- * parameters, the processed vector is evaluated using
- * one of the checking functions. Some of them require
+ * parameters, the resulting state vector is evaluated by
+ * at least one checking function. Some of them require
  * several confirmations of the observation and thus
  * will need several iterations of the Kalman Filter.
- *
- * Unless Earth's gravity becomes like that on Jupiter,
- * we don't need to rush here!
  */
 
 #include "evaluation.h"
@@ -55,40 +44,27 @@ ULONG evaluation_stack[EVAL_STACK_ULONG];
 /// Module config bitmask. Global as used by Kalman filter.
 fu16 mode = 0;
 
-/// Separate flag in addition to flight state
-/// to avoid repeated comparisons in handlers.
+/// Current filter flag that does not depend on flight state.
 atomic_uint_fast8_t unscented = 1;
 
 
 /* ------ Static ------ */
 
-/// Raw data ring.
-static struct measm_z payload[RING_SIZE] = {0};
+/// Measurement struct but as 1x7 column vector.
+static struct measm_z raw = {0};
 
 /// 0-7:  amount of new entries,
-/// 8-15: 'consumer locked' index
-/// The latter is 255 (FF) when consumer is not reading the buffer.
+/// 8-15: 'consumer lock' index. 0xFF when unlocked.
 static atomic_uint_fast16_t mask = 0xFF00u;
+static struct measm_z payload[RING_SIZE] = {0};
 
-/// Last state vector buffer {0, 1}
+/// Current and previous state vectors.
 static fu8 last = 0;
-
-/// Amount of successive samples per flight stage
-static fu8 sampl = 0;
-
-/// Current flight state
-static enum state flight = SUSPENDED;
-
-/* Addresses of the following structs and their 
- * members are constants. When passed to external
- * functions, address arguments are subjected to
- * compiler and linker optimizations. */
-
-/// Current and previous state vectors
 static struct state_vec vec[2] = {0};
 
-/// Latest local measurement (trimmed of temperature and pressure)
-static struct measm_z raw = {0};
+/// Flight stage and transition sample counter.
+static enum state flight = SUSPENDED;
+static fu8 sampl = 0;
 
 
 /* ------ Public API ------ */
@@ -122,9 +98,6 @@ static fu8 idx = UINT_FAST8_MAX;
 static inline fu8 fetch_async()
 {
   fu16 i = idx;
-
-  /* Fetch and clear new entries counter
-   * and store current index */
   fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
   
   if (!n)
@@ -136,16 +109,14 @@ static inline fu8 fetch_async()
   raw = payload[i];
 
 finish:
-  /* Always clear busy index (relaxed) */
   fetch_or(&mask, CLEAR_IDX, Rlx);
   return n;
 }
 
 
 /// Fetches one value from the ring buffer.
-/// This version should only be used when preemption for
-/// the Evaluation task is disabled.
 /// Returns the amount of new entries added since last call.
+/// Used when Evaluation cannot be preempted by Distribution.
 static inline fu8 fetch_unsafe()
 {
   fu8 n = (fu8) mask;
@@ -159,11 +130,11 @@ static inline fu8 fetch_unsafe()
   return n;
 }
 
+
 #ifdef MEASM_VALIDATE
 
-/// Validates one raw measurement against sanity bounds.
-static inline fu8
-validate()
+/// Validates one measm_z against sanity bounds.
+static inline fu8 validate()
 {
   enum command st = RAW_DATA;
 
@@ -173,7 +144,7 @@ validate()
 #ifdef GPS_AVAILABLE
   if (unscented)
   {
-#endif // GPS_AVAILABLE
+#endif
 
     if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
       st += RAW_BAD_ACC_X;
@@ -183,6 +154,15 @@ validate()
   
     if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
       st += RAW_BAD_ACC_Z;
+
+    if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
+      st += RAW_BAD_ANG_X;
+
+    if (raw.gyro.y > MAX_ANG || raw.gyro.y < MIN_ANG)
+      st += RAW_BAD_ANG_Y;
+
+    if (raw.gyro.z > MAX_ANG || raw.gyro.z < MIN_ANG)
+      st += RAW_BAD_ANG_Z;
 
 #if GPS_AVAILABLE
   }
@@ -199,22 +179,6 @@ validate()
   }
 
 #endif // GPS_AVAILABLE
-  
-  if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
-    st += RAW_BAD_ANG_X;
-
-  if (raw.gyro.y > MAX_ANG || raw.gyro.y < MIN_ANG)
-    st += RAW_BAD_ANG_Y;
-
-  if (raw.gyro.z > MAX_ANG || raw.gyro.z < MIN_ANG)
-    st += RAW_BAD_ANG_Z;
-
-  st = FC_MSG(st);
-  /*
-   * Even if data has been successfully validated,
-   * send 'OK' signal in order to maintain heartbeat.
-   */
-  tx_queue_send(&shared, &st, TX_NO_WAIT);
 
   return st;
 }
@@ -224,16 +188,11 @@ validate()
 
 /* ------ Data evaluation ------ */
 
-/// Cautiously examine altitude changes
-/// in order to make an immediate decision.
-static inline void
-evaluate_altitude()
+/// Cautiously examine altitude changes. Act in place.
+static inline void evaluate_altitude()
 {
-  /* If we aren't yet ascending or not descending, return.
-   * First condition is to guard against noise while idle. */
   if (flight < ASCENT || vec[last].p.z > vec[!last].p.z) {
-    /* If we were waiting on confirmation BUT config mandates
-     * confirmations to be consecutive, reset the flag */
+    /* Confirms must be consecutive */
     if (mode & CONSECUTIVE_SAMP && mode & PYRO_REQ_CONFIRM) {
       mode &= ~PYRO_REQ_CONFIRM;
     }
@@ -243,34 +202,45 @@ evaluate_altitude()
 
   if (vec[last].p.z <= REEF_TARGET_ALT)
   {
-    /* We somehow missed the moment to expand parachute.
-     * Do NOT release control until reef is fired */
+    /* We fell below reefing altitude. Depeding on
+     * how much we missed, peform the deployments. */
+
     if (mode & SAFE_EXPAND_REEF)
     {
       reef_high();
-      log_msg("FC:EVAL: urgently expanding reef", 33);
+
+      if (flight < REEF) {
+        flight = REEF;
+      }
+      log_msg("FC:EVAL: urgently expanded reef", 32);
     }
     else
-    {
-      /* We didn't even deploy parachute to that moment.
-       * What is going on!!? Perform full sequence. */ 
+    { 
       co2_high();
-      log_msg("FC:EVAL: urgently firing PYRO->REEF", 36);
-      mode |= SAFE_EXPAND_REEF;
-      tx_thread_sleep(100); // sleep for 1 sec
+      tx_thread_sleep(100);
       reef_high();
+      
+      if (flight < REEF) {
+        flight = REEF;
+      }
+      mode |= SAFE_EXPAND_REEF;
+      log_msg("FC:EVAL: urgently fired PYRO->REEF", 35);
     }
   }
   else if (!(mode & PYRO_REQ_CONFIRM))
   {
-    /* Request one confirmation of decreasing height,
-      * then fire PYRO. */
+    /* Confirm we are falling before firing CO2. */
     mode |= PYRO_REQ_CONFIRM;
   }
   else
   {
     co2_high();
+
+    if (flight < DESCENT) {
+      flight = DESCENT;
+    }
     mode |= SAFE_EXPAND_REEF;
+    log_msg("FC:EVAL: urgently fired pyro", 29);
   }
 }
 
@@ -446,22 +416,18 @@ void evaluation_entry(ULONG input)
 
   if (load(&config, Acq) & ENTER_DIST_CYCLE)
   {
-    /* This is a re-entry. Discard the buffer processing
-     * which the system timed out. KF will receive older
-     * state vector and recompute new state vec into the
-     * buffer that was interrupted. */
+     /* Discard unfinished (interrupted) state vector. */
      last = !last;
   }
-  else /* Initial launch command */
+  else
   {
     log_msg("FC:EVAL: received launch signal", 32);
     flight = IDLE;
 
-    /* Signal distribution task to enter main cycle */
+    /* Signal distribution task to enter main cycle. */
     fetch_or(&config, ENTER_DIST_CYCLE, Rel);
   }
 
-  /* Init filter and begin counting down elapsed time. */
   if (unscented) {
     timer_update(AscentKF);
     initialize_ascent();
@@ -482,21 +448,19 @@ void evaluation_entry(ULONG input)
 
 #ifdef MEASM_VALIDATE
     st = validate();
+#else
+    st = FC_MSG(RAW_DATA);
+#endif
 
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+
+#ifdef MEASM_VALIDATE
     if (st > 0) {
-      /* Depending on comptime config (sleep intervals
-       * and thread time slices), relinquishing may
-       * return control back to this thread faster than
-       * sleeping. Here, we retry not because the producer
-       * is slow, but because the data is invalid. Thus
-       * we want producer to run for its minimum (1 slice). */
       tx_thread_relinquish();
       continue;
     }
+#endif
 
-#endif // MEASM_VALIDATE
-
-    /* One state vector is input (x_0), other is for output only (x_f) */
 #ifdef GPS_AVAILABLE
     unscented ? ascentKF (&vec[last], &vec[!last], &raw)  :
                 descentKF(&vec[last], &vec[!last], &raw.d);
@@ -504,17 +468,13 @@ void evaluation_entry(ULONG input)
 #else
     ascentKF(&vec[last], &vec[!last], &raw);
 
-#endif // GPS_AVAILABLE
+#endif
 
     last = !last;
 
-    /* ^^^ Log latest state vec excluding quaternions */
     log_filter_data(&vec[last], STATE_LOGGABLE);
 
-    /* Long cycle of Distribution and Telemetry tasks */
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
-
-    /* When back, load any changes in config */
     mode = load(&config, Acq);
 
     if (mode & FORCE_ALT_CHECKS) {
@@ -532,19 +492,14 @@ void evaluation_entry(ULONG input)
       default: break;
     }
 
-    /* Short cycle of Distribution and Telemetry tasks */
     tx_thread_relinquish();
-
-    /* When back, load any changes in config */
     mode = load(&config, Acq);
   }
 }
 
 
-/// Creates a configurably-preemptive, cooperative
-/// Evaluation task with defined parameters.
-/// This task does not start automatically and is
-/// instead resumer by the Recovery task.
+/// Creates a configurably-preemptive, cooperative Evaluation task
+/// with defined parameters. This task started by the Recovery task.
 void create_evaluation_task(void)
 {
   UINT st = tx_thread_create(&evaluation_task,

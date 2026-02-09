@@ -16,10 +16,8 @@
  * read and locally update on every iteration. The
  * ThreadX timer is set to expire every second.
  *
- * The function user_runtime_config is provided,
- * where users can specify the default configuration.
- * The list of options can be found in recovery.h ->
- * -> "Run time configuration flags".
+ * To change default configuration applied during boot,
+ * refer to recovery.h -> DEFAULT_OPTIONS.
  *
  * You can send a command to recovery like this
  * (assume firing pyro from the ground station):
@@ -47,9 +45,7 @@ ULONG recovery_stack[RECV_STACK_ULONG];
 /// Last recorded time for each timer user.
 fu32 local_time[Time_Users] = {0};
 
-/// Run time configuration mask
-/// Recovery task cannot be preempted and thus
-/// can access this config non-atomically
+/// Run time configuration mask.
 atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
 
@@ -63,7 +59,6 @@ static fu8 failures = 0;
 static fu8 to_abort  = TO_ABORT;
 static fu8 to_reinit = TO_REINIT;
 
-/// Queue of 32 uints that begins in the middle of SRAM1
 #define QADDR (VOID *)0x20010000
 #define QSIZE 128
 
@@ -109,16 +104,15 @@ static inline void try_reinit_sensors()
 }
 
 
-/// Scenario when Flight Computer itself decides to abort.
+/// FC deemed the required minimum of sensors unreliable.
 static inline void auto_abort()
 {
-  // TODO to be discussed
+  // TODO
 }
 
 
 /// Process general command from either endpoint.
-static inline void
-process_action(enum command cmd)
+static inline void process_action(enum command cmd)
 {
   UINT eval_old_pt;
 
@@ -138,14 +132,12 @@ process_action(enum command cmd)
       return;
 
     case START:
-      /* Set Evaluation task eligible for scheduling. 
-       * This begins rocket launch chain. */
+      /* Start Evaluation and begin rocket launch chain. */
       tx_thread_resume(&evaluation_task);
       return;
 
     case EVAL_RELAX:
-      /* Allow preemption of Evaluation
-       * task while inside Kalman Filter. */
+      /* Allow preemption of Evaluation task inside KF. */
       config &= ~EVAL_PREEMPT_OFF;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PRIORITY,
@@ -153,8 +145,7 @@ process_action(enum command cmd)
       return;
 
     case EVAL_FOCUS:
-      /* Rectrict preemption of Evaluation
-       * task while inside Kalman Filter. */
+      /* Restrict preemption of Evaluation task inside KF. */
       config |= EVAL_PREEMPT_OFF;
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PREEMPT_THRESHOLD,
@@ -162,9 +153,6 @@ process_action(enum command cmd)
       return;
 
     case EVAL_ABORT:
-      /* Do not use ThreadX API to terminate
-       * thread to avoid doing so when it is
-       * inside HAL or ThreadX call. */
       config |= ABORT_EVALUATION;
       return;
 
@@ -182,8 +170,7 @@ process_action(enum command cmd)
 
 
 /// Checks whether raw data report is OK.
-static inline void
-process_raw_data_code(enum command code)
+static inline void process_raw_data_code(enum command code)
 {
   if (code != RAW_DATA)
   {
@@ -198,15 +185,13 @@ process_raw_data_code(enum command code)
   }
   else if (config & RESET_FAILURES)
   {
-    /* RAW_DATA is sent when raw data looks good */
     failures = 0;
   }
 }
 
 
 /// Handles delayed GPS data report.
-static inline void
-process_gps_code(enum command code)
+static inline void process_gps_code(enum command code)
 {
   static fu8 delay_count = 0;
   static fu8 malformed_count = 0;
@@ -239,14 +224,13 @@ force_ukf:
 
 /// Decodes commands, message, or code from
 /// the Flight Computer and the Ground Station.
-static inline void
-decode(enum command cmd)
+static inline void decode(enum command cmd)
 {
   timer_update(cmd & FC_MASK ? HeartbeatFC : HeartbeatGND);
-                  //                       ^
-  if (cmd & SYNC) //                       |
-  {         //                             |
-    return; // Successful heartbeat -------`
+
+  if (cmd & SYNC)
+  {
+    return;
   }
   else if (cmd & GPS_DELIVERY)
   {
@@ -254,12 +238,10 @@ decode(enum command cmd)
   }
   else if (cmd & KF_OP_MODE)
   {
-    /* Clear flag; what is left is the new step */
     config |= (cmd & ~KF_OP_MODE);
   }
   else if (cmd & AUTO_REINIT_BOUNDS)
   {
-    /* Clear flag; what is left is the new bound */
     to_reinit = cmd & ~AUTO_REINIT_BOUNDS;
   }
   else if (cmd & AUTO_ABORT_BOUNDS)
@@ -272,31 +254,25 @@ decode(enum command cmd)
   }
   else if (cmd & DATA_EVALUATION)
   {
-    /* Data evaluation reports unconfirmed states.
-     * For bookkeeping. */
+    /* Data evaluation reported an unconfirmed state. */
     log_err("FC:RECV: received warning (%u)", (unsigned)cmd);
   }
   else if (cmd & FC_MASK)
   {
-    /* Likely raw data report */
     process_raw_data_code(cmd & ~FC_MASK);
   }
 }
 
 
 /// Suspend on semaphore until a new message arrives.
-/// Does not waste MCU cycles if queue if empty.
-/// See page 68 of Azure RTOS ThreadX User Guide, Feb 2020.
-///
-/// Recovery task should never return.
+/// Does not waste cycles if queue is empty.
 void recovery_entry(ULONG input)
 {
   (void) input;
 
-  /* This task is created and ran first, and should
-   * prevent accidental timeouts due to slow SW init. */
-  timer_update(HeartbeatFC);
-  timer_update(HeartbeatGND);
+  for (enum fc_timer k = 0; k < Time_Users; ++k) {
+    timer_update(k);
+  }
 
   task_loop (DO_NOT_EXIT)
   {
@@ -316,9 +292,8 @@ void recovery_entry(ULONG input)
 }
 
 
-/// Check if an endpoint {FC, GND} is absent for
-/// compile-defined time, and invoke handler appropriately.
-/// Runs in ThreadX interrupt context.
+/// Check if an endpoint {FC, GND, RF} is absent for
+/// compile-defined time. If it is, act appropriately.
 static void check_endpoints(ULONG id)
 {
   (void) id;
@@ -333,9 +308,6 @@ static void check_endpoints(ULONG id)
 
     timer_update(HeartbeatFC);
 
-    /* Whether we have launched determines
-     * which task sends heartbeat signals.
-     * Accordingly, restart this task. */
     if (config & ENTER_DIST_CYCLE)
     {
       tx_thread_reset(&evaluation_task);
@@ -352,20 +324,15 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
-    /* Contact lost with Ground Station.
-     * Set options for most precision and do not
-     * accumulate failures. In fact, reset them! */
     config |= FORCE_ALT_CHECKS;
     config |= RENORM_QUATERN_1;
     config |= RESET_FAILURES;
     failures = 0;
 
-#else
+#else /* FOR TESTS ONLY */
     static fu8 test_launched = 0;
 
     if (!test_launched) {
-      /* During testing, launch on first GND timeout 
-       * (since, without telemetry, there is no GND). */
       tx_thread_resume(&evaluation_task);
       test_launched = 1;
     }
@@ -384,7 +351,6 @@ static void check_endpoints(ULONG id)
   }
 
 #endif // GPS_AVAILABLE
-
 }
 
 

@@ -28,13 +28,7 @@ extern atomic_uint_fast32_t config;
 
 /* ------ Endpoint identifiers: FC, GND ------ */
 
-/// 2s complement awareness: as negative codes
-/// can only originate from the FC, checking
-/// against the incoming message MSB is reliable.
 #define FC_MASK (1u << 31)
-
-/// Mark general commands as coming from FC.
-/// Use this for enum command values > 0.
 #define FC_MSG(message) (message | FC_MASK)
 
 
@@ -44,8 +38,7 @@ extern atomic_uint_fast32_t config;
 #define RF_TIMEOUT_MS 2000
 #define GND_TIMEOUT_MS 4000
 
-/* Expiration of timer that invokes timeout checks 
- * (1 tick = 10 ms) */
+/* Expiration of timer that invokes timeout checks  */
 #define TX_TIMER_TICKS   100
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
@@ -53,9 +46,6 @@ extern atomic_uint_fast32_t config;
 /* ------ Run time configuration flags ------ */
 
 #if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-/*
- * In the version of C we are using, this is a GNU extension.
- */
 enum g_conf : uint32_t {
 
 #else
@@ -72,7 +62,7 @@ enum g_conf {
   REINIT_ATTEMPTED = 1u << 3,
   PYRO_REQ_CONFIRM = 1u << 4,
 
-  RENORM_QUATERN_1 = 1u << 5, /* Default */
+  RENORM_QUATERN_1 = 1u << 5,
   RENORM_QUATERN_2 = 1u << 6,
   RENORM_QUATERN_4 = 1u << 7,
   RENORM_QUATERN_8 = 1u << 8,
@@ -192,9 +182,7 @@ enum command {
 
   /* ... */
 
-  /* Synchronization event
-   * The same code for both FC and GND
-   * because masking is in effect */
+  /* Synchronization event for Ground Station */
   SYNC = (1u << 30),
 };
 
@@ -202,9 +190,7 @@ enum command {
 /* For non-GNU C < 23, prevent UB at compile-time */
 
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-/*
- * Positive 32-bit value required (TX queue and recovery semantics).
- */
+
 #define typeeq(a, b) __builtin_types_compatible_p(a, b)
 
 _Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");

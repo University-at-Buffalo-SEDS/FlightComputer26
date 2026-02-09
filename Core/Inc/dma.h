@@ -23,7 +23,8 @@
 
 /* ------ Containers ------ */
 
-/// Discriminants must comply with decode_ptr() dev[].
+/* Discriminants must comply with decode_ptr() dev[]. */
+
 enum device {
   BAROMETER = 0,
   GYROSCOPE = 1,
@@ -32,12 +33,10 @@ enum device {
   DEVICES = 3,
 };
 
-/* Generic measurement containers */
-struct serial coords { float x, y, z; }; /* Order matters */
-struct serial baro { float alt, p, t; }; /* Order matters */
+struct serial coords { float x, y, z; };
+struct serial baro { float alt, p, t; };
 
-/// Transferable raw data unit
-struct serial measurement { /* Order matters */
+struct serial measurement {
   struct coords gyro;
   union {
     struct coords accl;
@@ -50,7 +49,7 @@ struct serial measurement { /* Order matters */
 /* ------ Public API ------ */
 
 /// Fetches whatever is available in a free (tm) DMA buffer.
-/// Returns 1 when all 3 sensor buckets have been filled,
+/// Returns 1 when all required sensor buckets have been filled,
 /// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
 int dma_try_fetch(struct measurement *buf, fu8 skip_mask);
 

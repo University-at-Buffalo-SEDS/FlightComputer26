@@ -26,7 +26,7 @@ ascentKF(struct state_vec *x_0, struct state_vec *x_f,
 void initialize_descent();
 
 /// Sets ascent filter values in shared buffers.
-/// Called during boot and whenever the system falls back to UKF.
+/// Called during boot and whenever system falls back to UKF.
 void initialize_ascent();
 
 
