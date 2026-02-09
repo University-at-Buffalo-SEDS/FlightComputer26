@@ -26,12 +26,12 @@
  * vertical acceleration VAX (m/s^2) */
 
 #define MAX_ALT 4800.0f
-#define MAX_ANG 2000.0f
-#define MAX_VAX (GRAVITY_SI * 12.0f)
+#define MAX_DPS 2000.0f
+#define MAX_ACC (GRAVITY_SI * 12.0f)
 
 #define MIN_ALT -10.0f
-#define MIN_ANG -MAX_ANG
-#define MIN_VAX -(GRAVITY_SI * 12.0f)
+#define MIN_DPS -MAX_DPS
+#define MIN_ACC -MAX_ACC
 
 #define LAUNCH_SITE_LATT 0 // TODO
 #define LAUNCH_SITE_LONG 0

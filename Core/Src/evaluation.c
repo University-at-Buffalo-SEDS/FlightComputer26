@@ -125,8 +125,6 @@ static inline fu8 fetch_unsafe()
 }
 
 
-#ifdef MEASM_VALIDATE
-
 /// Validates one measm_z against sanity bounds.
 static inline fu32 validate(fu32 mode)
 {
@@ -144,22 +142,22 @@ static inline fu32 validate(fu32 mode)
   {
 #endif
 
-    if (raw.d.axis.accl.x > MAX_VAX || raw.d.axis.accl.x < MIN_VAX)
+    if (raw.d.axis.accl.x > MAX_ACC || raw.d.axis.accl.x < MIN_ACC)
       st += Bad_Accel_X;
 
-    if (raw.d.axis.accl.y > MAX_VAX || raw.d.axis.accl.y < MIN_VAX)
+    if (raw.d.axis.accl.y > MAX_ACC || raw.d.axis.accl.y < MIN_ACC)
       st += Bad_Accel_Y;
   
-    if (raw.d.axis.accl.z > MAX_VAX || raw.d.axis.accl.z < MIN_VAX)
+    if (raw.d.axis.accl.z > MAX_ACC || raw.d.axis.accl.z < MIN_ACC)
       st += Bad_Accel_Z;
 
-    if (raw.gyro.x > MAX_ANG || raw.gyro.x < MIN_ANG)
+    if (raw.gyro.x > MAX_DPS || raw.gyro.x < MIN_DPS)
       st += Bad_Attitude_X;
 
-    if (raw.gyro.y > MAX_ANG || raw.gyro.y < MIN_ANG)
+    if (raw.gyro.y > MAX_DPS || raw.gyro.y < MIN_DPS)
       st += Bad_Attitude_Y;
 
-    if (raw.gyro.z > MAX_ANG || raw.gyro.z < MIN_ANG)
+    if (raw.gyro.z > MAX_DPS || raw.gyro.z < MIN_DPS)
       st += Bad_Attitude_Z;
 
 #if GPS_AVAILABLE
@@ -180,8 +178,6 @@ static inline fu32 validate(fu32 mode)
 
   return st;
 }
-
-#endif // MEASM_VALIDATE
 
 
 /* ------ Data evaluation ------ */

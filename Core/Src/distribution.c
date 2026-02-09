@@ -299,30 +299,42 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 /* ------ Local helpers ------ */
 
 /// Locally validate all data but do not send reports to the queue.
-static inline fu8 pilot_validate()
+static inline fu8 test_validate_all()
 {
   enum message st = Sensor_Measm_Code;
-  
+
   if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT)
     st += Bad_Altitude;
 
-  if (payload.d.accl.x > MAX_VAX || payload.d.accl.x < MIN_VAX)
+  if (payload.d.accl.x > MAX_ACC || payload.d.accl.x < MIN_ACC)
     st += Bad_Accel_X;
 
-  if (payload.d.accl.y > MAX_VAX || payload.d.accl.y < MIN_VAX)
+  if (payload.d.accl.y > MAX_ACC || payload.d.accl.y < MIN_ACC)
     st += Bad_Accel_Y;
-  
-  if (payload.d.accl.z > MAX_VAX || payload.d.accl.z < MIN_VAX)
+
+  if (payload.d.accl.z > MAX_ACC || payload.d.accl.z < MIN_ACC)
     st += Bad_Accel_Z;
 
-  if (payload.gyro.x > MAX_ANG || payload.gyro.x < MIN_ANG)
+  if (payload.gyro.x > MAX_DPS || payload.gyro.x < MIN_DPS)
     st += Bad_Attitude_X;
 
-  if (payload.gyro.y > MAX_ANG || payload.gyro.y < MIN_ANG)
+  if (payload.gyro.y > MAX_DPS || payload.gyro.y < MIN_DPS)
     st += Bad_Attitude_Y;
 
-  if (payload.gyro.z > MAX_ANG || payload.gyro.z < MIN_ANG)
+  if (payload.gyro.z > MAX_DPS || payload.gyro.z < MIN_DPS)
     st += Bad_Attitude_Z;
+
+#if GPS_AVAILABLE
+  if (payload.d.gps.x > MAX_GPS_X || payload.d.gps.x < MIN_GPS_X)
+    st += Bad_Lattitude;
+
+  if (payload.d.gps.y > MAX_GPS_Y || payload.d.gps.y < MIN_GPS_Y)
+    st += Bad_Longtitude;
+
+  if (payload.d.gps.z > MAX_GPS_Z || payload.d.gps.z < MIN_GPS_Z)
+    st += Bad_Sea_Level;
+
+#endif // GPS_AVAILABLE
 
   return st;
 }
@@ -337,7 +349,7 @@ static inline fu8 pilot_validate()
 static inline void pre_launch()
 {
   fu8 st = 0;
-  enum message cmd = FC_MSG(GroundStation_Heartbeat);
+  enum message cmd = FC_MSG(Sensor_Measm_Code);
 
   task_loop (load(&config, Acq) & static_option(Launch_Triggered))
   {
@@ -354,7 +366,7 @@ static inline void pre_launch()
     }
 
     compensate(&payload, 0);
-    st = pilot_validate();
+    st = test_validate_all();
 
     if (st != Sensor_Measm_Code) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
@@ -406,9 +418,11 @@ void distribution_entry(ULONG input)
     {
       log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+#ifdef GPS_AVAILABLE
       check_for_gps_packet();
+#endif
     }
-    
+
 #ifdef GPS_AVAILABLE
     else
     {
