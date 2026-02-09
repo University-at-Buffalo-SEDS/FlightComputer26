@@ -332,7 +332,7 @@ static inline void pre_launch()
   fu8 st = 0;
   enum message cmd = FC_MSG(GroundStation_Heartbeat);
 
-  task_loop (load(&config, Acq) & Launch_Triggered)
+  task_loop (load(&config, Acq) & static_option(Launch_Triggered))
   {
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
@@ -374,7 +374,7 @@ void distribution_entry(ULONG input)
   (void) input;
 
   /* Enter pre-launch loop only once. */
-  if (!(load(&config, Acq) & Launch_Triggered)) {
+  if (!(load(&config, Acq) & static_option(Launch_Triggered))) {
     pre_launch();
   }
 

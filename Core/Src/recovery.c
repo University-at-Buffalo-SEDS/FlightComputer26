@@ -125,7 +125,7 @@ static inline void process_action(enum message cmd)
       return;
 
     case Expand_Parachute:
-      if (config & Parachute_Deployed) {
+      if (config & static_option(Parachute_Deployed)) {
         reef_high();
       }
       return;
@@ -141,7 +141,7 @@ static inline void process_action(enum message cmd)
 
     case Evaluation_Relax:
       /* Allow preemption of Evaluation task inside KF. */
-      config &= ~Eval_Focus_Flag;
+      config &= ~static_option(Eval_Focus_Flag);
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PRIORITY,
                                   &eval_old_pt);
@@ -149,13 +149,14 @@ static inline void process_action(enum message cmd)
 
     case Evaluation_Focus:
       /* Restrict preemption of Evaluation task inside KF. */
-      config |= Eval_Focus_Flag;
+      config |= static_option(Eval_Focus_Flag);
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PREEMPT_THRESHOLD,
                                   &eval_old_pt);
       return;
 
     case Evaluation_Abort:
+      config |= static_option(Eval_Abort_Flag);
       tx_thread_reset(&evaluation_task);
       return;
 
@@ -195,7 +196,7 @@ static inline void process_report(enum message code)
       try_reinit_sensors();
     }
   }
-  else if (config & Reset_Failures)
+  else if (config & static_option(Reset_Failures))
   {
     failures = 0;
   }
@@ -225,7 +226,7 @@ static inline void process_gps_code(enum message code)
   }
 
 force_ukf:
-  config |= Prohibit_Descent_KF;
+  config |= static_option(Prohibit_Descent_KF);
 
   if (!unscented) {
     initialize_ascent();
@@ -243,7 +244,7 @@ static inline void decode_message(enum message msg)
   }
   else if (msg & Runtime_Configuration)
   {
-    process_config(msg & ~(FC_Identifier | Runtime_Configuration));
+    process_config(static_option(msg & ~FC_Identifier));
   }
   else if (msg & GPS_Packet_Code)
   {
@@ -310,7 +311,7 @@ static void check_endpoints(ULONG id)
 
     timer_update(HeartbeatFC);
 
-    if (config & Launch_Triggered)
+    if (config & static_option(Launch_Triggered))
     {
       tx_thread_reset(&evaluation_task);
       tx_thread_resume(&evaluation_task);
@@ -326,8 +327,8 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
-    config |= Monitor_Altitude;
-    config |= Reset_Failures;
+    config |= static_option(Monitor_Altitude);
+    config |= static_option(Reset_Failures);
     renorm_step_mask = RENORM_STEP;
     failures = 0;
 
@@ -345,7 +346,7 @@ static void check_endpoints(ULONG id)
 #ifdef GPS_AVAILABLE
   if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
   {
-    config |= Prohibit_Descent_KF;
+    config |= static_option(Prohibit_Descent_KF);
     if (!unscented) {
       initialize_ascent();
       unscented = 1;

@@ -230,7 +230,7 @@ static inline void evaluate_altitude(fu32 mode)
   else if (!(mode & static_option(Confirm_Altitude)))
   {
     /* Confirm we are falling before firing CO2. */
-    fetch_or(&config, Confirm_Altitude, Rlx);
+    fetch_or(&config, static_option(Confirm_Altitude), Rlx);
   }
   else
   {
@@ -429,7 +429,7 @@ void evaluation_entry(ULONG input)
     flight = IDLE;
 
     /* Signal distribution task to enter main cycle. */
-    fetch_or(&config, Launch_Triggered, Rel);
+    fetch_or(&config, static_option(Launch_Triggered), Rel);
   }
 
   if (unscented) {
