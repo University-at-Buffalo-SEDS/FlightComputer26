@@ -51,9 +51,6 @@ OPTIONS:
         nogps           - absence of external GPS device;
                         - always use Ascent Kalman filter;
                         - True if telemetry is disabled
-
-        nosanity        - disable measurement data checks
-                        - against sanity boundaries
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -75,7 +72,7 @@ DEFAULT_PRESET  = "Debug"
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {"flash", "notelemetry", "clean", "dmatest", "fullcmd",
-                        "batching", "configure", "nogps", "nosanity"}
+                        "batching", "configure", "nogps"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -122,7 +119,6 @@ def configure(buildir: Path, preset: str, options: dict):
         tcompat_flag    = "-DTELEMETRY_COMPAT=ON"
         dma_test_flag   = "-DDMA_TESTING=OFF"
         gps_flag        = "-DEXTERNAL_GPS=ON"
-        sanity_flag     = "-DSANITY_CHECKS=ON"
 
         if options["notelemetry"]:
                 telemetry_flag = "-DENABLE_TELEMETRY=OFF"
@@ -137,9 +133,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 if options["nogps"]:
                         gps_flag = "-DEXTERNAL_GPS=OFF"
 
-        if options["nosanity"]:
-                sanity_flag = "-DSANITY_CHECKS=OFF"
-
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -151,7 +144,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 batching_flag,
                 tcompat_flag,
                 gps_flag,
-                sanity_flag,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",
