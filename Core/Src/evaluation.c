@@ -463,15 +463,15 @@ void evaluation_entry(ULONG input)
 
 #ifdef GPS_AVAILABLE
     if (mode & Using_Ascent_KF) {
-      loggable = ASC_STAT;
+      loggable = ASC_STAT * sizeof(float);
       ascentKF (&vec[last], &vec[!last], &raw);
     } else {
-      loggable = DESC_STAT;
+      loggable = DESC_STAT * sizeof(float);
       descentKF(&vec[last], &vec[!last], &raw.d);
     }
 
 #else
-    loggable = ASC_STAT;
+    loggable = ASC_STAT * sizeof(float);
     ascentKF(&vec[last], &vec[!last], &raw);
 
 #endif
