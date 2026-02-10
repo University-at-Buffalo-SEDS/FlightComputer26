@@ -194,7 +194,7 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 }
 
 /// Fetches latest available GPS packet, or checks for timeout.
-static inline fu8 fetch_gps_data()
+static inline fu8 fetch_gps_data(struct coords *buf)
 {
   tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
 
@@ -209,7 +209,7 @@ static inline fu8 fetch_gps_data()
     return 0;
   }
   
-  payload.d.gps = gps_bucket;
+  *buf = gps_bucket;
   gps_cons_serial = gps_prod_serial;
 
   tx_mutex_put(&mu_gps);
@@ -300,7 +300,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 /* ------ Local helpers ------ */
 
 /// Locally validate all data but do not send reports to the queue.
-static inline fu8 test_validate_all()
+static inline fu8 test_validate_all(struct coords *gps)
 {
   enum message st = Sensor_Measm_Code;
 
@@ -326,13 +326,13 @@ static inline fu8 test_validate_all()
     st += Bad_Attitude_Z;
 
 #if GPS_AVAILABLE
-  if (payload.d.gps.x > MAX_GPS_X || payload.d.gps.x < MIN_GPS_X)
+  if (gps->x > MAX_GPS_X || gps->x < MIN_GPS_X)
     st += Bad_Lattitude;
 
-  if (payload.d.gps.y > MAX_GPS_Y || payload.d.gps.y < MIN_GPS_Y)
+  if (gps->y > MAX_GPS_Y || gps->y < MIN_GPS_Y)
     st += Bad_Longtitude;
 
-  if (payload.d.gps.z > MAX_GPS_Z || payload.d.gps.z < MIN_GPS_Z)
+  if (gps->z > MAX_GPS_Z || gps->z < MIN_GPS_Z)
     st += Bad_Sea_Level;
 
 #endif // GPS_AVAILABLE
@@ -351,6 +351,7 @@ static inline void pre_launch()
 {
   fu8 st = 0;
   enum message cmd = FC_MSG(Sensor_Measm_Code);
+  struct coords temp_gps_buf = {0};
 
   task_loop (load(&config, Acq) & static_option(Launch_Triggered))
   {
@@ -367,7 +368,10 @@ static inline void pre_launch()
     }
 
     compensate(&payload, 0);
-    st = test_validate_all();
+
+    fetch_gps_data(&temp_gps_buf);
+
+    st = test_validate_all(&temp_gps_buf);
 
     if (st != Sensor_Measm_Code) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
@@ -427,7 +431,7 @@ void distribution_entry(ULONG input)
 #ifdef GPS_AVAILABLE
     else
     {
-      while (!fetch_gps_data())
+      while (!fetch_gps_data(&payload.d.gps))
       {
         if (load(&config, Acq) & static_option(Using_Ascent_KF))
         {
