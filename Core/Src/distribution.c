@@ -89,8 +89,6 @@ enum remote_cmd_compat {
   Revoke_Descent_KF_Feasible,
   Compat_Consecutive_Samples,
   Revoke_Consecutive_Samples,
-  Compat_Confirm_Altitude,
-  Revoke_Confirm_Altitude,
   Compat_Reset_Failures,
   Revoke_Reset_Failures,
   Compat_Validate_Measms,
@@ -133,8 +131,6 @@ static const enum message extmap[Compat_Messages] = {
         static_revoke(Descent_KF_Feasible),
         Consecutive_Samples,
         static_revoke(Consecutive_Samples),
-        Confirm_Altitude,
-        static_revoke(Confirm_Altitude),
         Reset_Failures,
         static_revoke(Reset_Failures),
         Validate_Measms,
@@ -176,11 +172,32 @@ static inline enum command decode_cmd(const uint8_t *raw)
 
 #ifdef GPS_AVAILABLE
 
-static struct coords gps_bucket = {0};
-static fu8 gps_prod_serial = 0;
-static fu8 gps_cons_serial = 0;
+#define GPS_RING_SIZE 4
+#define GPS_RING_MASK (GPS_RING_SIZE - 1)
 
-static TX_MUTEX mu_gps;
+/// 0-7:  amount of new entries,
+/// 8-15: 'consumer lock' index. 0xFF when unlocked.
+static atomic_uint_fast16_t mask = 0xFF00u;
+static struct coords gps_ring[GPS_RING_SIZE] = {0};
+
+
+/// Deterministically writes GPS data struct into a free bucket.
+/// Guards against locks, dropped packets, and inadequate consumer.
+static inline void enqueue_gps_data(const uint8_t *buf)
+{
+  static fu8 idx = 0;
+
+  fu8 i = idx;
+  memcpy(&gps_ring[i], buf, sizeof(struct coords));
+
+  i = (i + 1) & RING_MASK;
+  fu8 cons = load(&mask, Acq) >> 8;
+
+  if (i != cons) {
+    fetch_add(&mask, 1, Rel);
+    idx = i;
+  }
+}
 
 
 /// Called from within the Telemetry thread.
@@ -211,51 +228,48 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
     log_err("FC:TLMT: warning: using outdated GPS data.");
   }
 
-  tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
-
-  memcpy(&gps_bucket, data, 3 * sizeof(float));
-  ++gps_prod_serial;
-
-  tx_mutex_put(&mu_gps);
+  enqueue_gps_data(data);
 
   return SEDS_OK;
-}
-
-/// Fetches latest available GPS packet, or checks for timeout.
-static inline fu8 fetch_gps_data(struct coords *buf)
-{
-  tx_mutex_get(&mu_gps, TX_WAIT_FOREVER);
-
-  if (gps_cons_serial == gps_prod_serial) {
-    tx_mutex_put(&mu_gps);
-
-    if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
-      enum message cmd = FC_MSG(GPS_Delayed);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-    }
-
-    return 0;
-  }
-  
-  *buf = gps_bucket;
-  gps_cons_serial = gps_prod_serial;
-
-  tx_mutex_put(&mu_gps);
-  timer_update(IntervalGPS);
-
-  return 1;
 }
 
 
 /// Checks for timeout but does not fetch GPS data.
 /// Provides early inference of GPS availability.
-static inline void check_for_gps_packet()
+static inline void assess_gps_delay()
 {
-  if (timer_exchange(IntervalGPS) > GPS_DELAY_MS) {
+  if (timer_exchange(IntervalGPS) > GPS_DELAY_MS)
+  {
     enum message cmd = FC_MSG(GPS_Delayed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
+
+
+/// Fetches latest available GPS packet, or checks for timeout.
+/// Returns the amount of new entries added since last call.
+static inline fu8 fetch_gps_data(struct coords *buf)
+{
+  static fu8 idx = UINT_FAST8_MAX;
+
+  fu16 i = idx;
+  fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
+  
+  if (!n) {
+    assess_gps_delay();
+    fetch_or(&mask, CLEAR_IDX, Rlx);
+    return 0;
+  }
+
+  i = (i + n) & RING_MASK;
+  idx = i;
+
+  *buf = gps_ring[i];
+
+  fetch_or(&mask, CLEAR_IDX, Rlx);
+  return n;
+}
+
 
 #endif // GPS_AVAILABLE
 
@@ -453,7 +467,7 @@ void distribution_entry(ULONG input)
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
 
 #ifdef GPS_AVAILABLE
-      check_for_gps_packet();
+      assess_gps_delay();
     }
     else
     {
@@ -492,11 +506,5 @@ void create_distribution_task(void)
 
   if (st != TX_SUCCESS) {
     log_die("FC:DIST: failed to create task (%u)", st);
-  }
-
-  st = tx_mutex_create(&mu_gps, "GPS bucket mutex", TX_NO_INHERIT);
-
-  if (st != TX_SUCCESS) {
-    log_die("FC:DIST: failed to create GPS bucket mutex (%u)", st);
   }
 }

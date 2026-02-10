@@ -94,15 +94,16 @@ static inline fu8 fetch_async()
   fu16 i = idx;
   fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
   
-  if (!n)
-    goto finish;
+  if (!n) {
+    fetch_or(&mask, CLEAR_IDX, Rlx);
+    return 0;
+  }
 
   i = (i + n) & RING_MASK;
   idx = i;
 
   raw = payload[i];
 
-finish:
   fetch_or(&mask, CLEAR_IDX, Rlx);
   return n;
 }
