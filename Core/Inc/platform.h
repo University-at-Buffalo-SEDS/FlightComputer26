@@ -220,20 +220,20 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low()                                           \
+#define co2_low()                                               \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-#define co2_high()                                          \
-  do {                                                      \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
-    /* Always guarantee all tasks observe PYRO fire */      \
-    fetch_or(&config, static_option(Parachute_Deployed), Rel);             \
+#define co2_high()                                              \
+  do {                                                          \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
+    /* Always guarantee all tasks observe PYRO fire */          \
+    fetch_or(&config, static_option(Parachute_Deployed), Rel);  \
   } while (0)
 
-#define reef_low()                                          \
+#define reef_low()                                              \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define reef_high()                                         \
+#define reef_high()                                             \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Data cache calls */
@@ -263,9 +263,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "accel.h"
 #include "barometer.h"
 
-#define init_baro()  init_barometer(&hspi1)
-#define init_gyro()  gyro_init(&hspi1)
-#define init_accel() accel_init(&hspi1)
+#define init_baro() init_barometer(&hspi1)
+#define init_gyro() gyro_init(&hspi1)
+#define init_accl() accel_init(&hspi1)
 
 #define baro_comp_temp(temp) \
   compensate_temperature((uint32_t)temp)

@@ -90,10 +90,12 @@ static inline void try_reinit_sensors()
   if (init_baro() != HAL_OK) {
     faulty *= Sensor_Baro;
   }
+
   if (init_gyro() != HAL_OK) {
     faulty -= Sensor_Gyro;
   }
-  if (init_accel() != HAL_OK) {
+
+  if (init_accl() != HAL_OK) {
     faulty -= Sensor_Accl;
   }
 
@@ -168,15 +170,24 @@ static inline void process_action(enum message cmd)
 /// Apply or revoke passed runtime configuration option.
 static inline void process_config(enum message code)
 {
-  if (code & KF_Operation_Mode) {
+  if (code & KF_Operation_Mode)
+  {
     renorm_step_mask = code & ~KF_Operation_Mode;
-  } else if (code & Abortion_Thresholds) {
+  }
+  else if (code & Abortion_Thresholds)
+  {
     to_abort = code & ~Abortion_Thresholds;
-  } else if (code & Reinit_Thresholds) {
+  }
+  else if (code & Reinit_Thresholds)
+  {
     to_reinit = code & ~Reinit_Thresholds;
-  } else if (code & Revoke_Option) {
+  }
+  else if (code & Revoke_Option)
+  {
     config &= ~(code & ~Revoke_Option);
-  } else {
+  }
+  else
+  {
     config |= code;
   }
 }
@@ -268,7 +279,6 @@ static inline void decode_message(enum message msg)
 
 
 /// Suspend on semaphore until a new message arrives.
-/// Does not waste cycles if queue is empty.
 void recovery_entry(ULONG input)
 {
   (void) input;
@@ -279,18 +289,18 @@ void recovery_entry(ULONG input)
 
   task_loop (DO_NOT_EXIT)
   {
-    enum message cmd;
+    enum message msg;
 
     /* Thread suspension */
     tx_semaphore_get(&unread, TX_WAIT_FOREVER);
     
-    if (tx_queue_receive(&shared, &cmd,
-        TX_WAIT_FOREVER) != TX_SUCCESS || !cmd)
+    if (tx_queue_receive(&shared, &msg,
+        TX_WAIT_FOREVER) != TX_SUCCESS)
     {
       continue;
     }
 
-    decode_message(cmd);
+    decode_message(msg);
   }
 }
 

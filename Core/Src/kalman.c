@@ -38,8 +38,8 @@ fu8 renorm_step_mask = RENORM_STEP;
 
 #define TOLERANCE 1e-3f
 
-#define FTLOW(k)  ((float)k - TOLERANCE)
-#define FTHIGH(k) ((float)k + TOLERANCE)
+#define sigma_low(k)  ((float)k - TOLERANCE)
+#define sigma_high(k) ((float)k + TOLERANCE)
 
 #define FSEC(ms) ((float)(ms) * 0.001f)
 
@@ -47,17 +47,13 @@ fu8 renorm_step_mask = RENORM_STEP;
 
 /* For ascent filter */
 
-#define ASC_STAT 16
-#define ASC_MEAS 7
-
 #define SIGMA_GYRO 0.1f
 #define SIGMA_GYRO_Z 1e-6f
 #define SIGMA_ACC 0.1f
 #define SIGMA_ALT 10.0f
 
 /* For descent filter */
-#define DESC_STAT 6
-#define DESC_MEAS 4
+
 #define DESC_MASK (DESC_STAT - 1)
 #define APEX_A    (DESC_MASK - 2)
 
@@ -128,8 +124,7 @@ measurement(const struct state_vec *restrict vec,
 
 
 /// Transforms input vector into next-sample prediction.
-static inline void
-predict(struct state_vec *vec)
+static inline void predict(struct state_vec *vec)
 {
   static fu8 iteration = 0;
 
@@ -173,7 +168,7 @@ predict(struct state_vec *vec)
                        vec->qv.q3 * vec->qv.q3 + \
                        vec->qv.q4 * vec->qv.q4;
     
-    if (expr < FTLOW(1) || expr > FTHIGH(1)) {
+    if (expr < sigma_low(1) || expr > sigma_high(1)) {
       const float norm = invsqrtf(expr);
       vec->qv.q1 *= norm;
       vec->qv.q2 *= norm;

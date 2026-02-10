@@ -459,18 +459,26 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
+    fu8 loggable;
+
 #ifdef GPS_AVAILABLE
-    mode & Using_Ascent_KF ? ascentKF (&vec[last], &vec[!last], &raw)  :
-                             descentKF(&vec[last], &vec[!last], &raw.d);
+    if (mode & Using_Ascent_KF) {
+      loggable = ASC_STAT;
+      ascentKF (&vec[last], &vec[!last], &raw);
+    } else {
+      loggable = DESC_STAT;
+      descentKF(&vec[last], &vec[!last], &raw.d);
+    }
 
 #else
+    loggable = ASC_STAT;
     ascentKF(&vec[last], &vec[!last], &raw);
 
 #endif
 
     last = !last;
 
-    log_filter_data(&vec[last], STATE_LOGGABLE);
+    log_filter_data(&vec[last], loggable);
 
     tx_thread_sleep(EVAL_SLEEP_RT_CONF);
     mode = load(&config, Acq);
@@ -486,7 +494,7 @@ void evaluation_entry(ULONG input)
       case Burnout: detect_apogee();      break;
       case Apogee:  detect_descent(mode); break;
       case Descent: detect_reef(mode);    break;
-      case Reefing:    detect_landed(mode);  break;
+      case Reefing: detect_landed(mode);  break;
       default: break;
     }
 

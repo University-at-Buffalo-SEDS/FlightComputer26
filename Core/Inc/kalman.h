@@ -6,6 +6,14 @@
 #define KALMAN_H
 
 
+/* ------ State and measurement vector sizes ------ */
+
+#define ASC_STAT 16
+#define ASC_MEAS 7
+#define DESC_STAT 6
+#define DESC_MEAS 4
+
+
 /* ------ Public API ------ */
 
 #include "platform.h"

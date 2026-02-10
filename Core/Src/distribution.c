@@ -47,7 +47,6 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
-#include <sedsprintf.h>
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
@@ -464,7 +463,7 @@ void create_distribution_task(void)
     log_die("FC:DIST: failed to create task (%u)", st);
   }
 
-  st = tx_mutex_create(&mu_gps, "GPS bucket mutex.", TX_NO_INHERIT);
+  st = tx_mutex_create(&mu_gps, "GPS bucket mutex", TX_NO_INHERIT);
 
   if (st != TX_SUCCESS) {
     log_die("FC:DIST: failed to create GPS bucket mutex (%u)", st);

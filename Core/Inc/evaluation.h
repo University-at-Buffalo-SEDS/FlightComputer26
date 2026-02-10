@@ -80,18 +80,18 @@
 
 /* ------ Data containers ------ */
 
-struct serial quaternion { /* Order matters */
+struct serial quaternion {
   float q1, q2, q3, q4;
 };
 
-struct serial state_vec { /* Order matters */
+struct serial state_vec {
   struct coords p, v, a;
   struct quaternion qv;
   struct coords w;
 };
 
 /// Piece of measm_z accepted by Descent filter
-struct serial descent { /* Order matters */
+struct serial descent {
   union {
     struct coords accl;
     struct coords gps;
@@ -101,13 +101,11 @@ struct serial descent { /* Order matters */
 };
 
 /// Full measurement excluding baro temperature and pressure.
-struct serial measm_z { /* Order matters */
+struct serial measm_z {
   struct coords gyro;
-  struct descent d; /* Brief for 'descent' */
+  struct descent d;
 };
 
-#define STATE_LOGGABLE (sizeof(struct state_vec) - \
-                        sizeof(struct quaternion))
 
 /// In-flight rocket states only since used internally.
 enum state {
