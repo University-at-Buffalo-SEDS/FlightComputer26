@@ -84,12 +84,17 @@ enum remote_cmd_compat {
   
   /* Excludes internal config options */
   Compat_Monitor_Altitude,
+  Revoke_Monitor_Altitude,
   Compat_Descent_KF_Feasible,
+  Revoke_Descent_KF_Feasible,
   Compat_Consecutive_Samples,
+  Revoke_Consecutive_Samples,
   Compat_Confirm_Altitude,
+  Revoke_Confirm_Altitude,
   Compat_Reset_Failures,
+  Revoke_Reset_Failures,
   Compat_Validate_Measms,
-  Compat_Using_Ascent_KF,
+  Revoke_Validate_Measms,
 
   Compat_Renormalize_Quat_1,
   Compat_Renormalize_Quat_2,
@@ -114,14 +119,37 @@ enum remote_cmd_compat {
 
 /// O(1) map between byte code and FC message.
 static const enum message extmap[Compat_Messages] = {
-    Deploy_Parachute,    Expand_Parachute,   Reinit_Sensors,
-    Launch_Signal,       Evaluation_Relax,   Evaluation_Focus,
-    Evaluation_Abort,    Monitor_Altitude,   Descent_KF_Feasible,
-    Consecutive_Samples, Confirm_Altitude,   Reset_Failures,
-    Validate_Measms,     Using_Ascent_KF,    Renormalize_Quat_1,
-    Renormalize_Quat_2,  Renormalize_Quat_4, Renormalize_Quat_8,
-    Abort_After_15,      Abort_After_40,     Abort_After_70,
-    Reinit_After_12,     Reinit_After_26,    Reinit_After_44
+        Deploy_Parachute,
+        Expand_Parachute,
+        Reinit_Sensors,
+        Launch_Signal,
+        Evaluation_Relax,
+        Evaluation_Focus,
+        Evaluation_Abort,
+
+        Monitor_Altitude,
+        static_revoke(Monitor_Altitude),
+        Descent_KF_Feasible,
+        static_revoke(Descent_KF_Feasible),
+        Consecutive_Samples,
+        static_revoke(Consecutive_Samples),
+        Confirm_Altitude,
+        static_revoke(Confirm_Altitude),
+        Reset_Failures,
+        static_revoke(Reset_Failures),
+        Validate_Measms,
+        static_revoke(Validate_Measms),
+
+        Renormalize_Quat_1,
+        Renormalize_Quat_2,
+        Renormalize_Quat_4,
+        Renormalize_Quat_8,
+        Abort_After_15,
+        Abort_After_40,
+        Abort_After_70,
+        Reinit_After_12,
+        Reinit_After_26,
+        Reinit_After_44,
 };
 
 
@@ -412,7 +440,7 @@ void distribution_entry(ULONG input)
     if (!dma_try_fetch(&payload, skip_mask))
     {
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
-      continue;
+      goto start;
     }
 
     compensate(&payload, skip_mask);
@@ -423,12 +451,10 @@ void distribution_entry(ULONG input)
     {
       log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
-#ifdef GPS_AVAILABLE
-      check_for_gps_packet();
-#endif
-    }
 
 #ifdef GPS_AVAILABLE
+      check_for_gps_packet();
+    }
     else
     {
       while (!fetch_gps_data(&payload.d.gps))
@@ -440,8 +466,9 @@ void distribution_entry(ULONG input)
         /* GPS data is required for Descent filter to proceed. */
         tx_thread_relinquish();
       }
+
+#endif // GPS_AVAILABLE
     }
-#endif
 
     evaluation_put(&payload);
   }

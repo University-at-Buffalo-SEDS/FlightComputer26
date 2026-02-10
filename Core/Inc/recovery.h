@@ -173,7 +173,11 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 
 /* ------ Statically unflag option value ------ */
 
-#define static_option(opt) (opt & ~Runtime_Configuration)
+/* When sending commands TO decode_message() */
+#define static_revoke(opt) ((opt) | Revoke_Option)
+
+/* When manipulating config OUTSIDE decode_message() */
+#define static_option(opt) ((opt) & ~Runtime_Configuration)
 
 
 /* ------ User default configuration ------ */
