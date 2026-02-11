@@ -57,10 +57,13 @@ extern fu8 renorm_step_mask;
 static TX_TIMER endpoints;
 static TX_SEMAPHORE unread;
 
-static fu8 failures = 0;
+static fu16 failures = 0;
 
-static fu8 to_abort  = TO_ABORT;
-static fu8 to_reinit = TO_REINIT;
+static fu16 to_abort  = TO_ABORT;
+static fu16 to_reinit = TO_REINIT;
+
+static fu16 gps_delay_count = 0;
+static fu16 gps_malform_count = 0;
 
 #define QADDR (VOID *)0x20010000
 #define QSIZE 128
@@ -79,7 +82,7 @@ static void queue_handler(TX_QUEUE *q)
 
 
 /// Synchronously initializes each sensor.
-static inline void try_reinit_sensors()
+static inline void try_reinit_sensors(void)
 {
   enum device faulty = Sensors;
 
@@ -110,7 +113,7 @@ static inline void try_reinit_sensors()
 
 
 /// FC deemed the required minimum of sensors unreliable.
-static inline void auto_abort()
+static inline void auto_abort(void)
 {
   // TODO
 }
@@ -137,6 +140,15 @@ static inline void process_action(enum message cmd)
       return;
 
     case Launch_Signal:
+      if (gps_delay_count || gps_malform_count)
+      {
+        log_err("FC:RECV: had %u GPS delays and %u malformed packets"
+                "during pre-launch stage. Counters are now reset.",
+                gps_delay_count, gps_malform_count);
+      }
+      gps_delay_count = 0;
+      gps_malform_count = 0;
+
       /* Start Evaluation and begin rocket launch chain. */
       tx_thread_resume(&evaluation_task);
       return;
@@ -214,34 +226,52 @@ static inline void process_report(enum message code)
 }
 
 
-/// Handles delayed or malformed GPS data report.
-static inline void process_gps_code(enum message code)
+/// Signals other tasks to use Ascent filter, if not already.
+static inline void prohibit_descent_kf(void)
 {
-  static fu8 delay_count = 0;
-  static fu8 malformed_count = 0;
-
-  switch (code) {
-    case GPS_Delayed:
-      if (++delay_count >= MAX_GPS_DELAYS) {
-        goto force_ukf;
-      }
-      return;
-
-    case GPS_Malformed:
-      if (++malformed_count >= GPS_MAX_MALFORMED) {
-        goto force_ukf;
-      }
-      return;
-
-    default: return;
-  }
-
-force_ukf:
   config &= ~static_option(Descent_KF_Feasible);
+  log_msg("FC:RECV: blocked Descent KF (problems with GPS)", 48);
 
   if (!(config & static_option(Using_Ascent_KF))) {
     initialize_ascent();
     config |= static_option(Using_Ascent_KF);
+  }
+}
+
+
+/// Handles delayed or malformed GPS data report.
+static inline void process_gps_code(enum message code)
+{
+  switch (code) {
+    case GPS_Delayed:
+      ++gps_delay_count;
+
+      if (config & static_option(Launch_Triggered)) {
+        log_err("FC:RECV: delayed GPS packet (%u)", gps_delay_count);
+        return;
+      }
+
+      if (gps_delay_count >= MAX_GPS_DELAYS) {
+        prohibit_descent_kf();
+        return;
+      }
+      break;
+
+    case GPS_Malformed:
+      ++gps_malform_count;
+
+      if (config & static_option(Launch_Triggered)) {
+        log_err("FC:RECV: malformed GPS packet (%u)", gps_malform_count);
+        return;
+      }
+
+      if (gps_malform_count >= GPS_MAX_MALFORMED) {
+        prohibit_descent_kf();
+        return;
+      }
+      break;
+
+    default: break;
   }
 }
 
@@ -255,25 +285,25 @@ static inline void decode_message(enum message msg)
   }
   else if (msg & Runtime_Configuration)
   {
-    process_config(static_option(msg & ~FC_Identifier));
+    process_config(static_option(fc_unmask(msg)));
   }
   else if (msg & GPS_Packet_Code)
   {
-    process_gps_code(msg & ~FC_Identifier);
+    process_gps_code(fc_unmask(msg));
   }
   else if (msg & Actionable_Decrees)
   {
-    process_action(msg & ~FC_Identifier);
+    process_action(fc_unmask(msg));
   }
   else if (msg & Spurious_Confirmations)
   {
     msg &= ~(FC_Identifier | Spurious_Confirmations);
     log_err("FC:RECV: unconfirmed transition: %u", (unsigned)msg);
   }
-  else if (msg & FC_Identifier)
+  else if (fc_unmask(msg))
   {
     timer_update(HeartbeatFC);
-    process_report(msg & ~FC_Identifier);
+    process_report(fc_unmask(msg));
   }
 }
 

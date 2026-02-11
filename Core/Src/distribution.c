@@ -214,7 +214,7 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
   }
 
   if (len != 3 * sizeof(float)) {
-    enum message cmd = FC_MSG(GPS_Malformed);
+    enum message cmd = fc_mask(GPS_Malformed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     return SEDS_ERR;
   }
@@ -240,7 +240,7 @@ static inline void assess_gps_delay()
 {
   if (timer_exchange(IntervalGPS) > GPS_DELAY_MS)
   {
-    enum message cmd = FC_MSG(GPS_Delayed);
+    enum message cmd = fc_mask(GPS_Delayed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -396,7 +396,7 @@ static inline fu8 test_validate_all(struct coords *gps)
 static inline void pre_launch()
 {
   fu8 st = 0;
-  enum message cmd = FC_MSG(Sensor_Measm_Code);
+  enum message cmd = fc_mask(Sensor_Measm_Code);
   struct coords temp_gps_buf = {0};
 
   task_loop (load(&config, Acq) & static_option(Launch_Triggered))
@@ -407,15 +407,14 @@ static inline void pre_launch()
       log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
     }
 
-    if (!dma_try_fetch(&payload, 0))
+    if (!dma_try_fetch(&payload, 0) ||
+        !fetch_gps_data(&temp_gps_buf))
     {
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
 
     compensate(&payload, 0);
-
-    fetch_gps_data(&temp_gps_buf);
 
     st = test_validate_all(&temp_gps_buf);
 

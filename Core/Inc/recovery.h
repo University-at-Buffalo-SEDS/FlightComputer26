@@ -170,7 +170,8 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 
 /* ------ Endpoint identifiers: FC ------ */
 
-#define FC_MSG(message) (message | FC_Identifier)
+#define fc_mask(message)    ((message) | FC_Identifier)
+#define fc_unmask(message)  ((message) & ~FC_Identifier)
 
 
 /* ------ Statically unflag option value ------ */

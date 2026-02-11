@@ -129,50 +129,60 @@ static inline fu8 fetch_unsafe()
 /// Validates one measm_z against sanity bounds.
 static inline fu32 validate(fu32 mode)
 {
-  enum message st = Sensor_Measm_Code;
+  enum message st = fc_mask(Sensor_Measm_Code);
 
   if (!(mode & Validate_Measms)) {
     return st;
   }
 
-  if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT)
+  if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT) {
     st += Bad_Altitude;
+  }
 
 #ifdef GPS_AVAILABLE
   if (mode & Using_Ascent_KF)
   {
 #endif
 
-    if (raw.d.axis.accl.x > MAX_ACC || raw.d.axis.accl.x < MIN_ACC)
+    if (raw.d.axis.accl.x > MAX_ACC || raw.d.axis.accl.x < MIN_ACC) {
       st += Bad_Accel_X;
+    }
 
-    if (raw.d.axis.accl.y > MAX_ACC || raw.d.axis.accl.y < MIN_ACC)
+    if (raw.d.axis.accl.y > MAX_ACC || raw.d.axis.accl.y < MIN_ACC) {
       st += Bad_Accel_Y;
+    }
   
-    if (raw.d.axis.accl.z > MAX_ACC || raw.d.axis.accl.z < MIN_ACC)
+    if (raw.d.axis.accl.z > MAX_ACC || raw.d.axis.accl.z < MIN_ACC) {
       st += Bad_Accel_Z;
+    }
 
-    if (raw.gyro.x > MAX_DPS || raw.gyro.x < MIN_DPS)
+    if (raw.gyro.x > MAX_DPS || raw.gyro.x < MIN_DPS) {
       st += Bad_Attitude_X;
+    }
 
-    if (raw.gyro.y > MAX_DPS || raw.gyro.y < MIN_DPS)
+    if (raw.gyro.y > MAX_DPS || raw.gyro.y < MIN_DPS) {
       st += Bad_Attitude_Y;
+    }
 
-    if (raw.gyro.z > MAX_DPS || raw.gyro.z < MIN_DPS)
+    if (raw.gyro.z > MAX_DPS || raw.gyro.z < MIN_DPS) {
       st += Bad_Attitude_Z;
+    }
 
 #if GPS_AVAILABLE
   }
   else
   {
-    if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X)
+    if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X) {
       st += Bad_Lattitude;
+    }
 
-    if (raw.d.axis.gps.y > MAX_GPS_Y || raw.d.axis.gps.y < MIN_GPS_Y)
+    if (raw.d.axis.gps.y > MAX_GPS_Y || raw.d.axis.gps.y < MIN_GPS_Y) {
       st += Bad_Longtitude;
+    }
   
-    if (raw.d.axis.gps.z > MAX_GPS_Z || raw.d.axis.gps.z < MIN_GPS_Z)
+    if (raw.d.axis.gps.z > MAX_GPS_Z || raw.d.axis.gps.z < MIN_GPS_Z) {
       st += Bad_Sea_Level;
+    }
   }
 
 #endif // GPS_AVAILABLE
