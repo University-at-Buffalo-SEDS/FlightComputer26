@@ -34,36 +34,7 @@
 fu8 renorm_step_mask = RENORM_STEP;
 
 
-/* ------ Locally used definitions ------ */
-
-#define TOLERANCE 1e-3f
-
-#define sigma_low(k)  ((float)k - TOLERANCE)
-#define sigma_high(k) ((float)k + TOLERANCE)
-
-#define FSEC(ms) ((float)(ms) * 0.001f)
-
-#define NR_ITERATIONS 2
-
-/* For ascent filter */
-
-#define SIGMA_GYRO 0.1f
-#define SIGMA_GYRO_Z 1e-6f
-#define SIGMA_ACC 0.1f
-#define SIGMA_ALT 10.0f
-
-/* For descent filter */
-
-#define DESC_MASK (DESC_STAT - 1)
-#define APEX_A    (DESC_MASK - 2)
-
-union bithack {
-  float f;
-  uint32_t d;
-};
-
-
-/* ------ Math functions ------ */
+/* ------ Local math functions ------ */
 
 /// Inverse square root function using bithack.
 static inline float invsqrtf(float x)
@@ -230,16 +201,19 @@ void initialize_descent(void)
 }
 
 
+#define DESC_MASK (DESC_STAT - 1)
+#define APEX_A    (DESC_MASK - 2)
+
 /// descentKF.m
 void
 descentKF(struct state_vec *x_0, struct state_vec *x_f,
           const struct descent *z)
 {
-  /* Custom wrappers for the shared pools. */
-  static const matrix noise = {DESC_STAT, DESC_STAT, &Q[0][0]};
-  static const matrix trans = {DESC_STAT, DESC_STAT, &A[0][0]};
-  static const matrix obsrv = {DESC_MEAS, DESC_STAT, &H[0][0]};
-  static const matrix mscov = {DESC_MEAS, DESC_MEAS, &R[0][0]};
+  static matrix stcov = {DESC_STAT, DESC_STAT, &P[0][0]};
+  static matrix noise = {DESC_STAT, DESC_STAT, &Q[0][0]};
+  static matrix trans = {DESC_STAT, DESC_STAT, &A[0][0]};
+  static matrix obsrv = {DESC_MEAS, DESC_STAT, &H[0][0]};
+  static matrix mscov = {DESC_MEAS, DESC_MEAS, &R[0][0]};
 
   static matrix state = {DESC_STAT, 1, NULL};
   static matrix measm = {DESC_MEAS, 1, NULL};
@@ -254,10 +228,17 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 	// TODO
 }
 
+
 #endif // GPS_AVAILABLE
 
 
 /* ------ Ascent (unscented) Kalman filter ------ */
+
+
+#define SIGMA_GYRO 0.1f
+#define SIGMA_GYRO_Z 1e-6f
+#define SIGMA_ACC 0.1f
+#define SIGMA_ALT 10.0f
 
 /// Sets ascent filter values in shared buffers.
 void initialize_ascent(void) 
@@ -276,7 +257,7 @@ void initialize_ascent(void)
     P[k][k] = 100.0f;
     P[k + 3][k + 3] = 25.0f;
     P[k + 6][k + 6] = 1.0f;
-    P[k + 13][k + 13] = 0.01f;
+    P[k + 13][k + 13] = 1e-2f;
   }
 
   for (fu8 k = 9; k < 9 + 4; ++k) {
@@ -294,10 +275,23 @@ void initialize_ascent(void)
 }
 
 
+#define ALPHA 1.0f
+#define BETA  2.0f
+#define KAPPA (1.5f * L)
+
 /// ascentKF.m
 void
 ascentKF(struct state_vec *x_0, struct state_vec *x_f,
          const struct measm_z *z)
 {
-	// TODO
+	static matrix stcov = {ASC_STAT, ASC_STAT, &P[0][0]};
+  static matrix noise = {ASC_STAT, ASC_STAT, &Q[0][0]};
+  static matrix trans = {ASC_STAT, ASC_STAT, &A[0][0]};
+  static matrix obsrv = {ASC_MEAS, ASC_STAT, &H[0][0]};
+  static matrix mscov = {ASC_MEAS, ASC_MEAS, &R[0][0]};
+
+  /* Outputs lower triangular matrix */
+  chol(&stcov, &trans);
+
+  // TODO
 }

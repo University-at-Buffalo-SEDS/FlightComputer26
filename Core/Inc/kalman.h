@@ -14,6 +14,23 @@
 #define DESC_MEAS 4
 
 
+/* ------ Locally used definitions ------ */
+
+#define TOLERANCE 1e-3f
+
+#define sigma_low(k)  ((float)k - TOLERANCE)
+#define sigma_high(k) ((float)k + TOLERANCE)
+
+#define FSEC(ms) ((float)(ms) * 0.001f)
+
+#define NR_ITERATIONS 2
+
+union bithack {
+  float f;
+  uint32_t d;
+};
+
+
 /* ------ Public API ------ */
 
 #include "platform.h"
