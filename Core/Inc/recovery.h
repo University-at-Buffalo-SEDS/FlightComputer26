@@ -200,4 +200,46 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
                         ) )
 
 
+/* ------ On-board relative timer implementation ------ */
+
+enum fc_timer {
+  AscentKF,
+  DescentKF,
+  HeartbeatFC,
+  HeartbeatRF,
+  HeartbeatGND,
+  IntervalGPS,
+
+  Time_Users
+};
+
+/// Last recorded time for each UKF timer user.
+/// Defined in recovery.c to avoid multiple linkage.
+/// u32 wrap is not handled (flight assumed < 49 days :D).
+extern fu32 local_time[Time_Users];
+
+/// Report time elapsed since last call to either 
+/// timer_fetch_update or timer_update,
+/// and set local time to current HAL tick (ms).
+static inline fu32 timer_exchange(enum fc_timer u)
+{
+  fu32 prev = local_time[u];
+  local_time[u] = hal_time_ms();
+  return local_time[u] - prev;
+}
+
+/// Set local time to current HAL tick (ms).
+static inline void timer_update(enum fc_timer u)
+{
+  local_time[u] = hal_time_ms();
+}
+
+/// Report time elapsed since last call to either 
+/// timer_fetch_update or timer_update.
+static inline fu32 timer_fetch(enum fc_timer u)
+{
+  return hal_time_ms() - local_time[u];
+}
+
+
 #endif // RECOVERY_H

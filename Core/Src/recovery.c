@@ -123,6 +123,8 @@ static inline void auto_abort(void)
   if (config & static_option(Lost_GroundStation))
   {
     /* Nowhere to expect commands from! Reinitialize. */
+    to_abort = TO_ABORT * 10;
+
     enum message cmd = fc_mask(Launch_Signal);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
