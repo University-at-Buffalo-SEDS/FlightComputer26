@@ -279,6 +279,14 @@ void initialize_ascent(void)
 #define BETA  2.0f
 #define KAPPA (1.5f * L)
 
+#define W_DIM (int)(2*L + 1)
+#define W_l   (W_DIM - 1)
+
+#define W_0_a (float)((ALPHA*ALPHA*KAPPA - L) / (ALPHA*ALPHA*KAPPA))
+#define W_l_a (float)(1.0f / (2.0f*ALPHA*ALPHA*KAPPA))
+#define W_0_c (float)(W_0_a + 1.0f - ALPHA*ALPHA + BETA)
+#define W_l_c W_l_a
+
 /// ascentKF.m
 void
 ascentKF(struct state_vec *x_0, struct state_vec *x_f,
@@ -290,8 +298,21 @@ ascentKF(struct state_vec *x_0, struct state_vec *x_f,
   static matrix obsrv = {ASC_MEAS, ASC_STAT, &H[0][0]};
   static matrix mscov = {ASC_MEAS, ASC_MEAS, &R[0][0]};
 
+  static const float W_a[W_DIM] = {[0] = W_0_a, [1 ... W_l] = W_l_a};
+  static const float W_c[W_DIM] = {[0] = W_0_c, [1 ... W_l] = W_l_c};
+
+  static matrix colwa = {W_DIM, 1, (float *)(&W_a[0])};
+  static matrix colwc = {W_DIM, 1, (float *)(&W_c[0])};
+  
   /* Outputs lower triangular matrix */
   chol(&stcov, &trans);
+
+  // TODO s and x_j (L x 2L + 1), ops over x_0 and A -> s
+  // TODO x_0 becomes x_hat AFTER ^^^^
+
+  memset(x_0, 0, sizeof *x_0);
+
+  // TODO S_hat becomes H (shared)
 
   // TODO
 }
