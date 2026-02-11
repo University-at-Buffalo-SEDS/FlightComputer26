@@ -153,7 +153,7 @@ static const enum message extmap[Compat_Messages] = {
 
 static inline enum message decode_cmd(const uint8_t *raw)
 {
-  return extmap[*raw];
+  return *raw < Sensors ? extmap[*raw] : Invalid_Message;
 }
 
 
@@ -274,6 +274,8 @@ static inline fu8 fetch_gps_data(struct coords *buf)
 #endif // GPS_AVAILABLE
 
 
+#define INVALID_MESSAGE_STATUS 0xFFu
+
 /// Deposits one or multiple messages into the recovery queue.
 static inline SedsResult
 handle_gnd_command(const uint8_t *data, size_t len)
@@ -290,14 +292,16 @@ handle_gnd_command(const uint8_t *data, size_t len)
   for (fu16 k = 0; k < len; k += MIN_CMD_SIZE)
   {
     msg = decode_cmd(data + k);
-    st += tx_queue_send(&shared, &msg, TX_NO_WAIT);
+    st += (msg != Invalid_Message) ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
+                                   : INVALID_MESSAGE_STATUS;
   }
 
   tx_thread_priority_change(&telemetry_thread, TLMT_PRIORITY, &tlmt_old_pr);
 
 #else
   msg = decode_cmd(data);
-  st = tx_queue_send(&shared, &msg, TX_NO_WAIT);
+  st = (msg != Invalid_Message) ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
+                                : INVALID_MESSAGE_STATUS;
 
 #endif // MESSAGE_BATCHING_ENABLED
 

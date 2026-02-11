@@ -150,7 +150,9 @@ enum message {
   /* ... */
 
   GroundStation_Heartbeat = (1u << 30),
-  FC_Identifier = (1u << 31)
+  FC_Identifier = (1u << 31),
+
+  Invalid_Message = UINT32_MAX
 };
 
 
