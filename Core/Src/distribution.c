@@ -236,7 +236,7 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 
 /// Checks for timeout but does not fetch GPS data.
 /// Provides early inference of GPS availability.
-static inline void assess_gps_delay()
+static inline void assess_gps_delay(void)
 {
   if (timer_exchange(IntervalGPS) > GPS_DELAY_MS)
   {
@@ -393,7 +393,7 @@ static inline fu8 test_validate_all(struct coords *gps)
 /// Computer receives command to launch. After exiting
 /// the loop, this function performs final sanity checks
 /// and sends ignition signal to the Valve board.
-static inline void pre_launch()
+static inline void pre_launch(void)
 {
   fu8 st = 0;
   enum message cmd = fc_mask(Sensor_Measm_Code);

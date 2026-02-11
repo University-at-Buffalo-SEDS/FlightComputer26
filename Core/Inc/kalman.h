@@ -31,11 +31,11 @@ ascentKF(struct state_vec *x_0, struct state_vec *x_f,
 
 /// Sets descent filter values in shared buffers.
 /// Called by Evaluation task when APOGEE state is reached.
-void initialize_descent();
+void initialize_descent(void);
 
 /// Sets ascent filter values in shared buffers.
 /// Called during boot and whenever system falls back to UKF.
-void initialize_ascent();
+void initialize_ascent(void);
 
 
 #endif // KALMAN_H

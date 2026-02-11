@@ -132,6 +132,8 @@ static inline void process_action(enum message cmd)
     case Expand_Parachute:
       if (config & static_option(Parachute_Deployed)) {
         reef_high();
+      } else {
+        log_err("FC:RECV: you have to deploy parachute first.");
       }
       return;
 
@@ -145,9 +147,10 @@ static inline void process_action(enum message cmd)
         log_err("FC:RECV: had %u GPS delays and %u malformed packets"
                 "during pre-launch stage. Counters are now reset.",
                 gps_delay_count, gps_malform_count);
+
+        gps_delay_count = 0;
+        gps_malform_count = 0;
       }
-      gps_delay_count = 0;
-      gps_malform_count = 0;
 
       /* Start Evaluation and begin rocket launch chain. */
       tx_thread_resume(&evaluation_task);

@@ -207,7 +207,7 @@ static float H[M][M] = {0};
 /* ------ Descent Kalman filter ------ */
 
 /// Sets descent filter values in shared buffers.
-void initialize_descent()
+void initialize_descent(void)
 {
   memset(P, 0, sizeof P);
   memset(Q, 0, sizeof Q);
@@ -260,7 +260,7 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 /* ------ Ascent (unscented) Kalman filter ------ */
 
 /// Sets ascent filter values in shared buffers.
-void initialize_ascent() 
+void initialize_ascent(void) 
 {
   memset(P, 0, sizeof P);
   memset(Q, 0, sizeof Q);

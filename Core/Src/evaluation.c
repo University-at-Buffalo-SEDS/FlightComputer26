@@ -89,7 +89,7 @@ static fu8 idx = UINT_FAST8_MAX;
 
 /// Fetches one value from the ring buffer.
 /// Returns the amount of new entries added since last call.
-static inline fu8 fetch_async()
+static inline fu8 fetch_async(void)
 {
   fu16 i = idx;
   fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
@@ -112,7 +112,7 @@ static inline fu8 fetch_async()
 /// Fetches one value from the ring buffer.
 /// Returns the amount of new entries added since last call.
 /// Used when Evaluation cannot be preempted by Distribution.
-static inline fu8 fetch_unsafe()
+static inline fu8 fetch_unsafe(void)
 {
   fu8 n = (fu8) mask;
 
@@ -255,7 +255,7 @@ static inline void evaluate_altitude(fu32 mode)
 
 /// Monitors if minimum thresholds for velocity and
 /// acceleration were exceded.
-static inline void detect_launch()
+static inline void detect_launch(void)
 {
   if (vec[last].v.z >= LAUNCH_MIN_VEL &&
       vec[last].a.z >= LAUNCH_MIN_VAX)
@@ -320,7 +320,7 @@ static inline void detect_burnout(fu32 mode)
 
 /// Initially monitors for continuing burnout and
 /// for velocity to pass the minimum threshold.
-static inline void detect_apogee()
+static inline void detect_apogee(void)
 {
   if (vec[last].v.z <= APOGEE_MAX_VEL &&
       vec[last].v.z < vec[!last].v.z)
