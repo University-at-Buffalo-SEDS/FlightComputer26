@@ -113,35 +113,37 @@ enum message {
 
   Runtime_Configuration = (1u << 29),
 
-  Monitor_Altitude    = Runtime_Configuration + 1u,
-  Descent_KF_Feasible = Runtime_Configuration + (1u << 1),
-  Consecutive_Samples = Runtime_Configuration + (1u << 2),
-  Parachute_Deployed  = Runtime_Configuration + (1u << 3),
-  Reinit_Attempted    = Runtime_Configuration + (1u << 4),
-  Confirm_Altitude    = Runtime_Configuration + (1u << 5),
-  Eval_Focus_Flag     = Runtime_Configuration + (1u << 6),
-  Eval_Abort_Flag     = Runtime_Configuration + (1u << 7),
-  Reset_Failures      = Runtime_Configuration + (1u << 8),
-  Launch_Triggered    = Runtime_Configuration + (1u << 8),
-  Validate_Measms     = Runtime_Configuration + (1u << 9),
-  Using_Ascent_KF     = Runtime_Configuration + (1u << 11),
+  Monitor_Altitude    = Runtime_Configuration | 1u,
+  Descent_KF_Feasible = Runtime_Configuration | (1u << 1),
+  Consecutive_Samples = Runtime_Configuration | (1u << 2),
+  Parachute_Deployed  = Runtime_Configuration | (1u << 3),
+  Reinit_Attempted    = Runtime_Configuration | (1u << 4),
+  Confirm_Altitude    = Runtime_Configuration | (1u << 5),
+  Eval_Focus_Flag     = Runtime_Configuration | (1u << 6),
+  Eval_Abort_Flag     = Runtime_Configuration | (1u << 7),
+  Reset_Failures      = Runtime_Configuration | (1u << 8),
+  Launch_Triggered    = Runtime_Configuration | (1u << 8),
+  Validate_Measms     = Runtime_Configuration | (1u << 9),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 11),
+  In_Aborted_State    = Runtime_Configuration | (1u << 12),
+  Lost_GroundStation  = Runtime_Configuration | (1u << 13),
 
-  Revoke_Option = Runtime_Configuration + (1u << 20),
+  Revoke_Option = Runtime_Configuration | (1u << 20),
 
-  KF_Operation_Mode = Runtime_Configuration + (1u << 28),
+  KF_Operation_Mode = Runtime_Configuration | (1u << 28),
 
   Renormalize_Quat_1 = KF_Operation_Mode + 0,
   Renormalize_Quat_2 = KF_Operation_Mode + 1,
   Renormalize_Quat_4 = KF_Operation_Mode + 3,
   Renormalize_Quat_8 = KF_Operation_Mode + 7,
 
-  Abortion_Thresholds = Runtime_Configuration + (1u << 27),
+  Abortion_Thresholds = Runtime_Configuration | (1u << 27),
 
   Abort_After_15 = Abortion_Thresholds + 15,
   Abort_After_40 = Abortion_Thresholds + 40,
   Abort_After_70 = Abortion_Thresholds + 70,
 
-  Reinit_Thresholds = Runtime_Configuration + (1u << 26),
+  Reinit_Thresholds = Runtime_Configuration | (1u << 26),
 
   Reinit_After_12 = Reinit_Thresholds + 12,
   Reinit_After_26 = Reinit_Thresholds + 26,

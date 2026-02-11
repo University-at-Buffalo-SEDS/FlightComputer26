@@ -8,8 +8,17 @@
  * When a message appears in the queue, a callback
  * is invoked that increments the value in semaphore.
  *
+ * This task provides for various recovery and abortion
+ * scenarios, and also logs all important actions. This
+ * task as a sole command and decision center of the
+ * flight computer, and therefore cannot be preempted
+ * while in execution. As such, utlizing the fact that
+ * the target MCU is single core and thus has only one
+ * data cache unit, this task can perform non-atomic
+ * reads and writes across its allotted RAM region. 
+ *
  * This task also includes a timer callback that
- * checks for timeout of both FC and GND. If timeout
+ * checks for timeout of FC, RF and GND. If timeout
  * occurs (i.e., this task did not receive a signal)
  * for 4 seconds, a handler is invoked that changes
  * global runtime configuration, which other tasks
@@ -19,17 +28,10 @@
  * To change default configuration applied during boot,
  * refer to recovery.h -> DEFAULT_OPTIONS.
  *
- * You can send a command to recovery like this
- * (assume firing pyro from the ground station):
- *
- * enum command cmd = FIRE_PYRO;
- * tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
- *
- * Wait option depends on whether you want to drop
- * the value if queue is full (unlikely). 
- *
- * NOTE: if you are sending a message from FC,
- * mask it with FC_MSG(_variant_). Otherwise - UB!
+ * This task defines the local timer, which informs its
+ * users of time elapsed since last call for each user.
+ * This timer is independent of the ThreadX timer (above),
+ * and relies on HAL tick that is incremented every 1 ms.
  */
 
 #include "platform.h"
@@ -58,7 +60,6 @@ static TX_TIMER endpoints;
 static TX_SEMAPHORE unread;
 
 static fu16 failures = 0;
-
 static fu16 to_abort  = TO_ABORT;
 static fu16 to_reinit = TO_REINIT;
 
@@ -70,15 +71,6 @@ static fu16 gps_malform_count = 0;
 
 
 /* ------ Recovery logic ------ */
-
-/// Wake up recovery loop.
-static void queue_handler(TX_QUEUE *q)
-{
-  if (q != &shared) {
-    return;
-  }
-  tx_semaphore_put(&unread);
-}
 
 
 /// Synchronously initializes each sensor.
@@ -112,10 +104,28 @@ static inline void try_reinit_sensors(void)
 }
 
 
-/// FC deemed the required minimum of sensors unreliable.
+/// Reset Distribution and Evaluation tasks. Grants Telemetry
+/// task full scheduling time. If launch signal is sent after
+/// abortion, the FC will attempt to resume normal opertaion.
 static inline void auto_abort(void)
 {
-  // TODO
+  config |= static_option(In_Aborted_State);
+
+  tx_thread_reset(&evaluation_task);
+  tx_thread_reset(&distribution_task);
+
+  gps_delay_count = 0;
+  gps_malform_count = 0;
+
+  log_msg("FC:RECV: issued automatic abortion. "
+          "Waiting for commands or launch signal.", 75);
+
+  if (config & static_option(Lost_GroundStation))
+  {
+    /* Nowhere to expect commands from! Reinitialize. */
+    enum message cmd = fc_mask(Launch_Signal);
+    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+  }
 }
 
 
@@ -133,7 +143,7 @@ static inline void process_action(enum message cmd)
       if (config & static_option(Parachute_Deployed)) {
         reef_high();
       } else {
-        log_err("FC:RECV: you have to deploy parachute first.");
+        log_err("FC:RECV: you have to deploy parachute first");
       }
       return;
 
@@ -145,11 +155,17 @@ static inline void process_action(enum message cmd)
       if (gps_delay_count || gps_malform_count)
       {
         log_err("FC:RECV: had %u GPS delays and %u malformed packets"
-                "during pre-launch stage. Counters are now reset.",
+                " during pre-launch stage. Counters are now reset.",
                 gps_delay_count, gps_malform_count);
 
         gps_delay_count = 0;
         gps_malform_count = 0;
+      }
+
+      if (config & static_option(In_Aborted_State))
+      {
+        tx_thread_resume(&distribution_task);
+        config &= ~static_option(In_Aborted_State);
       }
 
       /* Start Evaluation and begin rocket launch chain. */
@@ -346,10 +362,16 @@ static void check_endpoints(ULONG id)
 
   static fu8 restart_count = 0;
 
-  if (timer_fetch(HeartbeatFC) > FC_TIMEOUT_MS)
+  if (config & static_option(In_Aborted_State))
+  {
+    /* If aborted, no task is sending heartbeat */
+    timer_update(HeartbeatFC);
+  }
+  else if (timer_fetch(HeartbeatFC) > FC_TIMEOUT_MS)
   {
     if (++restart_count >= MAX_RESTARTS) {
-      return auto_abort();
+      auto_abort();
+      return;
     }
 
     timer_update(HeartbeatFC);
@@ -370,6 +392,7 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
+    config |= static_option(Lost_GroundStation);
     config |= static_option(Monitor_Altitude);
     config |= static_option(Reset_Failures);
     renorm_step_mask = RENORM_STEP;
@@ -398,6 +421,16 @@ static void check_endpoints(ULONG id)
   }
 
 #endif // GPS_AVAILABLE
+}
+
+
+/// Wake up recovery loop.
+static void queue_handler(TX_QUEUE *q)
+{
+  if (q != &shared) {
+    return;
+  }
+  tx_semaphore_put(&unread);
 }
 
 
