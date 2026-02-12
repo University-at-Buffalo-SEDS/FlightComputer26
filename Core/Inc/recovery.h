@@ -216,7 +216,7 @@ enum fc_timer {
 /// Last recorded time for each UKF timer user.
 /// Defined in recovery.c to avoid multiple linkage.
 /// u32 wrap is not handled (flight assumed < 49 days :D).
-extern fu32 local_time[Time_Users];
+extern volatile fu32 local_time[Time_Users];
 
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,

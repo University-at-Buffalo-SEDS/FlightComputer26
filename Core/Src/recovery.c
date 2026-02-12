@@ -45,13 +45,13 @@ TX_THREAD recovery_task;
 ULONG recovery_stack[RECV_STACK_ULONG];
 
 /// Last recorded time for each timer user.
-fu32 local_time[Time_Users] = {0};
+volatile fu32 local_time[Time_Users] = {0};
 
 /// Run time configuration mask.
 atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
 /// Defined and used by Ascent filter.
-extern fu8 renorm_step_mask;
+extern volatile fu8 renorm_step_mask;
 
 
 /* ------ Local definitions ------ */
@@ -62,7 +62,8 @@ static enum tx_align message q_pool[QSIZE] = {0};
 
 static TX_TIMER ep_timeout;
 
-static fu16 failures = 0;
+static volatile fu16 failures = 0;
+
 static fu16 to_abort  = TO_ABORT;
 static fu16 to_reinit = TO_REINIT;
 

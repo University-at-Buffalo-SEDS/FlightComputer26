@@ -31,7 +31,7 @@
 
 /// Number of iterations - 1 for quaternion matrix
 /// renormalization. Set by Recovery task.
-fu8 renorm_step_mask = RENORM_STEP;
+volatile fu8 renorm_step_mask = RENORM_STEP;
 
 
 /* ------ Local math functions ------ */

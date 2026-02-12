@@ -55,7 +55,7 @@
 /// Each device data readiness mask for two buffers.
 /// Baro, Gyro, Accel, and unused bits (in this order).
 /// 0 0 0 0 0 A G B | 0 0 0 0 0 0 A G B
-static fu8 is_complete[2] = {0};
+static volatile fu8 is_complete[2] = {0};
 
 /// Rx buffer marked for accepting DMA transfers.
 static atomic_uint_fast8_t in_transfer = 0;
@@ -66,7 +66,7 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
 };
 
 /// Double-buffered Rx for each sensor.
-static uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
+static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
 
 
 /* ------ Helpers ------ */
