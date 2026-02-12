@@ -120,6 +120,12 @@ typedef arm_matrix_instance_f32 matrix;
 #define transpose arm_mat_trans_f32
 #define xmul 			arm_mat_mult_f32
 #define xadd			arm_mat_add_f32
+#define xsub      arm_mat_sub_f32
+#define xinv      arm_mat_inverse_f32
+
+/* I don't quite get the point of this function.
+ * Maybe because it's *floating point*. */
+#define xinit     arm_mat_init_f32
 
 
 /* ------ Numerical helpers ------ */

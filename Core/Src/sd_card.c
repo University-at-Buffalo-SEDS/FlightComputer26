@@ -5,8 +5,6 @@
 #include "platform.h"
 #include "sd_card.h"
 
-#include <string.h>
-
 
 /* =========================
    ThreadX objects
@@ -72,6 +70,7 @@ static sd_line_t *sd_pool_alloc(void) {
   return out;
 }
 
+
 static void sd_pool_free(sd_line_t *p) {
   if (!p)
     return;
@@ -92,6 +91,7 @@ static UINT ensure_fx_ready(void) {
   }
   return FX_SUCCESS;
 }
+
 
 static UINT ensure_media_open(void) {
   if (g_media_open)
@@ -130,6 +130,7 @@ static UINT sd_drop_oldest(UINT n) {
 
   return dropped;
 }
+
 
 static UINT ensure_file_open(void) {
   if (g_file_open)
@@ -171,6 +172,7 @@ static VOID sd_close_all(void) {
     g_media_open = 0;
   }
 }
+
 
 /* =========================
    SD writer thread
@@ -256,6 +258,7 @@ UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry,
   return FX_SUCCESS;
 }
 
+
 UINT sd_logger_enqueue_line(const CHAR *data, size_t len) {
   if (!g_sd_logger_up)
     return FX_NOT_AVAILABLE;
@@ -305,6 +308,7 @@ UINT sd_logger_enqueue_line(const CHAR *data, size_t len) {
   sd_pool_free(rec);
   return FX_NO_MORE_SPACE;
 }
+
 
 UINT sd_logger_request_flush(void) {
   if (!g_sd_logger_up)
