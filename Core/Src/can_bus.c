@@ -25,6 +25,7 @@
 //  ensure the consumer sees the slot contents after observing `head` (acquire).
 
 #include "can_bus.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -51,26 +52,13 @@ static size_t can_bus_dlc_to_len(uint32_t dlc) {
   return map[dlc];
 }
 
-static uint32_t can_bus_len_to_dlc(size_t len) {
+static uint32_t can_bus_len_to_dlc(size_t len)
+{
+  if (len <= 8) {
+    return FDCAN_DLC_BYTES_0 + (uint32_t)len;
+  }
+
   switch (len) {
-  case 0:
-    return FDCAN_DLC_BYTES_0;
-  case 1:
-    return FDCAN_DLC_BYTES_1;
-  case 2:
-    return FDCAN_DLC_BYTES_2;
-  case 3:
-    return FDCAN_DLC_BYTES_3;
-  case 4:
-    return FDCAN_DLC_BYTES_4;
-  case 5:
-    return FDCAN_DLC_BYTES_5;
-  case 6:
-    return FDCAN_DLC_BYTES_6;
-  case 7:
-    return FDCAN_DLC_BYTES_7;
-  case 8:
-    return FDCAN_DLC_BYTES_8;
   case 12:
     return FDCAN_DLC_BYTES_12;
   case 16:
@@ -91,22 +79,22 @@ static uint32_t can_bus_len_to_dlc(size_t len) {
 }
 
 static size_t can_bus_round_up_fd_len(size_t len) {
-  if (len <= 8)
+  if (len <= 8) {
     return len;
-  if (len <= 12)
-    return 12;
-  if (len <= 16)
-    return 16;
-  if (len <= 20)
-    return 20;
-  if (len <= 24)
-    return 24;
-  if (len <= 32)
+  }
+
+  if (len <= 24) {
+    /* Add to the next multiple of 4 and trim the tail. */
+    return (len + 3) & ~((size_t)3);
+  }
+
+  if (len <= 32) {
     return 32;
-  if (len <= 48)
+  }
+  if (len <= 48) {
     return 48;
-  if (len <= 64)
-    return 64;
+  }
+
   return 64;
 }
 
