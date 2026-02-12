@@ -18,11 +18,11 @@
  * The pilot loop is left and ignition is requested from the
  * Valve board upon receiving the 'ENTER_DIST_CYCLE' atomic
  * flag from the Evaluation Task, which sets this flag after
- * being (in turn) woken on a semaphore by the Recovery Task,
- * which sends it (in turn) after receiving the 'START' signal
- * on its queue, which (in turn) is deposited there by the
- * telemetry handler (below). This allows for sequential and
- * safe module initialization and consent.
+ * being (in turn) started by the Recovery Task, which resumes
+ * after receiving the 'START' signal on its blocking queue,
+ * which (in turn) is deposited there by the telemetry handler
+ * (below). This allows for sequential and safe module
+ * initialization and consent.
  *
  * When fetching a pack of data (barometer, gyroscope, and
  * accelerometer readings) from DMA buffers, it is not

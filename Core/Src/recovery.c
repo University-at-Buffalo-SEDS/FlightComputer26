@@ -1,12 +1,12 @@
 /*
  * Recovery Task
  *
- * This task suspends on a counting semaphore
- * and when resumed, drains the message queue.
- * The messages are then interpreted depending
- * on the MSB designating the endpoint - FC or GND.
- * When a message appears in the queue, a callback
- * is invoked that increments the value in semaphore.
+ * This task suspends on a blocking message queue
+ * and when resumed, drains the message queue. The
+ & messages are then interpreted depending on the
+ * MSB designating the endpoint - FC or GND. When
+ * a message appears in the queue, this thread is 
+ * _immediately_ woken by ThreadX and processing begins.
  *
  * This task provides for various recovery and abortion
  * scenarios, and also logs all important actions. This
@@ -56,8 +56,7 @@ extern fu8 renorm_step_mask;
 
 /* ------ Local definitions ------ */
 
-static TX_TIMER endpoints;
-static TX_SEMAPHORE unread;
+static TX_TIMER ep_timeout;
 
 static fu16 failures = 0;
 static fu16 to_abort  = TO_ABORT;
@@ -329,7 +328,7 @@ static inline void decode_message(enum message msg)
 }
 
 
-/// Suspend on semaphore until a new message arrives.
+/// Suspend on blocking queue until a new message arrives.
 void recovery_entry(ULONG input)
 {
   (void) input;
@@ -338,16 +337,16 @@ void recovery_entry(ULONG input)
     timer_update(k);
   }
 
+  tx_timer_activate(&ep_timeout);
+
   task_loop (DO_NOT_EXIT)
   {
     enum message msg;
 
     /* Thread suspension */
-    tx_semaphore_get(&unread, TX_WAIT_FOREVER);
-    
-    if (tx_queue_receive(&shared, &msg,
-        TX_WAIT_FOREVER) != TX_SUCCESS)
-    {
+    UINT st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
+
+    if (st != TX_SUCCESS) {
       continue;
     }
 
@@ -426,16 +425,6 @@ static void check_endpoints(ULONG id)
 }
 
 
-/// Wake up recovery loop.
-static void queue_handler(TX_QUEUE *q)
-{
-  if (q != &shared) {
-    return;
-  }
-  tx_semaphore_put(&unread);
-}
-
-
 /// Creates a non-preemptive Recovery Task with defined parameters.
 void create_recovery_task(void)
 {
@@ -455,27 +444,15 @@ void create_recovery_task(void)
     log_die("FC:RECV: failed to create task (%u)", st);
   }
 
-  st = tx_queue_create(&shared, "Message queue", 1, QADDR, QSIZE);
+  st = tx_queue_create(&shared, "FC messages", 1, QADDR, QSIZE);
 
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create queue (%u)", st);
   }
 
-  st = tx_queue_send_notify(&shared, queue_handler);
-
-  if (st != TX_SUCCESS) {
-    log_die("FC:RECV: failed to subscribe to queue (%u)", st);
-  }
-
-  st = tx_semaphore_create(&unread, "Messages in queue", 0);
-
-  if (st != TX_SUCCESS) {
-    log_die("FC:RECV: failed to create semaphore (%u)", st);
-  }
-
-  st = tx_timer_create(&endpoints, "Endpoints timeout timer",
+  st = tx_timer_create(&ep_timeout, "Endpoints timeout",
                        check_endpoints, 0, TX_TIMER_INITIAL,
-                       TX_TIMER_TICKS, TX_AUTO_ACTIVATE);
+                       TX_TIMER_TICKS, TX_NO_ACTIVATE);
 
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create timer (%u)", st);
