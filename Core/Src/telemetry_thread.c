@@ -1,12 +1,16 @@
-// telemetry_thread.c
-#include "FC-Threads.h"
-#include "tx_api.h"
+/*
+ * Thread component of the Telemetry task.
+ * Invokes CAN and sedsprintf_rs router
+ * from the ThreadX thread context.
+ */
+
+#include "platform.h"
 #include "telemetry.h"
 #include "can_bus.h"
 
+/// Stack + TCB for telemetry thread
 TX_THREAD telemetry_thread;
-#define TELEMETRY_THREAD_STACK_SIZE 1024u
-ULONG telemetry_thread_stack[TELEMETRY_THREAD_STACK_SIZE / sizeof(ULONG)];
+ULONG telemetry_thread_stack[TLMT_STACK_ULONG];
 
 // How often this node requests a resync from the master:
 #define TIMESYNC_REQUEST_PERIOD_MS 2000u   // e.g. every 2 seconds
@@ -15,11 +19,14 @@ ULONG telemetry_thread_stack[TELEMETRY_THREAD_STACK_SIZE / sizeof(ULONG)];
 #error "TX_TIMER_TICKS_PER_SECOND must be defined by ThreadX."
 #endif
 
+
 static uint64_t tx_now_ms(void) {
     ULONG ticks = tx_time_get();
     return ((uint64_t)(uint32_t)ticks * 1000ULL) / (uint64_t)TX_TIMER_TICKS_PER_SECOND;
 }
 
+
+/// Telemetry task entry.
 void telemetry_thread_entry(ULONG initial_input)
 {
     (void)initial_input;
@@ -35,7 +42,8 @@ void telemetry_thread_entry(ULONG initial_input)
 
     uint64_t last_req_ms = 0;
 
-    for (;;) {
+    task_loop (DO_NOT_EXIT)
+    {
         can_bus_process_rx();
         (void)process_all_queues_timeout(5);
         can_bus_process_rx();
@@ -46,22 +54,27 @@ void telemetry_thread_entry(ULONG initial_input)
             last_req_ms = now_ms;
         }
 
-        tx_thread_sleep(1);
+        tx_thread_relinquish();
     }
 }
 
+/// Creates a preemptive, non-cooperative telemetry thread
+/// with defined parameters. This thread repeatedly drains
+/// CAN bus message queue and invokes local instance of the
+/// telemetry router to process incoming and outcoming messages.
 void create_telemetry_thread(void)
 {
     UINT status = tx_thread_create(&telemetry_thread,
-                                   "Telemetry Thread",
-                                   telemetry_thread_entry,
-                                   0,
-                                   telemetry_thread_stack,
-                                   TELEMETRY_THREAD_STACK_SIZE,
-                                   5,
-                                   5,
-                                   TX_NO_TIME_SLICE,
-                                   TX_AUTO_START);
+                                  "Telemetry Task",
+                                  telemetry_thread_entry,
+                                  TLMT_INPUT,
+                                  telemetry_thread_stack,
+                                  TLMT_STACK_BYTES,
+                                  /* No preemption threshold */
+                                  TLMT_PRIORITY,
+                                  TLMT_PRIORITY,
+                                  TLMT_TIME_SLICE,
+                                  TX_AUTO_START);
 
     if (status != TX_SUCCESS) {
         die("Failed to create telemetry thread: %u", (unsigned)status);
