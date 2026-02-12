@@ -136,11 +136,11 @@ if (EXTERNAL_GPS)
 endif()
 
 # Option defaults to ON
-option(SANITY_CHECKS "Data validation before passing to KF." ON)
-message(STATUS "Data validation: ${SANITY_CHECKS}")
+option(ONBOARD_SD "Logger storage on FC board." ON)
+message(STATUS "SD card: ${ONBOARD_SD}")
 
-if (SANITY_CHECKS)
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MEASM_VALIDATE)
+if (ONBOARD_SD)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
 endif()
 
 

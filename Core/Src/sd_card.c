@@ -1,19 +1,19 @@
+/*
+ * SD card logging utilities over FileX.
+ */
+
+#include "platform.h"
 #include "sd_card.h"
 
 #include <string.h>
 
-/* =========================
-   Config
-   ========================= */
-#define SD_LOG_THREAD_STACK_WORDS 1024
-#define SD_LOG_QUEUE_DEPTH 64
-#define SD_LOG_LINE_MAX 256
 
 /* =========================
    ThreadX objects
    ========================= */
-static TX_THREAD g_sd_log_thread;
-static ULONG g_sd_log_thread_stack[SD_LOG_THREAD_STACK_WORDS];
+
+TX_THREAD g_sd_log_thread;
+static tx_align ULONG g_sd_log_thread_stack[LOGGER_STACK_ULONG];
 
 static TX_QUEUE g_sd_log_queue;
 /* Queue stores pointers (ULONG per message) */
@@ -32,9 +32,11 @@ typedef struct {
 
 static sd_line_t g_line_pool[SD_LOG_QUEUE_DEPTH];
 
+
 /* =========================
    FileX objects/state
    ========================= */
+
 static FX_MEDIA g_sd_media;
 static FX_FILE g_sd_file;
 
@@ -51,9 +53,11 @@ static const CHAR *g_filename = "seds_log.txt";
 static SdFxDriverEntry g_driver_entry = 0;
 static VOID *g_driver_info = 0;
 
+
 /* =========================
    Pool helpers
    ========================= */
+
 static sd_line_t *sd_pool_alloc(void) {
   sd_line_t *out = NULL;
   tx_mutex_get(&g_sd_pool_mutex, TX_WAIT_FOREVER);
@@ -76,9 +80,11 @@ static void sd_pool_free(sd_line_t *p) {
   tx_mutex_put(&g_sd_pool_mutex);
 }
 
+
 /* =========================
    FileX helpers
    ========================= */
+
 static UINT ensure_fx_ready(void) {
   if (!g_fx_inited) {
     fx_system_initialize();
@@ -169,6 +175,7 @@ static VOID sd_close_all(void) {
 /* =========================
    SD writer thread
    ========================= */
+
 static VOID sd_log_thread_entry(ULONG arg) {
   (void)arg;
 
@@ -219,9 +226,11 @@ static VOID sd_log_thread_entry(ULONG arg) {
   }
 }
 
+
 /* =========================
    Public API
    ========================= */
+
 UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry,
                     VOID *driver_info) {
   if (g_sd_logger_up) {
@@ -240,8 +249,8 @@ UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry,
                   g_sd_log_queue_storage, sizeof(g_sd_log_queue_storage));
 
   tx_thread_create(&g_sd_log_thread, "sd_log_thread", sd_log_thread_entry, 0,
-                   g_sd_log_thread_stack, sizeof(g_sd_log_thread_stack), 20, 20,
-                   TX_NO_TIME_SLICE, TX_AUTO_START);
+                   g_sd_log_thread_stack, LOGGER_STACK_BYTES, LOGGER_PRIORITY,
+                   LOGGER_PRIORITY, LOGGER_TIME_SLICE, TX_DONT_START);
 
   g_sd_logger_up = 1;
   return FX_SUCCESS;

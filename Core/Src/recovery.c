@@ -56,6 +56,10 @@ extern fu8 renorm_step_mask;
 
 /* ------ Local definitions ------ */
 
+#define QSIZE 128
+
+static enum tx_align message q_pool[QSIZE] = {0};
+
 static TX_TIMER ep_timeout;
 
 static fu16 failures = 0;
@@ -64,9 +68,6 @@ static fu16 to_reinit = TO_REINIT;
 
 static fu16 gps_delay_count = 0;
 static fu16 gps_malform_count = 0;
-
-#define QADDR (VOID *)0x20010000
-#define QSIZE 128
 
 
 /* ------ Recovery logic ------ */
@@ -339,6 +340,10 @@ void recovery_entry(ULONG input)
 
   tx_timer_activate(&ep_timeout);
 
+#ifdef SD_AVAILABLE
+  tx_thread_resume(&g_sd_log_thread);
+#endif
+
   task_loop (DO_NOT_EXIT)
   {
     enum message msg;
@@ -444,7 +449,7 @@ void create_recovery_task(void)
     log_die("FC:RECV: failed to create task (%u)", st);
   }
 
-  st = tx_queue_create(&shared, "FC messages", 1, QADDR, QSIZE);
+  st = tx_queue_create(&shared, "FC messages", 1, &q_pool, sizeof q_pool);
 
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create queue (%u)", st);

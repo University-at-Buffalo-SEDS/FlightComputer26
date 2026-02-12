@@ -23,10 +23,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 #include "main.h"
-#include "evaluation.h"
-#include "recovery.h"
 #include "platform.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -77,6 +77,10 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
+
+#ifdef SD_AVAILABLE
+  sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
+#endif
 
   create_recovery_task();
   create_evaluation_task();

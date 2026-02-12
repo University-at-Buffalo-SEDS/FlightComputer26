@@ -51,6 +51,9 @@ OPTIONS:
         nogps           - absence of external GPS device;
                         - always use Ascent Kalman filter;
                         - True if telemetry is disabled
+
+        nosd            - absence of on-board SD card;
+                        - True if telemetry is disabled
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -72,7 +75,7 @@ DEFAULT_PRESET  = "Debug"
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {"flash", "notelemetry", "clean", "dmatest", "fullcmd",
-                        "batching", "configure", "nogps"}
+                        "batching", "configure", "nogps", "nosd"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -114,24 +117,29 @@ def parse(argv: list[str]):
 def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
-        batching_flag   = "-DMESSAGE_BATCHING=OFF"
-        telemetry_flag  = "-DENABLE_TELEMETRY=ON"
-        tcompat_flag    = "-DTELEMETRY_COMPAT=ON"
-        dma_test_flag   = "-DDMA_TESTING=OFF"
-        gps_flag        = "-DEXTERNAL_GPS=ON"
+        # Defaults for IREC 2026
+        batch   = "-DMESSAGE_BATCHING=OFF"
+        telem   = "-DENABLE_TELEMETRY=ON"
+        compat  = "-DTELEMETRY_COMPAT=ON"
+        dmatest = "-DDMA_TESTING=OFF"
+        gps     = "-DEXTERNAL_GPS=ON"
+        sd      = "-DONBOARD_SD=ON"
 
         if options["notelemetry"]:
-                telemetry_flag = "-DENABLE_TELEMETRY=OFF"
-                gps_flag = "-DEXTERNAL_GPS=OFF"
+                telem = "-DENABLE_TELEMETRY=OFF"
+                gps = "-DEXTERNAL_GPS=OFF"
+                sd = "-DONBOARD_SD=OFF"
                 if options["dmatest"]:
-                        dma_test_flag = "-DDMA_TESTING=ON"
+                        dmatest = "-DDMA_TESTING=ON"
         else:
                 if options["fullcmd"]:
-                        tcompat_flag = "-DTELEMETRY_COMPAT=OFF"
+                        compat = "-DTELEMETRY_COMPAT=OFF"
                 if options["batching"]:
-                        batching_flag  = "-DMESSAGE_BATCHING=ON"
+                        batch  = "-DMESSAGE_BATCHING=ON"
                 if options["nogps"]:
-                        gps_flag = "-DEXTERNAL_GPS=OFF"
+                        gps = "-DEXTERNAL_GPS=OFF"
+                if options["nosd"]:
+                        sd = "-DONBOARD_SD=OFF"
 
         cmake_args = [
                 "cmake",
@@ -139,11 +147,11 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
                 "-DCMAKE_COMMAND=cmake",
-                telemetry_flag,
-                dma_test_flag,
-                batching_flag,
-                tcompat_flag,
-                gps_flag,
+                telem,
+                dmatest,
+                batch,
+                compat,
+                gps,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

@@ -1,15 +1,39 @@
-#pragma once
-#include "app_threadx.h" // should bring in tx_api.h; if not, include tx_api.h directly
+/*
+ * SD logger configuration and API.
+ */
+
+#ifndef LOGGER_H
+#define LOGGER_H
+
 #include <stddef.h>
 #include <stdint.h>
-#include <tx_api.h>
+
+#include "app_threadx.h"
+#include "tx_api.h"
 #include "fx_api.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+extern TX_THREAD g_sd_log_thread;
+
+
+/* ------ Local definitions ------ */
+
 typedef VOID (*SdFxDriverEntry)(FX_MEDIA *media);
+
+#define LOGGER_INPUT 0
+#define LOGGER_PRIORITY 5
+#define LOGGER_TIME_SLICE	5
+#define LOGGER_STACK_BYTES 8192
+#define LOGGER_STACK_ULONG (LOGGER_STACK_BYTES / sizeof(ULONG))
+
+#define SD_LOG_QUEUE_DEPTH 64
+#define SD_LOG_LINE_MAX 256
+
+
+/* ------ Public API ------ */
 
 /**
  * Initialize SD logger.
@@ -39,3 +63,6 @@ UINT sd_logger_request_flush(void);
 #ifdef __cplusplus
 }
 #endif
+
+
+#endif // LOGGER_H

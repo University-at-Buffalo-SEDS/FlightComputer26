@@ -57,11 +57,6 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 #endif
 
 
-/* ------ Type attributes ------ */
-
-#define serial __attribute__((packed, aligned(4)))
-
-
 /* ------ Platform integer aliases ----- */
 
 /* Fast means the _fastest_ integer of minimum width. 
@@ -200,6 +195,13 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
 #include "tx_api.h"
 #include "tx_port.h"
 #include "FC-Threads.h"
+
+
+/* ------ Type attributes ------ */
+
+#define serial __attribute__((packed, aligned(4)))
+
+#define tx_align __attribute__((aligned(sizeof(ULONG))))
 
 
 /* ------ HAL Aliases ------ */
@@ -471,6 +473,16 @@ static inline SedsResult request_ignition()
   ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
 
 #endif // TELEMETRY_ENABLED
+
+
+/* ------ On-board SD card (conditional) ------ */
+
+#ifdef SD_AVAILABLE
+
+#include "sd_card.h"
+#include "fx_stm32_sd_driver.h"
+
+#endif // SD_AVAILABLE
 
 
 #endif // PLATFORM_H
