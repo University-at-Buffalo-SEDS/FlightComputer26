@@ -407,12 +407,22 @@ static inline void pre_launch(void)
       log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
     }
 
-    if (!dma_try_fetch(&payload, 0) ||
-        !fetch_gps_data(&temp_gps_buf))
+    if (!dma_try_fetch(&payload, 0))
     {
+      /* Short yield (DMA is fast) */
+      tx_thread_relinquish();
+      continue;
+    }
+
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+    if (!fetch_gps_data(&temp_gps_buf))
+    {
+      /* Long yield (also refresh DMA data) */
       tx_thread_sleep(DIST_SLEEP_NO_DATA);
       continue;
     }
+
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
 
     compensate(&payload, 0);
 
@@ -456,7 +466,7 @@ void distribution_entry(ULONG input)
 
     if (!dma_try_fetch(&payload, skip_mask))
     {
-      tx_thread_sleep(DIST_SLEEP_NO_DATA);
+      tx_thread_relinquish();
       goto start;
     }
 
@@ -469,7 +479,7 @@ void distribution_entry(ULONG input)
       log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
 
-#ifdef GPS_AVAILABLE
+#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
       assess_gps_delay();
     }
     else
@@ -481,10 +491,10 @@ void distribution_entry(ULONG input)
           goto start;
         }
         /* GPS data is required for Descent filter to proceed. */
-        tx_thread_relinquish();
+        tx_thread_sleep(DIST_SLEEP_NO_DATA);
       }
 
-#endif // GPS_AVAILABLE
+#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
     }
 
     evaluation_put(&payload);

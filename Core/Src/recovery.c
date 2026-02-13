@@ -56,7 +56,7 @@ extern volatile fu8 renorm_step_mask;
 
 /* ------ Local definitions ------ */
 
-#define QSIZE (128 * sizeof(enum message))
+#define QSIZE 128
 
 static tx_align enum message q_pool[QSIZE] = {0};
 

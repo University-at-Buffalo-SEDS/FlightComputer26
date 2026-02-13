@@ -54,7 +54,7 @@ void create_evaluation_task(void);
 /* ------ Distribution Task ------ */
 #define DIST_INPUT 0
 #define DIST_TIME_SLICE 20
-#define DIST_SLEEP_NO_DATA 5
+#define DIST_SLEEP_NO_DATA 25
 #define DIST_PRIORITY 5
 #define DIST_STACK_BYTES 2048
 #define DIST_STACK_ULONG (DIST_STACK_BYTES / sizeof(ULONG))
