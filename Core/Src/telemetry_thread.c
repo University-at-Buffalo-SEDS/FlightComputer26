@@ -21,41 +21,47 @@ ULONG telemetry_thread_stack[TLMT_STACK_ULONG];
 
 
 static uint64_t tx_now_ms(void) {
-    ULONG ticks = tx_time_get();
-    return ((uint64_t)(uint32_t)ticks * 1000ULL) / (uint64_t)TX_TIMER_TICKS_PER_SECOND;
+  ULONG ticks = tx_time_get();
+  return ((uint64_t)(uint32_t)ticks * 1000ULL) / (uint64_t)TX_TIMER_TICKS_PER_SECOND;
 }
 
 
 /// Telemetry task entry.
 void telemetry_thread_entry(ULONG initial_input)
 {
-    (void)initial_input;
+  (void)initial_input;
 
-    // Ensure router exists early (so we can send requests immediately)
-    (void)init_telemetry_router();
+  // Ensure router exists early (so we can send requests immediately)
+  (void)init_telemetry_router();
 
-    const char started_txt[] = "Telemetry thread starting";
-    (void)log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,
-                                    started_txt,
-                                    sizeof(started_txt),
-                                    1);
+  const char started_txt[] = "Telemetry thread starting";
+  (void)log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,
+                                  started_txt,
+                                  sizeof(started_txt),
+                                  1);
 
-    uint64_t last_req_ms = 0;
+  uint64_t last_req_ms = 0;
 
-    task_loop (DO_NOT_EXIT)
+#ifdef SD_AVAILABLE
+  tx_thread_resume(&g_sd_log_thread);
+#endif
+
+  task_loop (DO_NOT_EXIT)
+  {
+    can_bus_process_rx();
+    (void)process_all_queues_timeout(5);
+    can_bus_process_rx();
+
+    const uint64_t now_ms = tx_now_ms();
+
+    if ((uint64_t)(now_ms - last_req_ms) >= (uint64_t)TIMESYNC_REQUEST_PERIOD_MS)
     {
-        can_bus_process_rx();
-        (void)process_all_queues_timeout(5);
-        can_bus_process_rx();
-
-        const uint64_t now_ms = tx_now_ms();
-        if ((uint64_t)(now_ms - last_req_ms) >= (uint64_t)TIMESYNC_REQUEST_PERIOD_MS) {
-            (void)telemetry_timesync_request();
-            last_req_ms = now_ms;
-        }
-
-        tx_thread_relinquish();
+      (void)telemetry_timesync_request();
+      last_req_ms = now_ms;
     }
+
+    tx_thread_relinquish();
+  }
 }
 
 /// Creates a preemptive, non-cooperative telemetry thread
@@ -64,19 +70,19 @@ void telemetry_thread_entry(ULONG initial_input)
 /// telemetry router to process incoming and outcoming messages.
 void create_telemetry_thread(void)
 {
-    UINT status = tx_thread_create(&telemetry_thread,
-                                  "Telemetry Task",
-                                  telemetry_thread_entry,
-                                  TLMT_INPUT,
-                                  telemetry_thread_stack,
-                                  TLMT_STACK_BYTES,
-                                  /* No preemption threshold */
-                                  TLMT_PRIORITY,
-                                  TLMT_PRIORITY,
-                                  TLMT_TIME_SLICE,
-                                  TX_AUTO_START);
+  UINT status = tx_thread_create(&telemetry_thread,
+                                "Telemetry Task",
+                                telemetry_thread_entry,
+                                TLMT_INPUT,
+                                telemetry_thread_stack,
+                                TLMT_STACK_BYTES,
+                                /* No preemption threshold */
+                                TLMT_PRIORITY,
+                                TLMT_PRIORITY,
+                                TLMT_TIME_SLICE,
+                                TX_AUTO_START);
 
-    if (status != TX_SUCCESS) {
-        die("Failed to create telemetry thread: %u", (unsigned)status);
-    }
+  if (status != TX_SUCCESS) {
+    die("Failed to create telemetry thread: %u", (unsigned)status);
+  }
 }

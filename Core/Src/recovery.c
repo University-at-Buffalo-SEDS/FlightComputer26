@@ -56,9 +56,9 @@ extern volatile fu8 renorm_step_mask;
 
 /* ------ Local definitions ------ */
 
-#define QSIZE 128
+#define QSIZE (128 * sizeof(enum message))
 
-static enum tx_align message q_pool[QSIZE] = {0};
+static tx_align enum message q_pool[QSIZE] = {0};
 
 static TX_TIMER ep_timeout;
 
@@ -220,9 +220,15 @@ static inline void process_config(enum message code)
   {
     config &= ~(code & ~Revoke_Option);
   }
-  else
+  /* If nothing else matched, must have exactly 1 bit set
+   * (i.e., a power of 2) to be a valid config option. */
+  else if (!(code & (code - 1)))
   {
     config |= code;
+  }
+  else
+  {
+    log_err("FC:RECV: invalid config option: %u", code);
   }
 }
 
@@ -340,10 +346,6 @@ void recovery_entry(ULONG input)
   }
 
   tx_timer_activate(&ep_timeout);
-
-#ifdef SD_AVAILABLE
-  tx_thread_resume(&g_sd_log_thread);
-#endif
 
   task_loop (DO_NOT_EXIT)
   {
