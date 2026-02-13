@@ -57,11 +57,6 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 #endif
 
 
-/* ------ Type attributes ------ */
-
-#define serial __attribute__((packed, aligned(4)))
-
-
 /* ------ Platform integer aliases ----- */
 
 /* Fast means the _fastest_ integer of minimum width. 
@@ -125,6 +120,12 @@ typedef arm_matrix_instance_f32 matrix;
 #define transpose arm_mat_trans_f32
 #define xmul 			arm_mat_mult_f32
 #define xadd			arm_mat_add_f32
+#define xsub      arm_mat_sub_f32
+#define xinv      arm_mat_inverse_f32
+
+/* I don't quite get the point of this function.
+ * Maybe because it's *floating point*. */
+#define xinit     arm_mat_init_f32
 
 
 /* ------ Numerical helpers ------ */
@@ -202,6 +203,13 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
 #include "FC-Threads.h"
 
 
+/* ------ Type attributes ------ */
+
+#define serial __attribute__((packed, aligned(4)))
+
+#define tx_align __attribute__((aligned(sizeof(ULONG))))
+
+
 /* ------ HAL Aliases ------ */
 
 #include "stm32h5xx_hal.h"
@@ -220,20 +228,20 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low()                                           \
+#define co2_low()                                               \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-#define co2_high()                                          \
-  do {                                                      \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);    \
-    /* Always guarantee all tasks observe PYRO fire */      \
-    fetch_or(&config, static_option(Parachute_Deployed), Rel);             \
+#define co2_high()                                              \
+  do {                                                          \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
+    /* Always guarantee all tasks observe PYRO fire */          \
+    fetch_or(&config, static_option(Parachute_Deployed), Rel);  \
   } while (0)
 
-#define reef_low()                                          \
+#define reef_low()                                              \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define reef_high()                                         \
+#define reef_high()                                             \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Data cache calls */
@@ -263,9 +271,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "accel.h"
 #include "barometer.h"
 
-#define init_baro()  init_barometer(&hspi1)
-#define init_gyro()  gyro_init(&hspi1)
-#define init_accel() accel_init(&hspi1)
+#define init_baro() init_barometer(&hspi1)
+#define init_gyro() gyro_init(&hspi1)
+#define init_accl() accel_init(&hspi1)
 
 #define baro_comp_temp(temp) \
   compensate_temperature((uint32_t)temp)
@@ -471,48 +479,6 @@ static inline SedsResult request_ignition()
   ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
 
 #endif // TELEMETRY_ENABLED
-
-
-/* ------ On-board relative timer implementation ------ */
-
-enum fc_timer {
-  AscentKF,
-  DescentKF,
-  HeartbeatFC,
-  HeartbeatRF,
-  HeartbeatGND,
-  IntervalGPS,
-
-  Time_Users
-};
-
-/// Last recorded time for each UKF timer user.
-/// Defined in recovery.c to avoid multiple linkage.
-/// u32 wrap is not handled (flight assumed < 49 days :D).
-extern fu32 local_time[Time_Users];
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update,
-/// and set local time to current HAL tick (ms).
-static inline fu32 timer_exchange(enum fc_timer u)
-{
-  fu32 prev = local_time[u];
-  local_time[u] = hal_time_ms();
-  return local_time[u] - prev;
-}
-
-/// Set local time to current HAL tick (ms).
-static inline void timer_update(enum fc_timer u)
-{
-  local_time[u] = hal_time_ms();
-}
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update.
-static inline fu32 timer_fetch(enum fc_timer u)
-{
-  return hal_time_ms() - local_time[u];
-}
 
 
 #endif // PLATFORM_H

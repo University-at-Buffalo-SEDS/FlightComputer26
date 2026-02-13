@@ -55,18 +55,18 @@
 /// Each device data readiness mask for two buffers.
 /// Baro, Gyro, Accel, and unused bits (in this order).
 /// 0 0 0 0 0 A G B | 0 0 0 0 0 0 A G B
-static fu8 is_complete[2] = {0};
+static volatile fu8 is_complete[2] = {0};
 
 /// Rx buffer marked for accepting DMA transfers.
 static atomic_uint_fast8_t in_transfer = 0;
 
 /// Separate Tx buffers for each sensor.
-static const uint8_t tx[3][SENSOR_BUF_SIZE] = {
+static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
   [0][0] = BARO_TX_BYTE, [1][0] = GYRO_TX_BYTE, [2][0] = ACCEL_TX_BYTE
 };
 
 /// Double-buffered Rx for each sensor.
-static uint8_t rx[2][3][SENSOR_BUF_SIZE] = {0};
+static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
 
 
 /* ------ Helpers ------ */
@@ -148,25 +148,28 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
        * - one of callbacks will do it on time. Only on HAL_ERROR
        * (when HAL aborts its side effects) CS is pulled back high.
        */
-      st = dma_spi_txrx(tx[0], rx[i][0], SENSOR_BUF_SIZE);
-      if (st == HAL_ERROR)
+      st = dma_spi_txrx(tx[0], (uint8_t *)rx[i][0], SENSOR_BUF_SIZE);
+      if (st == HAL_ERROR) {
         BARO_CS_HIGH();
+      }
       break;
 
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
       GYRO_CS_LOW();
-      st = dma_spi_txrx(tx[1], rx[i][1], SENSOR_BUF_SIZE);
-      if (st == HAL_ERROR)
+      st = dma_spi_txrx(tx[1], (uint8_t *)rx[i][1], SENSOR_BUF_SIZE);
+      if (st == HAL_ERROR) {
         GYRO_CS_HIGH();
+      }
       break;
 
     case ACCEL_INT_PIN_1:
     case ACCEL_INT_PIN_2:
       ACCEL_CS_LOW();
-      st = dma_spi_txrx(tx[2], rx[i][2], SENSOR_BUF_SIZE);
-      if (st == HAL_ERROR)
+      st = dma_spi_txrx(tx[2], (uint8_t *)rx[i][2], SENSOR_BUF_SIZE);
+      if (st == HAL_ERROR) {
         ACCEL_CS_HIGH();
+      }
       break;
 
     default: break;
@@ -184,8 +187,10 @@ int dma_try_fetch(struct measurement *buf, fu8 skip_mask)
   static fu8 i = 1;
   static fu8 cache = 0;
 
-  if (!buf) return -1;
-
+  if (!buf) {
+    return -1;
+  }
+  
   if (is_complete[i] & BARO_DONE) {
     buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
     buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
