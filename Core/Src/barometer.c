@@ -12,7 +12,7 @@ static struct baro_calibration cd = {0};
 static float gnd_lvl_pressure = 0.0f;
 
 
-/* ----- Synchronous SPI helpers ------ */
+/* ------ Synchronous SPI helpers ------ */
 
 /*
  * Synchronously read one value at the specified register.
@@ -85,6 +85,9 @@ baro_write_u8(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t val)
 
 /* ------ Trim/NVM read ------ */
 
+/* Constant-folded when exp is literal (>= O2) */
+#define invpowf2(exp) (1.0f / powf(2.0f, (exp)))
+
 /*
  * Reads initial calibration coefficients from barometer registers.
  */
@@ -118,22 +121,23 @@ read_trim_pars(SPI_HandleTypeDef *hspi)
   int8_t   nvm_par_p11 = (int8_t)    raw[20];
 
   /* Conversion to float */
-  cd.par_t1 = (float)nvm_par_t1 / powf(2.0f, -8.0f);
-  cd.par_t2 = (float)nvm_par_t2 / powf(2.0f, 30.0f);
-  cd.par_t3 = (float)nvm_par_t3 / powf(2.0f, 48.0f);
+  cd.par_t1 = (float)nvm_par_t1 * invpowf2(-8.0f);
+  cd.par_t2 = (float)nvm_par_t2 * invpowf2(30.0f);
+  cd.par_t3 = (float)nvm_par_t3 * invpowf2(48.0f);
 
   const float exp_p1_2 = powf(2.0f, 14.0f);
-  cd.par_p1  = ((float)nvm_par_p1 - exp_p1_2) / powf(2.0f, 20.0f);
-  cd.par_p2  = ((float)nvm_par_p2 - exp_p1_2) / powf(2.0f, 29.0f);
-  cd.par_p3  = (float)nvm_par_p3  / powf(2.0f, 32.0f);
-  cd.par_p4  = (float)nvm_par_p4  / powf(2.0f, 37.0f);
-  cd.par_p5  = (float)nvm_par_p5  / powf(2.0f, -3.0f);
-  cd.par_p6  = (float)nvm_par_p6  / powf(2.0f, 6.0f);
-  cd.par_p7  = (float)nvm_par_p7  / powf(2.0f, 8.0f);
-  cd.par_p8  = (float)nvm_par_p8  / powf(2.0f, 15.0f);
-  cd.par_p9  = (float)nvm_par_p9  / powf(2.0f, 48.0f);
-  cd.par_p10 = (float)nvm_par_p10 / powf(2.0f, 48.0f);
-  cd.par_p11 = (float)nvm_par_p11 / powf(2.0f, 65.0f);
+
+  cd.par_p1  = ((float)nvm_par_p1 - exp_p1_2) * invpowf2(20.0f);
+  cd.par_p2  = ((float)nvm_par_p2 - exp_p1_2) * invpowf2(29.0f);
+  cd.par_p3  = (float)nvm_par_p3  * invpowf2(32.0f);
+  cd.par_p4  = (float)nvm_par_p4  * invpowf2(37.0f);
+  cd.par_p5  = (float)nvm_par_p5  * invpowf2(-3.0f);
+  cd.par_p6  = (float)nvm_par_p6  * invpowf2(6.0f);
+  cd.par_p7  = (float)nvm_par_p7  * invpowf2(8.0f);
+  cd.par_p8  = (float)nvm_par_p8  * invpowf2(15.0f);
+  cd.par_p9  = (float)nvm_par_p9  * invpowf2(48.0f);
+  cd.par_p10 = (float)nvm_par_p10 * invpowf2(48.0f);
+  cd.par_p11 = (float)nvm_par_p11 * invpowf2(65.0f);
 
   return HAL_OK;
 }
@@ -271,6 +275,9 @@ baro_check_drdy(SPI_HandleTypeDef *hspi)
 
 
 /* ------ Compensation helpers ------ */
+
+// FIXME this compiles to powf calls that end up on hot paths
+// (distribution task). O3
 
 static inline float
 altitude_from_pressures(float p, float p0)
