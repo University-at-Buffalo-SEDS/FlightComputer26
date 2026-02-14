@@ -271,24 +271,24 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "accel.h"
 #include "barometer.h"
 
-#define init_baro() init_barometer(&hspi1)
-#define init_gyro() gyro_init(&hspi1)
-#define init_accl() accel_init(&hspi1)
+#define init_baro(conf) init_barometer(&hspi1, (conf))
+#define init_gyro()     gyro_init(&hspi1)
+#define init_accl()     accel_init(&hspi1)
 
 #define baro_comp_temp(temp) \
-  compensate_temperature((uint32_t)temp)
+  baro_compensate_temp((uint32_t)temp)
 
 #define baro_comp_pres(pres) \
-  compensate_pressure((uint32_t)pres)
+  baro_compensate_pres((uint32_t)pres)
 
 #define baro_calc_alt(pres) \
-  compute_relative_altitude((float)pres)
+  baro_relative_alt((float)pres)
 
 #define finish_transfer(device) \
   do {                          \
     switch (device) {           \
       case Sensor_Baro:         \
-        BARO_CS_HIGH(); break;  \
+        baro_cs_high(); break;  \
       case Sensor_Gyro:         \
         GYRO_CS_HIGH(); break;  \
       case Sensor_Accl:         \
@@ -299,14 +299,14 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define terminate_transfers() \
   do {                        \
-    BARO_CS_HIGH();           \
+    baro_cs_high();           \
     GYRO_CS_HIGH();           \
     ACCEL_CS_HIGH();          \
   } while (0)
 
 /* Identification bytes for DMA Tx buffers */
 
-#define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BMP390_SPI_READ_BIT))
+#define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BARO_SPI_READ_BIT))
 #define GYRO_TX_BYTE  ((uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB)))
 #define ACCEL_TX_BYTE ((uint8_t)(ACCEL_CMD_READ(ACCEL_X_LSB)))
 
