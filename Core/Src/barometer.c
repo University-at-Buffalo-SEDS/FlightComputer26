@@ -1,5 +1,5 @@
 /*
- * BMP390 Barometer driver.
+ * BMP390 Barometer driver over SPI.
  */
 
 #include "platform.h"
@@ -634,9 +634,9 @@ baro_try_fetch_temp(SPI_HandleTypeDef *hspi, float *temp_c)
 /* ------ Initialization ------ */
 
 /*
- * Initializes barometer with specified parameters. Idempotent.
+ * Initializes barometer with specified parameters.
  * OSR, ODR, and IIR values can be found in barometer.h.
- * Do not call from interrupts or callbacks.
+ * Do not call from interrupts or callbacks. Idempotent.
  */
 HAL_StatusTypeDef
 baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)

@@ -11,6 +11,7 @@
 // ==============================
 // BMP390 register map
 // ==============================
+
 #define BARO_CHIP_ID 0x00
 #define BARO_REV_ID 0x01
 #define BARO_ERR_REG 0x02
@@ -196,14 +197,6 @@ struct baro_calibration {
 
   /* Computed by temperature compensation */
   float t_lin;
-};
-
-struct baro_data {
-  float temp, pres, alt;
-};
-
-struct baro_trimmed {
-  float pres, alt;
 };
 
 struct baro_config {

@@ -33,16 +33,15 @@ enum device {
   Sensors
 };
 
-struct serial coords { float x, y, z; };
-struct serial baro { float alt, p, t; };
-
 struct serial measurement {
   struct coords gyro;
   union {
     struct coords accl;
     struct coords gps;
   } d;
-  struct baro baro;
+  struct {
+    float alt, p, t;
+  } baro;
 };
 
 

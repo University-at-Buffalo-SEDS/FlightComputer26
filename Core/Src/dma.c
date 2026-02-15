@@ -165,10 +165,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
     case ACCEL_INT_PIN_1:
     case ACCEL_INT_PIN_2:
-      ACCEL_CS_LOW();
+      accl_cs_low();
       st = dma_spi_txrx(tx[2], (uint8_t *)rx[i][2], SENSOR_BUF_SIZE);
       if (st == HAL_ERROR) {
-        ACCEL_CS_HIGH();
+        accl_cs_high();
       }
       break;
 
