@@ -54,6 +54,9 @@ OPTIONS:
 
         nosd            - absence of on-board SD card;
                         - True if telemetry is disabled
+
+        asm             - generate assembly code for the
+                        - preset and options chosen
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -75,7 +78,7 @@ DEFAULT_PRESET  = "Debug"
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {"flash", "notelemetry", "clean", "dmatest", "fullcmd",
-                        "batching", "configure", "nogps", "nosd"}
+                        "batching", "configure", "nogps", "nosd", "asm"}
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -84,11 +87,21 @@ BIN             = "FlightComputer26.bin"
 ELF             = "FlightComputer26.elf"
 
 
-def run(cmd: list[str]):
-        print("Running:", " ".join(cmd))
-
+def run(cmd: list[str], *, pipeline: bool = False):
         try:
-                subprocess.run(cmd, check=True)
+                if pipeline:
+                        proc = subprocess.run(
+                                cmd,
+                                check=True,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True
+                        )
+                        return proc
+                else:        
+                        subprocess.run(cmd, check=True)
+                        return None
+
         except Exception as e:
                 print(f"Command failed: {e}")
                 sys.exit(1)
@@ -207,6 +220,30 @@ def clean(path: Path):
         path.mkdir(parents=True, exist_ok=True)
 
 
+def asmgen(buildir: Path):
+        path = buildir / f"{PROJECT.name}.asm"
+
+        elf_path = buildir / ELF
+
+        if not elf_path.exists():
+                sys.exit(f"Expected ELF at {elf_path}")
+
+        # Deduce assembly from ELF
+        proc = run([
+                "arm-none-eabi-objdump",
+                "-d",
+                "-S",
+                str(elf_path)],
+                pipeline=True
+        )
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+                f.write(proc.stdout)
+
+        print(f"Written assembly code to {path}")
+
+
 def main() -> None:
         os.chdir(PROJECT)
         preset, options = parse(sys.argv[1:])
@@ -222,6 +259,9 @@ def main() -> None:
                 return
 
         build(buildir)
+
+        if options["asm"]:
+                asmgen(buildir)
 
         executable = objcopy(buildir)
 

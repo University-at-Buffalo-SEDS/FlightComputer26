@@ -12,7 +12,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
@@ -160,4 +159,22 @@ option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
 if (DMA_TESTING)
     message(STATUS "Running local DMA tests (no telemetry).")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
+endif()
+
+# Custom compilation flags
+
+# Option defaults to OFF
+    option(CUSTOM_FLAGS "User-defined compilation flags" OFF)
+    message(STATUS "Custom compilation flags: ${CUSTOM_FLAGS}")
+
+    if (CUSTOM_FLAGS)
+    set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
+    set(FC_DEBUG    "-O0" "-g")
+    set(FC_RELEASE  "-O3" "-ffast-math" "-DNDEBUG" "-g0" "-fno-math-errno" "-funroll-loops")
+
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+        ${FC_COMMON}
+        $<$<CONFIG:Debug>:${FC_DEBUG}>
+        $<$<CONFIG:Release>:${FC_RELEASE}>
+    )
 endif()
