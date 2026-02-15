@@ -17,7 +17,7 @@ static float gnd_lvl_pressure = 0.0f;
 /*
  * Synchronously read one value at the specified register.
  */
-static HAL_StatusTypeDef
+static inline HAL_StatusTypeDef
 baro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg,
               uint8_t *out, uint16_t len)
 {
@@ -45,7 +45,7 @@ baro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg,
 /*
  * Synchronously write new value to a specified writeable register. 
  */
-static HAL_StatusTypeDef
+static inline HAL_StatusTypeDef
 baro_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg,
                const uint8_t *data, uint16_t len)
 {
@@ -213,7 +213,7 @@ baro_try_enter_normal(SPI_HandleTypeDef *hspi)
 /*
  * Wait for both temp+press ready (STATUS bit6|bit5)
  */
-static HAL_StatusTypeDef
+static inline HAL_StatusTypeDef
 baro_wait_drdy(SPI_HandleTypeDef *hspi, uint32_t extra_ms)
 {
   HAL_StatusTypeDef st;
@@ -258,7 +258,7 @@ baro_wait_drdy(SPI_HandleTypeDef *hspi, uint32_t extra_ms)
 /*
  * Non-spinning call that performs a one-time status check.
  */
-static HAL_StatusTypeDef
+static inline HAL_StatusTypeDef
 baro_check_drdy(SPI_HandleTypeDef *hspi)
 {
   HAL_StatusTypeDef st;

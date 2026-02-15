@@ -2,8 +2,8 @@
  * BMP390 Barometer configuration and API.
  */
 
-#ifndef BARO_H
-#define BARO_H
+#ifndef BAROMETER_H
+#define BAROMETER_H
 
 #include "main.h"
 
@@ -232,4 +232,4 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
 void baro_rezero(SPI_HandleTypeDef *hspi);
 
 
-#endif // BARO_H
+#endif // BAROMETER_H

@@ -268,13 +268,13 @@ extern DCACHE_HandleTypeDef hdcache1;
 /* ------ Sensor drivers and data collection ------ */
 
 #include "barometer.h"
-#include "gyro.h"
+#include "gyroscope.h"
 #include "accelerometer.h"
 
 struct serial coords { float x, y, z; };
 
 #define init_baro(conf) baro_init(&hspi1, (conf))
-#define init_gyro()     gyro_init(&hspi1)
+#define init_gyro(conf) gyro_init(&hspi1, (conf))
 #define init_accl(conf) accl_init(&hspi1, (conf))
 
 #define baro_comp_temp(temp) \
@@ -292,9 +292,9 @@ struct serial coords { float x, y, z; };
       case Sensor_Baro:         \
         baro_cs_high(); break;  \
       case Sensor_Gyro:         \
-        GYRO_CS_HIGH(); break;  \
+        gyro_cs_high(); break;  \
       case Sensor_Accl:         \
-        accl_cs_high(); break; \
+        accl_cs_high(); break;  \
       default: return;          \
     }                           \
   } while (0)
@@ -302,14 +302,14 @@ struct serial coords { float x, y, z; };
 #define terminate_transfers() \
   do {                        \
     baro_cs_high();           \
-    GYRO_CS_HIGH();           \
-    accl_cs_high();          \
+    gyro_cs_high();           \
+    accl_cs_high();           \
   } while (0)
 
 /* Identification bytes for DMA Tx buffers */
 
 #define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BARO_SPI_READ_BIT))
-#define GYRO_TX_BYTE  ((uint8_t)(GYRO_CMD_READ(GYRO_RATE_X_LSB)))
+#define GYRO_TX_BYTE  ((uint8_t)(gyro_cmd_read(GYRO_RATE_X_LSB)))
 #define ACCEL_TX_BYTE ((uint8_t)(accl_cmd_read(ACCL_X_LSB)))
 
 /* Peripheral sensor EXT interrupt pins */

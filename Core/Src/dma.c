@@ -156,10 +156,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
-      GYRO_CS_LOW();
+      gyro_cs_low();
       st = dma_spi_txrx(tx[1], (uint8_t *)rx[i][1], SENSOR_BUF_SIZE);
       if (st == HAL_ERROR) {
-        GYRO_CS_HIGH();
+        gyro_cs_high();
       }
       break;
 

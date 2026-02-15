@@ -13,9 +13,9 @@
  * Discards first dummy byte (datasheet section 6.1.2).
  */
 static inline HAL_StatusTypeDef
-accl_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *data)
+accl_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *val)
 {
-  if (!data) {
+  if (!val) {
     return HAL_ERROR;
   }
 
@@ -28,7 +28,7 @@ accl_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *data)
   accl_cs_high();
 
   if (st == HAL_OK) {
-    *data = rx[2];
+    *val = rx[2];
   }
 
   return st;
@@ -51,15 +51,15 @@ accl_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data)
 }
 
 /*
- * Read the accelermoter axes data (datasheet section 5.3.4 & 6.1.2).
+ * Read the accelermoter axes data (datasheet sections 5.3.4 & 6.1.2).
  */
 HAL_StatusTypeDef
 accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
 {
   HAL_StatusTypeDef st;
-  uint8_t tx[ACCL_BUF_SIZE] = {[0] = accl_cmd_read(ACCL_X_LSB),
-                               [1 ... 7] = 0x00};
-  uint8_t rx[ACCL_BUF_SIZE];
+  uint8_t tx[ACCL_DMA_BUF_SIZE] = {[0] = accl_cmd_read(ACCL_X_LSB),
+                                   [1 ... 7] = 0x00};
+  uint8_t rx[ACCL_DMA_BUF_SIZE];
 
   accl_cs_low();
   st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof rx, HAL_MAX_DELAY);
@@ -121,28 +121,32 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
   };
 
   if (conf) {
-    if (conf->mode >= OSR4_100Hz && conf->mode <= Normal_1600Hz) {
+    if (conf->mode >= OSR4_100Hz &&
+        conf->mode <= Normal_1600Hz)
+    {
       valid.mode = conf->mode;
     }
-    if (conf->rng >= Accl_Range_3g && conf->rng <= Accl_Range_24g) {
+    if (conf->rng >= Accl_Range_3g &&
+        conf->rng <= Accl_Range_24g)
+    {
       valid.rng = conf->rng;
     }
   }
 
   /* Bandwith of low pass filter (datasheet 5.3.10) */
-  st = accl_write_reg(hspi, ACCL_CONF, valid.mode);
+  st = accl_write_reg(hspi, ACCL_CONF, (uint8_t)valid.mode);
   if (st != HAL_OK) {
     return st;
   }
 
-  /* Set range to ±24g (datasheet 5.3.11) */
-  st = accl_write_reg(hspi, ACCL_RANGE, valid.rng);
+  /* Set range (datasheet 5.3.11) */
+  st = accl_write_reg(hspi, ACCL_RANGE, (uint8_t)valid.rng);
   if (st != HAL_OK) {
     return st;
   }
 
   /* Enable active mode (datasheet 5.3.20) */
-  st = accl_write_reg(hspi, ACCL_PWR_CONF, Active_Mode);
+  st = accl_write_reg(hspi, ACCL_PWR_CONF, (uint8_t)Active_Mode);
   if (st != HAL_OK) {
     return st;
   }
@@ -150,7 +154,7 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
   HAL_Delay(ACCL_WAIT_MS);
 
   /* Power on (enter normal mode) (datasheet 3 & 4.1.1) */
-  st = accl_write_reg(hspi, ACCL_PWR_CTRL, Accl_On);
+  st = accl_write_reg(hspi, ACCL_PWR_CTRL, (uint8_t)Accl_On);
   if (st != HAL_OK) {
     return st;
   }

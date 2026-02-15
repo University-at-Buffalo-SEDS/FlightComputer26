@@ -2,8 +2,8 @@
  * BMI088 Accelerometer configuration and API.
  */
 
-#ifndef ACCL_H
-#define ACCL_H
+#ifndef ACCELEROMETER_H
+#define ACCELEROMETER_H
 
 #include "main.h"
 
@@ -66,7 +66,7 @@ struct accl_config {
 /* ------ Constants ------ */
 
 #define ACCL_RESET_VAL     0xB6
-#define ACCL_BUF_SIZE      8
+#define ACCL_DMA_BUF_SIZE  8
 
 #define ACCL_SELF_TEST     0x6D
 #define ACCL_POS_POL       0x0D
@@ -99,4 +99,4 @@ HAL_StatusTypeDef accl_read(SPI_HandleTypeDef *hspi, struct coords *buf);
 HAL_StatusTypeDef accl_test(SPI_HandleTypeDef *hspi, struct coords *buf, const struct accl_config *conf);
 
 
-#endif // ACCL_H
+#endif // ACCELEROMETER_H
