@@ -140,7 +140,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
-      BARO_CS_LOW();
+      baro_cs_low();
       /*
        * If another transfer is currently in progress, this
        * call will return HAL_BUSY (see try-lock on line 2438
@@ -150,25 +150,25 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
        */
       st = dma_spi_txrx(tx[0], (uint8_t *)rx[i][0], SENSOR_BUF_SIZE);
       if (st == HAL_ERROR) {
-        BARO_CS_HIGH();
+        baro_cs_high();
       }
       break;
 
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
-      GYRO_CS_LOW();
+      gyro_cs_low();
       st = dma_spi_txrx(tx[1], (uint8_t *)rx[i][1], SENSOR_BUF_SIZE);
       if (st == HAL_ERROR) {
-        GYRO_CS_HIGH();
+        gyro_cs_high();
       }
       break;
 
     case ACCEL_INT_PIN_1:
     case ACCEL_INT_PIN_2:
-      ACCEL_CS_LOW();
+      accl_cs_low();
       st = dma_spi_txrx(tx[2], (uint8_t *)rx[i][2], SENSOR_BUF_SIZE);
       if (st == HAL_ERROR) {
-        ACCEL_CS_HIGH();
+        accl_cs_high();
       }
       break;
 
