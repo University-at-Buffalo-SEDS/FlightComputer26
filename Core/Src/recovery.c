@@ -83,15 +83,15 @@ static inline void try_reinit_sensors(void)
 
   __disable_irq();
 
-  if (init_baro() != HAL_OK) {
+  if (init_baro(NULL) != HAL_OK) {
     faulty += (Sensor_Baro + 1);
   }
 
-  if (init_gyro() != HAL_OK) {
+  if (init_gyro(NULL) != HAL_OK) {
     faulty += (Sensor_Gyro + 1);
   }
 
-  if (init_accl() != HAL_OK) {
+  if (init_accl(NULL) != HAL_OK) {
     faulty += (Sensor_Accl + 2);
   }
 
