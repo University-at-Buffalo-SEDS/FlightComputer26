@@ -103,6 +103,7 @@ enum message {
   Evaluation_Relax = Actionable_Decrees + 5,
   Evaluation_Focus = Actionable_Decrees + 6,
   Evaluation_Abort = Actionable_Decrees + 7,
+  Reinit_Barometer = Actionable_Decrees + 8,
 
   GPS_Packet_Code = (1u << 12),
 
@@ -114,7 +115,7 @@ enum message {
   Runtime_Configuration = (1u << 29),
 
   Monitor_Altitude    = Runtime_Configuration | 1u,
-  Descent_KF_Feasible = Runtime_Configuration | (1u << 1),
+  GPS_Available       = Runtime_Configuration | (1u << 1),
   Consecutive_Samples = Runtime_Configuration | (1u << 2),
   Parachute_Deployed  = Runtime_Configuration | (1u << 3),
   Reinit_Attempted    = Runtime_Configuration | (1u << 4),
@@ -195,7 +196,7 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \
                           | Validate_Measms           \
-                          | Descent_KF_Feasible       \
+                          | GPS_Available             \
                           | Using_Ascent_KF           \
                         ) )
 

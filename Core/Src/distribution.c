@@ -81,12 +81,11 @@ enum remote_cmd_compat {
   Compat_Evaluation_Relax,
   Compat_Evaluation_Focus,
   Compat_Evaluation_Abort,
+  Compat_Reinit_Barometer,
   
   /* Excludes internal config options */
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,
-  Compat_Descent_KF_Feasible,
-  Revoke_Descent_KF_Feasible,
   Compat_Consecutive_Samples,
   Revoke_Consecutive_Samples,
   Compat_Reset_Failures,
@@ -124,11 +123,10 @@ static const enum message extmap[Compat_Messages] = {
         Evaluation_Relax,
         Evaluation_Focus,
         Evaluation_Abort,
+        Reinit_Barometer,
 
         Monitor_Altitude,
         static_revoke(Monitor_Altitude),
-        Descent_KF_Feasible,
-        static_revoke(Descent_KF_Feasible),
         Consecutive_Samples,
         static_revoke(Consecutive_Samples),
         Reset_Failures,
@@ -350,37 +348,45 @@ static inline fu8 test_validate_all(struct coords *gps)
 {
   enum message st = Sensor_Measm_Code;
 
-  if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT)
+  if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT) {
     st += Bad_Altitude;
+  }
 
-  if (payload.d.accl.x > MAX_ACC || payload.d.accl.x < MIN_ACC)
+  if (payload.d.accl.x > MAX_ACC || payload.d.accl.x < MIN_ACC) {
     st += Bad_Accel_X;
+  }
 
-  if (payload.d.accl.y > MAX_ACC || payload.d.accl.y < MIN_ACC)
+  if (payload.d.accl.y > MAX_ACC || payload.d.accl.y < MIN_ACC) {
     st += Bad_Accel_Y;
+  }
 
-  if (payload.d.accl.z > MAX_ACC || payload.d.accl.z < MIN_ACC)
+  if (payload.d.accl.z > MAX_ACC || payload.d.accl.z < MIN_ACC) {
     st += Bad_Accel_Z;
+  }
 
-  if (payload.gyro.x > MAX_DPS || payload.gyro.x < MIN_DPS)
+  if (payload.gyro.x > MAX_DPS || payload.gyro.x < MIN_DPS) {
     st += Bad_Attitude_X;
+  }
 
-  if (payload.gyro.y > MAX_DPS || payload.gyro.y < MIN_DPS)
+  if (payload.gyro.y > MAX_DPS || payload.gyro.y < MIN_DPS) {
     st += Bad_Attitude_Y;
+  }
 
-  if (payload.gyro.z > MAX_DPS || payload.gyro.z < MIN_DPS)
+  if (payload.gyro.z > MAX_DPS || payload.gyro.z < MIN_DPS) {
     st += Bad_Attitude_Z;
+  }
 
 #if GPS_AVAILABLE
-  if (gps->x > MAX_GPS_X || gps->x < MIN_GPS_X)
-    st += Bad_Lattitude;
+  if (gps) {
+    if (gps->x > MAX_GPS_X || gps->x < MIN_GPS_X)
+      st += Bad_Lattitude;
 
-  if (gps->y > MAX_GPS_Y || gps->y < MIN_GPS_Y)
-    st += Bad_Longtitude;
+    if (gps->y > MAX_GPS_Y || gps->y < MIN_GPS_Y)
+      st += Bad_Longtitude;
 
-  if (gps->z > MAX_GPS_Z || gps->z < MIN_GPS_Z)
-    st += Bad_Sea_Level;
-
+    if (gps->z > MAX_GPS_Z || gps->z < MIN_GPS_Z)
+      st += Bad_Sea_Level;
+  }
 #endif // GPS_AVAILABLE
 
   return st;
@@ -396,11 +402,14 @@ static inline fu8 test_validate_all(struct coords *gps)
 static inline void pre_launch(void)
 {
   fu8 st = 0;
+  fu32 local_conf = 0;
+  struct coords *gps_ref;
   enum message cmd = fc_mask(Sensor_Measm_Code);
-  struct coords temp_gps_buf = {0};
 
-  task_loop (load(&config, Acq) & static_option(Launch_Triggered))
+  task_loop (local_conf & static_option(Launch_Triggered))
   {
+    local_conf = load(&config, Acq);
+
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
     if (st != TX_SUCCESS) {
@@ -414,19 +423,32 @@ static inline void pre_launch(void)
       continue;
     }
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
-    if (!fetch_gps_data(&temp_gps_buf))
+#ifdef GPS_AVAILABLE
+    struct coords temp_gps_buf = {0};
+    gps_ref = &temp_gps_buf;
+
+    if (!(local_conf & static_option(GPS_Available)))
     {
-      /* Long yield (also refresh DMA data) */
-      tx_thread_sleep(DIST_SLEEP_NO_DATA);
-      continue;
+      if (!fetch_gps_data(&temp_gps_buf))
+      {
+        /* Long yield (refresh config and DMA data) */
+        tx_thread_sleep(DIST_SLEEP_NO_DATA);
+        continue;
+      }
+    }
+    else /* GPS is lost, skip validity checks */
+    {
+      gps_ref = NULL;
     }
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#else
+    gps_ref = NULL;
+
+#endif // GPS_AVAILABLE
 
     compensate(&payload, 0);
 
-    st = test_validate_all(&temp_gps_buf);
+    st = test_validate_all(gps_ref);
 
     if (st != Sensor_Measm_Code) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
@@ -457,7 +479,7 @@ void distribution_entry(ULONG input)
     pre_launch();
   }
 
-  start: task_loop (DO_NOT_EXIT)
+  task_loop (DO_NOT_EXIT)
   {
     fu8 for_ukf = load(&config, Acq) & static_option(Using_Ascent_KF);
 
@@ -467,7 +489,7 @@ void distribution_entry(ULONG input)
     if (!dma_try_fetch(&payload, skip_mask))
     {
       tx_thread_relinquish();
-      goto start;
+      continue;
     }
 
     compensate(&payload, skip_mask);
@@ -479,22 +501,19 @@ void distribution_entry(ULONG input)
       log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
 
-#if defined (TELEMETRY_ENABLED) && defined (GPS_AVAILABLE)
+#ifdef GPS_AVAILABLE
       assess_gps_delay();
     }
     else
     {
-      while (!fetch_gps_data(&payload.d.gps))
+      if (load(&config, Acq) & static_option(GPS_Available)
+          && !fetch_gps_data(&payload.d.gps))
       {
-        if (load(&config, Acq) & static_option(Using_Ascent_KF))
-        {
-          goto start;
-        }
-        /* GPS data is required for Descent filter to proceed. */
-        tx_thread_sleep(DIST_SLEEP_NO_DATA);
+        tx_thread_relinquish();
+        continue;
       }
 
-#endif // TELEMETRY_ENABLED * GPS_AVAILABLE
+#endif // GPS_AVAILABLE
     }
 
     evaluation_put(&payload);

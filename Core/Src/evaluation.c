@@ -170,7 +170,7 @@ static inline fu32 validate(fu32 mode)
 
 #if GPS_AVAILABLE
   }
-  else
+  else if (mode & GPS_Available)
   {
     if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X) {
       st += Bad_Lattitude;
@@ -345,15 +345,9 @@ static inline void detect_descent(fu32 mode)
       co2_high();
       log_msg("FC:EVAL: fired pyro, descending", 32);
 
-#ifdef GPS_AVAILABLE
-      if (load(&config, Acq) & static_option(Descent_KF_Feasible))
-      {
-        initialize_descent();
-        timer_update(DescentKF);
-        fetch_and(&config, ~static_option(Using_Ascent_KF), Rel);
-      }
-
-#endif // GPS_AVAILABLE
+      initialize_descent();
+      timer_update(DescentKF);
+      fetch_and(&config, ~static_option(Using_Ascent_KF), Rel);
     }
   }
   else if (mode & static_option(Consecutive_Samples)

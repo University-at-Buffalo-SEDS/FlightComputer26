@@ -3,7 +3,7 @@
  *
  * This task suspends on a blocking message queue
  * and when resumed, drains the message queue. The
- & messages are then interpreted depending on the
+ * messages are then interpreted depending on the
  * MSB designating the endpoint - FC or GND. When
  * a message appears in the queue, this thread is 
  * _immediately_ woken by ThreadX and processing begins.
@@ -132,6 +132,28 @@ static inline void auto_abort(void)
 }
 
 
+/// Signals other tasks to not fetch or use GPS data.
+/// Reinitializes barometer with larger oversampling rates.
+static inline void barometer_fallback(void)
+{
+  config &= ~static_option(GPS_Available);
+
+  struct baro_config precise = {
+    .osr_t = BARO_OSR_X1,
+    .osr_p = BARO_OSR_X8,
+    .odr = BARO_DEFAULT_ODR_SEL,
+    .iir_coef = BARO_IIR_COEF_15,
+  };
+
+  /* This is the place to perform sensitive initializations,
+   * because Recovery cannot be preempted by other tasks. */
+  if (init_baro(&precise) == HAL_OK)
+  {
+    log_msg("FC:RECV: lost GPS, relying on barometer", 40);
+  }
+}
+
+
 /// Process general command from either endpoint.
 static inline void process_action(enum message cmd)
 {
@@ -196,6 +218,10 @@ static inline void process_action(enum message cmd)
       tx_thread_reset(&evaluation_task);
       return;
 
+    case Reinit_Barometer:
+      barometer_fallback();
+      return;
+
     default: break;
   }
 }
@@ -254,19 +280,6 @@ static inline void process_report(enum message code)
 }
 
 
-/// Signals other tasks to use Ascent filter, if not already.
-static inline void prohibit_descent_kf(void)
-{
-  config &= ~static_option(Descent_KF_Feasible);
-  log_msg("FC:RECV: blocked Descent KF (problems with GPS)", 48);
-
-  if (!(config & static_option(Using_Ascent_KF))) {
-    initialize_ascent();
-    config |= static_option(Using_Ascent_KF);
-  }
-}
-
-
 /// Handles delayed or malformed GPS data report.
 static inline void process_gps_code(enum message code)
 {
@@ -280,7 +293,7 @@ static inline void process_gps_code(enum message code)
       }
 
       if (gps_delay_count >= MAX_GPS_DELAYS) {
-        prohibit_descent_kf();
+        barometer_fallback();
         return;
       }
       break;
@@ -294,7 +307,7 @@ static inline void process_gps_code(enum message code)
       }
 
       if (gps_malform_count >= GPS_MAX_MALFORMED) {
-        prohibit_descent_kf();
+        barometer_fallback();
         return;
       }
       break;
@@ -421,12 +434,8 @@ static void check_endpoints(ULONG id)
 #ifdef GPS_AVAILABLE
   if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
   {
-    config &= ~static_option(Descent_KF_Feasible);
-
-    if (!(config & static_option(Using_Ascent_KF))) {
-      initialize_ascent();
-      config |= static_option(Using_Ascent_KF);
-    }
+    enum message cmd = fc_mask(Reinit_Barometer);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 
 #endif // GPS_AVAILABLE
