@@ -276,13 +276,10 @@ baro_check_drdy(SPI_HandleTypeDef *hspi)
 
 /* ------ Compensation helpers ------ */
 
-// FIXME this compiles to powf calls that end up on hot paths
-// (distribution task). O3
-
 static inline float
 altitude_from_pressures(float p, float p0)
 {
-  return 44330.0f * (1.0f - powf(p / p0, BARO_HYPSOMETRIC_EXPONENT));
+  return ALT_PRES_CONST * (1.0f - powf(p / p0, BARO_HYPSOMETRIC_EXPONENT));
 }
 
 /*
@@ -291,14 +288,13 @@ altitude_from_pressures(float p, float p0)
 static inline float
 pressure_for_altitude(float p, float alt)
 {
-  const float k = BARO_HYPSOMETRIC_EXPONENT;
-  float denom = 1.0f - (alt / 44330.0f);
+  float denom = 1.0f - (alt * INV_PRES_CONST);
 
   if (denom <= 0.0f) {
     denom = 1e-6f;
   }
 
-  return p / powf(denom, 1.0f / k);
+  return p * powf(denom, -INV_HYPSOMETRIC_EXPONENT);
 }
 
 

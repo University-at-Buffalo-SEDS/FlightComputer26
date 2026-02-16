@@ -163,9 +163,14 @@
 #define BARO_MIN_PA 70000.0f
 #define BARO_MAX_PA 110000.0f
 
+// Altitude to pressure compression constant
+#define ALT_PRES_CONST 44330.0f
+#define INV_PRES_CONST (1.0f / ALT_PRES_CONST)
+
 // Hypsometric helpers
 #define BARO_SEA_LEVEL_PRESSURE_PA  101325.0f
 #define BARO_HYPSOMETRIC_EXPONENT   0.1903f
+#define INV_HYPSOMETRIC_EXPONENT    (1.0f / BARO_HYPSOMETRIC_EXPONENT)
 
 // Tunables to prevent drift
 
