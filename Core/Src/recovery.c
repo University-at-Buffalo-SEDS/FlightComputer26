@@ -254,7 +254,7 @@ static inline void process_config(enum message code)
   }
   else
   {
-    log_err("FC:RECV: invalid config option: %u", code);
+    log_err("FC:RECV: invalid config option: %u", (unsigned)code);
   }
 }
 
