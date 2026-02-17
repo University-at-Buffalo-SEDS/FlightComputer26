@@ -172,15 +172,15 @@ static inline fu32 validate(fu32 mode)
   }
   else if (mode & GPS_Available)
   {
-    if (raw.d.axis.gps.x > MAX_GPS_X || raw.d.axis.gps.x < MIN_GPS_X) {
+    if (raw.d.axis.gps.x > MAX_LAT || raw.d.axis.gps.x < MIN_LAT) {
       st += Bad_Lattitude;
     }
 
-    if (raw.d.axis.gps.y > MAX_GPS_Y || raw.d.axis.gps.y < MIN_GPS_Y) {
+    if (raw.d.axis.gps.y > MAX_LON || raw.d.axis.gps.y < MIN_LON) {
       st += Bad_Longtitude;
     }
   
-    if (raw.d.axis.gps.z > MAX_GPS_Z || raw.d.axis.gps.z < MIN_GPS_Z) {
+    if (raw.d.axis.gps.z > MAX_SEA || raw.d.axis.gps.z < MIN_SEA) {
       st += Bad_Sea_Level;
     }
   }

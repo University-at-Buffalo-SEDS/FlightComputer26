@@ -149,7 +149,7 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
     fu8:  max_fu8,      \
     fu16: max_fu16,     \
     fu32: max_fu32,     \
-    float: fmaxf        \
+    float: fmaxf,       \
     default: fmaxf      \
   ) (x, y)
 
@@ -158,7 +158,7 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
     fu8:  min_fu8,      \
     fu16: min_fu16,     \
     fu32: min_fu32,     \
-    float: fminf        \
+    float: fminf,       \
     default: fminf      \
   ) (x, y)
 
@@ -167,7 +167,7 @@ static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
     fi8:  abs_fi8,      \
     fi16: abs_fi16,     \
     fi32: abs_fi32,     \
-    float: fabsf        \
+    float: fabsf,       \
     default: fabsf      \
   ) (x)
 

@@ -25,24 +25,24 @@
  * Units: altitude ALT (m), angular velocity ANG (deg/s)
  * vertical acceleration VAX (m/s^2) */
 
+#define GRAVITY_SI 9.80665f
+
 #define MAX_ALT 4800.0f
 #define MAX_DPS 2000.0f
 #define MAX_ACC (GRAVITY_SI * 12.0f)
+#define MAX_LAT 90.0f
+#define MAX_LON 180.0f
+#define MAX_SEA 9999.9f
 
 #define MIN_ALT -10.0f
 #define MIN_DPS -MAX_DPS
 #define MIN_ACC -MAX_ACC
+#define MIN_LAT -MAX_LAT
+#define MIN_LON -MAX_LON
+#define MIN_SEA -999.9f
 
-#define LAUNCH_SITE_LATT 0 // TODO
-#define LAUNCH_SITE_LONG 0
-
-#define MIN_GPS_X 0 // TODO
-#define MIN_GPS_Y 0 // TODO
-#define MIN_GPS_Z 0 // TODO
-
-#define MAX_GPS_X 0 // TODO
-#define MAX_GPS_Y 0 // TODO
-#define MAX_GPS_Z 0 // TODO
+#define LAUNCH_SITE_LAT 32.000507f
+#define LAUNCH_SITE_LON -102.077408f
 
 #define LAUNCH_MIN_VEL  8.0f
 #define LAUNCH_MIN_VAX  10.0f
@@ -54,20 +54,16 @@
 
 #define REEF_TARGET_ALT 457.2f
 
-#define ALT_TOLER  2.0f
-#define VEL_TOLER  1.5f
-#define VAX_TOLER  1.0f
+#define ALT_TOLER 2.0f
+#define VEL_TOLER 1.5f
+#define VAX_TOLER 1.0f
+#define GPS_TOLER 1.0f  
 
-#define GRAVITY_SI 9.80665f
+#define lat_within_launch_site(k)                         \
+  (Abs((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)
 
-
-/* ------ Data validation ------  */
-
-#define VALID_ALT 0x01u
-#define VALID_VEL (1u << 2)
-#define VALID_VAX (1u << 4)
-
-#define VALID_DATA (VALID_ALT | VALID_VEL | VALID_VAX)
+#define lon_within_launch_site(k)                         \
+  (Abs((float)(k) - LAUNCH_SITE_LON) <= GPS_TOLER)
 
 
 /* ------ Put/fetch algorithm definitions ------ */

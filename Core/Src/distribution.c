@@ -378,15 +378,21 @@ static inline fu8 test_validate_all(struct coords *gps)
 
 #if GPS_AVAILABLE
   if (gps) {
-    if (gps->x > MAX_GPS_X || gps->x < MIN_GPS_X)
+    /* Run regular sanity checks during flight
+     * stage in the case we fly far away :) */
+    if (lat_within_launch_site(gps->x)) {
       st += Bad_Lattitude;
+    }
 
-    if (gps->y > MAX_GPS_Y || gps->y < MIN_GPS_Y)
+    if (lon_within_launch_site(gps->y)) {
       st += Bad_Longtitude;
+    }
 
-    if (gps->z > MAX_GPS_Z || gps->z < MIN_GPS_Z)
+    if (gps->z > MAX_SEA || gps->z < MIN_SEA) {
       st += Bad_Sea_Level;
+    }
   }
+
 #endif // GPS_AVAILABLE
 
   return st;
