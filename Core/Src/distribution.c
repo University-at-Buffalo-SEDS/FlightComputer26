@@ -126,13 +126,13 @@ static const enum message extmap[Compat_Messages] = {
         Reinit_Barometer,
 
         Monitor_Altitude,
-        static_revoke(Monitor_Altitude),
+        revoke(Monitor_Altitude),
         Consecutive_Samples,
-        static_revoke(Consecutive_Samples),
+        revoke(Consecutive_Samples),
         Reset_Failures,
-        static_revoke(Reset_Failures),
+        revoke(Reset_Failures),
         Validate_Measms,
-        static_revoke(Validate_Measms),
+        revoke(Validate_Measms),
 
         Renormalize_Quat_1,
         Renormalize_Quat_2,
@@ -206,22 +206,25 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 
   timer_update(HeartbeatRF);
 
-  if (load(&config, Rlx) & static_option(Using_Ascent_KF)) {
+  if (load(&config, Rlx) & option(Using_Ascent_KF))
+  {
     /* GPS data is not needed. */
     return SEDS_OK;
   }
 
-  if (len != 3 * sizeof(float)) {
+  if (len != 3 * sizeof(float))
+  {
     enum message cmd = fc_mask(GPS_Malformed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+
     return SEDS_ERR;
   }
 
   if (gps_ref_time == 0)
   {
-    gps_ref_time = ts*1000UL - hal_time_ms();
+    gps_ref_time = ts*1000UL - now_ms();
   }
-  else if (ts*1000UL - gps_ref_time > GPS_TIME_DRIFT_MS)
+  else if (gps_ref_time + now_ms() - ts*1000UL > GPS_TIME_DRIFT_MS)
   {
     log_err("FC:TLMT: warning: using outdated GPS data.");
   }
@@ -236,11 +239,21 @@ handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
 /// Provides early inference of GPS availability.
 static inline void assess_gps_delay(void)
 {
-  if (timer_exchange(IntervalGPS) > GPS_DELAY_MS)
+  if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
   {
     enum message cmd = fc_mask(GPS_Delayed);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
+}
+
+
+/*
+ * Converts GPS coordinates into distance from launch rail.
+ */
+static inline void
+distance_from_rail(struct coords *gps)
+{
+  // TODO Dynamics
 }
 
 
@@ -412,7 +425,7 @@ static inline void pre_launch(void)
   struct coords *gps_ref;
   enum message cmd = fc_mask(Sensor_Measm_Code);
 
-  task_loop (local_conf & static_option(Launch_Triggered))
+  task_loop (local_conf & option(Launch_Triggered))
   {
     local_conf = load(&config, Acq);
 
@@ -433,7 +446,7 @@ static inline void pre_launch(void)
     struct coords temp_gps_buf = {0};
     gps_ref = &temp_gps_buf;
 
-    if (!(local_conf & static_option(GPS_Available)))
+    if (!(local_conf & option(GPS_Available)))
     {
       if (!fetch_gps_data(&temp_gps_buf))
       {
@@ -452,13 +465,17 @@ static inline void pre_launch(void)
 
 #endif // GPS_AVAILABLE
 
-    compensate(&payload, 0);
-
     st = test_validate_all(gps_ref);
 
     if (st != Sensor_Measm_Code) {
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
     }
+
+    compensate(&payload, 0);
+    
+#ifdef GPS_AVAILABLE
+    distance_from_rail(&payload.d.gps);
+#endif
 
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
     log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
@@ -481,13 +498,13 @@ void distribution_entry(ULONG input)
   (void) input;
 
   /* Enter pre-launch loop only once. */
-  if (!(load(&config, Acq) & static_option(Launch_Triggered))) {
+  if (!(load(&config, Acq) & option(Launch_Triggered))) {
     pre_launch();
   }
 
   task_loop (DO_NOT_EXIT)
   {
-    fu8 for_ukf = load(&config, Acq) & static_option(Using_Ascent_KF);
+    fu8 for_ukf = load(&config, Acq) & option(Using_Ascent_KF);
 
     /* Do not wait for Gyro & Accel if we use Descent KF. */
     fu8 skip_mask = for_ukf ? 0 : GYRO_DONE | ACCL_DONE;
@@ -512,7 +529,7 @@ void distribution_entry(ULONG input)
     }
     else
     {
-      if (load(&config, Acq) & static_option(GPS_Available)
+      if (load(&config, Acq) & option(GPS_Available)
           && !fetch_gps_data(&payload.d.gps))
       {
         tx_thread_relinquish();

@@ -31,7 +31,6 @@ extern atomic_uint_fast32_t config;
 /* ------ Endpoint timeouts ------ */
 
 #define FC_TIMEOUT_MS 4000
-#define RF_TIMEOUT_MS 2000
 #define GND_TIMEOUT_MS 4000
 
 /* Expiration of timer that invokes timeout checks  */
@@ -180,10 +179,10 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 /* ------ Statically unflag option value ------ */
 
 /* When sending commands TO decode_message() */
-#define static_revoke(opt) ((opt) | Revoke_Option)
+#define revoke(opt) ((opt) | Revoke_Option)
 
 /* When manipulating config OUTSIDE decode_message() */
-#define static_option(opt) ((opt) & ~Runtime_Configuration)
+#define option(opt) ((opt) & ~Runtime_Configuration)
 
 
 /* ------ User default configuration ------ */
@@ -219,27 +218,30 @@ enum fc_timer {
 /// u32 wrap is not handled (flight assumed < 49 days :D).
 extern volatile fu32 local_time[Time_Users];
 
+
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update,
 /// and set local time to current HAL tick (ms).
 static inline fu32 timer_exchange(enum fc_timer u)
 {
   fu32 prev = local_time[u];
-  local_time[u] = hal_time_ms();
+  local_time[u] = now_ms();
   return local_time[u] - prev;
 }
+
 
 /// Set local time to current HAL tick (ms).
 static inline void timer_update(enum fc_timer u)
 {
-  local_time[u] = hal_time_ms();
+  local_time[u] = now_ms();
 }
+
 
 /// Report time elapsed since last call to either 
 /// timer_fetch_update or timer_update.
 static inline fu32 timer_fetch(enum fc_timer u)
 {
-  return hal_time_ms() - local_time[u];
+  return now_ms() - local_time[u];
 }
 
 

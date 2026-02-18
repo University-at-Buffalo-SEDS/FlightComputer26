@@ -199,10 +199,10 @@ static inline void evaluate_altitude(fu32 mode)
   if (flight < Ascent || vec[last].p.z > vec[!last].p.z) {
     /* Confirms must be consecutive */
 
-    if (mode & static_option(Consecutive_Samples) &&
-        mode & static_option(Confirm_Altitude))
+    if (mode & option(Consecutive_Samples) &&
+        mode & option(Confirm_Altitude))
     {
-      fetch_and(&config, ~static_option(Confirm_Altitude), Rlx);
+      fetch_and(&config, ~option(Confirm_Altitude), Rlx);
     }
 
     return;
@@ -213,7 +213,7 @@ static inline void evaluate_altitude(fu32 mode)
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
 
-    if (mode & static_option(Parachute_Deployed))
+    if (mode & option(Parachute_Deployed))
     {
       reef_high();
 
@@ -235,10 +235,10 @@ static inline void evaluate_altitude(fu32 mode)
       log_msg("FC:EVAL: urgently fired PYRO->REEF", 35);
     }
   }
-  else if (!(mode & static_option(Confirm_Altitude)))
+  else if (!(mode & option(Confirm_Altitude)))
   {
     /* Confirm we are falling before firing CO2. */
-    fetch_or(&config, static_option(Confirm_Altitude), Rlx);
+    fetch_or(&config, option(Confirm_Altitude), Rlx);
   }
   else
   {
@@ -280,7 +280,7 @@ static inline void detect_ascent(fu32 mode)
       log_msg("FC:EVAL: launch confirmed", 26);
     }
   }
-  else if (mode & static_option(Consecutive_Samples)
+  else if (mode & option(Consecutive_Samples)
            && sampl > 0)
   {
     sampl = 0;
@@ -308,7 +308,7 @@ static inline void detect_burnout(fu32 mode)
       log_msg("FC:EVAL: watching for apogee", 29);
     }
   }
-  else if (mode & static_option(Consecutive_Samples)
+  else if (mode & option(Consecutive_Samples)
            && sampl > 0)
   {
     sampl = 0;
@@ -347,10 +347,10 @@ static inline void detect_descent(fu32 mode)
 
       initialize_descent();
       timer_update(DescentKF);
-      fetch_and(&config, ~static_option(Using_Ascent_KF), Rel);
+      fetch_and(&config, ~option(Using_Ascent_KF), Rel);
     }
   }
-  else if (mode & static_option(Consecutive_Samples)
+  else if (mode & option(Consecutive_Samples)
            && sampl > 0)
   {
     sampl = 0;
@@ -375,7 +375,7 @@ static inline void detect_reef(fu32 mode)
       log_msg("FC:EVAL: expanded parachute", 28);
     }
   }
-  else if (mode & static_option(Consecutive_Samples)
+  else if (mode & option(Consecutive_Samples)
            && sampl > 0)
   {
     sampl = 0;
@@ -403,7 +403,7 @@ static inline void detect_landed(fu32 mode)
       log_msg("FC:EVAL: rocket landed", 23);
     }
   }
-  else if (mode & static_option(Consecutive_Samples)
+  else if (mode & option(Consecutive_Samples)
            && sampl > 0)
   {
     sampl = 0;
@@ -435,7 +435,7 @@ void evaluation_entry(ULONG input)
     flight = Idle;
 
     /* Signal distribution task to enter main cycle. */
-    fetch_or(&config, static_option(Launch_Triggered), Rel);
+    fetch_or(&config, option(Launch_Triggered), Rel);
   }
 
   if (mode & Using_Ascent_KF) {

@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <string.h>
+#include <math.h>
 
 
 /* ------ Pre-compilation checks ------ */
@@ -128,50 +129,6 @@ typedef arm_matrix_instance_f32 matrix;
 #define xinit     arm_mat_init_f32
 
 
-/* ------ Numerical helpers ------ */
-
-#include <math.h>
-
-static inline fu8  max_fu8 (fu8  a, fu8  b) { return a > b ? a : b; }
-static inline fu16 max_fu16(fu16 a, fu16 b) { return a > b ? a : b; }
-static inline fu32 max_fu32(fu32 a, fu32 b) { return a > b ? a : b; }
-
-static inline fu8  min_fu8 (fu8 a, fu8 b)   { return a < b ? a : b; }
-static inline fu16 min_fu16(fu16 a, fu16 b) { return a < b ? a : b; }
-static inline fu32 min_fu32(fu32 a, fu32 b) { return a < b ? a : b; }
-
-static inline fi8  abs_fi8 (fi8  a) { return a < 0 ? -a : a; }
-static inline fi16 abs_fi16(fi16 a) { return a < 0 ? -a : a; }
-static inline fi32 abs_fi32(fi32 a) { return a < 0 ? -a : a; }
-
-#define Max(x, y)       \
-  _Generic((x),         \
-    fu8:  max_fu8,      \
-    fu16: max_fu16,     \
-    fu32: max_fu32,     \
-    float: fmaxf,       \
-    default: fmaxf      \
-  ) (x, y)
-
-#define Min(x, y)       \
-  _Generic((x),         \
-    fu8:  min_fu8,      \
-    fu16: min_fu16,     \
-    fu32: min_fu32,     \
-    float: fminf,       \
-    default: fminf      \
-  ) (x, y)
-
-#define Abs(x)          \
-  _Generic((x),         \
-    fi8:  abs_fi8,      \
-    fi16: abs_fi16,     \
-    fi32: abs_fi32,     \
-    float: fabsf,       \
-    default: fabsf      \
-  ) (x)
-
-
 /* ------ Task utilities ------ */
 
 #define DO_NOT_EXIT 0
@@ -224,7 +181,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Get currect tick for custom timer */
 
-#define hal_time_ms() HAL_GetTick()
+#define now_ms() HAL_GetTick()
 
 /* Parachute deployment functions */
 
@@ -235,7 +192,7 @@ extern DCACHE_HandleTypeDef hdcache1;
   do {                                                          \
     HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
     /* Always guarantee all tasks observe PYRO fire */          \
-    fetch_or(&config, static_option(Parachute_Deployed), Rel);  \
+    fetch_or(&config, option(Parachute_Deployed), Rel);  \
   } while (0)
 
 #define reef_low()                                              \

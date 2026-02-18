@@ -60,10 +60,10 @@
 #define GPS_TOLER 1.0f  
 
 #define lat_within_launch_site(k)                         \
-  (Abs((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)
+  (fabsf((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)
 
 #define lon_within_launch_site(k)                         \
-  (Abs((float)(k) - LAUNCH_SITE_LON) <= GPS_TOLER)
+  (fabsf((float)(k) - LAUNCH_SITE_LON) <= GPS_TOLER)
 
 
 /* ------ Put/fetch algorithm definitions ------ */

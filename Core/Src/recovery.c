@@ -110,7 +110,7 @@ static inline void try_reinit_sensors(void)
 /// abortion, the FC will attempt to resume normal opertaion.
 static inline void auto_abort(void)
 {
-  config |= static_option(In_Aborted_State);
+  config |= option(In_Aborted_State);
 
   tx_thread_reset(&evaluation_task);
   tx_thread_reset(&distribution_task);
@@ -121,7 +121,7 @@ static inline void auto_abort(void)
   log_msg("FC:RECV: issued automatic abortion. "
           "Waiting for commands or launch signal.", 75);
 
-  if (config & static_option(Lost_GroundStation))
+  if (config & option(Lost_GroundStation))
   {
     /* Nowhere to expect commands from! Reinitialize. */
     to_abort = TO_ABORT * 10;
@@ -136,7 +136,7 @@ static inline void auto_abort(void)
 /// Reinitializes barometer with larger oversampling rates.
 static inline void barometer_fallback(void)
 {
-  config &= ~static_option(GPS_Available);
+  config &= ~option(GPS_Available);
 
   struct baro_config precise = {
     .osr_t = BARO_OSR_X1,
@@ -165,7 +165,7 @@ static inline void process_action(enum message cmd)
       return;
 
     case Expand_Parachute:
-      if (config & static_option(Parachute_Deployed)) {
+      if (config & option(Parachute_Deployed)) {
         reef_high();
       } else {
         log_err("FC:RECV: you have to deploy parachute first");
@@ -187,10 +187,10 @@ static inline void process_action(enum message cmd)
         gps_malform_count = 0;
       }
 
-      if (config & static_option(In_Aborted_State))
+      if (config & option(In_Aborted_State))
       {
         tx_thread_resume(&distribution_task);
-        config &= ~static_option(In_Aborted_State);
+        config &= ~option(In_Aborted_State);
       }
 
       /* Start Evaluation and begin rocket launch chain. */
@@ -199,7 +199,7 @@ static inline void process_action(enum message cmd)
 
     case Evaluation_Relax:
       /* Allow preemption of Evaluation task inside KF. */
-      config &= ~static_option(Eval_Focus_Flag);
+      config &= ~option(Eval_Focus_Flag);
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PRIORITY,
                                   &eval_old_pt);
@@ -207,14 +207,14 @@ static inline void process_action(enum message cmd)
 
     case Evaluation_Focus:
       /* Restrict preemption of Evaluation task inside KF. */
-      config |= static_option(Eval_Focus_Flag);
+      config |= option(Eval_Focus_Flag);
       tx_thread_preemption_change(&evaluation_task,
                                   EVAL_PREEMPT_THRESHOLD,
                                   &eval_old_pt);
       return;
 
     case Evaluation_Abort:
-      config |= static_option(Eval_Abort_Flag);
+      config |= option(Eval_Abort_Flag);
       tx_thread_reset(&evaluation_task);
       return;
 
@@ -273,7 +273,7 @@ static inline void process_report(enum message code)
       try_reinit_sensors();
     }
   }
-  else if (config & static_option(Reset_Failures))
+  else if (config & option(Reset_Failures))
   {
     failures = 0;
   }
@@ -287,7 +287,7 @@ static inline void process_gps_code(enum message code)
     case GPS_Delayed:
       ++gps_delay_count;
 
-      if (config & static_option(Launch_Triggered)) {
+      if (config & option(Launch_Triggered)) {
         log_err("FC:RECV: delayed GPS packet (%u)", gps_delay_count);
         return;
       }
@@ -301,7 +301,7 @@ static inline void process_gps_code(enum message code)
     case GPS_Malformed:
       ++gps_malform_count;
 
-      if (config & static_option(Launch_Triggered)) {
+      if (config & option(Launch_Triggered)) {
         log_err("FC:RECV: malformed GPS packet (%u)", gps_malform_count);
         return;
       }
@@ -326,7 +326,7 @@ static inline void decode_message(enum message msg)
   }
   else if (msg & Runtime_Configuration)
   {
-    process_config(static_option(fc_unmask(msg)));
+    process_config(option(fc_unmask(msg)));
   }
   else if (msg & GPS_Packet_Code)
   {
@@ -384,7 +384,7 @@ static void check_endpoints(ULONG id)
 
   static fu8 restart_count = 0;
 
-  if (config & static_option(In_Aborted_State))
+  if (config & option(In_Aborted_State))
   {
     /* If aborted, no task is sending heartbeat */
     timer_update(HeartbeatFC);
@@ -398,7 +398,7 @@ static void check_endpoints(ULONG id)
 
     timer_update(HeartbeatFC);
 
-    if (config & static_option(Launch_Triggered))
+    if (config & option(Launch_Triggered))
     {
       tx_thread_reset(&evaluation_task);
       tx_thread_resume(&evaluation_task);
@@ -414,9 +414,9 @@ static void check_endpoints(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
   {
 #ifdef TELEMETRY_ENABLED
-    config |= static_option(Lost_GroundStation);
-    config |= static_option(Monitor_Altitude);
-    config |= static_option(Reset_Failures);
+    config |= option(Lost_GroundStation);
+    config |= option(Monitor_Altitude);
+    config |= option(Reset_Failures);
     renorm_step_mask = RENORM_STEP;
     failures = 0;
 
@@ -430,15 +430,6 @@ static void check_endpoints(ULONG id)
 
 #endif // TELEMETRY_ENABLED
   }
-
-#ifdef GPS_AVAILABLE
-  if (timer_fetch(HeartbeatRF) > RF_TIMEOUT_MS)
-  {
-    enum message cmd = fc_mask(Reinit_Barometer);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
-
-#endif // GPS_AVAILABLE
 }
 
 
