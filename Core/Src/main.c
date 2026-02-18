@@ -139,17 +139,42 @@ int main(void)
   HAL_Delay(200);
 
   struct measurement k = {0};
+  fu8 dma_api = 0;
 
   while (1) {
-    if (!dma_try_fetch(&k, 0)) {
-      HAL_Delay(20);
-      continue;
+    if (dma_api & 1)
+    {
+      if (dma_fetch_imu(&k.gyro, &k.d.accl))
+      {
+        compensate_accl(&k.d.accl);
+        log_measurement(SEDS_DT_GYRO_DATA,  &k);
+        log_measurement(SEDS_DT_ACCEL_DATA, &k);
+      }
+
+      if (dma_fetch_baro(&k.baro))
+      {
+        compensate_baro(&k.baro);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+      }
+    }
+    else
+    {
+      fu8 st = dma_fetch(&k, 0);
+
+      if (st == RX_DONE)
+      {
+        compensate_all(&k);
+        log_measurement(SEDS_DT_GYRO_DATA,      &k);
+        log_measurement(SEDS_DT_ACCEL_DATA,     &k);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+      }
+      else
+      {
+        log_err("DMA: (testing) readiness: %u", st);
+      }
     }
 
-    compensate(&k, 0);
-    log_measurement(SEDS_DT_BAROMETER_DATA, &k);
-    log_measurement(SEDS_DT_GYRO_DATA,      &k);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &k);
+    dma_api ^= 1;
   }
 
   /* Assert unreeachable. */
