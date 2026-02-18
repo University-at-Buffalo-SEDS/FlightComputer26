@@ -76,7 +76,7 @@ fu8 dma_fetch_baro(struct baro *buf);
 /*
  * Calls compensation functions from the barometer driver.
  */
-inline void compensate_baro(struct baro *buf)
+static inline void compensate_baro(struct baro *buf)
 {
   buf->t   = baro_comp_temp(buf->t);
   buf->p   = baro_comp_pres(buf->p);
@@ -87,7 +87,7 @@ inline void compensate_baro(struct baro *buf)
 /*
  * Performs correction on accelerometer measurements.
  */
-inline void compensate_accl(struct coords *buf)
+static inline void compensate_accl(struct coords *buf)
 {
   buf->x *= MG;
   buf->y *= MG;
@@ -97,7 +97,7 @@ inline void compensate_accl(struct coords *buf)
 /*
  * Aggregates sensor compensation functions.
  */
-inline void compensate_all(struct measurement *buf)
+static inline void compensate_all(struct measurement *buf)
 {
   compensate_baro(&buf->baro);
   compensate_accl(&buf->d.accl);
