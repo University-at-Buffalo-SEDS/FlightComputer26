@@ -435,7 +435,7 @@ static inline void pre_launch(void)
       log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
     }
 
-    if (!dma_try_fetch(&payload, 0))
+    if (!dma_fetch(&payload, 0))
     {
       /* Short yield (DMA is fast) */
       tx_thread_relinquish();
@@ -471,7 +471,7 @@ static inline void pre_launch(void)
       log_err("FC:DIST: (PILOT) malformed data (%u)", st);
     }
 
-    compensate(&payload, 0);
+    compensate_all(&payload);
     
 #ifdef GPS_AVAILABLE
     distance_from_rail(&payload.d.gps);
@@ -507,15 +507,15 @@ void distribution_entry(ULONG input)
     fu8 for_ukf = load(&config, Acq) & option(Using_Ascent_KF);
 
     /* Do not wait for Gyro & Accel if we use Descent KF. */
-    fu8 skip_mask = for_ukf ? 0 : GYRO_DONE | ACCL_DONE;
+    fu8 skip_mask = for_ukf ? 0 : RX_GYRO | RX_ACCL;
 
-    if (!dma_try_fetch(&payload, skip_mask))
+    if (!dma_fetch(&payload, skip_mask))
     {
       tx_thread_relinquish();
       continue;
     }
 
-    compensate(&payload, skip_mask);
+    compensate_all(&payload);
 
     log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
 

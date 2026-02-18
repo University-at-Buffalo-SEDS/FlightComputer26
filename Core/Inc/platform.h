@@ -265,14 +265,14 @@ struct serial coords { float x, y, z; };
 
 /* Identification bytes for DMA Tx buffers */
 
-#define BARO_TX_BYTE  ((uint8_t)(BARO_DATA_0 | BARO_SPI_READ_BIT))
-#define GYRO_TX_BYTE  ((uint8_t)(gyro_cmd_read(GYRO_RATE_X_LSB)))
-#define ACCEL_TX_BYTE ((uint8_t)(accl_cmd_read(ACCL_X_LSB)))
+#define BARO_TX_BYTE ((uint8_t)(BARO_DATA_0 | BARO_SPI_READ_BIT))
+#define GYRO_TX_BYTE ((uint8_t)(gyro_cmd_read(GYRO_RATE_X_LSB)))
+#define ACCL_TX_BYTE ((uint8_t)(accl_cmd_read(ACCL_X_LSB)))
 
 /* Peripheral sensor EXT interrupt pins */
 
-#define ACCEL_INT_PIN_1 GPIO_PIN_4
-#define ACCEL_INT_PIN_2 GPIO_PIN_5
+#define ACCL_INT_PIN_1  GPIO_PIN_4
+#define ACCL_INT_PIN_2  GPIO_PIN_5
 #define GYRO_INT_PIN_1  GPIO_PIN_0
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7

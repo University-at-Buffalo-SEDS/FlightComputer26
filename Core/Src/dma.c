@@ -9,78 +9,88 @@
  * completion and error handling.
  *
  * The ISR is called by HAL after it receivies a signal
- * on one or two of the designated (by Avionics Hardware)
- * GPIO pins. Depedning on the pin, a DMA transfer is
- * initiated for a corresponding device into one of two
- * receive buffers. The device's CS pin is set low.
+ * on one or two of the designated GPIO pins. Depedning
+ * on the pin, a DMA transfer is initiated for a corre-
+ * -sponding device into one of two receive buffers.
+ * The device's CS pin is set low.
  *
- * One such buffer consists of 3 sections (for each device).
+ * One buffer consists of 3 sections (for each device).
  * Every time a completion callback receives, it will:
  *
- * 1. Infer the buffer and section (thus the device type)
- *    by calculating pointer offset from the beginning of
- *    the receive buffer (*).
- * 2. If the pointer matches any valid section, invalidate
- *    data cache for that section and pull the CS pin of
- *    the corresponding device high.
- *    [!] If the offset is beyond the Receive buffers, it
- *        will pull CS pins of ALL device up, thus possibly
- *        terminating active transfers.
- * 3. Set the 'ready' flag for the concerned section (device).
+ * 1. Infer the buffer and section (thus the device
+ *    type) by calculating pointer offset from the
+ *    beginning of the receive buffer.
  *
- * The error callback will perform the same sequence of events
- * EXCEPT for invalidating data cache and setting 'ready' flag.
+ * 2. If the pointer matches any valid section,
+ *    invalidate data cache for that section and
+ *    pull CS pin of the corresponding device high.
  *
- * The consumer will read whatever is reported as 'ready' by the
- * completion callback into the provided buffer, and THEN (after
- * reading) atomically switch the active buffer using rel/acq
- * semantics on ARM. Such sequence of events avoids waiting for
- * the remaining DMA transfers to complete -- when the caller
- * returns to the buffer previously switched to, all transfers
- * will be completeed and flags set for that buffer. This also
- * avoids using memory orderings on the 'ready' flags, as they
- * are separate for each buffer. A consumer may wish to ignore
- * certain devices on fetch and calibration; it is achieved
- * through passing a mask OR-ed with device flags as per dma.h.
+ *    [!] If the offset is beyond the Receive buffers,
+ *        it will pull CS pins of ALL device up, thus
+ *        possibly terminating active transfers.
  *
- * If, on any call, the fetch function determines that it filled
- * all sections demanded by consumer of the provided argument buffer,
- * it will report this to the caller, allowing it to proceed.
+ * 3. Set the 'ready' flag for the concerned device.
+ *
+ * The error callback will perform the same sequence
+ * of events EXCEPT for invalidating data cache and
+ * setting the 'ready' flag.
+ *
+ * The consumer is provided with two options:
+ * 
+ * 1. Parse specific device {Barometer, IMU}.
+ *    In this case, data is copied for the
+ *    whole device or not copied at all.
+ *
+ * 2. Fetch anything that is available per sensor
+ *    (Barometer, Gyroscope, Accelerometer). In
+ *    this case, a mask is returned that represents
+ *    devices for which data was fetched.
+ *
+ * Compensation aggregators per sensor are provided
+ * as inline helpers in the header (dma.h).
  */
 
 #include "platform.h"
 #include "dma.h"
 
 
-/// Each device data readiness mask for two buffers.
-/// Baro, Gyro, Accel, and unused bits (in this order).
-/// 0 0 0 0 0 A G B | 0 0 0 0 0 0 A G B
-static volatile fu8 is_complete[2] = {0};
+/*
+ * Each sensor data readiness flag for two buffers.
+ */
+static volatile fu8 is_complete[2][Sensors] = {0};
 
-/// Rx buffer marked for accepting DMA transfers.
-static atomic_uint_fast8_t in_transfer = 0;
+/*
+ * Each device's buffer accepting DMA transfers.
+ */
+static atomic_uint_fast8_t transfer_imu = 0;
+static atomic_uint_fast8_t transfer_baro = 0;
 
-/// Separate Tx buffers for each sensor.
-static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
-  [0][0] = BARO_TX_BYTE, [1][0] = GYRO_TX_BYTE, [2][0] = ACCEL_TX_BYTE
-};
-
-/// Double-buffered Rx for each sensor.
+/*
+ * Double-buffered Rx for each sensor.
+ */
 static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
 
 
 /* ------ Helpers ------ */
 
-/// Determines active buffer and device type from pointer offset.
-/// Returns DMA_RX_NULL if p is NULL or does not point inside rx.
-/// Context: callbacks.
+
+/*
+ * Determines active buffer and device type from pointer offset.
+ * Returns DMA_RX_NULL if p is NULL or does not point inside rx.
+ * Context: DMA callbacks.
+ */
 static inline fu8
 decode_ptr(uint8_t *p, fu8 *type)
 {
   static const fu8 buf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
-  static const fu8 dev[2 * Sensors] = {0, 1, 2, 0, 1, 2};
+  static const enum device dev[2 * Sensors] = {
+    Sensor_Baro, Sensor_Gyro, Sensor_Accl,
+    Sensor_Baro, Sensor_Gyro, Sensor_Accl
+  };
 
-  if (!p) return DMA_RX_NULL;
+  if (!p) {
+    return DMA_RX_NULL;
+  }
 
   ptrdiff_t offset = p - &rx[0][0][0];
   if (offset < 0 || offset >= sizeof rx) {
@@ -97,7 +107,10 @@ decode_ptr(uint8_t *p, fu8 *type)
 
 /* ------ Callbacks ------ */
 
-/// Finish transfer and publish device data flag.
+
+/*
+ * Finish transfer and publish device data flag.
+ */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   fu8 t;
@@ -111,11 +124,13 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
   finish_transfer(t);
 
-  is_complete[i] |= 1u << t;
+  is_complete[i][t] = 1;
 }
 
 
-/// Finish transfer but do not publish flag (drop sample).
+/*
+ * Finish transfer but do not publish flag (drop sample).
+ */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
   fu8 t;
@@ -132,14 +147,23 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
 /* ------ ISR ------ */
 
-/// Attempts to initialize DMA transfer.
+
+/*
+ * Attempts to initialize DMA transfer.
+ */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+  fu8 i;
   HAL_StatusTypeDef st;
-  fu8 i = load(&in_transfer, Acq);
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
+    {
+      static const uint8_t tx_baro[BARO_DMA_BUF_SIZE] = {
+        [0] = BARO_TX_BYTE, [1 ... 7] = 0x0
+      };
+
+      i = load(&transfer_baro, Acq);
       baro_cs_low();
       /*
        * If another transfer is currently in progress, this
@@ -148,29 +172,50 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
        * - one of callbacks will do it on time. Only on HAL_ERROR
        * (when HAL aborts its side effects) CS is pulled back high.
        */
-      st = dma_spi_txrx(tx[0], (uint8_t *)rx[i][0], SENSOR_BUF_SIZE);
+      st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
+                                            BARO_DMA_BUF_SIZE);
+
       if (st == HAL_ERROR) {
         baro_cs_high();
       }
       break;
+    }
 
     case GYRO_INT_PIN_1:
     case GYRO_INT_PIN_2:
+    {
+      static const uint8_t tx_gyro[GYRO_DMA_BUF_SIZE] = {
+        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x0
+      };
+
+      i = load(&transfer_imu, Acq);
       gyro_cs_low();
-      st = dma_spi_txrx(tx[1], (uint8_t *)rx[i][1], SENSOR_BUF_SIZE);
+
+      st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
+                                            GYRO_DMA_BUF_SIZE);
       if (st == HAL_ERROR) {
         gyro_cs_high();
       }
       break;
+    }
 
-    case ACCEL_INT_PIN_1:
-    case ACCEL_INT_PIN_2:
+    case ACCL_INT_PIN_1:
+    case ACCL_INT_PIN_2:
+    {
+      static const uint8_t tx_accl[ACCL_DMA_BUF_SIZE] = {
+        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x0
+      };
+
+      i = load(&transfer_imu, Acq);
       accl_cs_low();
-      st = dma_spi_txrx(tx[2], (uint8_t *)rx[i][2], SENSOR_BUF_SIZE);
+      
+      st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
+                                            ACCL_DMA_BUF_SIZE);
       if (st == HAL_ERROR) {
         accl_cs_high();
       }
       break;
+    }
 
     default: break;
   }
@@ -179,63 +224,129 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 /* ------ Public API ------ */
 
-/// Fetches whatever is available in a free (tm) DMA buffer.
-/// Returns 1 when all required sensor buckets have been filled,
-/// (accumulates acrosss calls), 0 otherwise, and -1 on bag argument.
-int dma_try_fetch(struct measurement *buf, fu8 skip_mask)
+
+static fu8 baro_i = 1;
+
+/*
+ * Peeks at the barometer DMA buffer status,
+ * and fetches the latest pair of measurements
+ * (temperature, pressure), if available.
+ * Returns 1 on successful fetch and 0 otherwise. 
+ */
+fu8 dma_fetch_baro(struct baro *buf)
 {
-  static fu8 i = 1;
-  static fu8 cache = 0;
-
   if (!buf) {
-    return -1;
-  }
-  
-  if (is_complete[i] & BARO_DONE) {
-    buf->baro.p = U24(rx[i][0][1], rx[i][0][2], rx[i][0][3]);
-    buf->baro.t = U24(rx[i][0][4], rx[i][0][5], rx[i][0][6]);
+    return UINT_FAST8_MAX;
   }
 
-  if (!(skip_mask & GYRO_DONE) && is_complete[i] & GYRO_DONE) {
-    buf->gyro.x = F16(rx[i][1][1], rx[i][1][2]);
-    buf->gyro.y = F16(rx[i][1][3], rx[i][1][4]);
-    buf->gyro.z = F16(rx[i][1][5], rx[i][1][6]);
-  }
+  if (is_complete[baro_i][Sensor_Baro])
+  {
+    buf->p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
+    buf->t = U24(rx[baro_i][0][4], rx[baro_i][0][5], rx[baro_i][0][6]);
 
-  if (!(skip_mask & ACCL_DONE) && is_complete[i] & ACCL_DONE) {
-    buf->d.accl.x = F16(rx[i][2][2], rx[i][2][3]);
-    buf->d.accl.y = F16(rx[i][2][4], rx[i][2][5]);
-    buf->d.accl.z = F16(rx[i][2][6], rx[i][2][7]);  
-  }
+    is_complete[baro_i][Sensor_Baro] = 0;
 
-  cache |= is_complete[i];
-  cache |= skip_mask;
+    store(&transfer_baro, baro_i, Rel);
+    baro_i ^= 1;
 
-  is_complete[i] = 0;
-  
-  store(&in_transfer, i, Rel);
-  i ^= 1;
-
-  if (cache & RX_DONE) {
-    cache = 0;
     return 1;
   }
+
+  store(&transfer_baro, baro_i, Rel);
+  baro_i ^= 1;
 
   return 0;
 }
 
 
-/// Aggregates sensor compensation functions.
-/// Run before reporting or publishing data.
-void compensate(struct measurement *buf, fu8 skip_mask)
+static fu8 imu_i = 1;
+
+/*
+ * Peeks at the IMU DMA buffers' statuses, and
+ * fetches the latest pair of measurements
+ * (accelerometer, gyroscope), if available.
+ * Returns 1 on successful fetch and 0 otherwise. 
+ */
+fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
 {
-  buf->baro.t   = baro_comp_temp(buf->baro.t);
-  buf->baro.p   = baro_comp_pres(buf->baro.p);
-  buf->baro.alt = baro_calc_alt (buf->baro.p);
-  
-  if (!(skip_mask & ACCL_DONE)) {
-    buf->d.accl.x *= MG;
-    buf->d.accl.y *= MG;
-    buf->d.accl.z *= MG;
+  if (!gyro || !accl) {
+    return UINT_FAST8_MAX;
   }
+
+  if (is_complete[imu_i][Sensor_Gyro] &&
+      is_complete[imu_i][Sensor_Accl])
+  {
+    gyro->x = F16(rx[imu_i][1][1], rx[imu_i][1][2]);
+    gyro->y = F16(rx[imu_i][1][3], rx[imu_i][1][4]);
+    gyro->z = F16(rx[imu_i][1][5], rx[imu_i][1][6]);
+
+    accl->x = F16(rx[imu_i][2][2], rx[imu_i][2][3]);
+    accl->y = F16(rx[imu_i][2][4], rx[imu_i][2][5]);
+    accl->z = F16(rx[imu_i][2][6], rx[imu_i][2][7]);
+
+    is_complete[imu_i][Sensor_Gyro] = 0;
+    is_complete[imu_i][Sensor_Accl] = 0;
+
+    store(&transfer_imu, imu_i, Rel);
+    imu_i ^= 1;
+
+    return 1;
+  }
+
+  store(&transfer_imu, imu_i, Rel);
+  imu_i ^= 1;
+
+  return 0;  
+}
+
+
+/*
+ * Fetches whatever is available in a free (tm) DMA
+ * buffer. Returns a relevancy mask, which has bits
+ * set for devices whose data was fetched.
+ */
+fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
+{ 
+  if (!buf) {
+    return UINT_FAST8_MAX;
+  }
+  
+  fu8 fetched = 0;
+
+  if (!(skip_mask & RX_BARO) && is_complete[baro_i][Sensor_Baro])
+  {
+    buf->baro.p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
+    buf->baro.t = U24(rx[baro_i][0][4], rx[baro_i][0][5], rx[baro_i][0][6]);
+
+    is_complete[baro_i][Sensor_Baro] = 0;
+    fetched |= RX_BARO;
+  }
+
+  if (!(skip_mask & RX_GYRO) && is_complete[imu_i][Sensor_Gyro])
+  {
+    buf->gyro.x = F16(rx[imu_i][1][1], rx[imu_i][1][2]);
+    buf->gyro.y = F16(rx[imu_i][1][3], rx[imu_i][1][4]);
+    buf->gyro.z = F16(rx[imu_i][1][5], rx[imu_i][1][6]);
+
+    is_complete[imu_i][Sensor_Gyro] = 0;
+    fetched |= RX_GYRO;
+  }
+
+  if (!(skip_mask & RX_ACCL) && is_complete[imu_i][Sensor_Accl])
+  {
+    buf->d.accl.x = F16(rx[imu_i][2][2], rx[imu_i][2][3]);
+    buf->d.accl.y = F16(rx[imu_i][2][4], rx[imu_i][2][5]);
+    buf->d.accl.z = F16(rx[imu_i][2][6], rx[imu_i][2][7]);
+
+    is_complete[imu_i][Sensor_Accl] = 0;
+    fetched |= RX_ACCL;
+  }
+
+  store(&transfer_imu, baro_i, Rel);
+  baro_i ^= 1;
+  
+  store(&transfer_imu, imu_i, Rel);
+  imu_i ^= 1;
+
+  return fetched;
 }
