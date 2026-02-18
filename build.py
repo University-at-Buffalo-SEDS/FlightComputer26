@@ -158,8 +158,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
-                "-DCMAKE_COMMAND=cmake",
                 telem,
                 dmatest,
                 batch,
