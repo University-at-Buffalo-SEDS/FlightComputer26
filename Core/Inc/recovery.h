@@ -210,6 +210,7 @@ enum fc_timer {
   HeartbeatRF,
   HeartbeatGND,
   IntervalGPS,
+  IntervalBaro,
 
   Time_Users
 };

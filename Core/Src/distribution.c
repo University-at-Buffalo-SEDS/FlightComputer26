@@ -43,6 +43,7 @@
  * data evaluation buffer and telemetry (UART and SD) queues.
  */
 
+#include "kalman.h"
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
@@ -278,7 +279,7 @@ validate_gps_relative(const struct coords *gps)
  * Checks received size and invokes appropriate validator.
  */
 static inline fu32
-validate_gps_serial(const uint8_t *data, size_t len, fu32 conf)
+validate_gps_serial(const uint8_t *data, size_t len)
 {
   enum message rep = fc_mask(GPS_Data_Code);
 
@@ -288,7 +289,7 @@ validate_gps_serial(const uint8_t *data, size_t len, fu32 conf)
   }
   else
   {
-    if (conf & option(Launch_Triggered)) {
+    if (load(&config, Rlx) & option(Launch_Triggered)) {
       rep |= validate_gps_absolute((const struct coords *)data);
     }
     else {
@@ -308,8 +309,7 @@ handle_gps_data(const uint8_t *data, size_t len)
 {
   timer_update(HeartbeatRF);
   
-  fu32 conf = load(&config, Rlx);
-  fu32 rep = validate_gps_serial(data, len, conf);
+  fu32 rep = validate_gps_serial(data, len);
 
   if (rep != fc_mask(GPS_Data_Code))
   {
@@ -317,10 +317,7 @@ handle_gps_data(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
-  if (!(conf & option(Using_Ascent_KF)))
-  {
-    enqueue_gps_data(data);
-  }
+  enqueue_gps_data(data);
 
   return SEDS_OK;
 }
@@ -490,54 +487,67 @@ validate_all(const struct measurement *buf)
  */
 static inline void pre_launch(void)
 {
-  fu8 st = 0;
-  fu32 conf = 0;
-  enum message cmd = fc_mask(Sensor_Measm_Code);
+  fu32 st = 0, counter = 0;
+  enum message cmd = fc_mask(0);
 
-  task_loop (conf & option(Launch_Triggered))
+  float accum_baro = 0, accum_gps = 0;
+  fu32 ctr_baro = 0, ctr_gps = 0;
+
+  task_loop (load(&config, Acq) & option(Launch_Triggered))
   {
-    conf = load(&config, Acq);
-
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
     if (st != TX_SUCCESS) {
-      log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
+      log_err("PILOT: heartbeat failed: %u", st);
     }
 
-    if (!dma_fetch(&payload, 0))
+    if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
     {
-      /* Short yield (DMA is fast) */
       tx_thread_relinquish();
       continue;
     }
 
-#ifdef GPS_AVAILABLE
-    struct coords temp_gps_buf = {0};
+    st = validate_imu(&payload.gyro, &payload.d.accl);
 
-    if (conf & option(GPS_Available) &&
-        !fetch_gps_data(&temp_gps_buf))
+    if (st == Sensor_Measm_Code) {
+      compensate_accl(&payload.d.accl);
+      log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
+      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+    }
+    else {
+      log_err("PILOT: malformed IMU data: %u", st);
+    }
+
+    if (dma_fetch_baro(&payload.baro))
     {
-        tx_thread_sleep(DIST_SLEEP_NO_DATA);
-        continue;
+      accum_baro += fsec(timer_exchange(IntervalBaro));
+      ++ctr_gps;
+
+      st = validate_baro(&payload.baro);
+
+      if (st == Sensor_Measm_Code) {
+        compensate_baro(&payload.baro);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+      }
+      else {
+        log_err("PILOT: malformed Baro data: %u", st);
+      }
     }
 
-#endif // GPS_AVAILABLE
-
-    st = validate_all(&payload);
-
-    if (st != Sensor_Measm_Code) {
-      log_err("FC:DIST: (PILOT) malformed data (%u)", st);
+    if (fetch_gps_data(&payload.d.gps))
+    {
+      accum_gps += fsec(timer_exchange(IntervalGPS));
+      ++ctr_gps;
+      /* GPS data is validated by the Telemetry thread,
+       * and reported by the RF board. */
     }
 
-    compensate_all(&payload);
-    
-#ifdef GPS_AVAILABLE
-    distance_from_rail(&payload.d.gps);
-#endif
-
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-    log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
+    if (!(++counter & 31)) {
+      // FIXME ask to provide explicit packet type for
+      // rates.
+      log_err("PILOT: gathering baro every %f sec", accum_baro / ctr_baro);
+      log_err("PILOT: gathering gps every %f sec", accum_gps / ctr_gps);
+    }
   }
 
   /* Request Valve board to ignite the engine. */
@@ -546,11 +556,12 @@ static inline void pre_launch(void)
   log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
 }
 
-
-/// Distribution task entry that also serves as
-/// an overview of the Flight Computer data distribution.
-/// This function is idempotent and can be reentered whenever
-/// any critical conditions arise as deemed by Recovery task.
+/*
+ * Distribution task entry that also serves as
+ * an overview of the Flight Computer data distribution.
+ * This function is idempotent and can be reentered whenever
+ * any critical conditions arise as deemed by Recovery task.
+ */
 void distribution_entry(ULONG input)
 {
   (void) input;
@@ -600,8 +611,10 @@ void distribution_entry(ULONG input)
   }
 }
 
-
-/// Creates a preemptive, Distribution task with defined parameters.
+/*
+ * Creates a preemptive, cooperative Distribution
+ * task with defined parameters.
+ */
 void create_distribution_task(void)
 {
   UINT st = tx_thread_create(&distribution_task,

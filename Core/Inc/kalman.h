@@ -21,7 +21,7 @@
 #define sigma_low(k)  ((float)k - TOLERANCE)
 #define sigma_high(k) ((float)k + TOLERANCE)
 
-#define FSEC(ms) ((float)(ms) * 0.001f)
+#define fsec(ms) ((float)(ms) * 0.001f)
 
 #define NR_ITERATIONS 2
 

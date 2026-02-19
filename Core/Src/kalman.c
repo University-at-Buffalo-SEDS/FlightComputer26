@@ -99,7 +99,7 @@ static inline void predict(struct state_vec *vec)
 {
   static fu8 iteration = 0;
 
-  const float dt = FSEC(timer_exchange(AscentKF));
+  const float dt = fsec(timer_exchange(AscentKF));
 
   const float fact = 0.5f * dt;
   const float dvx = dt * vec->a.x;
@@ -219,7 +219,7 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
   state.pData = (float *)x_0;
   measm.pData = (float *)z;
 
-	const float dt = FSEC(timer_exchange(DescentKF));
+	const float dt = fsec(timer_exchange(DescentKF));
 
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
