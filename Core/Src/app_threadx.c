@@ -68,8 +68,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
     Error_Handler();
   }
   /* Log after router is initialized, before threads start */
-#endif
-
   char started_txt[] = "Starting Threadx Scheduler";
   log_msg_sync(started_txt, sizeof started_txt);
 
