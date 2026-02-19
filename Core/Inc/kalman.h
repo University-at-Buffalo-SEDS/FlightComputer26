@@ -5,6 +5,9 @@
 #ifndef KALMAN_H
 #define KALMAN_H
 
+#include "platform.h"
+#include "evaluation.h"
+
 
 /* ------ State and measurement vector sizes ------ */
 
@@ -32,9 +35,6 @@ union bithack {
 
 
 /* ------ Public API ------ */
-
-#include "platform.h"
-#include "evaluation.h"
 
 /// descentKF.m
 void
