@@ -225,7 +225,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /* ------ Public API ------ */
 
 
-static fu8 baro_i = 1;
+static atomic_uint_fast8_t baro_i = 1;
 
 /*
  * Peeks at the barometer DMA buffer status,
@@ -246,26 +246,24 @@ fu8 dma_fetch_baro(struct baro *buf)
 
     is_complete[baro_i][Sensor_Baro] = 0;
 
-    store(&transfer_baro, baro_i, Rel);
-    baro_i ^= 1;
+    baro_i = swap(&transfer_baro, baro_i, Rel);
 
     return 1;
   }
 
-  store(&transfer_baro, baro_i, Rel);
-  baro_i ^= 1;
+  baro_i = swap(&transfer_baro, baro_i, Rel);
 
   return 0;
 }
 
 
-static fu8 imu_i = 1;
+static atomic_uint_fast8_t imu_i = 1;
 
 /*
  * Peeks at the IMU DMA buffers' statuses, and
  * fetches the latest pair of measurements
  * (accelerometer, gyroscope), if available.
- * Returns 1 on successful fetch and 0 otherwise. 
+ * Returns 1 on successful fetch and 0 otherwise.
  */
 fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
 {
@@ -287,16 +285,14 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     is_complete[imu_i][Sensor_Gyro] = 0;
     is_complete[imu_i][Sensor_Accl] = 0;
 
-    store(&transfer_imu, imu_i, Rel);
-    imu_i ^= 1;
+    imu_i = swap(&transfer_imu, imu_i, Rel);
 
     return 1;
   }
 
-  store(&transfer_imu, imu_i, Rel);
-  imu_i ^= 1;
+  imu_i = swap(&transfer_imu, imu_i, Rel);
 
-  return 0;  
+  return 0;
 }
 
 
@@ -342,11 +338,9 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
     fetched |= RX_ACCL;
   }
 
-  store(&transfer_imu, baro_i, Rel);
-  baro_i ^= 1;
-  
-  store(&transfer_imu, imu_i, Rel);
-  imu_i ^= 1;
+  imu_i = swap(&transfer_imu, imu_i, Rel);
+
+  baro_i = swap(&transfer_imu, baro_i, Rel);
 
   return fetched;
 }

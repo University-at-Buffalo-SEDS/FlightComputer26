@@ -147,14 +147,14 @@ int main(void)
       if (dma_fetch_imu(&k.gyro, &k.d.accl))
       {
         compensate_accl(&k.d.accl);
-        log_measurement(SEDS_DT_GYRO_DATA,  &k);
-        log_measurement(SEDS_DT_ACCEL_DATA, &k);
+        log_measurement(SEDS_DT_GYRO_DATA,  &k.gyro);
+        log_measurement(SEDS_DT_ACCEL_DATA, &k.d.accl);
       }
 
       if (dma_fetch_baro(&k.baro))
       {
         compensate_baro(&k.baro);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &k.baro);
       }
     }
     else
@@ -164,9 +164,9 @@ int main(void)
       if (st == RX_DONE)
       {
         compensate_all(&k);
-        log_measurement(SEDS_DT_GYRO_DATA,      &k);
-        log_measurement(SEDS_DT_ACCEL_DATA,     &k);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k);
+        log_measurement(SEDS_DT_GYRO_DATA,      &k.baro);
+        log_measurement(SEDS_DT_ACCEL_DATA,     &k.gyro);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &k.d.accl);
       }
       else
       {
