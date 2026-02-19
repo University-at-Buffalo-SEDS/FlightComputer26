@@ -75,17 +75,15 @@ enum message {
   Sensor_Measm_Code = 0,
 
   Bad_Altitude   = 1u,
-  Bad_Attitude_X = (1u << 1),
-  Bad_Attitude_Y = (1u << 2),
-  Bad_Attitude_Z = (1u << 3),
-  Bad_Accel_X    = (1u << 4),  
-  Bad_Accel_Y    = (1u << 5),
-  Bad_Accel_Z    = (1u << 6),
-  Bad_Lattitude  = (1u << 7),
-  Bad_Longtitude = (1u << 8),
-  Bad_Sea_Level  = (1u << 9),
+  Bad_Pressure   = (1u << 1),
+  Bad_Attitude_X = (1u << 2),
+  Bad_Attitude_Y = (1u << 3),
+  Bad_Attitude_Z = (1u << 4),
+  Bad_Accel_X    = (1u << 5),  
+  Bad_Accel_Y    = (1u << 6),
+  Bad_Accel_Z    = (1u << 7),
 
-  Spurious_Confirmations = (1u << 10),
+  Spurious_Confirmations = (1u << 16),
 
   Not_Launch  = Spurious_Confirmations + 1,
   Not_Burnout = Spurious_Confirmations + 2,
@@ -93,7 +91,7 @@ enum message {
   Not_Reefing = Spurious_Confirmations + 4,
   Not_Landed  = Spurious_Confirmations + 5,
   
-  Actionable_Decrees = (1u << 11),
+  Actionable_Decrees = (1u << 17),
 
   Deploy_Parachute = Actionable_Decrees + 1,
   Expand_Parachute = Actionable_Decrees + 2,
@@ -104,10 +102,13 @@ enum message {
   Evaluation_Abort = Actionable_Decrees + 7,
   Reinit_Barometer = Actionable_Decrees + 8,
 
-  GPS_Packet_Code = (1u << 12),
+  GPS_Data_Code = (1u << 18),
 
-  GPS_Delayed   = GPS_Packet_Code + 1,
-  GPS_Malformed = GPS_Packet_Code + 2,
+  Bad_Lattitude  = GPS_Data_Code | (1u << 1),
+  Bad_Longtitude = GPS_Data_Code | (1u << 2),
+  Bad_Sea_Level  = GPS_Data_Code | (1u << 3),
+  GPS_Delayed    = GPS_Data_Code | (1u << 4),
+  GPS_Malformed  = GPS_Data_Code | (1u << 5),
 
   /* ... */
 

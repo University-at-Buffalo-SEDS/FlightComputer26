@@ -328,7 +328,7 @@ static inline void decode_message(enum message msg)
   {
     process_config(option(fc_unmask(msg)));
   }
-  else if (msg & GPS_Packet_Code)
+  else if (msg & GPS_Data_Code)
   {
     process_gps_code(fc_unmask(msg));
   }
@@ -429,6 +429,12 @@ static void check_endpoints(ULONG id)
     }
 
 #endif // TELEMETRY_ENABLED
+  }
+
+  if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
+  {
+    enum message cmd = fc_mask(GPS_Delayed);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
 

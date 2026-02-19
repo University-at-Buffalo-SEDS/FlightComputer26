@@ -21,20 +21,27 @@
 #define LAUNCH_CONFIRM_DELAY 25
 #define APOGEE_CONFIRM_DELAY 75
 
-/* Measurement thresholds.
- * Units: altitude ALT (m), angular velocity ANG (deg/s)
- * vertical acceleration VAX (m/s^2) */
+/* Measurement thresholds:
+ * Altitude         ALT     meters  
+ * Pressure         PRS     pascals
+ * Attitude         DPS     deg/sec
+ * Acceleration     ACC     m/s^2
+ * Lattitude        LAT     degrees
+ * Longtitude       LON     degrees
+ * Alt. above sea   SEA     meters    */
 
 #define GRAVITY_SI 9.80665f
 
 #define MAX_ALT 4800.0f
+#define MAX_PRS 125000.0f
 #define MAX_DPS 2000.0f
-#define MAX_ACC (GRAVITY_SI * 12.0f)
+#define MAX_ACC (GRAVITY_SI * 24.0f)
 #define MAX_LAT 90.0f
 #define MAX_LON 180.0f
 #define MAX_SEA 9999.9f
 
 #define MIN_ALT -10.0f
+#define MIN_PRS 30000.0f
 #define MIN_DPS -MAX_DPS
 #define MIN_ACC -MAX_ACC
 #define MIN_LAT -MAX_LAT
