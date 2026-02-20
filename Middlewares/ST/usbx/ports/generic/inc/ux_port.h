@@ -73,7 +73,10 @@
 
 #include <stdio.h>
 #include <string.h>
+
+/* USER CODE BEGIN 1 */
 #pragma GCC diagnostic ignored "-Warray-bounds"
+/* USER CODE END 1 */
 
 #if !defined(UX_STANDALONE)
 #include "tx_api.h"
