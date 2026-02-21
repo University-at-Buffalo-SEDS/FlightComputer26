@@ -95,11 +95,9 @@ measurement(const struct state_vec *restrict vec,
 
 
 /// Transforms input vector into next-sample prediction.
-static inline void predict(struct state_vec *vec)
+static inline void predict(struct state_vec *vec, const float dt)
 {
   static fu8 iteration = 0;
-
-  const float dt = fsec(timer_exchange(AscentKF));
 
   const float fact = 0.5f * dt;
   const float dvx = dt * vec->a.x;

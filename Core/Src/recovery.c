@@ -77,7 +77,7 @@ static fu16 gps_malform_count = 0;
 /// Synchronously initializes each sensor.
 static inline void try_reinit_sensors(void)
 {
-  enum device faulty = Sensors;
+  enum sensor faulty = Sensors;
 
   log_msg("FC:RECV: trying to reinit sensors", 35);
 

@@ -92,55 +92,40 @@ static atomic_uint_fast32_t isr_dt = 0;
 #endif // DMA_BENCHMARK
 
 
-/* ------ Helpers ------ */
-
-
-/*
- * Determines active buffer and device type from pointer offset.
- * Returns DMA_RX_NULL if p is NULL or does not point inside rx.
- * Context: DMA callbacks.
- */
-static inline fu8
-decode_ptr(uint8_t *p, fu8 *type)
-{
-  static const fu8 buf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
-  static const enum sensor dev[2 * Sensors] = {
-    Sensor_Baro, Sensor_Gyro, Sensor_Accl,
-    Sensor_Baro, Sensor_Gyro, Sensor_Accl
-  };
-
-  if (!p) {
-    return DMA_RX_NULL;
-  }
-
-  ptrdiff_t offset = p - &rx[0][0][0];
-  if (offset < 0 || offset >= sizeof rx) {
-    return DMA_RX_NULL;
-  }
-
-  /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
-  fu8 idx = (fu8)(offset) >> 3;
-
-  *type = dev[idx];
-  return buf[idx];
-}
-
-
 /* ------ Callbacks ------ */
 
+/*
+ * Offset-to-buffer and offset-to-sensor lookup arrays.
+ */
+static const fu8 dbuf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
+
+static const enum sensor sens[2 * Sensors] = {
+  Sensor_Baro, Sensor_Gyro, Sensor_Accl,
+  Sensor_Baro, Sensor_Gyro, Sensor_Accl
+};
 
 /*
  * Finish transfer and publish device data flag.
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-  fu8 t;
-  fu8 i = decode_ptr(hspi->pRxBuffPtr, &t);
-
-  if (i == DMA_RX_NULL) {
+  if (!hspi || !hspi->pRxBuffPtr) {
     terminate_transfers();
     return;
   }
+
+  ptrdiff_t offset = hspi->pRxBuffPtr - &rx[0][0][0];
+
+  if (offset < 0 || offset >= sizeof rx) {
+    terminate_transfers();
+    return;
+  }
+
+  /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
+  fu8 idx = (fu8)(offset) >> 3;
+
+  fu8 i = dbuf[idx];
+  fu8 t = sens[idx];
 
   invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
   finish_transfer(t);
@@ -159,13 +144,19 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
  */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
-  fu8 t;
-  fu8 i = decode_ptr(hspi->pRxBuffPtr, &t);
-
-  if (i == DMA_RX_NULL) {
+  if (!hspi || !hspi->pRxBuffPtr) {
     terminate_transfers();
     return;
   }
+
+  ptrdiff_t offset = hspi->pRxBuffPtr - &rx[0][0][0];
+
+  if (offset < 0 || offset >= sizeof rx) {
+    terminate_transfers();
+    return;
+  }
+
+  fu8 t = sens[(fu8)(offset) >> 3];
 
   finish_transfer(t);
   store(&in_progress[t], 0, Rel);
@@ -262,7 +253,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
   
         st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
                                               GYRO_DMA_BUF_SIZE);
-        if (st == HAL_ERROR) {
+        if (st != HAL_OK) {
           gyro_cs_high();
           store(&in_progress[Sensor_Gyro], 0, Rlx);
         }
@@ -284,7 +275,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
         
         st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
                                               ACCL_DMA_BUF_SIZE);
-        if (st == HAL_ERROR) {
+        if (st != HAL_OK) {
           accl_cs_high();
           store(&in_progress[Sensor_Accl], 0, Rlx);
         }

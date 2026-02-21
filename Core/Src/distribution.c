@@ -48,6 +48,7 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
+#include "tx_api.h"
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
@@ -158,9 +159,9 @@ static inline enum message decode_cmd(const uint8_t *raw)
 
 #define MIN_CMD_SIZE 4
 
-static inline enum command decode_cmd(const uint8_t *raw)
+static inline enum message decode_cmd(const uint8_t *raw)
 {
-  return (enum command) U32(raw[0], raw[1], raw[2], raw[3]);
+  return (enum message) U32(raw[0], raw[1], raw[2], raw[3]);
 }
 
 #endif // TELEMETRY_CMD_COMPAT
@@ -422,25 +423,25 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 static inline enum message
 validate_imu(const struct coords *gyro, const struct coords *accl)
 {
-  enum message st = Sensor_Measm_Code;
+  enum message st = fc_mask(Sensor_Measm_Code);
 
   if (accl->x > MAX_ACC || accl->x < MIN_ACC) {
-    st += Bad_Accel_X;
+    st |= Bad_Accel_X;
   }
   if (accl->y > MAX_ACC || accl->y < MIN_ACC) {
-    st += Bad_Accel_Y;
+    st |= Bad_Accel_Y;
   }
   if (accl->z > MAX_ACC || accl->z < MIN_ACC) {
-    st += Bad_Accel_Z;
+    st |= Bad_Accel_Z;
   }
   if (gyro->x > MAX_DPS || gyro->x < MIN_DPS) {
-    st += Bad_Attitude_X;
+    st |= Bad_Attitude_X;
   }
   if (gyro->y > MAX_DPS || gyro->y < MIN_DPS) {
-    st += Bad_Attitude_Y;
+    st |= Bad_Attitude_Y;
   }
   if (gyro->z > MAX_DPS || gyro->z < MIN_DPS) {
-    st += Bad_Attitude_Z;
+    st |= Bad_Attitude_Z;
   }
 
   return st;
@@ -452,13 +453,13 @@ validate_imu(const struct coords *gyro, const struct coords *accl)
 static inline enum message
 validate_baro(const struct baro *baro)
 {
-  enum message st = Sensor_Measm_Code;
+  enum message st = fc_mask(Sensor_Measm_Code);
 
   if (baro->p > MAX_PRS || baro->p < MAX_PRS) {
-    st += Bad_Pressure;
+    st |= Bad_Pressure;
   }
   if (baro->alt > MAX_ALT || baro->alt < MIN_ALT) {
-    st += Bad_Altitude;
+    st |= Bad_Altitude;
   }
 
   return st;
@@ -534,6 +535,7 @@ static inline void pre_launch(void)
       }
     }
 
+#ifdef GPS_AVAILABLE
     if (fetch_gps_data(&payload.d.gps))
     {
       accum_gps += fsec(timer_exchange(IntervalGPS));
@@ -541,12 +543,17 @@ static inline void pre_launch(void)
       /* GPS data is validated by the Telemetry thread,
        * and reported by the RF board. */
     }
+#endif // GPS_AVAILABLE
 
     if (!(++counter & 31)) {
       // FIXME ask to provide explicit packet type for
       // rates.
-      log_err("PILOT: gathering baro every %f sec", accum_baro / ctr_baro);
-      log_err("PILOT: gathering gps every %f sec", accum_gps / ctr_gps);
+      if (ctr_baro > 0) {
+        log_err("PILOT: gathering baro every %f sec", accum_baro / ctr_baro);
+      }
+      if (ctr_gps > 0) {
+        log_err("PILOT: gathering gps every %f sec", accum_gps / ctr_gps);
+      }
     }
   }
 
@@ -554,6 +561,55 @@ static inline void pre_launch(void)
   task_loop (request_ignition() == SEDS_OK);
 
   log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
+}
+
+/*
+ * Data cycle for the Ascent filter.
+ */
+static inline void ascent_cycle(fu32 conf)
+{
+  if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
+  {
+    /* Wait for IMU measurements */
+    tx_thread_relinquish();
+    return;
+  }
+
+  fu32 st = validate_imu(&payload.gyro, &payload.d.accl);
+  /* Note to self: if plan to remove heartbeat, move this
+   * inside if statement below */
+  tx_queue_send(&shared, &st, TX_NO_WAIT);
+
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    /* See if new IMU measurements are available immediately */
+    return;
+  }
+
+  compensate_accl(&payload.d.accl);
+  float dt = fsec(timer_exchange(AscentKF));
+
+  // call predict w/ imu & dt
+
+  if (!dma_fetch_baro(&payload.baro)) {
+    /* Run Predict in the meanwhile */
+    return;
+  }
+
+  st = validate_baro(&payload.baro);
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+  // call update w/ baro & dt (async + sema)
+}
+
+/*
+ * Data cycle for the Descent filter.
+ */
+static inline void descent_cycle(fu32 conf)
+{
+  
 }
 
 /*
@@ -566,48 +622,19 @@ void distribution_entry(ULONG input)
 {
   (void) input;
 
+  fu32 conf = load(&config, Acq);
+
   /* Enter pre-launch loop only once. */
-  if (!(load(&config, Acq) & option(Launch_Triggered))) {
+  if (!(conf & option(Launch_Triggered))) {
     pre_launch();
   }
 
   task_loop (DO_NOT_EXIT)
   {
-    fu8 for_ukf = load(&config, Acq) & option(Using_Ascent_KF);
+    conf = load(&config, Acq);
 
-    /* Do not wait for Gyro & Accel if we use Descent KF. */
-    fu8 skip_mask = for_ukf ? 0 : RX_GYRO | RX_ACCL;
-
-    if (!dma_fetch(&payload, skip_mask))
-    {
-      tx_thread_relinquish();
-      continue;
-    }
-
-    compensate_all(&payload);
-
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-
-    if (for_ukf)
-    {
-      log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
-      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
-
-#ifdef GPS_AVAILABLE
-    }
-    else
-    {
-      if (load(&config, Acq) & option(GPS_Available)
-          && !fetch_gps_data(&payload.d.gps))
-      {
-        tx_thread_relinquish();
-        continue;
-      }
-
-#endif // GPS_AVAILABLE
-    }
-
-    evaluation_put(&payload);
+    conf & option(Using_Ascent_KF) ? ascent_cycle(conf)
+                                   : descent_cycle(conf);
   }
 }
 
