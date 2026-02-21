@@ -45,6 +45,28 @@ struct serial measurement {
 #define RX_DONE (RX_BARO | RX_GYRO | RX_ACCL)
 
 
+/* ------ Producer / consumer benchmark timer ------ */
+
+#ifdef DMA_BENCHMARK
+
+#define dma_bench_log_fetch(dev)                              \
+  do {                                                        \
+    fu32 dt = now_ms() - load(&rxts[dev], Acq);               \
+    log_err("DMA: %u: consumed in %u ms", dev, dt);           \
+  } while (0)
+
+#define dma_bench_log_isr()                                   \
+  do {                                                        \
+    log_err("DMA: last ISR took %u ms", load(&isr_dt, Acq));  \
+  } while (0)
+
+#else
+
+#define dma_bench_log(dev) (void)0
+
+#endif // DMA_BENCHMARK
+
+
 /* ------ Public API ------ */
 
 /*

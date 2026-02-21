@@ -75,6 +75,22 @@ static atomic_uint_fast32_t in_progress[Sensors] = {0};
  */
 static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
 
+#ifdef DMA_BENCHMARK
+
+/*
+ * HAL timestamp for consumer benchmark.
+ * Stores relative time when RxCplt finishes transfer.
+ */
+static atomic_uint_fast32_t rxts[Sensors] = {0};
+
+/*
+ * Stores time, in milliseconds, that ISR took to execute.
+ * Updated inside ISR, reported inside thread context. 
+ */
+static atomic_uint_fast32_t isr_dt = 0;
+
+#endif // DMA_BENCHMARK
+
 
 /* ------ Helpers ------ */
 
@@ -129,6 +145,10 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
   finish_transfer(t);
 
+#ifdef DMA_BENCHMARK
+  store(&rxts[t], now_ms(), Rel);
+#endif
+
   is_complete[i][t] = 1;
   store(&in_progress[t], 0, Rel);
 }
@@ -157,9 +177,51 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
 /*
  * Attempts to initialize DMA transfer.
+ *
+ * This ISR may be expensive depending on how often
+ * the sensors will generate DRDY events. I includied
+ * a microbenchmark to estimate the time this ISR and
+ * DMA take to execute. The performance effect of this
+ * ISR on other tasks will also be evident from tests.
+ *
+ * If this ISR proves to crowd out tasks, we generally
+ * have 3 other options of using the benefits of DMA:
+ *
+ * 1. Tune IMU for higher precision. This may sound
+ *    lazy and redundant, but it will relax the ISR
+ *    and make Predict to Update ratio closer to 1.
+ *
+ * 2. Starting DMA transfer synchronously on demand.
+ *    This will require:
+ *    a) checking if there is new data (relatively
+ *       cheap if we keep ISR to receive and register
+ *       DRDY events in atomic flags),
+ *    b) starting DMA transfer in advance to allow
+ *       DMA arbiter time to write into memory (how
+ *       we determine 'advance' for each sensor and
+ *       KF scenario is another good question!),
+ *    c) checking if the transfer completed by the
+ *       time we need the new data.
+ *
+ * 3. Make consumer notify the ISR via atomic flag
+ *    that it consumed whatever was in the buffers,
+ *    and perform transfer on CAS. This will yield
+ *    older data (which is ~ok?? for speedy consumers).
+ *
+ * 4. Not that I cannot count, but I don't think this
+ *    is a viable option: begin transfer on TX timer.
+ *    Because scheduling is not deterministic (tasks
+ *    yield cooperatively and not all of them are RR,
+ *    e.g. Recovery), this timer may end up playing
+ *    blind baseball with Distribution task that may
+ *    periodically wait on active transfers.
  */
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
+#ifdef DMA_BENCHMARK
+  fu32 called = now_ms();
+#endif
+
   fu8 i;
   fu32 t = 0;
   HAL_StatusTypeDef st;
@@ -232,6 +294,10 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
     default: break;
   }
+
+#ifdef DMA_BENCHMARK
+  store(&isr_dt, now_ms() - called, Rel);
+#endif
 }
 
 
@@ -252,6 +318,8 @@ fu8 dma_fetch_baro(struct baro *buf)
     return UINT_FAST8_MAX;
   }
 
+  dma_bench_log_isr();
+
   if (is_complete[baro_i][Sensor_Baro])
   {
     buf->p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
@@ -260,6 +328,8 @@ fu8 dma_fetch_baro(struct baro *buf)
     is_complete[baro_i][Sensor_Baro] = 0;
 
     baro_i = swap(&transfer_baro, baro_i, Rel);
+
+    dma_bench_log_fetch(Sensor_Baro);
 
     return 1;
   }
@@ -284,6 +354,8 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     return UINT_FAST8_MAX;
   }
 
+  dma_bench_log_isr();
+
   if (is_complete[imu_i][Sensor_Gyro] &&
       is_complete[imu_i][Sensor_Accl])
   {
@@ -299,6 +371,9 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     is_complete[imu_i][Sensor_Accl] = 0;
 
     imu_i = swap(&transfer_imu, imu_i, Rel);
+
+    dma_bench_log_fetch(Sensor_Gyro);
+    dma_bench_log_fetch(Sensor_Accl);
 
     return 1;
   }
@@ -329,6 +404,8 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[baro_i][Sensor_Baro] = 0;
     fetched |= RX_BARO;
+
+    dma_bench_log_fetch(Sensor_Baro);
   }
 
   if (!(skip_mask & RX_GYRO) && is_complete[imu_i][Sensor_Gyro])
@@ -339,6 +416,8 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[imu_i][Sensor_Gyro] = 0;
     fetched |= RX_GYRO;
+
+    dma_bench_log_fetch(Sensor_Gyro);
   }
 
   if (!(skip_mask & RX_ACCL) && is_complete[imu_i][Sensor_Accl])
@@ -349,11 +428,15 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[imu_i][Sensor_Accl] = 0;
     fetched |= RX_ACCL;
+
+    dma_bench_log_fetch(Sensor_Accl);
   }
 
   imu_i = swap(&transfer_imu, imu_i, Rel);
 
   baro_i = swap(&transfer_imu, baro_i, Rel);
+
+  dma_bench_log_isr();
 
   return fetched;
 }

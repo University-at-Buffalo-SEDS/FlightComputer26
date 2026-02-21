@@ -111,3 +111,11 @@ if (DMA_TESTING)
     message(STATUS "Running local DMA tests (no telemetry).")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
 endif()
+
+# Options defaults to OFF
+option(DMA_BENCH "DMA produce/consume delay benchmark" OFF)
+
+if (DMA_BENCH)
+    message(STATUS "Running DMA benchmarks.")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_BENCHMARK)
+endif()
