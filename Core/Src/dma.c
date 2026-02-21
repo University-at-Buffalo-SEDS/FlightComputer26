@@ -151,7 +151,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 /*
  * Attempts to initialize DMA transfer.
  */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   fu8 i;
   HAL_StatusTypeDef st;
