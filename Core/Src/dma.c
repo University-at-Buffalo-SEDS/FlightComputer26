@@ -66,6 +66,11 @@ static atomic_uint_fast8_t transfer_imu = 0;
 static atomic_uint_fast8_t transfer_baro = 0;
 
 /*
+ * Per device flag for signaling ongoing DMA transfer.
+ */
+static atomic_uint_fast32_t in_progress[Sensors] = {0};
+
+/*
  * Double-buffered Rx for each sensor.
  */
 static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
@@ -125,6 +130,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   finish_transfer(t);
 
   is_complete[i][t] = 1;
+  store(&in_progress[t], 0, Rel);
 }
 
 
@@ -142,6 +148,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
   }
 
   finish_transfer(t);
+  store(&in_progress[t], 0, Rel);
 }
 
 
@@ -154,67 +161,73 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   fu8 i;
+  fu32 t = 0;
   HAL_StatusTypeDef st;
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
     {
       static const uint8_t tx_baro[BARO_DMA_BUF_SIZE] = {
-        [0] = BARO_TX_BYTE, [1 ... 7] = 0x0
+        [0] = BARO_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_baro, Acq);
-      baro_cs_low();
-      /*
-       * If another transfer is currently in progress, this
-       * call will return HAL_BUSY (see try-lock on line 2438
-       * of stm32h5xx_hal_spi.c). We should not pull CS high -
-       * - one of callbacks will do it on time. Only on HAL_ERROR
-       * (when HAL aborts its side effects) CS is pulled back high.
-       */
-      st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
-                                            BARO_DMA_BUF_SIZE);
-
-      if (st == HAL_ERROR) {
-        baro_cs_high();
+      if (cas_strong(&in_progress[Sensor_Baro], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_baro, Acq);
+        baro_cs_low();
+  
+        st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
+                                              BARO_DMA_BUF_SIZE);
+        if (st != HAL_OK) {
+          baro_cs_high();
+          store(&in_progress[Sensor_Baro], 0, Rlx);
+        }
       }
       break;
     }
 
     case GYRO_INT_PIN_1:
-    case GYRO_INT_PIN_2:
+/*  case GYRO_INT_PIN_2:        unused for IREC '26 */
     {
       static const uint8_t tx_gyro[GYRO_DMA_BUF_SIZE] = {
-        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x0
+        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_imu, Acq);
-      gyro_cs_low();
-
-      st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
-                                            GYRO_DMA_BUF_SIZE);
-      if (st == HAL_ERROR) {
-        gyro_cs_high();
+      if (cas_weak(&in_progress[Sensor_Gyro], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_imu, Acq);
+        gyro_cs_low();
+  
+        st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
+                                              GYRO_DMA_BUF_SIZE);
+        if (st == HAL_ERROR) {
+          gyro_cs_high();
+          store(&in_progress[Sensor_Gyro], 0, Rlx);
+        }
+        break;
       }
-      break;
     }
 
     case ACCL_INT_PIN_1:
-    case ACCL_INT_PIN_2:
+/*  case ACCL_INT_PIN_2:        unused for IREC '26 */
     {
       static const uint8_t tx_accl[ACCL_DMA_BUF_SIZE] = {
-        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x0
+        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_imu, Acq);
-      accl_cs_low();
-      
-      st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
-                                            ACCL_DMA_BUF_SIZE);
-      if (st == HAL_ERROR) {
-        accl_cs_high();
+      if (cas_weak(&in_progress[Sensor_Accl], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_imu, Acq);
+        accl_cs_low();
+        
+        st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
+                                              ACCL_DMA_BUF_SIZE);
+        if (st == HAL_ERROR) {
+          accl_cs_high();
+          store(&in_progress[Sensor_Accl], 0, Rlx);
+        }
+        break;
       }
-      break;
     }
 
     default: break;
