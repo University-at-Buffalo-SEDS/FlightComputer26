@@ -62,7 +62,8 @@ struct serial measurement {
 
 #else
 
-#define dma_bench_log(dev) (void)0
+#define dma_bench_log(dev)  (void)0
+#define dma_bench_log_isr() (void)0  
 
 #endif // DMA_BENCHMARK
 
