@@ -12,7 +12,7 @@
 
 /* Discriminants must comply with decode_ptr() dev[]. */
 
-enum device {
+enum sensor {
   Sensor_Baro = 0,
   Sensor_Gyro = 1,
   Sensor_Accl = 2,
@@ -62,8 +62,8 @@ struct serial measurement {
 
 #else
 
-#define dma_bench_log(dev)  (void)0
-#define dma_bench_log_isr() (void)0  
+#define dma_bench_log_fetch(dev)  (void)0
+#define dma_bench_log_isr()       (void)0  
 
 #endif // DMA_BENCHMARK
 

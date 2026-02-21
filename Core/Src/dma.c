@@ -104,7 +104,7 @@ static inline fu8
 decode_ptr(uint8_t *p, fu8 *type)
 {
   static const fu8 buf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
-  static const enum device dev[2 * Sensors] = {
+  static const enum sensor dev[2 * Sensors] = {
     Sensor_Baro, Sensor_Gyro, Sensor_Accl,
     Sensor_Baro, Sensor_Gyro, Sensor_Accl
   };
