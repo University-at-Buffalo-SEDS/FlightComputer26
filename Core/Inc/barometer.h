@@ -159,6 +159,9 @@
 #define BARO_PERIOD_MS_FROM_ODRSEL(s)                               \
   (5u << ((s) & BARO_ODR_SEL_MASK))         // approx
 
+/* 0100 0010 : INT active high data ready */
+#define BARO_INT_CTRL_VAL 0x42
+
 // Valid pressure sanity range (Pa)
 #define BARO_MIN_PA 70000.0f
 #define BARO_MAX_PA 110000.0f
