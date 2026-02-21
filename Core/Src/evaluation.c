@@ -215,7 +215,7 @@ static inline void evaluate_altitude(fu32 mode)
 
     if (mode & option(Parachute_Deployed))
     {
-      reef_high();
+      reef_high(&config);
 
       if (flight < Reefing) {
         flight = Reefing;
@@ -224,9 +224,9 @@ static inline void evaluate_altitude(fu32 mode)
     }
     else
     { 
-      co2_high();
+      co2_high(&config);
       tx_thread_sleep(100);
-      reef_high();
+      reef_high(&config);
       
       if (flight < Reefing) {
         flight = Reefing;
@@ -242,7 +242,7 @@ static inline void evaluate_altitude(fu32 mode)
   }
   else
   {
-    co2_high();
+    co2_high(&config);
 
     if (flight < Descent) {
       flight = Descent;
@@ -342,7 +342,7 @@ static inline void detect_descent(fu32 mode)
     {
       flight = Descent;
       sampl = 0;
-      co2_high();
+      co2_high(&config);
       log_msg("FC:EVAL: fired pyro, descending", 32);
 
       initialize_descent();
@@ -371,7 +371,7 @@ static inline void detect_reef(fu32 mode)
     {
       flight = Reefing;
       sampl = 0;
-      reef_low();
+      reef_low(&config);
       log_msg("FC:EVAL: expanded parachute", 28);
     }
   }

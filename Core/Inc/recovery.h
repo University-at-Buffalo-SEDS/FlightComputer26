@@ -28,15 +28,17 @@ extern atomic_uint_fast32_t config;
 #define GPS_MAX_MALFORMED 15
 
 
-/* ------ Endpoint timeouts ------ */
+/* ------ TX Timer interrupt definitions ------ */
 
 #define FC_TIMEOUT_MS 4000
 #define GND_TIMEOUT_MS 4000
 
 /* Expiration of timer that invokes timeout checks  */
-#define TX_TIMER_TICKS   100
+#define TX_TIMER_TICKS   50
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
+#define CO2_ASSERT_INTERVAL_MS  50
+#define REEF_ASSERT_INTERVAL_MS 50
 
 
 /* ------ Universal Flight Computer message ------ */
@@ -128,6 +130,8 @@ enum message {
   Using_Ascent_KF     = Runtime_Configuration | (1u << 11),
   In_Aborted_State    = Runtime_Configuration | (1u << 12),
   Lost_GroundStation  = Runtime_Configuration | (1u << 13),
+  CO2_Asserted        = Runtime_Configuration | (1u << 14),
+  REEF_Asserted       = Runtime_Configuration | (1u << 15),
 
   Revoke_Option = Runtime_Configuration | (1u << 20),
 
@@ -211,6 +215,8 @@ enum fc_timer {
   HeartbeatGND,
   IntervalGPS,
   IntervalBaro,
+  AssertCO2,
+  AssertREEF,
 
   Time_Users
 };

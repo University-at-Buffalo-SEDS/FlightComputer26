@@ -161,12 +161,12 @@ static inline void process_action(enum message cmd)
 
   switch (cmd) {
     case Deploy_Parachute:
-      co2_high();
+      co2_high(&config);
       return;
 
     case Expand_Parachute:
       if (config & option(Parachute_Deployed)) {
-        reef_high();
+        reef_high(&config);
       } else {
         log_err("FC:RECV: you have to deploy parachute first");
       }
@@ -383,6 +383,20 @@ static void check_endpoints(ULONG id)
   (void) id;
 
   static fu8 restart_count = 0;
+
+  if (config & option(CO2_Asserted) &&
+      timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL_MS)
+  {
+    co2_low(&config);
+    config &= ~option(CO2_Asserted);
+  }
+
+  if (config & option(REEF_Asserted) &&
+      timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL_MS)
+  {
+    reef_low(&config);
+    config &= ~option(REEF_Asserted);
+  }
 
   if (config & option(In_Aborted_State))
   {

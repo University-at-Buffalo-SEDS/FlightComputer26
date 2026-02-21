@@ -177,21 +177,25 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low()                                               \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
+#define co2_low(conf)                                                   \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET);
 
-#define co2_high()                                              \
-  do {                                                          \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
-    /* Always guarantee all tasks observe PYRO fire */          \
-    fetch_or(&config, option(Parachute_Deployed), Rel);  \
+#define co2_high(conf)                                                  \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);                \
+    timer_update(AssertCO2);                                            \
+    fetch_or(conf, option(Parachute_Deployed | CO2_Asserted), Rel);     \
   } while (0)
 
-#define reef_low()                                              \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
+#define reef_low(conf)                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET);
 
-#define reef_high()                                             \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
+#define reef_high(conf)                                                 \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET);               \
+    timer_update(AssertREEF);                                           \
+    fetch_or(conf, option(REEF_Asserted), Rel);                         \
+  } while (0)
 
 /* Data cache calls */
 
