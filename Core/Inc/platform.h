@@ -6,7 +6,7 @@
  * point of reference and modification. This file also
  * enables easier conditional compilation and poisoning.
  *
- * This header provides the following components the
+ * This header provides the following components for the
  * DMA, Distribution, Evaluation, and Recovery modules:
  *
  * - Type-specific Max, Min, and Abs helper macros;
@@ -15,15 +15,7 @@
  * - Variadic aliases for select sedsprintf_rs functions;
  * - Variadic aliases for substitute stdio functions.
  * - Aliases for select HAL and driver functions;
- * - Shared inlined timer implementation with single storage;
  * - Misc aliases and includes as required by the modules.
- *
- * This header should be included in all high-level Flight Computer
- * logic except for drivers, middleware, and utilized libraries (*),
- * which are considered to be the platform this header abstracts away.
- *
- * (*) Libraries include vendor, bundled, external, and optional,
- *     but exclude RTOS, as the FC makes use of ThreadX scheduling.
  */
 
 #ifndef PLATFORM_H

@@ -17,6 +17,8 @@
 #define ACCL_PWR_CTRL      0x7D
 #define ACCL_PWR_CONF      0x7C
 #define ACCL_RANGE         0x41
+#define ACCL_INT_CONF      0x53
+#define ACCL_INT_MAP       0x58
 
 #define ACCL_Z_MSB         0x17
 #define ACCL_Z_LSB         0x16
@@ -25,6 +27,11 @@
 #define ACCL_X_MSB         0x13
 #define ACCL_X_LSB         0x12
 
+/* 0000 1010 : INT1 to active high PP */
+#define ACCL_INT_CONF_VAL  0x0A
+
+/* 0000 0100 : INT1 mapped to data ready */
+#define ACCL_INT_MAP_VAL   0x04
 
 /* ------ Enumerated configuration ------ */
 

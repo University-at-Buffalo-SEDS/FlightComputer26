@@ -728,6 +728,13 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
     return HAL_ERROR;
   }
 
+  /* EXTI */
+  st = baro_write_u8(hspi, BARO_INT_CTRL, BARO_INT_CTRL_VAL);
+  if (st != HAL_OK) {
+    log_err("BARO: failed to write INT conf");
+    return HAL_ERROR;
+  }
+
   HAL_Delay(BARO_ENABLE_DELAY_MS);
 
   /* Try to enter normal mode */
