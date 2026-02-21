@@ -57,6 +57,10 @@ OPTIONS:
 
         asm             - generate assembly code for the
                         - preset and options chosen
+
+        dmabench        - compile DMA with microbenchmark;
+                        - slows down DMA consumer and logs
+                        - time information on SP/SC delays
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -77,8 +81,17 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {"flash", "notelemetry", "clean", "dmatest", "fullcmd",
-                        "batching", "configure", "nogps", "nosd", "asm"}
+ALL_OPTIONS     = {     "flash",
+                        "notelemetry", 
+                        "clean",
+                        "dmatest",
+                        "fullcmd",
+                        "batching",
+                        "configure",
+                        "nogps",
+                        "nosd",
+                        "asm",
+                        "dmabench"      }
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -131,12 +144,13 @@ def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
         # Defaults for IREC 2026
-        batch   = "-DMESSAGE_BATCHING=OFF"
-        telem   = "-DENABLE_TELEMETRY=ON"
-        compat  = "-DTELEMETRY_COMPAT=ON"
-        dmatest = "-DDMA_TESTING=OFF"
-        gps     = "-DEXTERNAL_GPS=ON"
-        sd      = "-DONBOARD_SD=ON"
+        batch           = "-DMESSAGE_BATCHING=OFF"
+        telem           = "-DENABLE_TELEMETRY=ON"
+        compat          = "-DTELEMETRY_COMPAT=ON"
+        dmatest         = "-DDMA_TESTING=OFF"
+        gps             = "-DEXTERNAL_GPS=ON"
+        sd              = "-DONBOARD_SD=ON"
+        dmabench        = "-DDMA_BENCH=OFF"
 
         if options["notelemetry"]:
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -154,6 +168,9 @@ def configure(buildir: Path, preset: str, options: dict):
                 if options["nosd"]:
                         sd = "-DONBOARD_SD=OFF"
 
+        if options["dmabench"]:
+                dmabench = "-DDMA_BENCH=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -164,6 +181,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 batch,
                 compat,
                 gps,
+                sd,
+                dmabench,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

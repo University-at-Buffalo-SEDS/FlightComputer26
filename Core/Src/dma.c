@@ -66,9 +66,30 @@ static atomic_uint_fast8_t transfer_imu = 0;
 static atomic_uint_fast8_t transfer_baro = 0;
 
 /*
+ * Per device flag for signaling ongoing DMA transfer.
+ */
+static atomic_uint_fast32_t in_progress[Sensors] = {0};
+
+/*
  * Double-buffered Rx for each sensor.
  */
 static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
+
+#ifdef DMA_BENCHMARK
+
+/*
+ * HAL timestamp for consumer benchmark.
+ * Stores relative time when RxCplt finishes transfer.
+ */
+static atomic_uint_fast32_t rxts[Sensors] = {0};
+
+/*
+ * Stores time, in milliseconds, that ISR took to execute.
+ * Updated inside ISR, reported inside thread context. 
+ */
+static atomic_uint_fast32_t isr_dt = 0;
+
+#endif // DMA_BENCHMARK
 
 
 /* ------ Helpers ------ */
@@ -124,7 +145,12 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
   finish_transfer(t);
 
+#ifdef DMA_BENCHMARK
+  store(&rxts[t], now_ms(), Rel);
+#endif
+
   is_complete[i][t] = 1;
+  store(&in_progress[t], 0, Rel);
 }
 
 
@@ -142,6 +168,7 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
   }
 
   finish_transfer(t);
+  store(&in_progress[t], 0, Rel);
 }
 
 
@@ -150,75 +177,127 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 
 /*
  * Attempts to initialize DMA transfer.
+ *
+ * This ISR may be expensive depending on how often
+ * the sensors will generate DRDY events. I includied
+ * a microbenchmark to estimate the time this ISR and
+ * DMA take to execute. The performance effect of this
+ * ISR on other tasks will also be evident from tests.
+ *
+ * If this ISR proves to crowd out tasks, we generally
+ * have 3 other options of using the benefits of DMA:
+ *
+ * 1. Tune IMU for higher precision. This may sound
+ *    lazy and redundant, but it will relax the ISR
+ *    and make Predict to Update ratio closer to 1.
+ *
+ * 2. Starting DMA transfer synchronously on demand.
+ *    This will require:
+ *    a) checking if there is new data (relatively
+ *       cheap if we keep ISR to receive and register
+ *       DRDY events in atomic flags),
+ *    b) starting DMA transfer in advance to allow
+ *       DMA arbiter time to write into memory (how
+ *       we determine 'advance' for each sensor and
+ *       KF scenario is another good question!),
+ *    c) checking if the transfer completed by the
+ *       time we need the new data.
+ *
+ * 3. Make consumer notify the ISR via atomic flag
+ *    that it consumed whatever was in the buffers,
+ *    and perform transfer on CAS. This will yield
+ *    older data (which is ~ok?? for speedy consumers).
+ *
+ * 4. Not that I cannot count, but I don't think this
+ *    is a viable option: begin transfer on TX timer.
+ *    Because scheduling is not deterministic (tasks
+ *    yield cooperatively and not all of them are RR,
+ *    e.g. Recovery), this timer may end up playing
+ *    blind baseball with Distribution task that may
+ *    periodically wait on active transfers.
  */
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
+#ifdef DMA_BENCHMARK
+  fu32 called = now_ms();
+#endif
+
   fu8 i;
+  fu32 t = 0;
   HAL_StatusTypeDef st;
 
   switch (GPIO_Pin) {
     case BARO_INT_PIN:
     {
       static const uint8_t tx_baro[BARO_DMA_BUF_SIZE] = {
-        [0] = BARO_TX_BYTE, [1 ... 7] = 0x0
+        [0] = BARO_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_baro, Acq);
-      baro_cs_low();
-      /*
-       * If another transfer is currently in progress, this
-       * call will return HAL_BUSY (see try-lock on line 2438
-       * of stm32h5xx_hal_spi.c). We should not pull CS high -
-       * - one of callbacks will do it on time. Only on HAL_ERROR
-       * (when HAL aborts its side effects) CS is pulled back high.
-       */
-      st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
-                                            BARO_DMA_BUF_SIZE);
-
-      if (st == HAL_ERROR) {
-        baro_cs_high();
+      if (cas_strong(&in_progress[Sensor_Baro], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_baro, Acq);
+        baro_cs_low();
+  
+        st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
+                                              BARO_DMA_BUF_SIZE);
+        if (st != HAL_OK) {
+          baro_cs_high();
+          store(&in_progress[Sensor_Baro], 0, Rlx);
+        }
       }
       break;
     }
 
     case GYRO_INT_PIN_1:
-    case GYRO_INT_PIN_2:
+/*  case GYRO_INT_PIN_2:        unused for IREC '26 */
     {
       static const uint8_t tx_gyro[GYRO_DMA_BUF_SIZE] = {
-        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x0
+        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_imu, Acq);
-      gyro_cs_low();
-
-      st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
-                                            GYRO_DMA_BUF_SIZE);
-      if (st == HAL_ERROR) {
-        gyro_cs_high();
+      if (cas_weak(&in_progress[Sensor_Gyro], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_imu, Acq);
+        gyro_cs_low();
+  
+        st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
+                                              GYRO_DMA_BUF_SIZE);
+        if (st == HAL_ERROR) {
+          gyro_cs_high();
+          store(&in_progress[Sensor_Gyro], 0, Rlx);
+        }
+        break;
       }
-      break;
     }
 
     case ACCL_INT_PIN_1:
-    case ACCL_INT_PIN_2:
+/*  case ACCL_INT_PIN_2:        unused for IREC '26 */
     {
       static const uint8_t tx_accl[ACCL_DMA_BUF_SIZE] = {
-        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x0
+        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x00
       };
 
-      i = load(&transfer_imu, Acq);
-      accl_cs_low();
-      
-      st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
-                                            ACCL_DMA_BUF_SIZE);
-      if (st == HAL_ERROR) {
-        accl_cs_high();
+      if (cas_weak(&in_progress[Sensor_Accl], &t, 1, Acq, Rlx))
+      {
+        i = load(&transfer_imu, Acq);
+        accl_cs_low();
+        
+        st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
+                                              ACCL_DMA_BUF_SIZE);
+        if (st == HAL_ERROR) {
+          accl_cs_high();
+          store(&in_progress[Sensor_Accl], 0, Rlx);
+        }
+        break;
       }
-      break;
     }
 
     default: break;
   }
+
+#ifdef DMA_BENCHMARK
+  store(&isr_dt, now_ms() - called, Rel);
+#endif
 }
 
 
@@ -239,6 +318,8 @@ fu8 dma_fetch_baro(struct baro *buf)
     return UINT_FAST8_MAX;
   }
 
+  dma_bench_log_isr();
+
   if (is_complete[baro_i][Sensor_Baro])
   {
     buf->p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
@@ -247,6 +328,8 @@ fu8 dma_fetch_baro(struct baro *buf)
     is_complete[baro_i][Sensor_Baro] = 0;
 
     baro_i = swap(&transfer_baro, baro_i, Rel);
+
+    dma_bench_log_fetch(Sensor_Baro);
 
     return 1;
   }
@@ -271,6 +354,8 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     return UINT_FAST8_MAX;
   }
 
+  dma_bench_log_isr();
+
   if (is_complete[imu_i][Sensor_Gyro] &&
       is_complete[imu_i][Sensor_Accl])
   {
@@ -286,6 +371,9 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     is_complete[imu_i][Sensor_Accl] = 0;
 
     imu_i = swap(&transfer_imu, imu_i, Rel);
+
+    dma_bench_log_fetch(Sensor_Gyro);
+    dma_bench_log_fetch(Sensor_Accl);
 
     return 1;
   }
@@ -316,6 +404,8 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[baro_i][Sensor_Baro] = 0;
     fetched |= RX_BARO;
+
+    dma_bench_log_fetch(Sensor_Baro);
   }
 
   if (!(skip_mask & RX_GYRO) && is_complete[imu_i][Sensor_Gyro])
@@ -326,6 +416,8 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[imu_i][Sensor_Gyro] = 0;
     fetched |= RX_GYRO;
+
+    dma_bench_log_fetch(Sensor_Gyro);
   }
 
   if (!(skip_mask & RX_ACCL) && is_complete[imu_i][Sensor_Accl])
@@ -336,11 +428,15 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
 
     is_complete[imu_i][Sensor_Accl] = 0;
     fetched |= RX_ACCL;
+
+    dma_bench_log_fetch(Sensor_Accl);
   }
 
   imu_i = swap(&transfer_imu, imu_i, Rel);
 
   baro_i = swap(&transfer_imu, baro_i, Rel);
+
+  dma_bench_log_isr();
 
   return fetched;
 }
