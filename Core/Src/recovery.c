@@ -110,16 +110,11 @@ static inline void try_reinit_sensors(void)
 /// abortion, the FC will attempt to resume normal opertaion.
 static inline void auto_abort(void)
 {
-  config |= option(In_Aborted_State);
-
   tx_thread_reset(&evaluation_task);
   tx_thread_reset(&distribution_task);
 
   gps_delay_count = 0;
   gps_malform_count = 0;
-
-  log_msg("FC:RECV: issued automatic abortion. "
-          "Waiting for commands or launch signal.", 75);
 
   if (config & option(Lost_GroundStation))
   {
@@ -128,6 +123,13 @@ static inline void auto_abort(void)
 
     enum message cmd = fc_mask(Launch_Signal);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+  }
+  else
+  {
+    log_msg("FC:RECV: issued automatic abortion. "
+            "Waiting for commands or launch signal.", 75);
+
+    config |= option(In_Aborted_State);
   }
 }
 
@@ -375,24 +377,33 @@ void recovery_entry(ULONG input)
   }
 }
 
-
-/// Check if an endpoint {FC, GND, RF} is absent for
-/// compile-defined time. If it is, act appropriately.
-static void check_endpoints(ULONG id)
+/*
+ * This routine is called from ThreadX interrupt
+ * every 0.5 seconds. It monitors timeout for the
+ * endpoints flight computer depends on {FC, RF, GND},
+ * and if timeout has occured, signals tasks to not
+ * depend on the endpoint which has timed out. In case
+ * of the FC itself, it tries to reinitialize vital
+ * tasks 3 times and them aborts.
+ *
+ * This timer is also responsible for pulling CO2 and
+ * REEF pins back low after either has been asserted.
+ */
+static void fc_timer_routine(ULONG id)
 {
   (void) id;
 
   static fu8 restart_count = 0;
 
   if (config & option(CO2_Asserted) &&
-      timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL_MS)
+      timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
   {
     co2_low(&config);
     config &= ~option(CO2_Asserted);
   }
 
   if (config & option(REEF_Asserted) &&
-      timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL_MS)
+      timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL)
   {
     reef_low(&config);
     config &= ~option(REEF_Asserted);
@@ -403,7 +414,7 @@ static void check_endpoints(ULONG id)
     /* If aborted, no task is sending heartbeat */
     timer_update(HeartbeatFC);
   }
-  else if (timer_fetch(HeartbeatFC) > FC_TIMEOUT_MS)
+  else if (timer_fetch(HeartbeatFC) > FC_TIMEOUT)
   {
     if (++restart_count >= MAX_RESTARTS) {
       auto_abort();
@@ -425,7 +436,7 @@ static void check_endpoints(ULONG id)
   }
 
   
-  if (timer_fetch(HeartbeatGND) > GND_TIMEOUT_MS)
+  if (timer_fetch(HeartbeatGND) > GND_TIMEOUT)
   {
 #ifdef TELEMETRY_ENABLED
     config |= option(Lost_GroundStation);
@@ -479,7 +490,7 @@ void create_recovery_task(void)
   }
 
   st = tx_timer_create(&ep_timeout, "Endpoints timeout",
-                       check_endpoints, 0, TX_TIMER_INITIAL,
+                       fc_timer_routine, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_NO_ACTIVATE);
 
   if (st != TX_SUCCESS) {

@@ -30,15 +30,17 @@ extern atomic_uint_fast32_t config;
 
 /* ------ TX Timer interrupt definitions ------ */
 
-#define FC_TIMEOUT_MS 4000
-#define GND_TIMEOUT_MS 4000
+/* Time is in ThreadX ticks. 1 tick = 10 ms */
+
+#define FC_TIMEOUT 300
+#define GND_TIMEOUT 300
 
 /* Expiration of timer that invokes timeout checks  */
 #define TX_TIMER_TICKS   50
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
-#define CO2_ASSERT_INTERVAL_MS  50
-#define REEF_ASSERT_INTERVAL_MS 50
+#define CO2_ASSERT_INTERVAL  50
+#define REEF_ASSERT_INTERVAL 50
 
 
 /* ------ Universal Flight Computer message ------ */
