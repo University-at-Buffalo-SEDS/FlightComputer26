@@ -24,12 +24,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 /* Includes ------------------------------------------------------------------*/
 #include "ux_api.h"
 #include "ux_stm32_config.h"
 #include "ux_device_class_cdc_acm.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
