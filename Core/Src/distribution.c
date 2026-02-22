@@ -53,13 +53,8 @@
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
 
-
-/* ------ Static ------ */
-
 /* Latest logged measurement */
-static struct measurement payload = {0};
-
-/* ------ Static ------ */
+struct measurement payload = {0};
 
 
 /* ------ Packet handling definitions ------ */
@@ -468,7 +463,7 @@ validate_baro(const struct baro *baro)
 /*
  * Call and aggregate statuses from all validator functions.
  */
-static inline enum message
+static inline enum message                          IREC26_unused
 validate_all(const struct measurement *buf)
 {
   return validate_baro(&buf->baro) |
@@ -568,6 +563,9 @@ static inline void pre_launch(void)
  */
 static inline void ascent_cycle(fu32 conf)
 {
+  fu32 st;
+  float dt;
+
   if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
   {
     /* Wait for IMU measurements */
@@ -575,7 +573,7 @@ static inline void ascent_cycle(fu32 conf)
     return;
   }
 
-  fu32 st = validate_imu(&payload.gyro, &payload.d.accl);
+  st = validate_imu(&payload.gyro, &payload.d.accl);
   /* Note to self: if plan to remove heartbeat, move this
    * inside if statement below */
   tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -586,7 +584,7 @@ static inline void ascent_cycle(fu32 conf)
   }
 
   compensate_accl(&payload.d.accl);
-  float dt = fsec(timer_exchange(AscentKF));
+  dt = fsec(timer_exchange(AscentKF));
 
   // call predict w/ imu & dt
 
@@ -609,7 +607,30 @@ static inline void ascent_cycle(fu32 conf)
  */
 static inline void descent_cycle(fu32 conf)
 {
-  
+  fu32 st;
+  float dt;
+
+  if (!dma_fetch_baro(&payload.baro)) {
+    tx_thread_relinquish();
+    return;
+  }
+
+  st = validate_baro(&payload.baro);
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+#ifdef GPS_AVAILABLE
+  if (conf & option(GPS_Available) &&
+      !fetch_gps_data(&payload.d.gps))
+  {
+    tx_thread_relinquish();
+    return;
+  }
+#endif // GPS_AVAILABLE
+
+  // call descent filter
 }
 
 /*

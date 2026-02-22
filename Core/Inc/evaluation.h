@@ -8,18 +8,21 @@
 #include "dma.h"
 #include "platform.h"
 
+extern TX_QUEUE evaluation_stage;
+
 
 /* ------ Local configuration ------ */
 
 #define MIN_SAMP_ASCENT   3
 #define MIN_SAMP_BURNOUT  3
-#define MIN_SAMP_DESCENT  3
-#define MIN_SAMP_REEF     2
-#define MIN_SAMP_LANDED   3
+#define MIN_SAMP_DESCENT  2
+#define MIN_SAMP_REEF     1
+#define MIN_SAMP_LANDED   6
 
 /* Delay in ThreadX ticks */
-#define LAUNCH_CONFIRM_DELAY 25
-#define APOGEE_CONFIRM_DELAY 75
+#define LAUNCH_CONFIRM_DELAY 20
+#define APOGEE_CONFIRM_DELAY 40
+#define LANDED_GPS_INTERVAL  200 
 
 /* Measurement thresholds:
  * Altitude         ALT     meters  
@@ -93,7 +96,9 @@ struct serial state_vec {
   struct coords w;
 };
 
-/// Piece of measm_z accepted by Descent filter
+/*
+ * Piece of measm_z accepted by Descent filter.
+ */
 struct serial descent {
   union {
     struct coords accl;
@@ -103,14 +108,17 @@ struct serial descent {
   float alt;
 };
 
-/// Full measurement excluding baro temperature and pressure.
+/*
+ * Full measurement excluding baro temperature and pressure.
+ */
 struct serial measm_z {
   struct coords gyro;
   struct descent d;
 };
 
-
-/// In-flight rocket states only since used internally.
+/*
+ * In-flight rocket states only since used internally.
+ */
 enum state {
   Suspended,
   Idle,
@@ -122,12 +130,6 @@ enum state {
   Reefing,
   Landed,
 };
-
-
-/* ------ Public API ------ */
-
-/// Enqueues raw data set for processing by KF.
-void evaluation_put(const struct measurement *buf);
 
 
 #endif // EVALUATION_H

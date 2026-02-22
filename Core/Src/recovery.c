@@ -56,9 +56,8 @@ extern volatile fu8 renorm_step_mask;
 
 /* ------ Local definitions ------ */
 
-#define QSIZE 128
-
-static tx_align enum message q_pool[QSIZE] = {0};
+#define RECVQ_SIZE 64
+static tx_align enum message recvq_pool[RECVQ_SIZE] = {0};
 
 static TX_TIMER ep_timeout;
 
@@ -456,10 +455,21 @@ static void fc_timer_routine(ULONG id)
 #endif // TELEMETRY_ENABLED
   }
 
-  if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
+  if (config & option(GPS_Available))
   {
-    enum message cmd = fc_mask(GPS_Delayed);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
+    {
+      enum message cmd = fc_mask(GPS_Delayed);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    }
+  }
+  else
+  {
+    if (timer_fetch(HeartbeatRF) < TX_TIMER_TICKS)
+    {
+      /* GPS became alive, announce */
+      config |= option(GPS_Available);
+    }
   }
 }
 
@@ -483,7 +493,8 @@ void create_recovery_task(void)
     log_die("FC:RECV: failed to create task (%u)", st);
   }
 
-  st = tx_queue_create(&shared, "FC messages", 1, &q_pool, sizeof q_pool);
+  st = tx_queue_create(&shared, "RECVQ", 1, &recvq_pool,
+                                     sizeof recvq_pool);
 
   if (st != TX_SUCCESS) {
     log_die("FC:RECV: failed to create queue (%u)", st);

@@ -158,6 +158,8 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define tx_align __attribute__((aligned(sizeof(ULONG))))
 
+#define IREC26_unused __attribute__((unused))
+
 
 /* ------ HAL Aliases ------ */
 

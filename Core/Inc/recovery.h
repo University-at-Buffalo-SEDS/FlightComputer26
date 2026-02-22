@@ -7,11 +7,11 @@
 
 #include "platform.h"
 
-/// Header declaration of the recovery queue
 extern TX_QUEUE shared;
-
-/// Run time configuration mask
 extern atomic_uint_fast32_t config;
+
+/* Length of task identifier */
+#define mlen(len) (len + sizeof(id))
 
 
 /* ------ Thresholds for bad/delayed/outdated data reports  ------ */
