@@ -138,6 +138,23 @@ int main(void)
 #ifdef DMA_LOCAL_TEST
   HAL_Delay(200);
 
+  __NVIC_DisableIRQ(Baro_EXTI);
+  __NVIC_DisableIRQ(Gyro_EXTI_1);
+  __NVIC_DisableIRQ(Gyro_EXTI_2);
+  __NVIC_DisableIRQ(Accl_EXTI_1);
+  __NVIC_DisableIRQ(Accl_EXTI_2);
+
+  /* Init with default configs */
+  init_baro(NULL);
+  init_gyro(NULL);
+  init_accl(NULL);
+
+  __NVIC_EnableIRQ(Baro_EXTI);
+  __NVIC_EnableIRQ(Gyro_EXTI_1);
+  __NVIC_EnableIRQ(Gyro_EXTI_2);
+  __NVIC_EnableIRQ(Accl_EXTI_1);
+  __NVIC_EnableIRQ(Accl_EXTI_2);
+
   struct measurement k = {0};
   fu8 dma_api = 0;
 
