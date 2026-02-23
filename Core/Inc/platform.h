@@ -30,6 +30,8 @@
 #include <string.h>
 #include <math.h>
 
+/* ------ Bundled std headers used ------ */
+
 
 /* ------ Pre-compilation checks ------ */
 
@@ -38,7 +40,7 @@
 #endif
 
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-  #warning "!C23 * !GNUC -> Hacky types and variadics."
+  #error "This platform requires GNU C11 or ISO C23."
 #endif
 
 #define CM_PTR 0xFFFFFFFFUL
@@ -48,6 +50,8 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 #ifndef STM32H523xx
   #error "STM32H523xx series MCU required."
 #endif
+
+/* ------ Pre-compilation checks ------ */
 
 
 /* ------ Platform integer aliases ----- */
@@ -64,6 +68,8 @@ typedef int_fast8_t  fi8;
 typedef int_fast16_t fi16;
 typedef int_fast32_t fi32;
 typedef int_fast64_t fi64;
+
+/* ------ Platform integer aliases ----- */
 
 
 /* ------ Atomic ops and MO aliases ------ */
@@ -87,6 +93,8 @@ enum seds_atomic_mo {
 #define fetch_xor   atomic_fetch_xor_explicit
 #define cas_weak    atomic_compare_exchange_weak_explicit
 #define cas_strong  atomic_compare_exchange_strong_explicit
+
+/* ------ Atomic ops and MO aliases ------ */
 
 
 /* ------ ARM fast math bundled library ------ */
@@ -120,6 +128,8 @@ typedef arm_matrix_instance_f32 matrix;
  * Maybe because it's *floating point*. */
 #define xinit     arm_mat_init_f32
 
+/* ------ ARM fast math bundled library ------ */
+
 
 /* ------ Task utilities ------ */
 
@@ -137,12 +147,16 @@ typedef arm_matrix_instance_f32 matrix;
 
 #endif // DMB support
 
+/* ------ Task utilities ------ */
 
-/* ------ FC '26 GPIO port maps ------ */
+
+/* ------ IREC 2026 GPIO port maps ------ */
 
 #define PYRO_PORT GPIOB
 #define CO2_PIN   GPIO_PIN_5
 #define REEF_PIN  GPIO_PIN_6
+
+/* ------ IREC 2026 GPIO port maps ------ */
 
 
 /* ------ ThreadX API includes ------ */
@@ -151,12 +165,18 @@ typedef arm_matrix_instance_f32 matrix;
 #include "tx_port.h"
 #include "FC-Threads.h"
 
+/* ------ ThreadX API includes ------ */
+
 
 /* ------ Type attributes ------ */
 
 #define serial __attribute__((packed, aligned(4)))
 
 #define tx_align __attribute__((aligned(sizeof(ULONG))))
+
+#define IREC26_unused __attribute__((unused))
+
+/* ------ Type attributes ------ */
 
 
 /* ------ HAL Aliases ------ */
@@ -177,21 +197,25 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low()                                               \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
+#define co2_low(conf)                                                   \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET);
 
-#define co2_high()                                              \
-  do {                                                          \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
-    /* Always guarantee all tasks observe PYRO fire */          \
-    fetch_or(&config, option(Parachute_Deployed), Rel);  \
+#define co2_high(conf)                                                  \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);                \
+    timer_update(AssertCO2);                                            \
+    fetch_or(conf, option(Parachute_Deployed | CO2_Asserted), Rel);     \
   } while (0)
 
-#define reef_low()                                              \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
+#define reef_low(conf)                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET);
 
-#define reef_high()                                             \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
+#define reef_high(conf)                                                 \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET);               \
+    timer_update(AssertREEF);                                           \
+    fetch_or(conf, option(REEF_Asserted), Rel);                         \
+  } while (0)
 
 /* Data cache calls */
 
@@ -212,6 +236,8 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define dma_spi_txrx(txbuf, rxbuf, size)              \
   (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
                                (rxbuf), (size)))
+
+/* ------ HAL Aliases ------ */
 
 
 /* ------ Sensor drivers and data collection ------ */
@@ -283,6 +309,8 @@ struct serial coords { float x, y, z; };
 
 #define F16(b0, b1) ((float)I16(b0, b1))
 
+/* ------ Sensor drivers and data collection ------ */
+
 
 /* ------ Telemetry API abstraction ------ */
 
@@ -316,8 +344,8 @@ struct serial coords { float x, y, z; };
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
-#else
-#if defined(__GNUC__)
+#else 
+#if defined (__GNUC__)
 
 #define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt, ##__VA_ARGS__)
@@ -327,17 +355,7 @@ struct serial coords { float x, y, z; };
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
-#else /* Does not support 0 variadic arguments */
-
-#define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, __VA_ARGS__)
-
-#define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, __VA_ARGS__)
-
-#define log_die(fmt, ...) die(fmt, __VA_ARGS__)
-
-#endif // GNU C
+#endif // GNUC
 #endif // >= C23
 
 /* Ignition request from the Valve board over telemetry */
@@ -408,19 +426,6 @@ static inline SedsResult request_ignition()
     }                                                         \
   } while (0)
 
-#else /* Does not support 0 variadic arguments */
-
-#define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_ARGS__)
-
-#define log_die(fmt, ...)                                     \
-  do {                                                        \
-    while (1) {                                               \
-      fprintf(stderr, fmt, __VA_ARGS__);                      \
-      HAL_Delay(1000);                                        \
-    }                                                         \
-  } while (0)
-
 #endif // GNU C
 #endif // >= C23
 
@@ -430,6 +435,8 @@ static inline SedsResult request_ignition()
   ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
 
 #endif // TELEMETRY_ENABLED
+
+/* ------ Telemetry API abstraction ------ */
 
 
 #endif // PLATFORM_H
