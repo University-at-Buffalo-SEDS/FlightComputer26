@@ -9,6 +9,7 @@
 #include "platform.h"
 
 extern TX_QUEUE evaluation_stage;
+extern struct measurement payload;
 
 
 /* ------ Local configuration ------ */
@@ -75,6 +76,8 @@ extern TX_QUEUE evaluation_stage;
 #define lon_within_launch_site(k)                         \
   (fabsf((float)(k) - LAUNCH_SITE_LON) <= GPS_TOLER)
 
+/* ------ Local configuration ------ */
+
 
 /* ------ Put/fetch algorithm definitions ------ */
 
@@ -82,6 +85,8 @@ extern TX_QUEUE evaluation_stage;
 #define RING_MASK (RING_SIZE - 1)
 
 #define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
+
+/* ------ Put/fetch algorithm definitions ------ */
 
 
 /* ------ Data containers ------ */
@@ -130,6 +135,8 @@ enum state {
   Reefing,
   Landed,
 };
+
+/* ------ Data containers ------ */
 
 
 #endif // EVALUATION_H

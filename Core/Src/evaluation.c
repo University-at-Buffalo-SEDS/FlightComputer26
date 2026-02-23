@@ -40,8 +40,6 @@ TX_QUEUE evaluation_stage;
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
-extern struct measurement payload;
-
 
 /* ------ Global and static storage ------ */
 
@@ -324,6 +322,8 @@ crew_send_coords(fu32 mode)
 
   log_msg(id "Landed at coordinates:", mlen(22));
   log_measurement(SEDS_DT_GPS_DATA, &payload.d.gps);
+
+  tx_thread_sleep(LANDED_GPS_INTERVAL);
 
 #else
   return;

@@ -44,23 +44,23 @@ TX_QUEUE shared;
 TX_THREAD recovery_task;
 ULONG recovery_stack[RECV_STACK_ULONG];
 
-/// Last recorded time for each timer user.
+
+/* ------ Global and static storage ------ */
+
+/* Last recorded time for each timer user. */
 volatile fu32 local_time[Time_Users] = {0};
 
-/// Run time configuration mask.
+/* Run time configuration mask. */
 atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
-/// Defined and used by Ascent filter.
-extern volatile fu8 renorm_step_mask;
-
-
-/* ------ Local definitions ------ */
-
+/* Recovery queue pool */
 #define RECVQ_SIZE 64
 static tx_align enum message recvq_pool[RECVQ_SIZE] = {0};
 
-static TX_TIMER ep_timeout;
+/* Monitors timeouts and deployment events */
+static TX_TIMER monotonic_checks;
 
+/* Static raw data status counters */
 static volatile fu16 failures = 0;
 
 static fu16 to_abort  = TO_ABORT;
@@ -69,20 +69,35 @@ static fu16 to_reinit = TO_REINIT;
 static fu16 gps_delay_count = 0;
 static fu16 gps_malform_count = 0;
 
+/* ------ Global and static storage ------ */
+
 
 /* ------ Recovery logic ------ */
 
-
-/// Synchronously initializes each sensor.
+/*
+ * Synchronously initializes each sensor.
+ */
 static inline void try_reinit_sensors(void)
 {
   enum sensor faulty = Sensors;
 
   log_msg("FC:RECV: trying to reinit sensors", 35);
 
+  struct baro_config *cref = NULL;
+  struct baro_config precise = {
+    .osr_t = BARO_OSR_X1,
+    .osr_p = BARO_OSR_X8,
+    .odr = BARO_DEFAULT_ODR_SEL,
+    .iir_coef = BARO_IIR_COEF_15,
+  };
+
+  if (config & option(Using_Ascent_KF)) {
+    cref = &precise;
+  }
+  
   __disable_irq();
 
-  if (init_baro(NULL) != HAL_OK) {
+  if (init_baro(cref) != HAL_OK) {
     faulty += (Sensor_Baro + 1);
   }
 
@@ -101,12 +116,15 @@ static inline void try_reinit_sensors(void)
   } else {
     log_err("FC:RECV: reinit failed (%d)", faulty);
   }
+
+  config |= option(Reinit_Attempted);
 }
 
-
-/// Reset Distribution and Evaluation tasks. Grants Telemetry
-/// task full scheduling time. If launch signal is sent after
-/// abortion, the FC will attempt to resume normal opertaion.
+/*
+ * Reset Distribution and Evaluation tasks. Grants Telemetry
+ * task full scheduling time. If launch signal is sent after
+ * abortion, the FC will attempt to resume normal opertaion.
+ */
 static inline void auto_abort(void)
 {
   tx_thread_reset(&evaluation_task);
@@ -132,9 +150,10 @@ static inline void auto_abort(void)
   }
 }
 
-
-/// Signals other tasks to not fetch or use GPS data.
-/// Reinitializes barometer with larger oversampling rates.
+/*
+ * Signals other tasks to not fetch or use GPS data.
+ * Reinitializes barometer with larger oversampling rates.
+ */
 static inline void barometer_fallback(void)
 {
   config &= ~option(GPS_Available);
@@ -154,8 +173,9 @@ static inline void barometer_fallback(void)
   }
 }
 
-
-/// Process general command from either endpoint.
+/*
+ * Process general command from either endpoint.
+ */
 static inline void process_action(enum message cmd)
 {
   UINT eval_old_pt;
@@ -227,8 +247,9 @@ static inline void process_action(enum message cmd)
   }
 }
 
-
-/// Apply or revoke passed runtime configuration option.
+/*
+ * Applies or revokes passed runtime configuration option.
+ */
 static inline void process_config(enum message code)
 {
   if (code & KF_Operation_Mode)
@@ -259,8 +280,9 @@ static inline void process_config(enum message code)
   }
 }
 
-
-/// Checks whether raw data report is OK.
+/*
+ * Checks whether raw data report is OK.
+ */
 static inline void process_report(enum message code)
 {
   if (code != Sensor_Measm_Code)
@@ -280,8 +302,9 @@ static inline void process_report(enum message code)
   }
 }
 
-
-/// Handles delayed or malformed GPS data report.
+/*
+ * Handles delayed or malformed GPS data report.
+ */
 static inline void process_gps_code(enum message code)
 {
   switch (code) {
@@ -317,8 +340,9 @@ static inline void process_gps_code(enum message code)
   }
 }
 
-
-/// Decodes universal FC message from an endpoint {FC, RF, GND}.
+/*
+ * Decodes universal FC message from an endpoint {FC, RF, GND}.
+ */
 static inline void decode_message(enum message msg)
 {
   if (msg & GroundStation_Heartbeat)
@@ -349,32 +373,10 @@ static inline void decode_message(enum message msg)
   }
 }
 
+/* ------ Recovery logic ------ */
 
-/// Suspend on blocking queue until a new message arrives.
-void recovery_entry(ULONG input)
-{
-  (void) input;
 
-  for (enum fc_timer k = 0; k < Time_Users; ++k) {
-    timer_update(k);
-  }
-
-  tx_timer_activate(&ep_timeout);
-
-  task_loop (DO_NOT_EXIT)
-  {
-    enum message msg;
-
-    /* Thread suspension */
-    UINT st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
-
-    if (st != TX_SUCCESS) {
-      continue;
-    }
-
-    decode_message(msg);
-  }
-}
+/* ------ Timer ------ */
 
 /*
  * This routine is called from ThreadX interrupt
@@ -438,6 +440,7 @@ static void fc_timer_routine(ULONG id)
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT)
   {
 #ifdef TELEMETRY_ENABLED
+    /* Vigilant mode */
     config |= option(Lost_GroundStation);
     config |= option(Monitor_Altitude);
     config |= option(Reset_Failures);
@@ -445,6 +448,7 @@ static void fc_timer_routine(ULONG id)
     failures = 0;
 
 #else /* FOR TESTS ONLY */
+    /* Auto "launch" on first timeout */
     static fu8 test_launched = 0;
 
     if (!test_launched) {
@@ -473,8 +477,42 @@ static void fc_timer_routine(ULONG id)
   }
 }
 
+/* ------ Timer ------ */
 
-/// Creates a non-preemptive Recovery Task with defined parameters.
+
+/* ------ Recovery task ------ */
+
+/*
+ * Suspends on blocking queue until a new message arrives.
+ */
+void recovery_entry(ULONG input)
+{
+  (void) input;
+
+  for (enum fc_timer k = 0; k < Time_Users; ++k) {
+    timer_update(k);
+  }
+
+  tx_timer_activate(&monotonic_checks);
+
+  task_loop (DO_NOT_EXIT)
+  {
+    enum message msg;
+
+    /* Thread suspension */
+    UINT st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
+
+    if (st != TX_SUCCESS) {
+      continue;
+    }
+
+    decode_message(msg);
+  }
+}
+
+/*
+ * Creates a non-preemptive Recovery Task with defined parameters.
+ */
 void create_recovery_task(void)
 {
   UINT st = tx_thread_create(&recovery_task,
@@ -500,7 +538,7 @@ void create_recovery_task(void)
     log_die("FC:RECV: failed to create queue (%u)", st);
   }
 
-  st = tx_timer_create(&ep_timeout, "Endpoints timeout",
+  st = tx_timer_create(&monotonic_checks, "RECVT",
                        fc_timer_routine, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_NO_ACTIVATE);
 
@@ -508,3 +546,5 @@ void create_recovery_task(void)
     log_die("FC:RECV: failed to create timer (%u)", st);
   }
 }
+
+/* ------ Recovery task ------ */

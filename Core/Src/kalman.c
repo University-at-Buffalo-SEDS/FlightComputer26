@@ -7,10 +7,11 @@
  *   - Covariance initialization functions;
  *	 - Context and type-specifc math functions.
  *
- * The entirety of logic in this file is executed
- * within context of the Evaluation task, which
- * invokes one of two filter based on flight state.
- * All invokations are performed synchronously.
+ * The entirety of logic in this file is executed within
+ * the context of either Distribution Evaluation task,
+ * which invoke parts of one of two filters based on the
+ * flight state and global run time configuration. All
+ * invokationsare performed synchronously.
  *
  * This file does not implement linear algebra functions,
  * and instead casts structs to column vectors and passes
@@ -29,14 +30,21 @@
 #include "kalman.h"
 #include "dma.h"
 
-/// Number of iterations - 1 for quaternion matrix
-/// renormalization. Set by Recovery task.
+
+/* ------ Global and static storage ------ */
+
+/* Number of iterations - 1 for quaternion matrix
+ * renormalization. Set by Recovery task. */
 volatile fu8 renorm_step_mask = RENORM_STEP;
+
+/* ------ Global and static storage ------ */
 
 
 /* ------ Local math functions ------ */
 
-/// Inverse square root function using bithack.
+/*
+ * Inverse square root function using bithack.
+ */
 static inline float invsqrtf(float x)
 {
   /* Brought right from Quake 3 Arena! */
@@ -51,10 +59,14 @@ static inline float invsqrtf(float x)
   return k.f;
 }
 
+/* ------ Local math functions ------ */
+
 
 /* ------ KF helper functions ------ */
 
-/// Transforms state vector into sensor measurement.
+/*
+ * Transforms state vector into sensor measurement.
+ */
 static inline void
 measurement(const struct state_vec *restrict vec,
             struct measm_z *restrict out)
@@ -149,8 +161,10 @@ static inline void predict(struct state_vec *vec, const float dt)
   ++iteration;
 }
 
+/* ------ KF helper functions ------ */
 
-/* ------ Static buffers ------ */
+
+/* ------ Shared static buffers ------ */
 
 # if ASC_STAT > DESC_STAT 
 #   define L ASC_STAT
@@ -170,10 +184,15 @@ static float A[L][L] = {0};
 static float R[M][M] = {0};
 static float H[M][M] = {0};
 
+/* ------ Shared static buffers ------ */
+
 
 /* ------ Descent Kalman filter ------ */
 
-/// Sets descent filter values in shared buffers.
+/*
+ * Sets descent filter values in shared buffers.
+ * Called by Evaluation task when APOGEE state is reached.
+ */
 void initialize_descent(void)
 {
   memset(P, 0, sizeof P);
@@ -200,10 +219,11 @@ void initialize_descent(void)
 #define DESC_MASK (DESC_STAT - 1)
 #define APEX_A    (DESC_MASK - 2)
 
-/// descentKF.m
-void
-descentKF(struct state_vec *x_0, struct state_vec *x_f,
-          const struct descent *z)
+/*
+ * descentKF.m
+ */
+void descentKF(struct state_vec *x_0, struct state_vec *x_f,
+               const struct descent *z)
 {
   static matrix stcov = {DESC_STAT, DESC_STAT, &P[0][0]};
   static matrix noise = {DESC_STAT, DESC_STAT, &Q[0][0]};
@@ -224,16 +244,20 @@ descentKF(struct state_vec *x_0, struct state_vec *x_f,
 	// TODO
 }
 
+/* ------ Descent Kalman filter ------ */
 
-/* ------ Ascent (unscented) Kalman filter ------ */
 
+/* ------ Ascent Kalman filter ------ */
 
 #define SIGMA_GYRO 0.1f
 #define SIGMA_GYRO_Z 1e-6f
 #define SIGMA_ACC 0.1f
 #define SIGMA_ALT 10.0f
 
-/// Sets ascent filter values in shared buffers.
+/*
+ * Sets ascent filter values in shared buffers.
+ * Called during boot by Evaluation task.
+ */
 void initialize_ascent(void) 
 {
   memset(P, 0, sizeof P);
@@ -267,7 +291,6 @@ void initialize_ascent(void)
   R[6][6] = SIGMA_ALT * SIGMA_ALT;
 }
 
-
 #define ALPHA 1.0f
 #define BETA  2.0f
 #define KAPPA (1.5f * L)
@@ -280,10 +303,11 @@ void initialize_ascent(void)
 #define W_0_c (float)(W_0_a + 1.0f - ALPHA*ALPHA + BETA)
 #define W_l_c W_l_a
 
-/// ascentKF.m
-void
-ascentKF(struct state_vec *x_0, struct state_vec *x_f,
-         const struct measm_z *z)
+/*
+ * ascentKF.m
+ */
+void ascentKF(struct state_vec *x_0, struct state_vec *x_f,
+              const struct measm_z *z)
 {
 	static matrix stcov = {ASC_STAT, ASC_STAT, &P[0][0]};
   static matrix noise = {ASC_STAT, ASC_STAT, &Q[0][0]};
@@ -309,3 +333,5 @@ ascentKF(struct state_vec *x_0, struct state_vec *x_f,
 
   // TODO
 }
+
+/* ------ Ascent Kalman filter ------ */

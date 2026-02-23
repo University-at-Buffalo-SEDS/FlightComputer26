@@ -10,11 +10,8 @@
 extern TX_QUEUE shared;
 extern atomic_uint_fast32_t config;
 
-/* Length of task identifier */
-#define mlen(len) (len + sizeof(id))
 
-
-/* ------ Thresholds for bad/delayed/outdated data reports  ------ */
+/* ------ Thresholds for data reports  ------ */
 
 #define TO_REINIT 20
 #define TO_ABORT  40
@@ -26,6 +23,8 @@ extern atomic_uint_fast32_t config;
 #define MAX_GPS_DELAYS 16
 #define GPS_TIME_DRIFT_MS 40
 #define GPS_MAX_MALFORMED 15
+
+/* ------ Thresholds for data reports  ------ */
 
 
 /* ------ TX Timer interrupt definitions ------ */
@@ -41,6 +40,8 @@ extern atomic_uint_fast32_t config;
 
 #define CO2_ASSERT_INTERVAL  50
 #define REEF_ASSERT_INTERVAL 50
+
+/* ------ TX Timer interrupt definitions ------ */
 
 
 /* ------ Universal Flight Computer message ------ */
@@ -67,15 +68,7 @@ extern atomic_uint_fast32_t config;
  * case values are 1..N). The lowest category is
  * additive, and therefore follows exponential pattern.
  */
-
-#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
 enum message : uint32_t {
-
-#else
-enum message {
-
-#endif // GNU C + C23
-
   Sensor_Measm_Code = 0,
 
   Bad_Altitude   = 1u,
@@ -164,26 +157,17 @@ enum message {
   Invalid_Message = UINT32_MAX
 };
 
-
-/* For non-GNU C < 23, prevent UB at compile-time */
-
-#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-
-#define typeeq(a, b) __builtin_types_compatible_p(a, b)
-
-_Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
-_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
-
-#endif // !GNU C * < C23
+/* ------ Universal Flight Computer message ------ */
 
 
-/* ------ Endpoint identifiers: FC ------ */
+/* ------ Helper macros ------ */
 
+/* Length of task identifier */
+#define mlen(len) (len + sizeof(id))
+
+/* Endpoint identifier: FC */
 #define fc_mask(message)    ((message) | FC_Identifier)
 #define fc_unmask(message)  ((message) & ~FC_Identifier)
-
-
-/* ------ Statically unflag option value ------ */
 
 /* When sending commands TO decode_message() */
 #define revoke(opt) ((opt) | Revoke_Option)
@@ -191,11 +175,13 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 /* When manipulating config OUTSIDE decode_message() */
 #define option(opt) ((opt) & ~Runtime_Configuration)
 
+/* ------ Helper macros ------ */
+
 
 /* ------ User default configuration ------ */
 
-/// Run time config options applied on boot.
-/// Users are welcome to edit the defaults here.
+/* Run time config options applied on boot.
+ * Users are welcome to edit the defaults here. */
 #define DEFAULT_OPTIONS ( (fu32) (0                   \
                           | Consecutive_Samples       \
                           | Renormalize_Quat_1        \
@@ -205,6 +191,8 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
                           | GPS_Available             \
                           | Using_Ascent_KF           \
                         ) )
+
+/* ------ User default configuration ------ */
 
 
 /* ------ On-board relative timer implementation ------ */
@@ -223,15 +211,16 @@ enum fc_timer {
   Time_Users
 };
 
-/// Last recorded time for each UKF timer user.
-/// Defined in recovery.c to avoid multiple linkage.
-/// u32 wrap is not handled (flight assumed < 49 days :D).
+/* Last recorded time for each UKF timer user.
+ * Defined in recovery.c to avoid multiple linkage.
+ * u32 wrap is not handled (flight assumed < 49 days). */
 extern volatile fu32 local_time[Time_Users];
 
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update,
-/// and set local time to current HAL tick (ms).
+/*
+ * Report time elapsed since last call to either 
+ * timer_fetch_update or timer_update,
+ * and set local time to current HAL tick (ms).
+ */
 static inline fu32 timer_exchange(enum fc_timer u)
 {
   fu32 prev = local_time[u];
@@ -240,19 +229,24 @@ static inline fu32 timer_exchange(enum fc_timer u)
 }
 
 
-/// Set local time to current HAL tick (ms).
+/*
+ * Set local time to current HAL tick (ms).
+ */
 static inline void timer_update(enum fc_timer u)
 {
   local_time[u] = now_ms();
 }
 
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update.
+/*
+ * Report time elapsed since last call to either 
+ * timer_fetch_update or timer_update.
+ */
 static inline fu32 timer_fetch(enum fc_timer u)
 {
   return now_ms() - local_time[u];
 }
+
+/* ------ On-board relative timer implementation ------ */
 
 
 #endif // RECOVERY_H

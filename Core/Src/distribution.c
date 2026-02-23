@@ -62,13 +62,7 @@ struct measurement payload = {0};
 #ifdef TELEMETRY_ENABLED
 #ifdef TELEMETRY_CMD_COMPAT
 
-#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
 enum remote_cmd_compat : uint8_t {
-
-#else
-enum remote_cmd_compat {
-
-#endif // GNU C + C23
 
   /* Matches 'Actionable_Decrees' */
   Compat_Deploy_Parachute,
@@ -105,11 +99,6 @@ enum remote_cmd_compat {
 
   Compat_Messages
 };
-
-#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-  _Static_assert(sizeof(enum remote_cmd_compat) == sizeof(uint8_t), "");
-#endif
-
 
 /* O(1) map between byte code and FC message */
 static const enum message extmap[Compat_Messages] = {
@@ -285,11 +274,13 @@ validate_gps_serial(const uint8_t *data, size_t len)
   }
   else
   {
-    if (load(&config, Rlx) & option(Launch_Triggered)) {
-      rep |= validate_gps_absolute((const struct coords *)data);
-    }
-    else {
-      rep |= validate_gps_relative((const struct coords *)data);
+    fu32 conf = load(&config, Acq);
+
+    if (conf & option(Validate_Measms))
+    {
+      rep |= conf & option(Launch_Triggered)
+          ? validate_gps_absolute((const struct coords *)data)
+          : validate_gps_relative((const struct coords *)data);
     }
   }
 
@@ -416,27 +407,31 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
  * IMU sanity check against BMI088 data range.
  */
 static inline enum message
-validate_imu(const struct coords *gyro, const struct coords *accl)
+validate_imu(const struct coords *gyro,
+             const struct coords *accl, fu32 conf)
 {
   enum message st = fc_mask(Sensor_Measm_Code);
 
-  if (accl->x > MAX_ACC || accl->x < MIN_ACC) {
-    st |= Bad_Accel_X;
-  }
-  if (accl->y > MAX_ACC || accl->y < MIN_ACC) {
-    st |= Bad_Accel_Y;
-  }
-  if (accl->z > MAX_ACC || accl->z < MIN_ACC) {
-    st |= Bad_Accel_Z;
-  }
-  if (gyro->x > MAX_DPS || gyro->x < MIN_DPS) {
-    st |= Bad_Attitude_X;
-  }
-  if (gyro->y > MAX_DPS || gyro->y < MIN_DPS) {
-    st |= Bad_Attitude_Y;
-  }
-  if (gyro->z > MAX_DPS || gyro->z < MIN_DPS) {
-    st |= Bad_Attitude_Z;
+  if (conf & option(Validate_Measms))
+  {
+    if (accl->x > MAX_ACC || accl->x < MIN_ACC) {
+      st |= Bad_Accel_X;
+    }
+    if (accl->y > MAX_ACC || accl->y < MIN_ACC) {
+      st |= Bad_Accel_Y;
+    }
+    if (accl->z > MAX_ACC || accl->z < MIN_ACC) {
+      st |= Bad_Accel_Z;
+    }
+    if (gyro->x > MAX_DPS || gyro->x < MIN_DPS) {
+      st |= Bad_Attitude_X;
+    }
+    if (gyro->y > MAX_DPS || gyro->y < MIN_DPS) {
+      st |= Bad_Attitude_Y;
+    }
+    if (gyro->z > MAX_DPS || gyro->z < MIN_DPS) {
+      st |= Bad_Attitude_Z;
+    }
   }
 
   return st;
@@ -446,15 +441,18 @@ validate_imu(const struct coords *gyro, const struct coords *accl)
  * Barometer sanity check against BMP390 data range.
  */
 static inline enum message
-validate_baro(const struct baro *baro)
+validate_baro(const struct baro *baro, fu32 conf)
 {
   enum message st = fc_mask(Sensor_Measm_Code);
 
-  if (baro->p > MAX_PRS || baro->p < MAX_PRS) {
-    st |= Bad_Pressure;
-  }
-  if (baro->alt > MAX_ALT || baro->alt < MIN_ALT) {
-    st |= Bad_Altitude;
+  if (conf & option(Validate_Measms))
+  {
+    if (baro->p > MAX_PRS || baro->p < MAX_PRS) {
+      st |= Bad_Pressure;
+    }
+    if (baro->alt > MAX_ALT || baro->alt < MIN_ALT) {
+      st |= Bad_Altitude;
+    }
   }
 
   return st;
@@ -463,11 +461,11 @@ validate_baro(const struct baro *baro)
 /*
  * Call and aggregate statuses from all validator functions.
  */
-static inline enum message                          IREC26_unused
-validate_all(const struct measurement *buf)
+static inline enum message                                  IREC26_unused
+validate_all(const struct measurement *buf, fu32 conf)
 {
-  return validate_baro(&buf->baro) |
-         validate_imu(&buf->gyro, &buf->d.accl);
+  return validate_baro(&buf->baro, conf) |
+         validate_imu(&buf->gyro, &buf->d.accl, conf);
 }
 
 /* ------ Sensor data sanity checks ------ */
@@ -489,6 +487,8 @@ static inline void pre_launch(void)
   float accum_baro = 0, accum_gps = 0;
   fu32 ctr_baro = 0, ctr_gps = 0;
 
+  fu32 conf;
+
   task_loop (load(&config, Acq) & option(Launch_Triggered))
   {
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
@@ -503,7 +503,9 @@ static inline void pre_launch(void)
       continue;
     }
 
-    st = validate_imu(&payload.gyro, &payload.d.accl);
+    conf = load(&config, Acq);
+
+    st = validate_imu(&payload.gyro, &payload.d.accl, conf);
 
     if (st == Sensor_Measm_Code) {
       compensate_accl(&payload.d.accl);
@@ -519,7 +521,7 @@ static inline void pre_launch(void)
       accum_baro += fsec(timer_exchange(IntervalBaro));
       ++ctr_gps;
 
-      st = validate_baro(&payload.baro);
+      st = validate_baro(&payload.baro, conf);
 
       if (st == Sensor_Measm_Code) {
         compensate_baro(&payload.baro);
@@ -573,7 +575,7 @@ static inline void ascent_cycle(fu32 conf)
     return;
   }
 
-  st = validate_imu(&payload.gyro, &payload.d.accl);
+  st = validate_imu(&payload.gyro, &payload.d.accl, conf);
   /* Note to self: if plan to remove heartbeat, move this
    * inside if statement below */
   tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -593,7 +595,7 @@ static inline void ascent_cycle(fu32 conf)
     return;
   }
 
-  st = validate_baro(&payload.baro);
+  st = validate_baro(&payload.baro, conf);
   if (st != fc_mask(Sensor_Measm_Code)) {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
@@ -615,7 +617,7 @@ static inline void descent_cycle(fu32 conf)
     return;
   }
 
-  st = validate_baro(&payload.baro);
+  st = validate_baro(&payload.baro, conf);
   if (st != fc_mask(Sensor_Measm_Code)) {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
