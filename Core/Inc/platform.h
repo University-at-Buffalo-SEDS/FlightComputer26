@@ -24,6 +24,7 @@
 
 /* ------ Bundled std headers used ------ */
 
+#include "stm32h523xx.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
@@ -181,6 +182,7 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* ------ HAL Aliases ------ */
 
+#include "stm32h5xx.h"
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_def.h"
 #include "stm32h5xx_hal_spi.h"
@@ -197,7 +199,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low(conf)                                                   \
+#define co2_low()                                                       \
     HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET);
 
 #define co2_high(conf)                                                  \
@@ -207,7 +209,7 @@ extern DCACHE_HandleTypeDef hdcache1;
     fetch_or(conf, option(Parachute_Deployed | CO2_Asserted), Rel);     \
   } while (0)
 
-#define reef_low(conf)                                                  \
+#define reef_low()                                                      \
     HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET);
 
 #define reef_high(conf)                                                 \
@@ -294,6 +296,12 @@ struct serial coords { float x, y, z; };
 #define GYRO_INT_PIN_1  GPIO_PIN_0
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7
+
+#define Baro_EXTI   EXTI7_IRQn
+#define Gyro_EXTI_1 EXTI0_IRQn
+#define Gyro_EXTI_2 EXTI1_IRQn
+#define Accl_EXTI_1 EXTI4_IRQn
+#define Accl_EXTI_2 EXTI5_IRQn
 
 /* Driver-specific data conversions */
 

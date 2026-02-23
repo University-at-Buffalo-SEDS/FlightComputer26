@@ -259,7 +259,7 @@ static inline void detect_reef(fu32 mode)
     {
       flight = Reefing;
       sampl = 0;
-      reef_low(&config);
+      reef_high(&config);
       log_msg(id "expanded parachute", mlen(18));
     }
   }

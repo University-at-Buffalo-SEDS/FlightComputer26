@@ -71,48 +71,71 @@ static fu16 to_reinit = TO_REINIT;
 static fu16 gps_delay_count = 0;
 static fu16 gps_malform_count = 0;
 
+/* Sensor configurations,
+ * modified and passed to init at runtime */
+
+static struct baro_config baro_conf = {
+  .osr_t = BARO_OSR_X1,
+  .osr_p = BARO_OSR_X2,
+  .odr = BARO_DEFAULT_ODR_SEL,
+  .iir_coef = BARO_IIR_COEF_0,
+};
+
+static struct gyro_config gyro_conf = {
+  .rng = Gyro_Range_2000Dps,
+  .bw  = Gyro_532Hz_ODR_2000Hz,
+};
+
+static struct accl_config accl_conf = {
+  .mode = Normal_1600Hz,
+  .rng  = Accl_Range_24g,
+};
+
 /* ------ Global and static storage ------ */
 
 
 /* ------ Recovery logic ------ */
 
 /*
- * Synchronously initializes each sensor.
+ * (Re)initializes indicated sensor(s). Disables
+ * DMA interrupt for the duration of reinitialization
+ * of concerned sensor. This is the place to perform
+ * sensitive initializations, because Recovery cannot
+ * be preempted by other tasks. As the driver init
+ * functions are idempotent, so is this function.
  */
-static inline void try_reinit_sensors(void)
+static inline void
+initialize_sensors(enum sensor_mask sensor)
 {
-  enum sensor faulty = Sensors;
+  enum sensor_mask fails = 0;
 
-  log_msg(id "trying to reinit sensors", mlen(24));
-
-  struct baro_config *cref = NULL;
-  struct baro_config precise = {
-    .osr_t = BARO_OSR_X1,
-    .osr_p = BARO_OSR_X8,
-    .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = BARO_IIR_COEF_15,
-  };
-
-  if (config & option(Using_Ascent_KF)) {
-    cref = &precise;
+  if (sensor & Init_Baro)
+  {
+    __NVIC_DisableIRQ(Baro_EXTI);
+    reinit(init_baro(&baro_conf), fails, Init_Baro);
+    __NVIC_EnableIRQ(Baro_EXTI);
   }
 
-  if (init_baro(cref) != HAL_OK) {
-    faulty += (Sensor_Baro + 1);
+  if (sensor & Init_Gyro)
+  {
+    __NVIC_DisableIRQ(Gyro_EXTI_1);
+    __NVIC_DisableIRQ(Gyro_EXTI_2);
+    reinit(init_gyro(&gyro_conf), fails, Init_Gyro);
+    __NVIC_EnableIRQ(Gyro_EXTI_1);
+    __NVIC_EnableIRQ(Gyro_EXTI_2);
   }
 
-  if (init_gyro(NULL) != HAL_OK) {
-    faulty += (Sensor_Gyro + 1);
-  }
-
-  if (init_accl(NULL) != HAL_OK) {
-    faulty += (Sensor_Accl + 2);
+  if (sensor & Init_Accl)
+  {
+    __NVIC_DisableIRQ(Accl_EXTI_1);
+    __NVIC_DisableIRQ(Accl_EXTI_2);
+    reinit(init_accl(&accl_conf), fails, Init_Accl);
+    __NVIC_EnableIRQ(Accl_EXTI_1);
+    __NVIC_EnableIRQ(Accl_EXTI_2);
   }
   
-  if (faulty == Sensors) {
-    log_msg(id "reinit OK", mlen(9));
-  } else {
-    log_err(id "reinit failed: %d", faulty);
+  if (fails != 0) {
+    log_err(id "some of requested reinit failed: %u", fails);
   }
 
   config |= option(Reinit_Attempted);
@@ -156,19 +179,15 @@ static inline void barometer_fallback(void)
 {
   config &= ~option(GPS_Available);
 
-  struct baro_config precise = {
-    .osr_t = BARO_OSR_X1,
-    .osr_p = BARO_OSR_X8,
-    .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = BARO_IIR_COEF_15,
-  };
+  baro_conf.osr_p = BARO_OSR_X8;
+  baro_conf.iir_coef = BARO_IIR_COEF_15;
 
-  /* This is the place to perform sensitive initializations,
-   * because Recovery cannot be preempted by other tasks. */
-  if (init_baro(&precise) == HAL_OK)
+  initialize_sensors(Init_Baro);
+  
+  if (!(config & option(GPS_Available)))
   {
     config |= option(Monitor_Altitude);
-    log_msg(id "lost GPS, in vigilant mode", mlen(26));
+    log_msg(id "Entered vigilant mode", mlen(26));
   }
 }
 
@@ -193,7 +212,7 @@ static inline void process_action(enum message cmd)
       return;
 
     case Reinit_Sensors:
-      try_reinit_sensors();
+      initialize_sensors(Init_All);
       return;
 
     case Launch_Signal:
@@ -292,7 +311,7 @@ static inline void process_report(enum message code)
     if (failures >= to_abort) {
       auto_abort();
     } else if (failures >= to_reinit) {
-      try_reinit_sensors();
+      initialize_sensors(Init_All);
     }
   }
   else if (config & option(Reset_Failures))
@@ -367,7 +386,6 @@ static inline void decode_message(enum message msg)
   }
   else if (fc_unmask(msg))
   {
-    timer_update(HeartbeatFC);
     process_report(fc_unmask(msg));
   }
 }
@@ -393,48 +411,19 @@ static void fc_timer_routine(ULONG timer_id)
 {
   (void) timer_id;
 
-  static fu8 restart_count = 0;
-
   if (config & option(CO2_Asserted) &&
       timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
   {
-    co2_low(&config);
+    co2_low();
     config &= ~option(CO2_Asserted);
   }
 
   if (config & option(REEF_Asserted) &&
       timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL)
   {
-    reef_low(&config);
+    reef_low();
     config &= ~option(REEF_Asserted);
   }
-
-  if (config & option(In_Aborted_State))
-  {
-    /* If aborted, no task is sending heartbeat */
-    timer_update(HeartbeatFC);
-  }
-  else if (timer_fetch(HeartbeatFC) > FC_TIMEOUT)
-  {
-    if (++restart_count >= MAX_RESTARTS) {
-      auto_abort();
-      return;
-    }
-
-    timer_update(HeartbeatFC);
-
-    if (config & option(Launch_Triggered))
-    {
-      tx_thread_reset(&evaluation_task);
-      tx_thread_resume(&evaluation_task);
-    }
-    else
-    {
-      tx_thread_reset(&distribution_task);
-      tx_thread_resume(&distribution_task);
-    }
-  }
-
   
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT)
   {
@@ -482,11 +471,18 @@ static void fc_timer_routine(ULONG timer_id)
 /* ------ Recovery task ------ */
 
 /*
+ * Upon entry, finishes Flight Computer boot sequence.
  * Suspends on blocking queue until a new message arrives.
+ * Not idempotent. This task must be start first and never
+ * reset until the device is powered off or rebooted.
  */
 void recovery_entry(ULONG input)
 {
   (void) input;
+
+  UINT st;
+
+  initialize_sensors(Init_All);
 
   for (enum fc_timer k = 0; k < Time_Users; ++k) {
     timer_update(k);
@@ -499,7 +495,7 @@ void recovery_entry(ULONG input)
     enum message msg;
 
     /* Thread suspension */
-    UINT st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
+    st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
 
     if (st != TX_SUCCESS) {
       continue;

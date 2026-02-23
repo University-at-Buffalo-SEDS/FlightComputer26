@@ -166,10 +166,8 @@ static inline enum message decode_cmd(const uint8_t *raw)
 #define GPS_RING_SIZE 4
 #define GPS_RING_MASK (GPS_RING_SIZE - 1)
 
-/*
- * 0-7:  amount of new entries,
- * 8-15: 'consumer lock' index. 0xFF when unlocked.
- */
+/* 0-7:  amount of new entries,
+ * 8-15: 'consumer lock' index. 0xFF when unlocked. */
 static atomic_uint_fast16_t gps_mask = 0xFF00u;
 static struct coords gps_ring[GPS_RING_SIZE] = {0};
 
@@ -488,17 +486,14 @@ validate_all(const struct measurement *buf, fu32 conf)
 static inline void pre_launch(void)
 {
   fu32 st = 0, counter = 0;
-  enum message cmd = fc_mask(0);
 
   float accum_baro = 0, accum_gps = 0;
   fu32 ctr_baro = 0, ctr_gps = 0;
 
-  fu32 conf;
+  fu32 conf = load(&config, Acq);
 
-  task_loop (load(&config, Acq) & option(Launch_Triggered))
+  task_loop (conf & option(Launch_Triggered))
   {
-    st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-
     if (st != TX_SUCCESS) {
       log_err(pilot "heartbeat failed: %u", st);
     }
@@ -508,8 +503,6 @@ static inline void pre_launch(void)
       tx_thread_relinquish();
       continue;
     }
-
-    conf = load(&config, Acq);
 
     st = validate_imu(&payload.gyro, &payload.d.accl, conf);
 
@@ -558,6 +551,8 @@ static inline void pre_launch(void)
         log_err(pilot "gathering gps every %f sec", accum_gps / ctr_gps);
       }
     }
+
+    conf = load(&config, Acq);
   }
 
   /* Request Valve board to ignite the engine. */

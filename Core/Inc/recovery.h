@@ -17,14 +17,38 @@ extern atomic_uint_fast32_t config;
 #define TO_ABORT  40
 #define RENORM_STEP 0
 
-#define MAX_RESTARTS 3
-
 #define GPS_DELAY_MS 125
 #define MAX_GPS_DELAYS 16
 #define GPS_TIME_DRIFT_MS 40
 #define GPS_MAX_MALFORMED 15
 
 /* ------ Thresholds for data reports  ------ */
+
+
+/* ------ Sensor reinitialization ------ */
+
+#define MAX_REINIT_ATTEMPTS 3
+
+enum sensor_mask : fu8 {
+  Init_Baro = 0x01,
+  Init_Gyro = 0x02,
+  Init_Accl = 0x04,
+
+  Init_All = (Init_Baro | Init_Gyro | Init_Accl)
+};
+
+#define reinit(fn, ctr, sens)             \
+  do {                                    \
+    fu8 k = 0;                            \
+    for (; k < MAX_REINIT_ATTEMPTS ||     \
+           (fn) != HAL_OK; ++k)           \
+           ;                              \
+    if (k >= MAX_REINIT_ATTEMPTS) {       \
+      (ctr) += (sens);                    \
+    }                                     \
+  } while (0)
+
+/* ------ Sensor reinitialization ------ */
 
 
 /* ------ TX Timer interrupt definitions ------ */
@@ -68,7 +92,7 @@ extern atomic_uint_fast32_t config;
  * case values are 1..N). The lowest category is
  * additive, and therefore follows exponential pattern.
  */
-enum message : uint32_t {
+enum message : fu32 {
   Sensor_Measm_Code = 0,
 
   Bad_Altitude   = 1u,
@@ -197,10 +221,9 @@ enum message : uint32_t {
 
 /* ------ On-board relative timer implementation ------ */
 
-enum fc_timer {
+enum fc_timer : fu8 {
   AscentKF,
   DescentKF,
-  HeartbeatFC,
   HeartbeatRF,
   HeartbeatGND,
   IntervalGPS,
