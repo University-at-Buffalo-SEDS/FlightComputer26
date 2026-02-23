@@ -47,6 +47,8 @@ ULONG recovery_stack[RECV_STACK_ULONG];
 
 /* ------ Global and static storage ------ */
 
+#define id "FC:RECV: "
+
 /* Last recorded time for each timer user. */
 volatile fu32 local_time[Time_Users] = {0};
 
@@ -81,7 +83,7 @@ static inline void try_reinit_sensors(void)
 {
   enum sensor faulty = Sensors;
 
-  log_msg("FC:RECV: trying to reinit sensors", 35);
+  log_msg(id "trying to reinit sensors", mlen(24));
 
   struct baro_config *cref = NULL;
   struct baro_config precise = {
@@ -94,8 +96,6 @@ static inline void try_reinit_sensors(void)
   if (config & option(Using_Ascent_KF)) {
     cref = &precise;
   }
-  
-  __disable_irq();
 
   if (init_baro(cref) != HAL_OK) {
     faulty += (Sensor_Baro + 1);
@@ -108,13 +108,11 @@ static inline void try_reinit_sensors(void)
   if (init_accl(NULL) != HAL_OK) {
     faulty += (Sensor_Accl + 2);
   }
-
-  __enable_irq();
   
   if (faulty == Sensors) {
-    log_msg("FC:RECV: reinit OK", 20);
+    log_msg(id "reinit OK", mlen(9));
   } else {
-    log_err("FC:RECV: reinit failed (%d)", faulty);
+    log_err(id "reinit failed: %d", faulty);
   }
 
   config |= option(Reinit_Attempted);
@@ -143,8 +141,8 @@ static inline void auto_abort(void)
   }
   else
   {
-    log_msg("FC:RECV: issued automatic abortion. "
-            "Waiting for commands or launch signal.", 75);
+    log_msg(id "aborted! Expecting commands "
+               "or launch signal.", mlen(45));
 
     config |= option(In_Aborted_State);
   }
@@ -169,7 +167,8 @@ static inline void barometer_fallback(void)
    * because Recovery cannot be preempted by other tasks. */
   if (init_baro(&precise) == HAL_OK)
   {
-    log_msg("FC:RECV: lost GPS, relying on barometer", 40);
+    config |= option(Monitor_Altitude);
+    log_msg(id "lost GPS, in vigilant mode", mlen(26));
   }
 }
 
@@ -189,7 +188,7 @@ static inline void process_action(enum message cmd)
       if (config & option(Parachute_Deployed)) {
         reef_high(&config);
       } else {
-        log_err("FC:RECV: you have to deploy parachute first");
+        log_err(id "rejected REEF before PYRO");
       }
       return;
 
@@ -200,8 +199,8 @@ static inline void process_action(enum message cmd)
     case Launch_Signal:
       if (gps_delay_count || gps_malform_count)
       {
-        log_err("FC:RECV: had %u GPS delays and %u malformed packets"
-                " during pre-launch stage. Counters are now reset.",
+        log_err(id "GPS: %u delayed and %u malformed "
+                "during pre-launch. Counters are reset.",
                 gps_delay_count, gps_malform_count);
 
         gps_delay_count = 0;
@@ -276,7 +275,7 @@ static inline void process_config(enum message code)
   }
   else
   {
-    log_err("FC:RECV: invalid config option: %u", (unsigned)code);
+    log_err(id "invalid config option: %u", (unsigned)code);
   }
 }
 
@@ -288,7 +287,7 @@ static inline void process_report(enum message code)
   if (code != Sensor_Measm_Code)
   {
     ++failures;
-    log_err("FC:RECV: bad sensor reading (%u)", (unsigned)code);
+    log_err(id "dirty data report (%u)", (unsigned)code);
 
     if (failures >= to_abort) {
       auto_abort();
@@ -312,7 +311,7 @@ static inline void process_gps_code(enum message code)
       ++gps_delay_count;
 
       if (config & option(Launch_Triggered)) {
-        log_err("FC:RECV: delayed GPS packet (%u)", gps_delay_count);
+        log_err(id "delayed GPS packet (%u)", gps_delay_count);
         return;
       }
 
@@ -326,7 +325,7 @@ static inline void process_gps_code(enum message code)
       ++gps_malform_count;
 
       if (config & option(Launch_Triggered)) {
-        log_err("FC:RECV: malformed GPS packet (%u)", gps_malform_count);
+        log_err(id "malformed GPS packet (%u)", gps_malform_count);
         return;
       }
 
@@ -364,7 +363,7 @@ static inline void decode_message(enum message msg)
   else if (msg & Spurious_Confirmations)
   {
     msg &= ~(FC_Identifier | Spurious_Confirmations);
-    log_err("FC:RECV: unconfirmed transition: %u", (unsigned)msg);
+    log_err(id "unconfirmed transition: %u", (unsigned)msg);
   }
   else if (fc_unmask(msg))
   {
@@ -390,9 +389,9 @@ static inline void decode_message(enum message msg)
  * This timer is also responsible for pulling CO2 and
  * REEF pins back low after either has been asserted.
  */
-static void fc_timer_routine(ULONG id)
+static void fc_timer_routine(ULONG timer_id)
 {
-  (void) id;
+  (void) timer_id;
 
   static fu8 restart_count = 0;
 
@@ -527,15 +526,17 @@ void create_recovery_task(void)
                              TX_NO_TIME_SLICE,
                              TX_AUTO_START);
 
+  const char *critical = "creation failure:";
+
   if (st != TX_SUCCESS) {
-    log_die("FC:RECV: failed to create task (%u)", st);
+    log_die(id "task %s %u", critical, st);
   }
 
   st = tx_queue_create(&shared, "RECVQ", 1, &recvq_pool,
                                      sizeof recvq_pool);
 
   if (st != TX_SUCCESS) {
-    log_die("FC:RECV: failed to create queue (%u)", st);
+    log_die(id "queue %s %u", critical, st);
   }
 
   st = tx_timer_create(&monotonic_checks, "RECVT",
@@ -543,7 +544,7 @@ void create_recovery_task(void)
                        TX_TIMER_TICKS, TX_NO_ACTIVATE);
 
   if (st != TX_SUCCESS) {
-    log_die("FC:RECV: failed to create timer (%u)", st);
+    log_die(id "timer %s %u", critical, st);
   }
 }
 

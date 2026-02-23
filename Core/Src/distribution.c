@@ -53,6 +53,9 @@
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
 
+#define id    "FC:DIST: "
+#define pilot "PILOT: "
+
 /* Latest logged measurement */
 struct measurement payload = {0};
 
@@ -60,6 +63,9 @@ struct measurement payload = {0};
 /* ------ Packet handling definitions ------ */
 
 #ifdef TELEMETRY_ENABLED
+
+#define telid "FC:TLMT: "
+
 #ifdef TELEMETRY_CMD_COMPAT
 
 enum remote_cmd_compat : uint8_t {
@@ -249,8 +255,8 @@ validate_gps_relative(const struct coords *gps)
   if (!lat_within_launch_site(gps->x) ||
       !lon_within_launch_site(gps->y))
   {
-    log_err("FC:TLMT: GPS coords beyond launch site: "
-            "LAT: %f, LON: %f", gps->x, gps->y); 
+    log_err(telid "GPS coords beyond launch site:"
+            " LAT: %f, LON: %f", gps->x, gps->y); 
   }
 
   if (gps->z > MAX_SEA || gps->z < MIN_SEA) {
@@ -494,7 +500,7 @@ static inline void pre_launch(void)
     st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
     if (st != TX_SUCCESS) {
-      log_err("PILOT: heartbeat failed: %u", st);
+      log_err(pilot "heartbeat failed: %u", st);
     }
 
     if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
@@ -513,7 +519,7 @@ static inline void pre_launch(void)
       log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
     }
     else {
-      log_err("PILOT: malformed IMU data: %u", st);
+      log_err(pilot "malformed IMU data: %u", st);
     }
 
     if (dma_fetch_baro(&payload.baro))
@@ -528,7 +534,7 @@ static inline void pre_launch(void)
         log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
       }
       else {
-        log_err("PILOT: malformed Baro data: %u", st);
+        log_err(pilot "malformed Baro data: %u", st);
       }
     }
 
@@ -546,10 +552,10 @@ static inline void pre_launch(void)
       // FIXME ask to provide explicit packet type for
       // rates.
       if (ctr_baro > 0) {
-        log_err("PILOT: gathering baro every %f sec", accum_baro / ctr_baro);
+        log_err(pilot "gathering baro every %f sec", accum_baro / ctr_baro);
       }
       if (ctr_gps > 0) {
-        log_err("PILOT: gathering gps every %f sec", accum_gps / ctr_gps);
+        log_err(pilot "gathering gps every %f sec", accum_gps / ctr_gps);
       }
     }
   }
@@ -557,7 +563,7 @@ static inline void pre_launch(void)
   /* Request Valve board to ignite the engine. */
   task_loop (request_ignition() == SEDS_OK);
 
-  log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
+  log_msg(id "ignition requested, in flight mode", mlen(34));
 }
 
 /*
@@ -680,6 +686,6 @@ void create_distribution_task(void)
                              TX_AUTO_START);
 
   if (st != TX_SUCCESS) {
-    log_die("FC:DIST: failed to create task (%u)", st);
+    log_die(id "task creation failure: %u", st);
   }
 }
