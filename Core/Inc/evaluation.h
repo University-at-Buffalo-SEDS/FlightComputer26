@@ -10,6 +10,7 @@
 
 extern TX_QUEUE evaluation_stage;
 extern struct measurement payload;
+extern struct coords rail;
 
 
 /* ------ Local configuration ------ */
@@ -68,7 +69,9 @@ extern struct measurement payload;
 #define ALT_TOLER 2.0f
 #define VEL_TOLER 1.5f
 #define VAX_TOLER 1.0f
-#define GPS_TOLER 1.0f  
+#define GPS_TOLER 1.41f
+
+#define GPS_RAIL_TOLER 0.1f
 
 #define lat_within_launch_site(k)                         \
   (fabsf((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)

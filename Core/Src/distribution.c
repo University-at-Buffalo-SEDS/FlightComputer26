@@ -48,16 +48,22 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
-#include "tx_api.h"
 
 TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
+
+
+/* ------ Global and static storage ------ */
 
 #define id    "FC:DIST: "
 #define pilot "PILOT: "
 
 /* Latest logged measurement */
 struct measurement payload = {0};
+
+struct coords rail = {0};
+
+/* ------ Global and static storage ------ */
 
 
 /* ------ Packet handling definitions ------ */
@@ -245,7 +251,9 @@ validate_gps_absolute(const struct coords *gps)
 
 /*
  * GPS sanity check against launch coordinates.
- * Tolerance of 1 degree makes it a sanity check.
+ * Tolerance of 1.41 degree makes it a sanity check.
+ * (We are basically checking for being within ~150
+ * km from Midland, TX).
  */
 static inline enum message
 validate_gps_relative(const struct coords *gps)
@@ -532,12 +540,25 @@ static inline void pre_launch(void)
     }
 
 #ifdef GPS_AVAILABLE
-    if (fetch_gps_data(&payload.d.gps))
+    if (conf & option(GPS_Available) &&
+        fetch_gps_data(&payload.d.gps))
     {
       accum_gps += fsec(timer_exchange(IntervalGPS));
       ++ctr_gps;
       /* GPS data is validated by the Telemetry thread,
        * and reported by the RF board. */
+
+      /* As long as we are stationary, update launch coordinates 
+       * with newest available. */
+      memcpy(&rail, &payload.d.gps, sizeof(struct coords));
+
+      if (counter != 0 &&
+          (fabsf(rail.x - payload.d.gps.x) > GPS_RAIL_TOLER ||
+           fabsf(rail.y - payload.d.gps.y) > GPS_RAIL_TOLER))
+      {
+        log_err(id "contraversial launch coords: "
+                   "LAT: %f, LON: %f", rail.x, rail.y);
+      }
     }
 #endif // GPS_AVAILABLE
 
