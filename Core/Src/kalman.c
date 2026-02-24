@@ -146,6 +146,8 @@ void descentKF(const struct descent *z)
  */
 void initialize_ascent(void) 
 {
+  sv_size_bytes = ASC_STAT * sizeof(float);
+
   memset(P, 0, sizeof P);
   memset(Q, 0, sizeof Q);
   memset(A, 0, sizeof A);

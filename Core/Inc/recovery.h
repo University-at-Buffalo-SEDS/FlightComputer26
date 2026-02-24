@@ -154,13 +154,6 @@ enum message : fu32 {
 
   Revoke_Option = Runtime_Configuration | (1u << 20),
 
-  KF_Operation_Mode = Runtime_Configuration | (1u << 28),
-
-  Renormalize_Quat_1 = KF_Operation_Mode + 0,
-  Renormalize_Quat_2 = KF_Operation_Mode + 1,
-  Renormalize_Quat_4 = KF_Operation_Mode + 3,
-  Renormalize_Quat_8 = KF_Operation_Mode + 7,
-
   Abortion_Thresholds = Runtime_Configuration | (1u << 27),
 
   Abort_After_15 = Abortion_Thresholds + 15,
@@ -208,7 +201,6 @@ enum message : fu32 {
  * Users are welcome to edit the defaults here. */
 #define DEFAULT_OPTIONS ( (fu32) (0                   \
                           | Consecutive_Samples       \
-                          | Renormalize_Quat_1        \
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \
                           | Validate_Measms           \
@@ -251,7 +243,6 @@ static inline fu32 timer_exchange(enum fc_timer u)
   return local_time[u] - prev;
 }
 
-
 /*
  * Set local time to current HAL tick (ms).
  */
@@ -262,7 +253,7 @@ static inline void timer_update(enum fc_timer u)
 
 /*
  * Report time elapsed since last call to either 
- * timer_fetch_update or timer_update.
+ * timer_exchange or timer_update.
  */
 static inline fu32 timer_fetch(enum fc_timer u)
 {

@@ -132,10 +132,6 @@ static const enum message extmap[Compat_Messages] = {
         Validate_Measms,
         revoke(Validate_Measms),
 
-        Renormalize_Quat_1,
-        Renormalize_Quat_2,
-        Renormalize_Quat_4,
-        Renormalize_Quat_8,
         Abort_After_15,
         Abort_After_40,
         Abort_After_70,

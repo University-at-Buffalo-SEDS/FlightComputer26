@@ -8,8 +8,6 @@
 #include "platform.h"
 #include "evaluation.h"
 
-extern volatile fu8 renorm_step_mask;
-
 
 /* ------ Matrix properties ------ */
 

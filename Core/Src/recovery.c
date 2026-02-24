@@ -273,11 +273,7 @@ static inline void process_action(enum message cmd)
  */
 static inline void process_config(enum message code)
 {
-  if (code & KF_Operation_Mode)
-  {
-    renorm_step_mask = code & ~KF_Operation_Mode;
-  }
-  else if (code & Abortion_Thresholds)
+  if (code & Abortion_Thresholds)
   {
     to_abort = code & ~Abortion_Thresholds;
   }
@@ -435,7 +431,6 @@ static void fc_timer_routine(ULONG timer_id)
     config |= option(Lost_GroundStation);
     config |= option(Monitor_Altitude);
     config |= option(Reset_Failures);
-    renorm_step_mask = RENORM_STEP;
     failures = 0;
 
 #else /* FOR TESTS ONLY */
