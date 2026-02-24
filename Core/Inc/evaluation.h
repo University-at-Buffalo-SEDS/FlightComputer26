@@ -5,12 +5,8 @@
 #ifndef EVALUATION_H
 #define EVALUATION_H
 
-#include "dma.h"
 #include "platform.h"
-
-extern TX_QUEUE evaluation_stage;
-extern struct measurement payload;
-extern struct coords rail;
+#include "dma.h"
 
 
 /* ------ Local configuration ------ */
@@ -82,14 +78,18 @@ extern struct coords rail;
 /* ------ Local configuration ------ */
 
 
-/* ------ Put/fetch algorithm definitions ------ */
+/* ------ Buffer/pool definitions ------ */
+
+#define EVALQ_SIZE 4
+
+#define SV_HIST_SIZE 4
 
 #define RING_SIZE 4
 #define RING_MASK (RING_SIZE - 1)
 
 #define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
 
-/* ------ Put/fetch algorithm definitions ------ */
+/* ------ Buffer/pool definitions ------ */
 
 
 /* ------ Data containers ------ */
@@ -140,6 +140,18 @@ enum state {
 };
 
 /* ------ Data containers ------ */
+
+
+/* ------ Exported globals ------ */
+
+extern TX_QUEUE evaluation_stage;
+extern struct measurement payload;
+extern struct coords rail;
+extern struct state_vec sv[];
+extern fu8 sv_size_bytes;
+extern fu8 idx;
+
+/* ------ Exported globals ------ */
 
 
 #endif // EVALUATION_H

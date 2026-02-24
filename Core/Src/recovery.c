@@ -57,7 +57,7 @@ atomic_uint_fast32_t config = DEFAULT_OPTIONS;
 
 /* Recovery queue pool */
 #define RECVQ_SIZE 64
-static tx_align enum message recvq_pool[RECVQ_SIZE] = {0};
+static tx_align enum message recvq[RECVQ_SIZE] = {0};
 
 /* Monitors timeouts and deployment events */
 static TX_TIMER monotonic_checks;
@@ -201,6 +201,9 @@ static inline void process_action(enum message cmd)
   switch (cmd) {
     case Deploy_Parachute:
       co2_high(&config);
+      if (config & option(Using_Ascent_KF)) {
+        initialize_descent();
+      }
       return;
 
     case Expand_Parachute:
@@ -528,8 +531,8 @@ void create_recovery_task(void)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_queue_create(&shared, "RECVQ", 1, &recvq_pool,
-                                     sizeof recvq_pool);
+  st = tx_queue_create(&shared, "RECVQ", 1, &recvq,
+                                     sizeof recvq);
 
   if (st != TX_SUCCESS) {
     log_die(id "queue %s %u", critical, st);

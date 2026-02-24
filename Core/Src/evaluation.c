@@ -45,21 +45,20 @@ ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 #define id "FC:EVAL: "
 
-/* State vector and 'most recent' index used
+/* History of 4 state vectors and ring index used
  * by Evaluation task and Kalman filter. */
-struct state_vec vec[2] = {0};
-fu8 last = 0;
+struct state_vec sv[SV_HIST_SIZE] = {0};
+fu8 idx = 0;
+
+/* Length of state vector to log, in bytes. Varies per KF. */
+fu8 sv_size_bytes = ASC_STAT * sizeof(float);
 
 /* Flight stage and transition sample counter. */
 static enum state flight = Suspended;
 static fu8 sampl = 0;
 
-/* Length of state vector to log, in bytes. Varies per KF. */
-static fu8 svec_size = ASC_STAT * sizeof(float);
-
 /* Evaluation task queue pool. */
-#define EVALQ_SIZE 4
-static tx_align enum message evalq_pool[EVALQ_SIZE] = {0};
+static tx_align enum message evalq[EVALQ_SIZE] = {0};
 
 /* ------ Global and static storage ------ */
 
@@ -75,7 +74,7 @@ static tx_align enum message evalq_pool[EVALQ_SIZE] = {0};
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || vec[last].p.z > vec[!last].p.z) {
+  if (flight < Ascent || sv[idx].p.z > sv[!idx].p.z) {
     /* Confirms must be consecutive */
 
     if (mode & option(Consecutive_Samples) &&
@@ -87,7 +86,7 @@ static inline void evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (vec[last].p.z <= REEF_TARGET_ALT)
+  if (sv[idx].p.z <= REEF_TARGET_ALT)
   {
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
@@ -104,6 +103,10 @@ static inline void evaluate_altitude(fu32 mode)
     else
     { 
       co2_high(&config);
+      if (load(&config, Acq) & option(Using_Ascent_KF)) {
+        initialize_descent();
+      }
+
       tx_thread_sleep(100);
       reef_high(&config);
       
@@ -122,6 +125,9 @@ static inline void evaluate_altitude(fu32 mode)
   else
   {
     co2_high(&config);
+    if (load(&config, Acq) & option(Using_Ascent_KF)) {
+      initialize_descent();
+    }
 
     if (flight < Descent) {
       flight = Descent;
@@ -137,8 +143,8 @@ static inline void evaluate_altitude(fu32 mode)
  */
 static inline void detect_launch(void)
 {
-  if (vec[last].v.z >= LAUNCH_MIN_VEL &&
-      vec[last].a.z >= LAUNCH_MIN_VAX)
+  if (sv[idx].v.z >= LAUNCH_MIN_VEL &&
+      sv[idx].a.z >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
     log_msg(id "launch detected", mlen(15));
@@ -151,8 +157,8 @@ static inline void detect_launch(void)
  */
 static inline void detect_ascent(fu32 mode)
 {
-  if (vec[last].v.z > vec[!last].v.z &&
-      vec[last].p.z > vec[!last].p.z)
+  if (sv[idx].v.z > sv[!idx].v.z &&
+      sv[idx].p.z > sv[!idx].p.z)
   {
     if (++sampl >= MIN_SAMP_ASCENT)
     {
@@ -178,10 +184,10 @@ static inline void detect_ascent(fu32 mode)
  */
 static inline void detect_burnout(fu32 mode)
 {
-  if (vec[last].v.z >= BURNOUT_MIN_VEL &&
-      vec[last].a.z <= BURNOUT_MAX_VAX &&
-      vec[last].p.z > vec[last].p.z &&
-      vec[last].v.z < vec[!last].v.z)
+  if (sv[idx].v.z >= BURNOUT_MIN_VEL &&
+      sv[idx].a.z <= BURNOUT_MAX_VAX &&
+      sv[idx].p.z > sv[idx].p.z &&
+      sv[idx].v.z < sv[!idx].v.z)
   {
     if (++sampl >= MIN_SAMP_BURNOUT)
     {
@@ -205,8 +211,8 @@ static inline void detect_burnout(fu32 mode)
  */
 static inline void detect_apogee(void)
 {
-  if (vec[last].v.z <= APOGEE_MAX_VEL &&
-      vec[last].v.z < vec[!last].v.z)
+  if (sv[idx].v.z <= APOGEE_MAX_VEL &&
+      sv[idx].v.z < sv[!idx].v.z)
   {
     flight = Apogee;
     log_msg(id "approaching apogee", mlen(18));
@@ -219,8 +225,8 @@ static inline void detect_apogee(void)
  */
 static inline void detect_descent(fu32 mode)
 {
-  if (vec[last].p.z < vec[!last].p.z &&
-      vec[last].v.z > vec[!last].v.z)
+  if (sv[idx].p.z < sv[!idx].p.z &&
+      sv[idx].v.z > sv[!idx].v.z)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
@@ -229,12 +235,7 @@ static inline void detect_descent(fu32 mode)
       co2_high(&config);
       log_msg(id "fired pyro, descending", mlen(22));
 
-      /* Descnt KF preparations */
       initialize_descent();
-      svec_size = DESC_STAT * sizeof(float);
-      timer_update(DescentKF);
-
-      fetch_and(&config, ~option(Using_Ascent_KF), Rel);
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -252,8 +253,8 @@ static inline void detect_descent(fu32 mode)
  */
 static inline void detect_reef(fu32 mode)
 {
-  if (vec[last].p.z <= REEF_TARGET_ALT && 
-      vec[last].p.z < vec[!last].p.z)
+  if (sv[idx].p.z <= REEF_TARGET_ALT && 
+      sv[idx].p.z < sv[!idx].p.z)
   {
     if (++sampl >= MIN_SAMP_REEF)
     {
@@ -278,9 +279,9 @@ static inline void detect_reef(fu32 mode)
  */
 static inline void detect_landed(fu32 mode)
 {
-  float dh = vec[last].p.z - vec[!last].p.z;
-  float dv = vec[last].v.z - vec[!last].v.z;
-  float da = vec[last].a.z - vec[!last].a.z;
+  float dh = sv[idx].p.z - sv[!idx].p.z;
+  float dv = sv[idx].v.z - sv[!idx].v.z;
+  float da = sv[idx].a.z - sv[!idx].a.z;
 
   if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
@@ -347,7 +348,7 @@ enter_flight_state(fu32 conf)
   if (conf & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
-     last = !last;
+     idx = !idx;
   }
   else
   {
@@ -355,7 +356,6 @@ enter_flight_state(fu32 conf)
     flight = Idle;
 
     initialize_ascent();
-    timer_update(AscentKF);
 
     /* Signal distribution task to enter main cycle. */
     fetch_or(&config, option(Launch_Triggered), Rel);
@@ -393,7 +393,7 @@ void evaluation_entry(ULONG input)
       // TODO run Ascent KF update() with dt
     }
 
-    log_filter_data(&vec[last], svec_size);
+    log_filter_data(&sv[idx], sv_size_bytes);
 
     if (conf & Monitor_Altitude) {
       evaluate_altitude(conf);
@@ -437,8 +437,8 @@ void create_evaluation_task(void)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_queue_create(&evaluation_stage, "EVALQ", 1,
-                       &evalq_pool, sizeof evalq_pool);
+  st = tx_queue_create(&evaluation_stage, "EVALQ",
+                       1, &evalq, sizeof evalq);
 
   if (st != TX_SUCCESS) {
     log_die(id "queue %s %u", critical, st);
