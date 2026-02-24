@@ -24,6 +24,12 @@ OPTIONS:
 	flash-dfu       - download executable to eabi
 	                - target (requires dfu-utils)
 
+        flash-st        - alternative to flash-dfu, but
+                        - uses STLink (requires stlink)
+
+        stlink          - open STLink connection for
+                        - debugger and exit 
+
 	notelemetry     - disable telemetry, redirect 
                         - output to terminal emulator;
                         - disables message handling
