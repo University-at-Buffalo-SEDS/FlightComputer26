@@ -61,6 +61,10 @@ OPTIONS:
         dmabench        - compile DMA with microbenchmark;
                         - slows down DMA consumer and logs
                         - time information on SP/SC delays
+
+        userflags       - compile with flags in top-level
+                        - CMakeLists; use this for the final
+                        - release build (will enable LTO)
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -91,7 +95,9 @@ ALL_OPTIONS     = {     "flash",
                         "nogps",
                         "nosd",
                         "asm",
-                        "dmabench"      }
+                        "dmabench",
+                        "userflags"
+                }
 
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
@@ -143,7 +149,7 @@ def parse(argv: list[str]):
 def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
-        # Defaults for IREC 2026
+        # Defaults for IREC 2026 (except compilation flags)
         batch           = "-DMESSAGE_BATCHING=OFF"
         telem           = "-DENABLE_TELEMETRY=ON"
         compat          = "-DTELEMETRY_COMPAT=ON"
@@ -151,6 +157,7 @@ def configure(buildir: Path, preset: str, options: dict):
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
         dmabench        = "-DDMA_BENCH=OFF"
+        flags           = "-DCUSTOM_FLAGS=OFF"
 
         if options["notelemetry"]:
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -171,6 +178,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["dmabench"]:
                 dmabench = "-DDMA_BENCH=ON"
 
+        if options["userflags"]:
+                flags = "-DCUSTOM_FLAGS=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -183,6 +193,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 gps,
                 sd,
                 dmabench,
+                flags,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",
