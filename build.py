@@ -21,7 +21,7 @@ PRESET:
 If none specified, defaults to Debug.
 
 OPTIONS:
-	flash           - download executable to eabi
+	flash-dfu       - download executable to eabi
 	                - target (requires dfu-utils)
 
 	notelemetry     - disable telemetry, redirect 
@@ -74,6 +74,8 @@ from __future__ import annotations
 
 import sys
 import os
+import time
+import socket
 import shutil
 import subprocess
 import importlib.util
@@ -85,7 +87,9 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {     "flash",
+ALL_OPTIONS     = {     "flash-dfu",
+                        "flash-st",
+                        "stlink",
                         "notelemetry", 
                         "clean",
                         "dmatest",
@@ -104,6 +108,9 @@ PROJECT         = Path(__file__).parent.resolve()
 BUILDDIR        = PROJECT / "build"
 BIN             = "FlightComputer26.bin"
 ELF             = "FlightComputer26.elf"
+FC_ADDR         = "0x08000000"
+DEBUG_HOST      = "127.0.0.1"
+DEBUG_PORT      = 4242
 
 
 def run(cmd: list[str], *, pipeline: bool = False):
@@ -122,8 +129,7 @@ def run(cmd: list[str], *, pipeline: bool = False):
                         return None
 
         except Exception as e:
-                print(f"Command failed: {e}")
-                sys.exit(1)
+                sys.exit(f"Command failed: {e}")
 
 
 def parse(argv: list[str]):
@@ -228,16 +234,54 @@ def objcopy(buildir: Path) -> Path:
         return bin_path
 
 
-def flash(path: Path):
+def flash(path: Path, options: dict):
         if not path.exists():
                 sys.exit(f"Expected BIN at {path}")
 
-        run([
-                "dfu-util",
-                "-a", "0",
-                "-s", "0x08000000",
-                "-D", str(path),
-        ])
+        cmd = []
+
+        if options["flash-dfu"]:
+                cmd = [ "dfu-util", "-a", "0",
+                        "-s", FC_ADDR, "-D", str(path),
+                ]
+        elif options["flash-st"]:
+                cmd = [ "st-flash", "write",
+                        str(path), FC_ADDR,
+                ]
+
+        run(cmd)
+
+
+def gdb_st_session(path: Path):
+        try:
+                subprocess.Popen(["st-util"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True
+                )
+        except Exception as e:
+                sys.exit(f"St-util failed: {e}")
+        
+        timeout = time.time() + 5.0
+
+        while time.time() < timeout:
+                try:
+                        sock = socket.create_connection(
+                                (DEBUG_HOST, DEBUG_PORT),
+                                timeout=0.5
+                        )
+                        sock.close()
+                        break
+                except Exception:
+                        time.sleep(0.1)
+        else:
+                sys.exit("STLink connection failed")
+
+        print("You can now attach gdb and/or end debugging session")
+        # For example:
+        # gdb build/Debug/FlightComputer26.bin
+        # (gdb) target extended-remote 127.0.0.1:4242
+        # killall st-util
 
 
 def clean(path: Path):
@@ -294,8 +338,12 @@ def main() -> None:
 
         executable = objcopy(buildir)
 
-        if options["flash"]:
-                flash(executable)
+        if options["flash-dfu"] or options["flash-st"]:
+                flash(executable, options)
+        elif preset == "Release":
+                return
+        elif options["stlink"]:
+                gdb_st_session(executable)
 
 
 if __name__ == "__main__":
