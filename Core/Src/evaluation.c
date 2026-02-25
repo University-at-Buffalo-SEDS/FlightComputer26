@@ -43,7 +43,7 @@ ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 /* ------ Global and static storage ------ */
 
-#define id "FC:EVAL: "
+#define id "EV "
 
 /* History of 4 state vectors and ring index used
  * by Evaluation task and Kalman filter. */
@@ -54,7 +54,7 @@ fu8 idx = 0;
 fu8 sv_size_bytes = ASC_STAT * sizeof(float);
 
 /* Flight stage and transition sample counter. */
-static enum state flight = Suspended;
+volatile enum state flight = Suspended;
 static fu8 sampl = 0;
 
 /* Evaluation task queue pool. */
@@ -74,7 +74,7 @@ static tx_align enum message evalq[EVALQ_SIZE] = {0};
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || sv[idx].p.z > sv[!idx].p.z) {
+  if (flight < Ascent || sv[idx].p.z > sv[prev(1)].p.z) {
     /* Confirms must be consecutive */
 
     if (mode & option(Consecutive_Samples) &&
@@ -157,14 +157,14 @@ static inline void detect_launch(void)
  */
 static inline void detect_ascent(fu32 mode)
 {
-  if (sv[idx].v.z > sv[!idx].v.z &&
-      sv[idx].p.z > sv[!idx].p.z)
+  if (sv[idx].v.z > sv[prev(1)].v.z &&
+      sv[idx].p.z > sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_ASCENT)
     {
       flight = Ascent;
       sampl = 0;
-      log_msg(id "launch confirmed", mlen(16));
+      log_msg(id "ascending", mlen(9));
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -187,13 +187,13 @@ static inline void detect_burnout(fu32 mode)
   if (sv[idx].v.z >= BURNOUT_MIN_VEL &&
       sv[idx].a.z <= BURNOUT_MAX_VAX &&
       sv[idx].p.z > sv[idx].p.z &&
-      sv[idx].v.z < sv[!idx].v.z)
+      sv[idx].v.z < sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_BURNOUT)
     {
       flight = Burnout;
       sampl = 0;
-      log_msg(id "watching for apogee", mlen(19));
+      log_msg(id "decelerating", mlen(12));
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -212,10 +212,10 @@ static inline void detect_burnout(fu32 mode)
 static inline void detect_apogee(void)
 {
   if (sv[idx].v.z <= APOGEE_MAX_VEL &&
-      sv[idx].v.z < sv[!idx].v.z)
+      sv[idx].v.z < sv[prev(1)].v.z)
   {
     flight = Apogee;
-    log_msg(id "approaching apogee", mlen(18));
+    log_msg(id "likely at apogee", mlen(16));
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -225,15 +225,15 @@ static inline void detect_apogee(void)
  */
 static inline void detect_descent(fu32 mode)
 {
-  if (sv[idx].p.z < sv[!idx].p.z &&
-      sv[idx].v.z > sv[!idx].v.z)
+  if (sv[idx].p.z < sv[prev(1)].p.z &&
+      sv[idx].v.z > sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
       flight = Descent;
       sampl = 0;
       co2_high(&config);
-      log_msg(id "fired pyro, descending", mlen(22));
+      log_msg(id "entered drogue", mlen(14));
 
       initialize_descent();
     }
@@ -254,7 +254,7 @@ static inline void detect_descent(fu32 mode)
 static inline void detect_reef(fu32 mode)
 {
   if (sv[idx].p.z <= REEF_TARGET_ALT && 
-      sv[idx].p.z < sv[!idx].p.z)
+      sv[idx].p.z < sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_REEF)
     {
@@ -279,9 +279,9 @@ static inline void detect_reef(fu32 mode)
  */
 static inline void detect_landed(fu32 mode)
 {
-  float dh = sv[idx].p.z - sv[!idx].p.z;
-  float dv = sv[idx].v.z - sv[!idx].v.z;
-  float da = sv[idx].a.z - sv[!idx].a.z;
+  float dh = sv[idx].p.z - sv[prev(1)].p.z;
+  float dv = sv[idx].v.z - sv[prev(1)].v.z;
+  float da = sv[idx].a.z - sv[prev(1)].a.z;
 
   if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
       (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
@@ -292,8 +292,7 @@ static inline void detect_landed(fu32 mode)
       flight = Landed;
       log_msg(id "'Sweet' landed", mlen(14));
 
-      /* Needed to avoid locks on landing coordinate
-         reporting. */
+      /* Needed to avoid locks on landing coordinate reporting. */
       UINT old_pt;
       tx_thread_preemption_change(&evaluation_task,
                                        1, &old_pt);
@@ -348,7 +347,7 @@ enter_flight_state(fu32 conf)
   if (conf & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
-     idx = !idx;
+     idx = prev(1);
   }
   else
   {
@@ -410,6 +409,9 @@ void evaluation_entry(ULONG input)
       case Landed:  crew_send_coords(conf); break;
       default: break;
     }
+
+    /* Increment index for the next state vector */
+    idx = (idx + 1) & SV_HIST_MASK;
   }
 }
 

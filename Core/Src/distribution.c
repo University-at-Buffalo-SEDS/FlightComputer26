@@ -55,8 +55,8 @@ ULONG distribution_stack[DIST_STACK_ULONG];
 
 /* ------ Global and static storage ------ */
 
-#define id    "FC:DIST: "
-#define pilot "PILOT: "
+#define id    "DI "
+#define pilot "PILOT "
 
 /* Latest logged measurement */
 struct measurement payload = {0};
@@ -70,7 +70,7 @@ struct coords rail = {0};
 
 #ifdef TELEMETRY_ENABLED
 
-#define telid "FC:TLMT: "
+#define telid "TE "
 
 #ifdef TELEMETRY_CMD_COMPAT
 
@@ -85,6 +85,8 @@ enum remote_cmd_compat : uint8_t {
   Compat_Evaluation_Focus,
   Compat_Evaluation_Abort,
   Compat_Reinit_Barometer,
+  Compat_Enable_IMU,
+  Compat_Disable_IMU,
   
   /* Excludes internal config options */
   Compat_Monitor_Altitude,
@@ -95,11 +97,6 @@ enum remote_cmd_compat : uint8_t {
   Revoke_Reset_Failures,
   Compat_Validate_Measms,
   Revoke_Validate_Measms,
-
-  Compat_Renormalize_Quat_1,
-  Compat_Renormalize_Quat_2,
-  Compat_Renormalize_Quat_4,
-  Compat_Renormalize_Quat_8,
 
   Compat_Abort_After_15,
   Compat_Abort_After_40,
@@ -122,6 +119,8 @@ static const enum message extmap[Compat_Messages] = {
         Evaluation_Focus,
         Evaluation_Abort,
         Reinit_Barometer,
+        Enable_IMU,
+        Disable_IMU,
 
         Monitor_Altitude,
         revoke(Monitor_Altitude),

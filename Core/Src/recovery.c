@@ -47,7 +47,7 @@ ULONG recovery_stack[RECV_STACK_ULONG];
 
 /* ------ Global and static storage ------ */
 
-#define id "FC:RECV: "
+#define id "RE "
 
 /* Last recorded time for each timer user. */
 volatile fu32 local_time[Time_Users] = {0};
@@ -112,26 +112,35 @@ initialize_sensors(enum sensor_mask sensor)
   if (sensor & Init_Baro)
   {
     __NVIC_DisableIRQ(Baro_EXTI);
-    reinit(init_baro(&baro_conf), fails, Init_Baro);
-    __NVIC_EnableIRQ(Baro_EXTI);
+
+    if (!(sensor & Disable)) {
+      reinit(init_baro(&baro_conf), fails, Init_Baro);
+      __NVIC_EnableIRQ(Baro_EXTI);
+    }
   }
 
   if (sensor & Init_Gyro)
   {
     __NVIC_DisableIRQ(Gyro_EXTI_1);
     __NVIC_DisableIRQ(Gyro_EXTI_2);
-    reinit(init_gyro(&gyro_conf), fails, Init_Gyro);
-    __NVIC_EnableIRQ(Gyro_EXTI_1);
-    __NVIC_EnableIRQ(Gyro_EXTI_2);
+
+    if (!(sensor & Disable)) {
+      reinit(init_gyro(&gyro_conf), fails, Init_Gyro);
+      __NVIC_EnableIRQ(Gyro_EXTI_1);
+      __NVIC_EnableIRQ(Gyro_EXTI_2);
+    }
   }
 
   if (sensor & Init_Accl)
   {
     __NVIC_DisableIRQ(Accl_EXTI_1);
     __NVIC_DisableIRQ(Accl_EXTI_2);
-    reinit(init_accl(&accl_conf), fails, Init_Accl);
-    __NVIC_EnableIRQ(Accl_EXTI_1);
-    __NVIC_EnableIRQ(Accl_EXTI_2);
+
+    if (!(sensor & Disable)) {
+      reinit(init_accl(&accl_conf), fails, Init_Accl);
+      __NVIC_EnableIRQ(Accl_EXTI_1);
+      __NVIC_EnableIRQ(Accl_EXTI_2);
+    }
   }
   
   if (fails != 0) {
@@ -236,6 +245,7 @@ static inline void process_action(enum message cmd)
       }
 
       /* Start Evaluation and begin rocket launch chain. */
+      config &= ~option(Eval_Abort_Flag);
       tx_thread_resume(&evaluation_task);
       return;
 
@@ -258,6 +268,14 @@ static inline void process_action(enum message cmd)
     case Evaluation_Abort:
       config |= option(Eval_Abort_Flag);
       tx_thread_reset(&evaluation_task);
+      return;
+
+    case Enable_IMU:
+      initialize_sensors(Init_Gyro | Init_Accl);
+      return;
+
+    case Disable_IMU:
+      initialize_sensors(Disable | Init_Gyro | Init_Accl);
       return;
 
     case Reinit_Barometer:

@@ -116,6 +116,12 @@ void initialize_descent(void)
   measm_cov.numCols = measm_cov.numRows = DESC_MEAS;
   obsrvance.numRows = obsrvance.numCols = DESC_MEAS;
 
+  /* Disable interrupts from IMU */
+  __NVIC_DisableIRQ(Gyro_EXTI_1);
+  __NVIC_DisableIRQ(Gyro_EXTI_2);
+  __NVIC_DisableIRQ(Accl_EXTI_1);
+  __NVIC_DisableIRQ(Accl_EXTI_2);
+
   timer_update(DescentKF);
   fetch_and(&config, ~option(Using_Ascent_KF), Rel);
 }
@@ -183,6 +189,15 @@ void initialize_ascent(void)
   mx_bucket.numCols = mx_bucket.numRows = ASC_STAT;
   measm_cov.numCols = measm_cov.numRows = ASC_MEAS;
   obsrvance.numRows = obsrvance.numCols = ASC_MEAS;
+
+  /* This deduction is due Using_Ascent_KF being in DEFAULT_OPTIONS */
+  if (!(load(&config, Acq) & option(Using_Ascent_KF)))
+  {
+    /* If it somehow happened that we initialize Ascent KF mid-flight,
+     * ask non-preemtive recovery to reinitialize IMU with interrupts. */
+    enum message cmd = fc_mask(Enable_IMU);
+    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+  }
 
   timer_update(AscentKF);
   fetch_or(&config, option(Using_Ascent_KF), Rel);

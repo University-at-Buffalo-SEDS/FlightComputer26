@@ -49,6 +49,7 @@
 #define MIN_LON -MAX_LON
 #define MIN_SEA -999.9f
 
+/* Midland, TX */
 #define LAUNCH_SITE_LAT 32.000507f
 #define LAUNCH_SITE_LON -102.077408f
 
@@ -67,7 +68,7 @@
 #define VAX_TOLER 1.0f
 #define GPS_TOLER 1.41f
 
-#define GPS_RAIL_TOLER 0.1f
+#define GPS_RAIL_TOLER 0.05f
 
 #define lat_within_launch_site(k)                         \
   (fabsf((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)
@@ -80,9 +81,13 @@
 
 /* ------ Buffer/pool definitions ------ */
 
-#define EVALQ_SIZE 4
+#define EVALQ_SIZE 2
 
 #define SV_HIST_SIZE 4
+#define SV_HIST_MASK (SV_HIST_SIZE - 1)
+
+/* Get index for the state vector that is 'step' evaluations old */
+#define prev(step) (((idx) - (step)) & SV_HIST_MASK)
 
 #define RING_SIZE 4
 #define RING_MASK (RING_SIZE - 1)
@@ -145,6 +150,7 @@ enum state {
 /* ------ Exported globals ------ */
 
 extern TX_QUEUE evaluation_stage;
+extern volatile enum state flight;
 extern struct measurement payload;
 extern struct coords rail;
 extern struct state_vec sv[];
