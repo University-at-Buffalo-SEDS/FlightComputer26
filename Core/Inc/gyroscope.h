@@ -20,6 +20,8 @@
 #define GYRO_FIFO_CONFIG_0  0x3D
 #define GYRO_FIFO_CONFIG_1  0x3E
 #define GYRO_FIFO_DATA      0x3F
+#define GYRO_INT_CONF       0x16
+#define GYRO_INT_MAP        0x18
 
 #define GYRO_RATE_X_LSB     0x02
 #define GYRO_RATE_X_MSB     0x03
@@ -29,6 +31,14 @@
 #define GYRO_RATE_Z_MSB     0x07
 
 #define GYRO_CHIP_ID_VALUE  0x0F
+
+/* [0000] 0001 : INT3 to active high PP
+                 INT4 to active low  PP */
+#define GYRO_INT_CONF_VAL 0x01u
+
+/* 0000 0001 : INT3 mapped to new data
+               INT4 and FIFO unmapped   */
+#define GYRO_INT_MAP_VAL  0x01u
 
 
 /* ------ Helper definitions ------ */

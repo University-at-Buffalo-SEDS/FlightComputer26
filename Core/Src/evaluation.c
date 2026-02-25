@@ -1,35 +1,33 @@
 /*
  * Evaluation Task
  * 
- * This task consists of two major parts:
- * KF (Kalman Filters, in kalman.c) and Prediction.
+ * This task is responsible for the finite state machine
+ * and data evaluation. This task suspends on a queue and
+ * when woken, evaluates data according to global run time
+ * configuration. Depending on the config, this task may or
+ * may not be interrupted while doing so. In the case of
+ * Ascent filter, this task also runs an update stage and
+ * then proceeds to data evaluation.
+ * 
+ * This task also handles the side effects of state
+ * transitions, such as deploying parachute and, if GPS
+ * module is enabled and available (those are different),
+ * reporting coordinates the rocket landed at.
  *
- * The shared ring buffer is actively filled by the
- * Distribution task with compensated raw data taken
- * from DMA buffers (and externally received GPS data
- * if we are running Descent filter). Upon entering
- * its main loop, this task copies the most recent 
- * measurements and optionally validates them.
+ * States advance forward from 'Suspended' to 'Landed',
+ * with both mentioned being passive states that require
+ * interaction, and everything in between being active
+ * conditions during which the FC board is autonomous.
  *
- * A good, bad, or empty (if validation is disabled)
- * report is then sent to the Recovery task, to maintain
- * heartbeat and change malformed data counter (if any).
- *
- * Then this task updates its local configuration from
- * the global one set by the Recovery task. The config
- * affects speed, operation capacity, verbosity, and
- * precision of both the KF and the Prediction parts.
- * The full list of available Evaluation options can
- * be found in recovery.h. 
- *
- * If valid, data vector is then passed to the either
- * of Ascent or Descent variants of the Kalman Filter.
- *
- * Then, depending on current flight state and run time
- * parameters, the resulting state vector is evaluated by
- * at least one checking function. Some of them require
- * several confirmations of the observation and thus
- * will need several iterations of the Kalman Filter.
+ * This task's header file, evalution.h, together with
+ * the global configuration found in recovery.h, list a
+ * number of options to tune data evaluation. Defined
+ * options configure scheduling, confirmation count,
+ * consecutiveness, and vigilance of state examination.
+ * 
+ * This task operates in always-suspend mode, and is
+ * resumed by Distribution task when it deems that
+ * there is enough raw data to pass.
  */
 
 #include "evaluation.h"
@@ -38,165 +36,43 @@
 #include "kalman.h"
 #include "dma.h"
 
+TX_SEMAPHORE eval_focus_mode;
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 
-/* ------ Static ------ */
+/* ------ Global storage ------ */
 
-/// Measurement struct but as 1x7 column vector.
-static struct measm_z raw = {0};
+#define id "EV "
 
-/// 0-7:  amount of new entries,
-/// 8-15: 'consumer lock' index. 0xFF when unlocked.
-static atomic_uint_fast16_t mask = 0xFF00u;
-static struct measm_z payload[RING_SIZE] = {0};
+/* History of 4 state vectors and ring index used
+ * by Evaluation task and Kalman filter. */
+struct state_vec sv[SV_HIST_SIZE] = {0};
 
-/// Current and previous state vectors.
-static fu8 last = 0;
-static struct state_vec vec[2] = {0};
+struct sv_helper sh = {0};
 
-/// Flight stage and transition sample counter.
-static enum state flight = Suspended;
-static fu8 sampl = 0;
+/* Length of state vector to log, in bytes. Varies per KF. */
+fu32 sv_size_bytes = ASC_STAT * sizeof(float);
 
+volatile enum state flight = Suspended;
 
-/* ------ Public API ------ */
-
-/// Writes one raw sample to the evaluation ring buffer.
-void evaluation_put(const struct measurement *buf)
-{
-  static fu8 idx = 0;
-
-  fu8 i = idx;
-  
-  /* Trim temperature and pressure */
-  memcpy(&payload[i], buf, sizeof(struct measm_z));
-
-  i = (i + 1) & RING_MASK;
-  fu8 cons = load(&mask, Acq) >> 8;
-
-  if (i != cons) {
-    fetch_add(&mask, 1, Rel);
-    idx = i;
-  }
-}
-
-
-/* ------ Local helpers ------ */
-
-static fu8 idx = UINT_FAST8_MAX;
-
-/// Fetches one value from the ring buffer.
-/// Returns the amount of new entries added since last call.
-static inline fu8 fetch_async(void)
-{
-  fu16 i = idx;
-  fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
-  
-  if (!n) {
-    fetch_or(&mask, CLEAR_IDX, Rlx);
-    return 0;
-  }
-
-  i = (i + n) & RING_MASK;
-  idx = i;
-
-  raw = payload[i];
-
-  fetch_or(&mask, CLEAR_IDX, Rlx);
-  return n;
-}
-
-
-/// Fetches one value from the ring buffer.
-/// Returns the amount of new entries added since last call.
-/// Used when Evaluation cannot be preempted by Distribution.
-static inline fu8 fetch_unsafe(void)
-{
-  fu8 n = (fu8) mask;
-
-  if (!n)
-    return 0;
-
-  idx = (idx + n) & RING_MASK;
-  raw = payload[idx];
-
-  return n;
-}
-
-
-/// Validates one measm_z against sanity bounds.
-static inline fu32 validate(fu32 mode)
-{
-  enum message st = fc_mask(Sensor_Measm_Code);
-
-  if (!(mode & Validate_Measms)) {
-    return st;
-  }
-
-  if (raw.d.alt > MAX_ALT || raw.d.alt < MIN_ALT) {
-    st += Bad_Altitude;
-  }
-
-#ifdef GPS_AVAILABLE
-  if (mode & Using_Ascent_KF)
-  {
-#endif
-
-    if (raw.d.axis.accl.x > MAX_ACC || raw.d.axis.accl.x < MIN_ACC) {
-      st += Bad_Accel_X;
-    }
-
-    if (raw.d.axis.accl.y > MAX_ACC || raw.d.axis.accl.y < MIN_ACC) {
-      st += Bad_Accel_Y;
-    }
-  
-    if (raw.d.axis.accl.z > MAX_ACC || raw.d.axis.accl.z < MIN_ACC) {
-      st += Bad_Accel_Z;
-    }
-
-    if (raw.gyro.x > MAX_DPS || raw.gyro.x < MIN_DPS) {
-      st += Bad_Attitude_X;
-    }
-
-    if (raw.gyro.y > MAX_DPS || raw.gyro.y < MIN_DPS) {
-      st += Bad_Attitude_Y;
-    }
-
-    if (raw.gyro.z > MAX_DPS || raw.gyro.z < MIN_DPS) {
-      st += Bad_Attitude_Z;
-    }
-
-#if GPS_AVAILABLE
-  }
-  else if (mode & GPS_Available)
-  {
-    if (raw.d.axis.gps.x > MAX_LAT || raw.d.axis.gps.x < MIN_LAT) {
-      st += Bad_Lattitude;
-    }
-
-    if (raw.d.axis.gps.y > MAX_LON || raw.d.axis.gps.y < MIN_LON) {
-      st += Bad_Longtitude;
-    }
-  
-    if (raw.d.axis.gps.z > MAX_SEA || raw.d.axis.gps.z < MIN_SEA) {
-      st += Bad_Sea_Level;
-    }
-  }
-
-#endif // GPS_AVAILABLE
-
-  return st;
-}
+/* ------ Global storage ------ */
 
 
 /* ------ Data evaluation ------ */
 
-/// Cautiously examine altitude changes. Act in place.
+#define caution " (vigilant)"
+#define mlen_caut(len) (mlen(len) + sizeof(caution))
+
+static fu8 sampl = 0;
+
+/*
+ * Cautiously examine altitude changes. Act in place.
+ * Must be used if 'barometer fallback' mode is enabled.
+ */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || vec[last].p.z > vec[!last].p.z) {
+  if (flight < Ascent || sv[sh.idx].p.z > sv[prev(1)].p.z) {
     /* Confirms must be consecutive */
 
     if (mode & option(Consecutive_Samples) &&
@@ -208,31 +84,35 @@ static inline void evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (vec[last].p.z <= REEF_TARGET_ALT)
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT)
   {
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
 
     if (mode & option(Parachute_Deployed))
     {
-      reef_high();
+      reef_high(&config);
 
       if (flight < Reefing) {
         flight = Reefing;
       }
-      log_msg("FC:EVAL: urgently expanded reef", 32);
+      log_msg(id "fired REEF" caution, mlen_caut(10));
     }
     else
     { 
-      co2_high();
+      co2_high(&config);
+      if (load(&config, Acq) & option(Using_Ascent_KF)) {
+        initialize_descent();
+      }
+
       tx_thread_sleep(100);
-      reef_high();
+      reef_high(&config);
       
       if (flight < Reefing) {
         flight = Reefing;
       }
 
-      log_msg("FC:EVAL: urgently fired PYRO->REEF", 35);
+      log_msg(id "fired PYRO->REEF" caution, mlen_caut(16));
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
@@ -242,42 +122,47 @@ static inline void evaluate_altitude(fu32 mode)
   }
   else
   {
-    co2_high();
+    co2_high(&config);
+    if (load(&config, Acq) & option(Using_Ascent_KF)) {
+      initialize_descent();
+    }
 
     if (flight < Descent) {
       flight = Descent;
     }
 
-    log_msg("FC:EVAL: urgently fired pyro", 29);
+    log_msg(id "fired PYRO" caution, mlen_caut(10));
   }
 }
 
-
-/// Monitors if minimum thresholds for velocity and
-/// acceleration were exceded.
+/*
+ * Monitors if minimum thresholds for velocity and
+ * acceleration were exceded.
+ */
 static inline void detect_launch(void)
 {
-  if (vec[last].v.z >= LAUNCH_MIN_VEL &&
-      vec[last].a.z >= LAUNCH_MIN_VAX)
+  if (sv[sh.idx].v.z >= LAUNCH_MIN_VEL &&
+      sv[sh.idx].a.z >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
-    log_msg("FC:EVAL: launch detected", 25);
+    log_msg(id "launch detected", mlen(15));
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
 
-
-/// Monitors height and velocity increase consistency.
+/*
+ * Monitors height and velocity increase consistency.
+ */
 static inline void detect_ascent(fu32 mode)
 {
-  if (vec[last].v.z > vec[!last].v.z &&
-      vec[last].p.z > vec[!last].p.z)
+  if (sv[sh.idx].v.z > sv[prev(1)].v.z &&
+      sv[sh.idx].p.z > sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_ASCENT)
     {
       flight = Ascent;
       sampl = 0;
-      log_msg("FC:EVAL: launch confirmed", 26);
+      log_msg(id "ascending", mlen(9));
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -289,23 +174,24 @@ static inline void detect_ascent(fu32 mode)
   }
 }
 
-
-/// Monitors if minimum threshold for velocity and
-/// maximum threshold for acceleration were passed.
-/// Checks for height increase and velocity decrease
-/// consistency.
+/*
+ * Monitors if minimum threshold for velocity and
+ * maximum threshold for acceleration were passed.
+ * Checks for height increase and velocity decrease
+ * consistency.
+ */
 static inline void detect_burnout(fu32 mode)
 {
-  if (vec[last].v.z >= BURNOUT_MIN_VEL &&
-      vec[last].a.z <= BURNOUT_MAX_VAX &&
-      vec[last].p.z > vec[last].p.z &&
-      vec[last].v.z < vec[!last].v.z)
+  if (sv[sh.idx].v.z >= BURNOUT_MIN_VEL &&
+      sv[sh.idx].a.z <= BURNOUT_MAX_VAX &&
+      sv[sh.idx].p.z > sv[sh.idx].p.z &&
+      sv[sh.idx].v.z < sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_BURNOUT)
     {
       flight = Burnout;
       sampl = 0;
-      log_msg("FC:EVAL: watching for apogee", 29);
+      log_msg(id "decelerating", mlen(12));
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -317,37 +203,37 @@ static inline void detect_burnout(fu32 mode)
   }
 }
 
-
-/// Initially monitors for continuing burnout and
-/// for velocity to pass the minimum threshold.
+/*
+ * Initially monitors for continuing burnout and
+ * for velocity to pass the minimum threshold.
+ */
 static inline void detect_apogee(void)
 {
-  if (vec[last].v.z <= APOGEE_MAX_VEL &&
-      vec[last].v.z < vec[!last].v.z)
+  if (sv[sh.idx].v.z <= APOGEE_MAX_VEL &&
+      sv[sh.idx].v.z < sv[prev(1)].v.z)
   {
     flight = Apogee;
-    log_msg("FC:EVAL: approaching apogee", 28);
+    log_msg(id "likely at apogee", mlen(16));
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
 
-
-/// Monitors for decreasing altitude and increasing velocity.
+/*
+ * Monitors for decreasing altitude and increasing velocity.
+ */
 static inline void detect_descent(fu32 mode)
 {
-  if (vec[last].p.z < vec[!last].p.z &&
-      vec[last].v.z > vec[!last].v.z)
+  if (sv[sh.idx].p.z < sv[prev(1)].p.z &&
+      sv[sh.idx].v.z > sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
       flight = Descent;
       sampl = 0;
-      co2_high();
-      log_msg("FC:EVAL: fired pyro, descending", 32);
+      co2_high(&config);
+      log_msg(id "entered drogue", mlen(14));
 
       initialize_descent();
-      timer_update(DescentKF);
-      fetch_and(&config, ~option(Using_Ascent_KF), Rel);
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -359,20 +245,21 @@ static inline void detect_descent(fu32 mode)
   }
 }
 
-
-/// Monitors for falling below a specific altitude,
-/// and checks for altitude consistency.
+/*
+ * Monitors for falling below a specific altitude,
+ * and checks for altitude consistency.
+ */
 static inline void detect_reef(fu32 mode)
 {
-  if (vec[last].p.z <= REEF_TARGET_ALT && 
-      vec[last].p.z < vec[!last].p.z)
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT && 
+      sv[sh.idx].p.z < sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_REEF)
     {
       flight = Reefing;
       sampl = 0;
-      reef_low();
-      log_msg("FC:EVAL: expanded parachute", 28);
+      reef_high(&config);
+      log_msg(id "expanded parachute", mlen(18));
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -384,23 +271,27 @@ static inline void detect_reef(fu32 mode)
   }
 }
 
-
-/// Monitors that all statistical metrics do not
-/// deviate beyond allowed tolerance thresholds.
+/*
+ * Monitors that all statistical metrics do not
+ * deviate beyond allowed tolerance thresholds.
+ */
 static inline void detect_landed(fu32 mode)
 {
-  float dh = vec[last].p.z - vec[!last].p.z;
-  float dv = vec[last].v.z - vec[!last].v.z;
-  float da = vec[last].a.z - vec[!last].a.z;
+  float dh = sv[sh.idx].p.z - sv[prev(1)].p.z;
+  float dv = sv[sh.idx].v.z - sv[prev(1)].v.z;
+  float da = sv[sh.idx].a.z - sv[prev(1)].a.z;
 
-  if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
-      (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
-      (da <= VAX_TOLER && da >= -VAX_TOLER))
+  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER && 
+      fabsf(da) <= VAX_TOLER)
   {
     if (++sampl >= MIN_SAMP_LANDED)
     {
       flight = Landed;
-      log_msg("FC:EVAL: rocket landed", 23);
+      log_msg(id "S.W.E.E.T. landed", mlen(17));
+
+      /* Needed to avoid locks on landing coordinates reporting. */
+      enum message cmd = fc_mask(Evaluation_Focus);
+      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -412,105 +303,127 @@ static inline void detect_landed(fu32 mode)
   }
 }
 
+/* ------ Data evaluation ------ */
+
+
+/* ------ Logging ------ */
+
+static inline void
+crew_send_coords(fu32 mode)
+{
+#ifdef GPS_AVAILABLE
+  if (!(mode & option(GPS_Available))) {
+    return;
+  }
+
+  log_msg(id "Landed at coordinates:", mlen(22));
+  log_measurement(SEDS_DT_GPS_DATA, &payload.d.gps);
+
+  tx_thread_sleep(LANDED_GPS_INTERVAL);
+
+#else
+  return;
+
+#endif // GPS_AVAILABLE
+}
+
+/* ------ Logging ------ */
+
 
 /* ------ Evaluation Task ------ */
 
-/// High-level overview of data evaluation cycle.
-/// This function is idempotent and can be entered twice
-/// if critical conditions arise as deemed by Recovery task.
-void evaluation_entry(ULONG input)
+/*
+ * Simple finite-state machine for state transition.
+ * Before leaving, logs state vector just used.
+ */
+blind_inline void evaluate_rocket_state(fu32 conf)
 {
-  (void) input;
+  if (conf & Monitor_Altitude) {
+    evaluate_altitude(conf);
+  }
 
-  fu32 mode = load(&config, Acq);
+  switch (flight) {
+    case Idle:    detect_launch();        break;
+    case Launch:  detect_ascent(conf);    break;
+    case Ascent:  detect_burnout(conf);   break;
+    case Burnout: detect_apogee();        break;
+    case Apogee:  detect_descent(conf);   break;
+    case Descent: detect_reef(conf);      break;
+    case Reefing: detect_landed(conf);    break;
+    case Landed:  crew_send_coords(conf); break;
+    default: break;
+  }
 
-  if (mode & Launch_Triggered)
+  log_filter_data(&sv[sh.idx], sv_size_bytes);
+
+  /* Increment index for the next state vector */
+  sh.idx = (sh.idx + 1) & SV_HIST_MASK;
+}
+
+/*
+ * Initializes Ascent filter and signal Distribution
+ * task to start performing data logistics. Idempotent.
+ * If there is a re-entrancy, discards dirty KF buffers.
+ */
+static inline void
+enter_flight_state(fu32 conf)
+{
+  if (conf & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
-     last = !last;
+     sh.idx = prev(1);
   }
   else
   {
-    log_msg("FC:EVAL: received launch signal", 32);
+    log_msg(id "received launch signal", mlen(22));
     flight = Idle;
+
+    initialize_ascent();
 
     /* Signal distribution task to enter main cycle. */
     fetch_or(&config, option(Launch_Triggered), Rel);
   }
+}
 
-  if (mode & Using_Ascent_KF) {
-    timer_update(AscentKF);
-    initialize_ascent();
-  } else {
-    timer_update(DescentKF);  
-    initialize_descent();
-  }
+/*
+ * Suspends on a message queue and performs
+ * data evaluation in accordance with global config.
+ */
+void evaluation_entry(ULONG input)
+{
+  (void) input;
+
+  UINT st;
+
+  fu32 conf = load(&config, Acq);
+
+  enter_flight_state(conf);
   
-  task_loop (mode & Eval_Abort_Flag)
+  task_loop (conf & Eval_Abort_Flag)
   {
-    fu32 st = mode & Eval_Focus_Flag ? fetch_unsafe()
-                                     : fetch_async();
+    /* Task suspension */
+    st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
 
-    if (st == 0) {
-      tx_thread_sleep(EVAL_SLEEP_NO_DATA);
+    if (st != TX_SUCCESS) {
       continue;
     }
 
-    st = validate(mode);
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    conf = load(&config, Acq);
 
-    if (st > 0) {
-      tx_thread_relinquish();
-      continue;
+    if (conf & Using_Ascent_KF)
+    {
+      update(sh.dt);
     }
 
-    fu8 loggable;
-
-#ifdef GPS_AVAILABLE
-    if (mode & Using_Ascent_KF) {
-      loggable = ASC_STAT * sizeof(float);
-      ascentKF (&vec[last], &vec[!last], &raw);
-    } else {
-      loggable = DESC_STAT * sizeof(float);
-      descentKF(&vec[last], &vec[!last], &raw.d);
-    }
-
-#else
-    loggable = ASC_STAT * sizeof(float);
-    ascentKF(&vec[last], &vec[!last], &raw);
-
-#endif
-
-    last = !last;
-
-    log_filter_data(&vec[last], loggable);
-
-    tx_thread_sleep(EVAL_SLEEP_RT_CONF);
-    mode = load(&config, Acq);
-
-    if (mode & Monitor_Altitude) {
-      evaluate_altitude(mode);
-    }
-
-    switch (flight) {
-      case Idle:    detect_launch();      break;
-      case Launch:  detect_ascent(mode);  break;
-      case Ascent:  detect_burnout(mode); break;
-      case Burnout: detect_apogee();      break;
-      case Apogee:  detect_descent(mode); break;
-      case Descent: detect_reef(mode);    break;
-      case Reefing: detect_landed(mode);  break;
-      default: break;
-    }
-
-    tx_thread_relinquish();
-    mode = load(&config, Acq);
+    evaluate_rocket_state(conf);
   }
 }
 
 
-/// Creates a configurably-preemptive, cooperative Evaluation task
-/// with defined parameters. This task started by the Recovery task.
+/*
+ * Creates a configurably-preemptive, cooperative Evaluation task
+ * with defined parameters. This task started by the Recovery task.
+ */
 void create_evaluation_task(void)
 {
   UINT st = tx_thread_create(&evaluation_task,
@@ -524,7 +437,17 @@ void create_evaluation_task(void)
                              EVAL_TIME_SLICE,
                              TX_DONT_START);
 
+  const char *critical = "creation failure:";
+
   if (st != TX_SUCCESS) {
-    log_die("FC:EVAL: failed to create evaluation task %u", st);
+    log_die(id "task %s %u", critical, st);
+  }
+
+  st = tx_semaphore_create(&eval_focus_mode, "EVALS", 0);
+
+  if (st != TX_SUCCESS) {
+    log_die(id "sema %s %u", critical, st);
   }
 }
+
+/* ------ Evaluation Task ------ */

@@ -213,5 +213,16 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
     return st;
   }
 
+  /* Set interrupt pin INT3 (PB0) to raise on new data */
+  st = gyro_write_reg(hspi, GYRO_INT_CONF, GYRO_INT_CONF_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  st = gyro_write_reg(hspi, GYRO_INT_MAP, GYRO_INT_MAP_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
+
   return HAL_OK;
 }

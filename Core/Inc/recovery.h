@@ -7,36 +7,67 @@
 
 #include "platform.h"
 
-/// Header declaration of the recovery queue
 extern TX_QUEUE shared;
-
-/// Run time configuration mask
 extern atomic_uint_fast32_t config;
 
 
-/* ------ Thresholds for bad/delayed/outdated data reports  ------ */
+/* ------ Thresholds for data reports  ------ */
 
 #define TO_REINIT 20
 #define TO_ABORT  40
 #define RENORM_STEP 0
-
-#define MAX_RESTARTS 3
 
 #define GPS_DELAY_MS 125
 #define MAX_GPS_DELAYS 16
 #define GPS_TIME_DRIFT_MS 40
 #define GPS_MAX_MALFORMED 15
 
+/* ------ Thresholds for data reports  ------ */
 
-/* ------ Endpoint timeouts ------ */
 
-#define FC_TIMEOUT_MS 4000
-#define GND_TIMEOUT_MS 4000
+/* ------ Sensor reinitialization ------ */
+
+#define MAX_REINIT_ATTEMPTS 3
+
+enum sensor_mask : fu8 {
+  Init_Baro = 0x01,
+  Init_Gyro = 0x02,
+  Init_Accl = 0x04,
+
+  Disable   = 0x80,
+
+  Init_All = (Init_Baro | Init_Gyro | Init_Accl)
+};
+
+#define reinit(fn, ctr, sens)             \
+  do {                                    \
+    fu8 k = 0;                            \
+    for (; k < MAX_REINIT_ATTEMPTS ||     \
+           (fn) != HAL_OK; ++k)           \
+           ;                              \
+    if (k >= MAX_REINIT_ATTEMPTS) {       \
+      (ctr) += (sens);                    \
+    }                                     \
+  } while (0)
+
+/* ------ Sensor reinitialization ------ */
+
+
+/* ------ TX Timer interrupt definitions ------ */
+
+/* Time is in ThreadX ticks. 1 tick = 10 ms */
+
+#define FC_TIMEOUT 300
+#define GND_TIMEOUT 300
 
 /* Expiration of timer that invokes timeout checks  */
-#define TX_TIMER_TICKS   100
+#define TX_TIMER_TICKS   50
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
+#define CO2_ASSERT_INTERVAL  50
+#define REEF_ASSERT_INTERVAL 50
+
+/* ------ TX Timer interrupt definitions ------ */
 
 
 /* ------ Universal Flight Computer message ------ */
@@ -63,29 +94,19 @@ extern atomic_uint_fast32_t config;
  * case values are 1..N). The lowest category is
  * additive, and therefore follows exponential pattern.
  */
-
-#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
-enum message : uint32_t {
-
-#else
-enum message {
-
-#endif // GNU C + C23
-
+enum message : fu32 {
   Sensor_Measm_Code = 0,
 
   Bad_Altitude   = 1u,
-  Bad_Attitude_X = (1u << 1),
-  Bad_Attitude_Y = (1u << 2),
-  Bad_Attitude_Z = (1u << 3),
-  Bad_Accel_X    = (1u << 4),  
-  Bad_Accel_Y    = (1u << 5),
-  Bad_Accel_Z    = (1u << 6),
-  Bad_Lattitude  = (1u << 7),
-  Bad_Longtitude = (1u << 8),
-  Bad_Sea_Level  = (1u << 9),
+  Bad_Pressure   = (1u << 1),
+  Bad_Attitude_X = (1u << 2),
+  Bad_Attitude_Y = (1u << 3),
+  Bad_Attitude_Z = (1u << 4),
+  Bad_Accel_X    = (1u << 5),  
+  Bad_Accel_Y    = (1u << 6),
+  Bad_Accel_Z    = (1u << 7),
 
-  Spurious_Confirmations = (1u << 10),
+  Spurious_Confirmations = (1u << 16),
 
   Not_Launch  = Spurious_Confirmations + 1,
   Not_Burnout = Spurious_Confirmations + 2,
@@ -93,7 +114,7 @@ enum message {
   Not_Reefing = Spurious_Confirmations + 4,
   Not_Landed  = Spurious_Confirmations + 5,
   
-  Actionable_Decrees = (1u << 11),
+  Actionable_Decrees = (1u << 17),
 
   Deploy_Parachute = Actionable_Decrees + 1,
   Expand_Parachute = Actionable_Decrees + 2,
@@ -103,11 +124,16 @@ enum message {
   Evaluation_Focus = Actionable_Decrees + 6,
   Evaluation_Abort = Actionable_Decrees + 7,
   Reinit_Barometer = Actionable_Decrees + 8,
+  Enable_IMU       = Actionable_Decrees + 9,
+  Disable_IMU      = Actionable_Decrees + 10,
 
-  GPS_Packet_Code = (1u << 12),
+  GPS_Data_Code = (1u << 18),
 
-  GPS_Delayed   = GPS_Packet_Code + 1,
-  GPS_Malformed = GPS_Packet_Code + 2,
+  Bad_Lattitude  = GPS_Data_Code | (1u << 1),
+  Bad_Longtitude = GPS_Data_Code | (1u << 2),
+  Bad_Sea_Level  = GPS_Data_Code | (1u << 3),
+  GPS_Delayed    = GPS_Data_Code | (1u << 4),
+  GPS_Malformed  = GPS_Data_Code | (1u << 5),
 
   /* ... */
 
@@ -127,15 +153,10 @@ enum message {
   Using_Ascent_KF     = Runtime_Configuration | (1u << 11),
   In_Aborted_State    = Runtime_Configuration | (1u << 12),
   Lost_GroundStation  = Runtime_Configuration | (1u << 13),
+  CO2_Asserted        = Runtime_Configuration | (1u << 14),
+  REEF_Asserted       = Runtime_Configuration | (1u << 15),
 
   Revoke_Option = Runtime_Configuration | (1u << 20),
-
-  KF_Operation_Mode = Runtime_Configuration | (1u << 28),
-
-  Renormalize_Quat_1 = KF_Operation_Mode + 0,
-  Renormalize_Quat_2 = KF_Operation_Mode + 1,
-  Renormalize_Quat_4 = KF_Operation_Mode + 3,
-  Renormalize_Quat_8 = KF_Operation_Mode + 7,
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 27),
 
@@ -157,26 +178,17 @@ enum message {
   Invalid_Message = UINT32_MAX
 };
 
-
-/* For non-GNU C < 23, prevent UB at compile-time */
-
-#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-
-#define typeeq(a, b) __builtin_types_compatible_p(a, b)
-
-_Static_assert(typeeq(typeof(enum command), typeof(uint32_t)), "");
-_Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
-
-#endif // !GNU C * < C23
+/* ------ Universal Flight Computer message ------ */
 
 
-/* ------ Endpoint identifiers: FC ------ */
+/* ------ Helper macros ------ */
 
+/* Length of task identifier */
+#define mlen(len) (len + sizeof(id))
+
+/* Endpoint identifier: FC */
 #define fc_mask(message)    ((message) | FC_Identifier)
 #define fc_unmask(message)  ((message) & ~FC_Identifier)
-
-
-/* ------ Statically unflag option value ------ */
 
 /* When sending commands TO decode_message() */
 #define revoke(opt) ((opt) | Revoke_Option)
@@ -184,14 +196,15 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
 /* When manipulating config OUTSIDE decode_message() */
 #define option(opt) ((opt) & ~Runtime_Configuration)
 
+/* ------ Helper macros ------ */
+
 
 /* ------ User default configuration ------ */
 
-/// Run time config options applied on boot.
-/// Users are welcome to edit the defaults here.
+/* Run time config options applied on boot.
+ * Users are welcome to edit the defaults here. */
 #define DEFAULT_OPTIONS ( (fu32) (0                   \
                           | Consecutive_Samples       \
-                          | Renormalize_Quat_1        \
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \
                           | Validate_Measms           \
@@ -199,29 +212,34 @@ _Static_assert(typeeq(typeof(enum g_conf),  typeof(uint32_t)), "");
                           | Using_Ascent_KF           \
                         ) )
 
+/* ------ User default configuration ------ */
+
 
 /* ------ On-board relative timer implementation ------ */
 
-enum fc_timer {
+enum fc_timer : fu8 {
   AscentKF,
   DescentKF,
-  HeartbeatFC,
   HeartbeatRF,
   HeartbeatGND,
   IntervalGPS,
+  IntervalBaro,
+  AssertCO2,
+  AssertREEF,
 
   Time_Users
 };
 
-/// Last recorded time for each UKF timer user.
-/// Defined in recovery.c to avoid multiple linkage.
-/// u32 wrap is not handled (flight assumed < 49 days :D).
+/* Last recorded time for each UKF timer user.
+ * Defined in recovery.c to avoid multiple linkage.
+ * u32 wrap is not handled (flight assumed < 49 days). */
 extern volatile fu32 local_time[Time_Users];
 
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update,
-/// and set local time to current HAL tick (ms).
+/*
+ * Report time elapsed since last call to either 
+ * timer_fetch_update or timer_update,
+ * and set local time to current HAL tick (ms).
+ */
 static inline fu32 timer_exchange(enum fc_timer u)
 {
   fu32 prev = local_time[u];
@@ -229,20 +247,24 @@ static inline fu32 timer_exchange(enum fc_timer u)
   return local_time[u] - prev;
 }
 
-
-/// Set local time to current HAL tick (ms).
+/*
+ * Set local time to current HAL tick (ms).
+ */
 static inline void timer_update(enum fc_timer u)
 {
   local_time[u] = now_ms();
 }
 
-
-/// Report time elapsed since last call to either 
-/// timer_fetch_update or timer_update.
+/*
+ * Report time elapsed since last call to either 
+ * timer_exchange or timer_update.
+ */
 static inline fu32 timer_fetch(enum fc_timer u)
 {
   return now_ms() - local_time[u];
 }
+
+/* ------ On-board relative timer implementation ------ */
 
 
 #endif // RECOVERY_H

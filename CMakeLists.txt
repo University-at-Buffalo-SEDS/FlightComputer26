@@ -161,21 +161,44 @@ if (DMA_TESTING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
 endif()
 
+# Options defaults to OFF
+option(DMA_BENCH "DMA produce/consume delay benchmark" OFF)
 
-# Custom compilation flags
+if (DMA_BENCH)
+    message(STATUS "Running DMA benchmarks.")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_BENCHMARK)
+endif()
+
+
+# Custom compilation and linker flags
 
 # Option defaults to OFF
-    option(CUSTOM_FLAGS "User-defined compilation flags" OFF)
-    message(STATUS "Custom compilation flags: ${CUSTOM_FLAGS}")
+option(CUSTOM_FLAGS "User-defined flags" OFF)
+message(STATUS "Custom flags: ${CUSTOM_FLAGS}")
 
-    if (CUSTOM_FLAGS)
+if (CUSTOM_FLAGS)
     set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
-    set(FC_DEBUG    "-O0" "-g")
-    set(FC_RELEASE  "-O3" "-ffast-math" "-DNDEBUG" "-g0" "-fno-math-errno" "-funroll-loops")
+
+    set(COMP_DEBUG    "-Og" "-g")
+    set(COMP_RELEASE  "-O3" "-flto" "-ffast-math" "-funroll-loops" "-DNDEBUG" "-g0")
+
+    set(LINK_DEBUG    )
+    set(LINK_RELEASE  "-flto")
 
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
         ${FC_COMMON}
-        $<$<CONFIG:Debug>:${FC_DEBUG}>
-        $<$<CONFIG:Release>:${FC_RELEASE}>
+        $<$<CONFIG:Debug>:${COMP_DEBUG}>
+        $<$<CONFIG:Release>:${COMP_RELEASE}>
     )
+
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+        ${FC_COMMON}
+        $<$<CONFIG:Debug>:${LINK_DEBUG}>
+        $<$<CONFIG:Release>:${LINK_RELEASE}>
+    )
+
+    # Newlib is compiled without LTO, so we must maintain this for syscall
+    # wrappers that CubeMX generated.
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
+                                PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()

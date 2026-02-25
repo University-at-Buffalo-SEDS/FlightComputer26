@@ -6,7 +6,7 @@
  * point of reference and modification. This file also
  * enables easier conditional compilation and poisoning.
  *
- * This header provides the following components the
+ * This header provides the following components for the
  * DMA, Distribution, Evaluation, and Recovery modules:
  *
  * - Type-specific Max, Min, and Abs helper macros;
@@ -15,15 +15,7 @@
  * - Variadic aliases for select sedsprintf_rs functions;
  * - Variadic aliases for substitute stdio functions.
  * - Aliases for select HAL and driver functions;
- * - Shared inlined timer implementation with single storage;
  * - Misc aliases and includes as required by the modules.
- *
- * This header should be included in all high-level Flight Computer
- * logic except for drivers, middleware, and utilized libraries (*),
- * which are considered to be the platform this header abstracts away.
- *
- * (*) Libraries include vendor, bundled, external, and optional,
- *     but exclude RTOS, as the FC makes use of ThreadX scheduling.
  */
 
 #ifndef PLATFORM_H
@@ -38,6 +30,8 @@
 #include <string.h>
 #include <math.h>
 
+/* ------ Bundled std headers used ------ */
+
 
 /* ------ Pre-compilation checks ------ */
 
@@ -46,7 +40,7 @@
 #endif
 
 #if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-  #warning "!C23 * !GNUC -> Hacky types and variadics."
+  #error "This platform requires GNU C11 or ISO C23."
 #endif
 
 #define CM_PTR 0xFFFFFFFFUL
@@ -56,6 +50,8 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 #ifndef STM32H523xx
   #error "STM32H523xx series MCU required."
 #endif
+
+/* ------ Pre-compilation checks ------ */
 
 
 /* ------ Platform integer aliases ----- */
@@ -72,6 +68,8 @@ typedef int_fast8_t  fi8;
 typedef int_fast16_t fi16;
 typedef int_fast32_t fi32;
 typedef int_fast64_t fi64;
+
+/* ------ Platform integer aliases ----- */
 
 
 /* ------ Atomic ops and MO aliases ------ */
@@ -96,6 +94,8 @@ enum seds_atomic_mo {
 #define cas_weak    atomic_compare_exchange_weak_explicit
 #define cas_strong  atomic_compare_exchange_strong_explicit
 
+/* ------ Atomic ops and MO aliases ------ */
+
 
 /* ------ ARM fast math bundled library ------ */
 
@@ -112,21 +112,23 @@ typedef arm_matrix_instance_f32 matrix;
   * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
   *
   * There is no such instruction for inverse square root
-  * => bithack + Newton-Raphson below to avoid FP division. */
-#define vsqrt     arm_sqrt_f32;
+  * => bithack + Newton-Raphson to avoid FP division. */
+#define vsqrt                 arm_sqrt_f32;
 
 /* These functions take pointers to arm_matrix_instance_f32;
  * this is the reason there are wrappers inside KF functions. */
-#define chol			arm_mat_cholesky_f32
-#define transpose arm_mat_trans_f32
-#define xmul 			arm_mat_mult_f32
-#define xadd			arm_mat_add_f32
-#define xsub      arm_mat_sub_f32
-#define xinv      arm_mat_inverse_f32
+#define chol_lower_triang			arm_mat_cholesky_f32
+#define transpose             arm_mat_trans_f32
+#define matrix_mult 			    arm_mat_mult_f32
+#define matrix_add			      arm_mat_add_f32
+#define matrix_sub            arm_mat_sub_f32
+#define matrix_inv            arm_mat_inverse_f32
 
 /* I don't quite get the point of this function.
  * Maybe because it's *floating point*. */
-#define xinit     arm_mat_init_f32
+#define matrix_init           arm_mat_init_f32
+
+/* ------ ARM fast math bundled library ------ */
 
 
 /* ------ Task utilities ------ */
@@ -145,12 +147,16 @@ typedef arm_matrix_instance_f32 matrix;
 
 #endif // DMB support
 
+/* ------ Task utilities ------ */
 
-/* ------ FC '26 GPIO port maps ------ */
+
+/* ------ IREC 2026 GPIO port maps ------ */
 
 #define PYRO_PORT GPIOB
 #define CO2_PIN   GPIO_PIN_5
 #define REEF_PIN  GPIO_PIN_6
+
+/* ------ IREC 2026 GPIO port maps ------ */
 
 
 /* ------ ThreadX API includes ------ */
@@ -159,6 +165,8 @@ typedef arm_matrix_instance_f32 matrix;
 #include "tx_port.h"
 #include "FC-Threads.h"
 
+/* ------ ThreadX API includes ------ */
+
 
 /* ------ Type attributes ------ */
 
@@ -166,9 +174,18 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define tx_align __attribute__((aligned(sizeof(ULONG))))
 
+#define IREC26_unused __attribute__((unused))
+
+#define constexpr __attribute__((const))
+
+#define blind_inline __attribute__((always_inline))
+
+/* ------ Type attributes ------ */
+
 
 /* ------ HAL Aliases ------ */
 
+#include "stm32h5xx.h"
 #include "stm32h5xx_hal.h"
 #include "stm32h5xx_hal_def.h"
 #include "stm32h5xx_hal_spi.h"
@@ -185,21 +202,25 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Parachute deployment functions */
 
-#define co2_low()                                               \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
+#define co2_low()                                                       \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET);
 
-#define co2_high()                                              \
-  do {                                                          \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);        \
-    /* Always guarantee all tasks observe PYRO fire */          \
-    fetch_or(&config, option(Parachute_Deployed), Rel);  \
+#define co2_high(conf)                                                  \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);                \
+    timer_update(AssertCO2);                                            \
+    fetch_or(conf, option(Parachute_Deployed | CO2_Asserted), Rel);     \
   } while (0)
 
-#define reef_low()                                              \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
+#define reef_low()                                                      \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET);
 
-#define reef_high()                                             \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
+#define reef_high(conf)                                                 \
+  do {                                                                  \
+    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET);               \
+    timer_update(AssertREEF);                                           \
+    fetch_or(conf, option(REEF_Asserted), Rel);                         \
+  } while (0)
 
 /* Data cache calls */
 
@@ -220,6 +241,8 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define dma_spi_txrx(txbuf, rxbuf, size)              \
   (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
                                (rxbuf), (size)))
+
+/* ------ HAL Aliases ------ */
 
 
 /* ------ Sensor drivers and data collection ------ */
@@ -277,6 +300,12 @@ struct serial coords { float x, y, z; };
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7
 
+#define Baro_EXTI   EXTI7_IRQn
+#define Gyro_EXTI_1 EXTI0_IRQn
+#define Gyro_EXTI_2 EXTI1_IRQn
+#define Accl_EXTI_1 EXTI4_IRQn
+#define Accl_EXTI_2 EXTI5_IRQn
+
 /* Driver-specific data conversions */
 
 #define U32(b0, b1, b2, b3)                                         \
@@ -290,6 +319,8 @@ struct serial coords { float x, y, z; };
   ((int16_t)(((uint16_t)(b1) << 8) | (uint16_t)(b0)))
 
 #define F16(b0, b1) ((float)I16(b0, b1))
+
+/* ------ Sensor drivers and data collection ------ */
 
 
 /* ------ Telemetry API abstraction ------ */
@@ -324,8 +355,8 @@ struct serial coords { float x, y, z; };
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
-#else
-#if defined(__GNUC__)
+#else 
+#if defined (__GNUC__)
 
 #define log_err_sync(fmt, ...)                              \
   log_error_syncronous(fmt, ##__VA_ARGS__)
@@ -335,17 +366,7 @@ struct serial coords { float x, y, z; };
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
-#else /* Does not support 0 variadic arguments */
-
-#define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, __VA_ARGS__)
-
-#define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, __VA_ARGS__)
-
-#define log_die(fmt, ...) die(fmt, __VA_ARGS__)
-
-#endif // GNU C
+#endif // GNUC
 #endif // >= C23
 
 /* Ignition request from the Valve board over telemetry */
@@ -416,19 +437,6 @@ static inline SedsResult request_ignition()
     }                                                         \
   } while (0)
 
-#else /* Does not support 0 variadic arguments */
-
-#define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_ARGS__)
-
-#define log_die(fmt, ...)                                     \
-  do {                                                        \
-    while (1) {                                               \
-      fprintf(stderr, fmt, __VA_ARGS__);                      \
-      HAL_Delay(1000);                                        \
-    }                                                         \
-  } while (0)
-
 #endif // GNU C
 #endif // >= C23
 
@@ -439,6 +447,8 @@ static inline SedsResult request_ignition()
 
 #endif // TELEMETRY_ENABLED
 
+/* ------ Telemetry API abstraction ------ */
+
 
 /* ------ On-board SD card (conditional) ------ */
 
@@ -448,6 +458,8 @@ static inline SedsResult request_ignition()
 #include "fx_stm32_sd_driver.h"
 
 #endif // SD_AVAILABLE
+
+/* ------ On-board SD card (conditional) ------ */
 
 
 #endif // PLATFORM_H

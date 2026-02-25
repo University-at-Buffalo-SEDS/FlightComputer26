@@ -43,6 +43,7 @@
  * data evaluation buffer and telemetry (UART and SD) queues.
  */
 
+#include "kalman.h"
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
@@ -52,26 +53,28 @@ TX_THREAD distribution_task;
 ULONG distribution_stack[DIST_STACK_ULONG];
 
 
-/* ------ Static ------ */
+/* ------ Global and static storage ------ */
 
-/// Latest logged measurement.
-static struct measurement payload = {0};
+#define id    "DI "
+#define pilot "PILOT "
 
+/* Latest logged measurement */
+struct measurement payload = {0};
+
+struct coords rail = {0};
+
+/* ------ Global and static storage ------ */
+
+
+/* ------ Packet handling definitions ------ */
 
 #ifdef TELEMETRY_ENABLED
 
-/* ------ FC packet handling ------ */
-
+#define telid "TE "
 
 #ifdef TELEMETRY_CMD_COMPAT
 
-#if defined(__GNUC__) || __STDC_VERSION__ >= 202311L
 enum remote_cmd_compat : uint8_t {
-
-#else
-enum remote_cmd_compat {
-
-#endif // GNU C + C23
 
   /* Matches 'Actionable_Decrees' */
   Compat_Deploy_Parachute,
@@ -82,6 +85,8 @@ enum remote_cmd_compat {
   Compat_Evaluation_Focus,
   Compat_Evaluation_Abort,
   Compat_Reinit_Barometer,
+  Compat_Enable_IMU,
+  Compat_Disable_IMU,
   
   /* Excludes internal config options */
   Compat_Monitor_Altitude,
@@ -92,11 +97,6 @@ enum remote_cmd_compat {
   Revoke_Reset_Failures,
   Compat_Validate_Measms,
   Revoke_Validate_Measms,
-
-  Compat_Renormalize_Quat_1,
-  Compat_Renormalize_Quat_2,
-  Compat_Renormalize_Quat_4,
-  Compat_Renormalize_Quat_8,
 
   Compat_Abort_After_15,
   Compat_Abort_After_40,
@@ -109,12 +109,7 @@ enum remote_cmd_compat {
   Compat_Messages
 };
 
-#if !defined(__GNUC__) && __STDC_VERSION__ < 202311L
-  _Static_assert(sizeof(enum remote_cmd_compat) == sizeof(uint8_t), "");
-#endif
-
-
-/// O(1) map between byte code and FC message.
+/* O(1) map between byte code and FC message */
 static const enum message extmap[Compat_Messages] = {
         Deploy_Parachute,
         Expand_Parachute,
@@ -124,6 +119,8 @@ static const enum message extmap[Compat_Messages] = {
         Evaluation_Focus,
         Evaluation_Abort,
         Reinit_Barometer,
+        Enable_IMU,
+        Disable_IMU,
 
         Monitor_Altitude,
         revoke(Monitor_Altitude),
@@ -134,10 +131,6 @@ static const enum message extmap[Compat_Messages] = {
         Validate_Measms,
         revoke(Validate_Measms),
 
-        Renormalize_Quat_1,
-        Renormalize_Quat_2,
-        Renormalize_Quat_4,
-        Renormalize_Quat_8,
         Abort_After_15,
         Abort_After_40,
         Abort_After_70,
@@ -146,7 +139,6 @@ static const enum message extmap[Compat_Messages] = {
         Reinit_After_44,
 };
 
-
 #define MIN_CMD_SIZE 1
 
 static inline enum message decode_cmd(const uint8_t *raw)
@@ -154,34 +146,40 @@ static inline enum message decode_cmd(const uint8_t *raw)
   return *raw < Sensors ? extmap[*raw] : Invalid_Message;
 }
 
-
-#else
+#else // TELEMETRY_CMD_COMPAT
 
 #define MIN_CMD_SIZE 4
 
-static inline enum command decode_cmd(const uint8_t *raw)
+static inline enum message decode_cmd(const uint8_t *raw)
 {
-  return (enum command) U32(raw[0], raw[1], raw[2], raw[3]);
+  return (enum message) U32(raw[0], raw[1], raw[2], raw[3]);
 }
-
 
 #endif // TELEMETRY_CMD_COMPAT
 
+/* ------ Packet handling definitions ------ */
+
+
+/* ------ GPS handling functions ------ */
 
 #ifdef GPS_AVAILABLE
 
 #define GPS_RING_SIZE 4
 #define GPS_RING_MASK (GPS_RING_SIZE - 1)
 
-/// 0-7:  amount of new entries,
-/// 8-15: 'consumer lock' index. 0xFF when unlocked.
-static atomic_uint_fast16_t mask = 0xFF00u;
+/* 0-7:  amount of new entries,
+ * 8-15: 'consumer lock' index. 0xFF when unlocked. */
+static atomic_uint_fast16_t gps_mask = 0xFF00u;
 static struct coords gps_ring[GPS_RING_SIZE] = {0};
 
-
-/// Deterministically writes GPS data struct into a free bucket.
-/// Guards against locks, dropped packets, and inadequate consumer.
-static inline void enqueue_gps_data(const uint8_t *buf)
+/*
+ * Deterministically writes GPS data struct into
+ * a free bucket. Guards against locks, dropped
+ * packets, and inadequate consumer. Safe when
+ * the calling thread is asynchronously cancelled.
+ */
+static inline void
+enqueue_gps_data(const uint8_t *buf)
 {
   static fu8 idx = 0;
 
@@ -189,86 +187,30 @@ static inline void enqueue_gps_data(const uint8_t *buf)
   memcpy(&gps_ring[i], buf, sizeof(struct coords));
 
   i = (i + 1) & RING_MASK;
-  fu8 cons = load(&mask, Acq) >> 8;
+  fu8 cons = load(&gps_mask, Acq) >> 8;
 
   if (i != cons) {
-    fetch_add(&mask, 1, Rel);
+    fetch_add(&gps_mask, 1, Rel);
     idx = i;
   }
 }
 
-
-/// Called from within the Telemetry thread.
-static inline SedsResult
-handle_gps_data(const uint8_t *data, size_t len, uint64_t ts)
-{
-  static fu64 gps_ref_time = 0;
-
-  timer_update(HeartbeatRF);
-
-  if (load(&config, Rlx) & option(Using_Ascent_KF))
-  {
-    /* GPS data is not needed. */
-    return SEDS_OK;
-  }
-
-  if (len != 3 * sizeof(float))
-  {
-    enum message cmd = fc_mask(GPS_Malformed);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-
-    return SEDS_ERR;
-  }
-
-  if (gps_ref_time == 0)
-  {
-    gps_ref_time = ts*1000UL - now_ms();
-  }
-  else if (gps_ref_time + now_ms() - ts*1000UL > GPS_TIME_DRIFT_MS)
-  {
-    log_err("FC:TLMT: warning: using outdated GPS data.");
-  }
-
-  enqueue_gps_data(data);
-
-  return SEDS_OK;
-}
-
-
-/// Checks for timeout but does not fetch GPS data.
-/// Provides early inference of GPS availability.
-static inline void assess_gps_delay(void)
-{
-  if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
-  {
-    enum message cmd = fc_mask(GPS_Delayed);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
-}
-
-
 /*
- * Converts GPS coordinates into distance from launch rail.
+ * Fetches latest available GPS packet, or checks
+ * for timeout. Returns the amount of new entries
+ * added since last call. Safe when the calling
+ * thread is asynchronously cancelled.
  */
-static inline void
-distance_from_rail(struct coords *gps)
-{
-  // TODO Dynamics
-}
-
-
-/// Fetches latest available GPS packet, or checks for timeout.
-/// Returns the amount of new entries added since last call.
-static inline fu8 fetch_gps_data(struct coords *buf)
+static inline fu8
+fetch_gps_data(struct coords *buf)
 {
   static fu8 idx = UINT_FAST8_MAX;
 
   fu16 i = idx;
-  fu8 n = (fu8) swap(&mask, i << 8, AcqRel);
+  fu8 n = (fu8) swap(&gps_mask, i << 8, AcqRel);
   
   if (!n) {
-    assess_gps_delay();
-    fetch_or(&mask, CLEAR_IDX, Rlx);
+    fetch_or(&gps_mask, CLEAR_IDX, Rlx);
     return 0;
   }
 
@@ -277,17 +219,125 @@ static inline fu8 fetch_gps_data(struct coords *buf)
 
   *buf = gps_ring[i];
 
-  fetch_or(&mask, CLEAR_IDX, Rlx);
+  fetch_or(&gps_mask, CLEAR_IDX, Rlx);
   return n;
 }
 
+/*
+ * GPS sanity check against NEO-M9N data range.
+ */
+static inline enum message
+validate_gps_absolute(const struct coords *gps)
+{
+  enum message st = 0;
+
+  if (gps->x > MAX_LAT || gps->x < MIN_LAT) {
+    st |= Bad_Lattitude;
+  }
+  if (gps->y > MAX_LON || gps->y < MIN_LON) {
+    st |= Bad_Longtitude;
+  }
+  if (gps->z > MAX_SEA || gps->z < MIN_SEA) {
+    st |= Bad_Sea_Level;
+  }
+
+  return st;
+}
+
+/*
+ * GPS sanity check against launch coordinates.
+ * Tolerance of 1.41 degree makes it a sanity check.
+ * (We are basically checking for being within ~150
+ * km from Midland, TX).
+ */
+static inline enum message
+validate_gps_relative(const struct coords *gps)
+{
+  if (!lat_within_launch_site(gps->x) ||
+      !lon_within_launch_site(gps->y))
+  {
+    log_err(telid "GPS coords beyond launch site:"
+            " LAT: %f, LON: %f", gps->x, gps->y); 
+  }
+
+  if (gps->z > MAX_SEA || gps->z < MIN_SEA) {
+    return Bad_Sea_Level;
+  }
+
+  return 0;
+}
+
+/*
+ * Checks received size and invokes appropriate validator.
+ */
+static inline fu32
+validate_gps_serial(const uint8_t *data, size_t len)
+{
+  enum message rep = fc_mask(GPS_Data_Code);
+
+  if (len != sizeof(struct coords))
+  {
+    rep |= GPS_Malformed;
+  }
+  else
+  {
+    fu32 conf = load(&config, Acq);
+
+    if (conf & option(Validate_Measms))
+    {
+      rep |= conf & option(Launch_Triggered)
+          ? validate_gps_absolute((const struct coords *)data)
+          : validate_gps_relative((const struct coords *)data);
+    }
+  }
+
+  return rep;
+}
+
+/*
+ * Accumulates helpers refresh RF board heartbeat,
+ * validate GPS data, and enqueue valid packet.
+ */
+static inline SedsResult
+handle_gps_data(const uint8_t *data, size_t len)
+{
+  timer_update(HeartbeatRF);
+  
+  fu32 rep = validate_gps_serial(data, len);
+
+  if (rep != fc_mask(GPS_Data_Code))
+  {
+    tx_queue_send(&shared, &rep, TX_NO_WAIT);
+    return SEDS_ERR;
+  }
+
+  enqueue_gps_data(data);
+
+  return SEDS_OK;
+}
+
+/*
+ * Converts GPS coordinates into distance from
+ * launch rail. This is how Descent KF expects GPS.
+ */
+static inline void
+distance_from_rail(struct coords *gps)
+{
+  // TODO Dynamics
+}
 
 #endif // GPS_AVAILABLE
 
+/* ------ GPS handling functions ------ */
+
+
+/* ------ Packet handling functions ------ */
 
 #define INVALID_MESSAGE_STATUS 0xFFu
 
-/// Deposits one or multiple messages into the recovery queue.
+/*
+ * Deposits one or multiple messages into the recovery queue.
+ */
 static inline SedsResult
 handle_gnd_command(const uint8_t *data, size_t len)
 {
@@ -319,14 +369,17 @@ handle_gnd_command(const uint8_t *data, size_t len)
   return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
 }
 
-
-/// Calls appropriate handler based on sender id.
+/*
+ * Calls appropriate handler based on sender id.
+ * Invoked from the Telemetry thread.
+ */
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 {
   (void) user;
 
-  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER || !pkt->payload
-      || !pkt->payload_len || !pkt->sender || !pkt->sender_len)
+  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
+      !pkt->payload || !pkt->payload_len ||
+      !pkt->sender || !pkt->sender_len)
   {
     return SEDS_HANDLER_ERROR;
   }
@@ -340,7 +393,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 #ifdef GPS_AVAILABLE
   else if (pkt->sender[0] == 'R')
   {
-    return handle_gps_data(pkt->payload, pkt->payload_len, pkt->timestamp);
+    return handle_gps_data(pkt->payload, pkt->payload_len);
   }
 #endif
 
@@ -350,201 +403,289 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
   }
 }
 
-
 #endif // TELEMETRY_ENABLED
 
+/* ------ Packet handling functions ------ */
 
-/* ------ Local helpers ------ */
 
-/// Locally validate all data but do not send reports to the queue.
-static inline fu8 test_validate_all(struct coords *gps)
+/* ------ Sensor data sanity checks ------ */
+
+/*
+ * IMU sanity check against BMI088 data range.
+ */
+static inline enum message
+validate_imu(const struct coords *gyro,
+             const struct coords *accl, fu32 conf)
 {
-  enum message st = Sensor_Measm_Code;
+  enum message st = fc_mask(Sensor_Measm_Code);
 
-  if (payload.baro.alt > MAX_ALT || payload.baro.alt < MIN_ALT) {
-    st += Bad_Altitude;
-  }
-
-  if (payload.d.accl.x > MAX_ACC || payload.d.accl.x < MIN_ACC) {
-    st += Bad_Accel_X;
-  }
-
-  if (payload.d.accl.y > MAX_ACC || payload.d.accl.y < MIN_ACC) {
-    st += Bad_Accel_Y;
-  }
-
-  if (payload.d.accl.z > MAX_ACC || payload.d.accl.z < MIN_ACC) {
-    st += Bad_Accel_Z;
-  }
-
-  if (payload.gyro.x > MAX_DPS || payload.gyro.x < MIN_DPS) {
-    st += Bad_Attitude_X;
-  }
-
-  if (payload.gyro.y > MAX_DPS || payload.gyro.y < MIN_DPS) {
-    st += Bad_Attitude_Y;
-  }
-
-  if (payload.gyro.z > MAX_DPS || payload.gyro.z < MIN_DPS) {
-    st += Bad_Attitude_Z;
-  }
-
-#if GPS_AVAILABLE
-  if (gps) {
-    /* Run regular sanity checks during flight
-     * stage in the case we fly far away :) */
-    if (lat_within_launch_site(gps->x)) {
-      st += Bad_Lattitude;
+  if (conf & option(Validate_Measms))
+  {
+    if (accl->x > MAX_ACC || accl->x < MIN_ACC) {
+      st |= Bad_Accel_X;
     }
-
-    if (lon_within_launch_site(gps->y)) {
-      st += Bad_Longtitude;
+    if (accl->y > MAX_ACC || accl->y < MIN_ACC) {
+      st |= Bad_Accel_Y;
     }
-
-    if (gps->z > MAX_SEA || gps->z < MIN_SEA) {
-      st += Bad_Sea_Level;
+    if (accl->z > MAX_ACC || accl->z < MIN_ACC) {
+      st |= Bad_Accel_Z;
+    }
+    if (gyro->x > MAX_DPS || gyro->x < MIN_DPS) {
+      st |= Bad_Attitude_X;
+    }
+    if (gyro->y > MAX_DPS || gyro->y < MIN_DPS) {
+      st |= Bad_Attitude_Y;
+    }
+    if (gyro->z > MAX_DPS || gyro->z < MIN_DPS) {
+      st |= Bad_Attitude_Z;
     }
   }
-
-#endif // GPS_AVAILABLE
 
   return st;
 }
 
+/*
+ * Barometer sanity check against BMP390 data range.
+ */
+static inline enum message
+validate_baro(const struct baro *baro, fu32 conf)
+{
+  enum message st = fc_mask(Sensor_Measm_Code);
+
+  if (conf & option(Validate_Measms))
+  {
+    if (baro->p > MAX_PRS || baro->p < MAX_PRS) {
+      st |= Bad_Pressure;
+    }
+    if (baro->alt > MAX_ALT || baro->alt < MIN_ALT) {
+      st |= Bad_Altitude;
+    }
+  }
+
+  return st;
+}
+
+/*
+ * Call and aggregate statuses from all validator functions.
+ */
+static inline enum message                                  IREC26_unused
+validate_all(const struct measurement *buf, fu32 conf)
+{
+  return validate_baro(&buf->baro, conf) |
+         validate_imu(&buf->gyro, &buf->d.accl, conf);
+}
+
+/* ------ Sensor data sanity checks ------ */
+
 
 /* ------ Distribution Task ------ */
 
-/// Distribution loop that executes before the Flight
-/// Computer receives command to launch. After exiting
-/// the loop, this function performs final sanity checks
-/// and sends ignition signal to the Valve board.
+/*
+ * Distribution loop that executes before the Flight
+ * Computer receives command to launch. After exiting
+ * the loop, this function performs final sanity checks
+ * and sends ignition signal to the Valve board.
+ */
 static inline void pre_launch(void)
 {
-  fu8 st = 0;
-  fu32 local_conf = 0;
-  struct coords *gps_ref;
-  enum message cmd = fc_mask(Sensor_Measm_Code);
+  fu32 st = 0, counter = 0;
 
-  task_loop (local_conf & option(Launch_Triggered))
+  float accum_baro = 0, accum_gps = 0;
+  fu32 ctr_baro = 0, ctr_gps = 0;
+
+  fu32 conf = load(&config, Acq);
+
+  task_loop (conf & option(Launch_Triggered))
   {
-    local_conf = load(&config, Acq);
-
-    st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-
     if (st != TX_SUCCESS) {
-      log_err("FC:DIST: (PILOT) heartbeat failed (%u)", st);
+      log_err(pilot "heartbeat failed: %u", st);
     }
 
-    if (!dma_fetch(&payload, 0))
+    if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
     {
-      /* Short yield (DMA is fast) */
       tx_thread_relinquish();
       continue;
     }
 
-#ifdef GPS_AVAILABLE
-    struct coords temp_gps_buf = {0};
-    gps_ref = &temp_gps_buf;
+    st = validate_imu(&payload.gyro, &payload.d.accl, conf);
 
-    if (!(local_conf & option(GPS_Available)))
+    if (st == Sensor_Measm_Code) {
+      compensate_accl(&payload.d.accl);
+      log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
+      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+    }
+    else {
+      log_err(pilot "malformed IMU data: %u", st);
+    }
+
+    if (dma_fetch_baro(&payload.baro))
     {
-      if (!fetch_gps_data(&temp_gps_buf))
-      {
-        /* Long yield (refresh config and DMA data) */
-        tx_thread_sleep(DIST_SLEEP_NO_DATA);
-        continue;
+      accum_baro += fsec(timer_exchange(IntervalBaro));
+      ++ctr_gps;
+
+      st = validate_baro(&payload.baro, conf);
+
+      if (st == Sensor_Measm_Code) {
+        compensate_baro(&payload.baro);
+        log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+      }
+      else {
+        log_err(pilot "malformed Baro data: %u", st);
       }
     }
-    else /* GPS is lost, skip validity checks */
+
+#ifdef GPS_AVAILABLE
+    if (conf & option(GPS_Available) &&
+        fetch_gps_data(&payload.d.gps))
     {
-      gps_ref = NULL;
+      accum_gps += fsec(timer_exchange(IntervalGPS));
+      ++ctr_gps;
+      /* GPS data is validated by the Telemetry thread,
+       * and reported by the RF board. */
+
+      /* As long as we are stationary, update launch coordinates 
+       * with newest available. */
+      memcpy(&rail, &payload.d.gps, sizeof(struct coords));
+
+      if (counter != 0 &&
+          (fabsf(rail.x - payload.d.gps.x) > GPS_RAIL_TOLER ||
+           fabsf(rail.y - payload.d.gps.y) > GPS_RAIL_TOLER))
+      {
+        log_err(id "contraversial launch coords: "
+                   "LAT: %f, LON: %f", rail.x, rail.y);
+      }
     }
-
-#else
-    gps_ref = NULL;
-
 #endif // GPS_AVAILABLE
 
-    st = test_validate_all(gps_ref);
-
-    if (st != Sensor_Measm_Code) {
-      log_err("FC:DIST: (PILOT) malformed data (%u)", st);
+    if (!(++counter & 31)) {
+      // FIXME ask to provide explicit packet type for
+      // rates.
+      if (ctr_baro > 0) {
+        log_err(pilot "gathering baro every %f sec", accum_baro / ctr_baro);
+      }
+      if (ctr_gps > 0) {
+        log_err(pilot "gathering gps every %f sec", accum_gps / ctr_gps);
+      }
     }
 
-    compensate_all(&payload);
-    
-#ifdef GPS_AVAILABLE
-    distance_from_rail(&payload.d.gps);
-#endif
-
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-    log_measurement(SEDS_DT_GYRO_DATA,      &payload.gyro);
-    log_measurement(SEDS_DT_ACCEL_DATA,     &payload.d.accl);
+    conf = load(&config, Acq);
   }
 
   /* Request Valve board to ignite the engine. */
   task_loop (request_ignition() == SEDS_OK);
 
-  log_msg("FC:DIST: Ignition requested, entering flight mode", 50);
+  log_msg(id "ignition requested, in flight mode", mlen(34));
 }
 
+/*
+ * Data cycle for the Ascent filter.
+ */
+static inline void ascent_cycle(fu32 conf)
+{
+  fu32 st;
 
-/// Distribution task entry that also serves as
-/// an overview of the Flight Computer data distribution.
-/// This function is idempotent and can be reentered whenever
-/// any critical conditions arise as deemed by Recovery task.
+  if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
+  {
+    /* Wait for IMU measurements */
+    tx_thread_relinquish();
+    return;
+  }
+
+  st = validate_imu(&payload.gyro, &payload.d.accl, conf);
+
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+  compensate_accl(&payload.d.accl);
+  sh.dt = fsec(timer_exchange(AscentKF));
+
+  predict(sh.dt);
+
+  if (!dma_fetch_baro(&payload.baro)) {
+    /* Run Predict in the meanwhile */
+    return;
+  }
+
+  st = validate_baro(&payload.baro, conf);
+
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+  if (conf & option(Eval_Focus_Flag)) {
+    tx_semaphore_put(&eval_focus_mode);
+  }
+  else {
+    update(sh.dt);
+    evaluate_rocket_state(conf);
+  }
+}
+
+/*
+ * Data cycle for the Descent filter.
+ */
+static inline void descent_cycle(fu32 conf)
+{
+  fu32 st;
+
+  if (!dma_fetch_baro(&payload.baro)) {
+    tx_thread_relinquish();
+    return;
+  }
+
+  st = validate_baro(&payload.baro, conf);
+  if (st != fc_mask(Sensor_Measm_Code)) {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+#ifdef GPS_AVAILABLE
+  if (conf & option(GPS_Available) &&
+      !fetch_gps_data(&payload.d.gps))
+  {
+    tx_thread_relinquish();
+    return;
+  }
+#endif // GPS_AVAILABLE
+
+  sh.dt = fsec(timer_exchange(DescentKF));
+
+  // call descent filter
+}
+
+/*
+ * Distribution task entry that also serves as
+ * an overview of the Flight Computer data distribution.
+ * This function is idempotent and can be reentered whenever
+ * any critical conditions arise as deemed by Recovery task.
+ */
 void distribution_entry(ULONG input)
 {
   (void) input;
 
+  fu32 conf = load(&config, Acq);
+
   /* Enter pre-launch loop only once. */
-  if (!(load(&config, Acq) & option(Launch_Triggered))) {
+  if (!(conf & option(Launch_Triggered))) {
     pre_launch();
   }
 
   task_loop (DO_NOT_EXIT)
   {
-    fu8 for_ukf = load(&config, Acq) & option(Using_Ascent_KF);
+    conf = load(&config, Acq);
 
-    /* Do not wait for Gyro & Accel if we use Descent KF. */
-    fu8 skip_mask = for_ukf ? 0 : RX_GYRO | RX_ACCL;
-
-    if (!dma_fetch(&payload, skip_mask))
-    {
-      tx_thread_relinquish();
-      continue;
-    }
-
-    compensate_all(&payload);
-
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-
-    if (for_ukf)
-    {
-      log_measurement(SEDS_DT_GYRO_DATA,  &payload.gyro);
-      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
-
-#ifdef GPS_AVAILABLE
-      assess_gps_delay();
-    }
-    else
-    {
-      if (load(&config, Acq) & option(GPS_Available)
-          && !fetch_gps_data(&payload.d.gps))
-      {
-        tx_thread_relinquish();
-        continue;
-      }
-
-#endif // GPS_AVAILABLE
-    }
-
-    evaluation_put(&payload);
+    conf & option(Using_Ascent_KF) ? ascent_cycle(conf)
+                                   : descent_cycle(conf);
   }
 }
 
-
-/// Creates a preemptive, Distribution task with defined parameters.
+/*
+ * Creates a preemptive, cooperative Distribution
+ * task with defined parameters.
+ */
 void create_distribution_task(void)
 {
   UINT st = tx_thread_create(&distribution_task,
@@ -560,6 +701,6 @@ void create_distribution_task(void)
                              TX_AUTO_START);
 
   if (st != TX_SUCCESS) {
-    log_die("FC:DIST: failed to create task (%u)", st);
+    log_die(id "task creation failure: %u", st);
   }
 }

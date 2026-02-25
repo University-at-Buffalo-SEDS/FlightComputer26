@@ -64,9 +64,13 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   UINT ret = TX_SUCCESS;
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
+#ifdef TELEMETRY_ENABLED
   if (init_telemetry_router() != SEDS_OK) {
     Error_Handler();
   }
+
+#endif
+
   /* Log after router is initialized, before threads start */
   char started_txt[] = "Starting Threadx Scheduler";
   log_msg_sync(started_txt, sizeof started_txt);
