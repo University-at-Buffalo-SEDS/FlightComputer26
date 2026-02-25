@@ -41,7 +41,7 @@ volatile fu8 renorm_step_mask = RENORM_STEP;
 /*
  * Inverse square root function using bithack.
  */
-static inline float invsqrtf(float x)
+static inline constexpr float invsqrtf(float x)
 {
   /* Brought right from Quake 3 Arena! */
   union bithack k = {.f = x};
@@ -131,7 +131,7 @@ void initialize_descent(void)
  */
 void descentKF(const struct descent *z)
 {
-  matrix state = {DESC_STAT, 1, (float *)&sv[idx]};
+  matrix state = {DESC_STAT, 1, (float *)&sv[sh.idx]};
   matrix measm = {DESC_MEAS, 1, (float *)z};
 
 	const float dt = fsec(timer_exchange(DescentKF));
@@ -206,54 +206,54 @@ void initialize_ascent(void)
 /*
  * Transforms input vector into next-sample prediction.
  */
-static inline void predict(struct state_vec *vec, const float dt)
+blind_inline void predict(const float dt)
 {
   static fu8 iteration = 0;
 
   const float fact = 0.5f * dt;
-  const float dvx = dt * vec->a.x;
-  const float dvy = dt * vec->a.y;
-  const float dvz = dt * vec->a.z;
-  const float vtx = dt * vec->v.x;
-  const float vty = dt * vec->v.y;
-  const float vtz = dt * vec->v.z;
+  const float dvx = dt * sv[sh.idx].a.x;
+  const float dvy = dt * sv[sh.idx].a.y;
+  const float dvz = dt * sv[sh.idx].a.z;
+  const float vtx = dt * sv[sh.idx].v.x;
+  const float vty = dt * sv[sh.idx].v.y;
+  const float vtz = dt * sv[sh.idx].v.z;
 
-  const struct quaternion old = vec->qv;
+  const struct quaternion old = sv[sh.idx].qv;
 
-  vec->v.x += dvx;
-  vec->v.y += dvy;
-  vec->v.z += dvz;
+  sv[sh.idx].v.x += dvx;
+  sv[sh.idx].v.y += dvy;
+  sv[sh.idx].v.z += dvz;
   
-  vec->p.x += vtx + (fact * dvx);
-  vec->p.y += vty + (fact * dvy);
-  vec->p.z += vtz + (fact * dvz);
+  sv[sh.idx].p.x += vtx + (fact * dvx);
+  sv[sh.idx].p.y += vty + (fact * dvy);
+  sv[sh.idx].p.z += vtz + (fact * dvz);
 
-  vec->qv.q1 -= fact * (vec->w.x * old.q2 + \
-                        vec->w.y * old.q3 + \
-                        vec->w.z * old.q4);
-  vec->qv.q2 += fact * (vec->w.x * old.q1 + \
-                        vec->w.z * old.q3 - \
-                        vec->w.y * old.q4);
-  vec->qv.q3 += fact * (vec->w.y * old.q1 - \
-                        vec->w.z * old.q2 + \
-                        vec->w.x * old.q4);
-  vec->qv.q4 += fact * (vec->w.z * old.q1 + \
-                        vec->w.y * old.q2 - \
-                        vec->w.x * old.q3);
+  sv[sh.idx].qv.q1 -= fact * (sv[sh.idx].w.x * old.q2 + \
+                              sv[sh.idx].w.y * old.q3 + \
+                              sv[sh.idx].w.z * old.q4);
+  sv[sh.idx].qv.q2 += fact * (sv[sh.idx].w.x * old.q1 + \
+                              sv[sh.idx].w.z * old.q3 - \
+                              sv[sh.idx].w.y * old.q4);
+  sv[sh.idx].qv.q3 += fact * (sv[sh.idx].w.y * old.q1 - \
+                              sv[sh.idx].w.z * old.q2 + \
+                              sv[sh.idx].w.x * old.q4);
+  sv[sh.idx].qv.q4 += fact * (sv[sh.idx].w.z * old.q1 + \
+                              sv[sh.idx].w.y * old.q2 - \
+                              sv[sh.idx].w.x * old.q3);
 
   if (!(iteration & renorm_step_mask))
   {
-    const float expr = vec->qv.q1 * vec->qv.q1 + \
-                       vec->qv.q2 * vec->qv.q2 + \
-                       vec->qv.q3 * vec->qv.q3 + \
-                       vec->qv.q4 * vec->qv.q4;
+    const float expr = sv[sh.idx].qv.q1 * sv[sh.idx].qv.q1 + \
+                       sv[sh.idx].qv.q2 * sv[sh.idx].qv.q2 + \
+                       sv[sh.idx].qv.q3 * sv[sh.idx].qv.q3 + \
+                       sv[sh.idx].qv.q4 * sv[sh.idx].qv.q4;
     
     if (expr < sigma_low(1) || expr > sigma_high(1)) {
       const float norm = invsqrtf(expr);
-      vec->qv.q1 *= norm;
-      vec->qv.q2 *= norm;
-      vec->qv.q3 *= norm;
-      vec->qv.q4 *= norm;
+      sv[sh.idx].qv.q1 *= norm;
+      sv[sh.idx].qv.q2 *= norm;
+      sv[sh.idx].qv.q3 *= norm;
+      sv[sh.idx].qv.q4 *= norm;
     }
   }
 
@@ -302,12 +302,19 @@ measurement(const struct state_vec *restrict vec,
 }
 
 /*
+ * Update portion of the Ascent KF.
+ */
+blind_inline void update(const float dt)
+{
+  
+}
+
+/*
  * ascentKF.m
  */
 void ascentKF(const struct measm_z *z)
 {
-  /* Outputs lower triangular matrix */
-  chol(&state_cov, &mx_bucket);
+  chol_lower_triang(&state_cov, &mx_bucket);
 
   // TODO s and x_j (L x 2L + 1), ops over x_0 and A -> s
   // TODO x_0 becomes x_hat AFTER ^^^^

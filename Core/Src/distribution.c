@@ -583,7 +583,6 @@ static inline void pre_launch(void)
 static inline void ascent_cycle(fu32 conf)
 {
   fu32 st;
-  float dt;
 
   if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
   {
@@ -593,19 +592,16 @@ static inline void ascent_cycle(fu32 conf)
   }
 
   st = validate_imu(&payload.gyro, &payload.d.accl, conf);
-  /* Note to self: if plan to remove heartbeat, move this
-   * inside if statement below */
-  tx_queue_send(&shared, &st, TX_NO_WAIT);
 
   if (st != fc_mask(Sensor_Measm_Code)) {
-    /* See if new IMU measurements are available immediately */
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
   }
 
   compensate_accl(&payload.d.accl);
-  dt = fsec(timer_exchange(AscentKF));
+  sh.dt = fsec(timer_exchange(AscentKF));
 
-  // call predict w/ imu & dt
+  predict(sh.dt);
 
   if (!dma_fetch_baro(&payload.baro)) {
     /* Run Predict in the meanwhile */
@@ -613,12 +609,19 @@ static inline void ascent_cycle(fu32 conf)
   }
 
   st = validate_baro(&payload.baro, conf);
+
   if (st != fc_mask(Sensor_Measm_Code)) {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
   }
 
-  // call update w/ baro & dt (async + sema)
+  if (conf & option(Eval_Focus_Flag)) {
+    tx_semaphore_put(&eval_focus_mode);
+  }
+  else {
+    update(sh.dt);
+    evaluate_rocket_state(conf);
+  }
 }
 
 /*
@@ -627,7 +630,6 @@ static inline void ascent_cycle(fu32 conf)
 static inline void descent_cycle(fu32 conf)
 {
   fu32 st;
-  float dt;
 
   if (!dma_fetch_baro(&payload.baro)) {
     tx_thread_relinquish();
@@ -648,6 +650,8 @@ static inline void descent_cycle(fu32 conf)
     return;
   }
 #endif // GPS_AVAILABLE
+
+  sh.dt = fsec(timer_exchange(DescentKF));
 
   // call descent filter
 }

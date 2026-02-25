@@ -105,6 +105,16 @@ void initialize_descent(void);
  */
 void initialize_ascent(void);
 
+/*
+ * Transforms input vector into next-sample prediction.
+ */
+blind_inline void predict(const float dt);
+
+/*
+ * Update portion of the Ascent KF.
+ */
+blind_inline void update(const float dt);
+
 /* ------ Public API ------ */
 
 

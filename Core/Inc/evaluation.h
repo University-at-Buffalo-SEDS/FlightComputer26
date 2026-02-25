@@ -87,7 +87,7 @@
 #define SV_HIST_MASK (SV_HIST_SIZE - 1)
 
 /* Get index for the state vector that is 'step' evaluations old */
-#define prev(step) (((idx) - (step)) & SV_HIST_MASK)
+#define prev(step) (((sh.idx) - (step)) & SV_HIST_MASK)
 
 #define RING_SIZE 4
 #define RING_MASK (RING_SIZE - 1)
@@ -107,6 +107,11 @@ struct serial state_vec {
   struct coords p, v, a;
   struct quaternion qv;
   struct coords w;
+};
+
+struct sv_helper {
+  fu32 idx;
+  float dt;
 };
 
 /*
@@ -149,15 +154,26 @@ enum state {
 
 /* ------ Exported globals ------ */
 
-extern TX_QUEUE evaluation_stage;
+extern TX_SEMAPHORE eval_focus_mode;
 extern volatile enum state flight;
 extern struct measurement payload;
 extern struct coords rail;
 extern struct state_vec sv[];
-extern fu8 sv_size_bytes;
-extern fu8 idx;
+extern struct sv_helper sh;
+extern fu32 sv_size_bytes;
 
 /* ------ Exported globals ------ */
+
+
+/* ------ Public API ------ */
+
+/*
+ * Simple finite-state machine for state transition.
+ * Before leaving, logs state vector just used.
+ */
+blind_inline void evaluate_rocket_state(fu32 conf);
+
+/* ------ Public API ------ */
 
 
 #endif // EVALUATION_H

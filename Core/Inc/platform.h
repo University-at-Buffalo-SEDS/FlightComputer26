@@ -24,7 +24,6 @@
 
 /* ------ Bundled std headers used ------ */
 
-#include "stm32h523xx.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
@@ -113,21 +112,21 @@ typedef arm_matrix_instance_f32 matrix;
   * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
   *
   * There is no such instruction for inverse square root
-  * => bithack + Newton-Raphson below to avoid FP division. */
-#define vsqrt     arm_sqrt_f32;
+  * => bithack + Newton-Raphson to avoid FP division. */
+#define vsqrt                 arm_sqrt_f32;
 
 /* These functions take pointers to arm_matrix_instance_f32;
  * this is the reason there are wrappers inside KF functions. */
-#define chol			arm_mat_cholesky_f32
-#define transpose arm_mat_trans_f32
-#define xmul 			arm_mat_mult_f32
-#define xadd			arm_mat_add_f32
-#define xsub      arm_mat_sub_f32
-#define xinv      arm_mat_inverse_f32
+#define chol_lower_triang			arm_mat_cholesky_f32
+#define transpose             arm_mat_trans_f32
+#define matrix_mult 			    arm_mat_mult_f32
+#define matrix_add			      arm_mat_add_f32
+#define matrix_sub            arm_mat_sub_f32
+#define matrix_inv            arm_mat_inverse_f32
 
 /* I don't quite get the point of this function.
  * Maybe because it's *floating point*. */
-#define xinit     arm_mat_init_f32
+#define matrix_init           arm_mat_init_f32
 
 /* ------ ARM fast math bundled library ------ */
 
@@ -176,6 +175,10 @@ typedef arm_matrix_instance_f32 matrix;
 #define tx_align __attribute__((aligned(sizeof(ULONG))))
 
 #define IREC26_unused __attribute__((unused))
+
+#define constexpr __attribute__((const))
+
+#define blind_inline __attribute__((always_inline))
 
 /* ------ Type attributes ------ */
 

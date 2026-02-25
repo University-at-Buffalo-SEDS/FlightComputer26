@@ -36,31 +36,27 @@
 #include "kalman.h"
 #include "dma.h"
 
-TX_QUEUE evaluation_stage;
+TX_SEMAPHORE eval_focus_mode;
 TX_THREAD evaluation_task;
 ULONG evaluation_stack[EVAL_STACK_ULONG];
 
 
-/* ------ Global and static storage ------ */
+/* ------ Global storage ------ */
 
 #define id "EV "
 
 /* History of 4 state vectors and ring index used
  * by Evaluation task and Kalman filter. */
 struct state_vec sv[SV_HIST_SIZE] = {0};
-fu8 idx = 0;
+
+struct sv_helper sh = {0};
 
 /* Length of state vector to log, in bytes. Varies per KF. */
-fu8 sv_size_bytes = ASC_STAT * sizeof(float);
+fu32 sv_size_bytes = ASC_STAT * sizeof(float);
 
-/* Flight stage and transition sample counter. */
 volatile enum state flight = Suspended;
-static fu8 sampl = 0;
 
-/* Evaluation task queue pool. */
-static tx_align enum message evalq[EVALQ_SIZE] = {0};
-
-/* ------ Global and static storage ------ */
+/* ------ Global storage ------ */
 
 
 /* ------ Data evaluation ------ */
@@ -68,13 +64,15 @@ static tx_align enum message evalq[EVALQ_SIZE] = {0};
 #define caution " (vigilant)"
 #define mlen_caut(len) (mlen(len) + sizeof(caution))
 
+static fu8 sampl = 0;
+
 /*
  * Cautiously examine altitude changes. Act in place.
  * Must be used if 'barometer fallback' mode is enabled.
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || sv[idx].p.z > sv[prev(1)].p.z) {
+  if (flight < Ascent || sv[sh.idx].p.z > sv[prev(1)].p.z) {
     /* Confirms must be consecutive */
 
     if (mode & option(Consecutive_Samples) &&
@@ -86,7 +84,7 @@ static inline void evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (sv[idx].p.z <= REEF_TARGET_ALT)
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT)
   {
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
@@ -143,8 +141,8 @@ static inline void evaluate_altitude(fu32 mode)
  */
 static inline void detect_launch(void)
 {
-  if (sv[idx].v.z >= LAUNCH_MIN_VEL &&
-      sv[idx].a.z >= LAUNCH_MIN_VAX)
+  if (sv[sh.idx].v.z >= LAUNCH_MIN_VEL &&
+      sv[sh.idx].a.z >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
     log_msg(id "launch detected", mlen(15));
@@ -157,8 +155,8 @@ static inline void detect_launch(void)
  */
 static inline void detect_ascent(fu32 mode)
 {
-  if (sv[idx].v.z > sv[prev(1)].v.z &&
-      sv[idx].p.z > sv[prev(1)].p.z)
+  if (sv[sh.idx].v.z > sv[prev(1)].v.z &&
+      sv[sh.idx].p.z > sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_ASCENT)
     {
@@ -184,10 +182,10 @@ static inline void detect_ascent(fu32 mode)
  */
 static inline void detect_burnout(fu32 mode)
 {
-  if (sv[idx].v.z >= BURNOUT_MIN_VEL &&
-      sv[idx].a.z <= BURNOUT_MAX_VAX &&
-      sv[idx].p.z > sv[idx].p.z &&
-      sv[idx].v.z < sv[prev(1)].v.z)
+  if (sv[sh.idx].v.z >= BURNOUT_MIN_VEL &&
+      sv[sh.idx].a.z <= BURNOUT_MAX_VAX &&
+      sv[sh.idx].p.z > sv[sh.idx].p.z &&
+      sv[sh.idx].v.z < sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_BURNOUT)
     {
@@ -211,8 +209,8 @@ static inline void detect_burnout(fu32 mode)
  */
 static inline void detect_apogee(void)
 {
-  if (sv[idx].v.z <= APOGEE_MAX_VEL &&
-      sv[idx].v.z < sv[prev(1)].v.z)
+  if (sv[sh.idx].v.z <= APOGEE_MAX_VEL &&
+      sv[sh.idx].v.z < sv[prev(1)].v.z)
   {
     flight = Apogee;
     log_msg(id "likely at apogee", mlen(16));
@@ -225,8 +223,8 @@ static inline void detect_apogee(void)
  */
 static inline void detect_descent(fu32 mode)
 {
-  if (sv[idx].p.z < sv[prev(1)].p.z &&
-      sv[idx].v.z > sv[prev(1)].v.z)
+  if (sv[sh.idx].p.z < sv[prev(1)].p.z &&
+      sv[sh.idx].v.z > sv[prev(1)].v.z)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
@@ -253,8 +251,8 @@ static inline void detect_descent(fu32 mode)
  */
 static inline void detect_reef(fu32 mode)
 {
-  if (sv[idx].p.z <= REEF_TARGET_ALT && 
-      sv[idx].p.z < sv[prev(1)].p.z)
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT && 
+      sv[sh.idx].p.z < sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_REEF)
     {
@@ -279,23 +277,21 @@ static inline void detect_reef(fu32 mode)
  */
 static inline void detect_landed(fu32 mode)
 {
-  float dh = sv[idx].p.z - sv[prev(1)].p.z;
-  float dv = sv[idx].v.z - sv[prev(1)].v.z;
-  float da = sv[idx].a.z - sv[prev(1)].a.z;
+  float dh = sv[sh.idx].p.z - sv[prev(1)].p.z;
+  float dv = sv[sh.idx].v.z - sv[prev(1)].v.z;
+  float da = sv[sh.idx].a.z - sv[prev(1)].a.z;
 
-  if ((dh <= ALT_TOLER && dh >= -ALT_TOLER) &&
-      (dv <= VEL_TOLER && dv >= -VEL_TOLER) &&
-      (da <= VAX_TOLER && da >= -VAX_TOLER))
+  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER && 
+      fabsf(da) <= VAX_TOLER)
   {
     if (++sampl >= MIN_SAMP_LANDED)
     {
       flight = Landed;
-      log_msg(id "'Sweet' landed", mlen(14));
+      log_msg(id "S.W.E.E.T. landed", mlen(17));
 
-      /* Needed to avoid locks on landing coordinate reporting. */
-      UINT old_pt;
-      tx_thread_preemption_change(&evaluation_task,
-                                       1, &old_pt);
+      /* Needed to avoid locks on landing coordinates reporting. */
+      enum message cmd = fc_mask(Evaluation_Focus);
+      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -337,6 +333,34 @@ crew_send_coords(fu32 mode)
 /* ------ Evaluation Task ------ */
 
 /*
+ * Simple finite-state machine for state transition.
+ * Before leaving, logs state vector just used.
+ */
+blind_inline void evaluate_rocket_state(fu32 conf)
+{
+  if (conf & Monitor_Altitude) {
+    evaluate_altitude(conf);
+  }
+
+  switch (flight) {
+    case Idle:    detect_launch();        break;
+    case Launch:  detect_ascent(conf);    break;
+    case Ascent:  detect_burnout(conf);   break;
+    case Burnout: detect_apogee();        break;
+    case Apogee:  detect_descent(conf);   break;
+    case Descent: detect_reef(conf);      break;
+    case Reefing: detect_landed(conf);    break;
+    case Landed:  crew_send_coords(conf); break;
+    default: break;
+  }
+
+  log_filter_data(&sv[sh.idx], sv_size_bytes);
+
+  /* Increment index for the next state vector */
+  sh.idx = (sh.idx + 1) & SV_HIST_MASK;
+}
+
+/*
  * Initializes Ascent filter and signal Distribution
  * task to start performing data logistics. Idempotent.
  * If there is a re-entrancy, discards dirty KF buffers.
@@ -347,7 +371,7 @@ enter_flight_state(fu32 conf)
   if (conf & Launch_Triggered)
   {
      /* Discard unfinished (interrupted) state vector. */
-     idx = prev(1);
+     sh.idx = prev(1);
   }
   else
   {
@@ -370,7 +394,6 @@ void evaluation_entry(ULONG input)
   (void) input;
 
   UINT st;
-  float dt;
 
   fu32 conf = load(&config, Acq);
 
@@ -379,7 +402,7 @@ void evaluation_entry(ULONG input)
   task_loop (conf & Eval_Abort_Flag)
   {
     /* Task suspension */
-    st = tx_queue_receive(&evaluation_stage, &dt, TX_WAIT_FOREVER);
+    st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
 
     if (st != TX_SUCCESS) {
       continue;
@@ -389,29 +412,10 @@ void evaluation_entry(ULONG input)
 
     if (conf & Using_Ascent_KF)
     {
-      // TODO run Ascent KF update() with dt
+      update(sh.dt);
     }
 
-    log_filter_data(&sv[idx], sv_size_bytes);
-
-    if (conf & Monitor_Altitude) {
-      evaluate_altitude(conf);
-    }
-
-    switch (flight) {
-      case Idle:    detect_launch();        break;
-      case Launch:  detect_ascent(conf);    break;
-      case Ascent:  detect_burnout(conf);   break;
-      case Burnout: detect_apogee();        break;
-      case Apogee:  detect_descent(conf);   break;
-      case Descent: detect_reef(conf);      break;
-      case Reefing: detect_landed(conf);    break;
-      case Landed:  crew_send_coords(conf); break;
-      default: break;
-    }
-
-    /* Increment index for the next state vector */
-    idx = (idx + 1) & SV_HIST_MASK;
+    evaluate_rocket_state(conf);
   }
 }
 
@@ -439,11 +443,10 @@ void create_evaluation_task(void)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_queue_create(&evaluation_stage, "EVALQ",
-                       1, &evalq, sizeof evalq);
+  st = tx_semaphore_create(&eval_focus_mode, "EVALS", 0);
 
   if (st != TX_SUCCESS) {
-    log_die(id "queue %s %u", critical, st);
+    log_die(id "sema %s %u", critical, st);
   }
 }
 
