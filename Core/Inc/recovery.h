@@ -143,7 +143,7 @@ enum message : fu32 {
   GPS_Available       = Runtime_Configuration | (1u << 1),
   Consecutive_Samples = Runtime_Configuration | (1u << 2),
   Parachute_Deployed  = Runtime_Configuration | (1u << 3),
-  Reinit_Attempted    = Runtime_Configuration | (1u << 4),
+  Init_Failure_Record = Runtime_Configuration | (1u << 4),
   Confirm_Altitude    = Runtime_Configuration | (1u << 5),
   Eval_Focus_Flag     = Runtime_Configuration | (1u << 6),
   Eval_Abort_Flag     = Runtime_Configuration | (1u << 7),

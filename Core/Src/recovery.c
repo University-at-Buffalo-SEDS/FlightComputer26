@@ -143,11 +143,11 @@ initialize_sensors(enum sensor_mask sensor)
     }
   }
   
-  if (fails != 0) {
+  if (fails != 0)
+  {
+    config |= option(Init_Failure_Record);
     log_err(id "some of requested reinit failed: %u", fails);
   }
-
-  config |= option(Reinit_Attempted);
 }
 
 /*
