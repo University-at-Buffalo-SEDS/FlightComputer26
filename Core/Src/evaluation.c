@@ -336,7 +336,7 @@ crew_send_coords(fu32 mode)
  * Simple finite-state machine for state transition.
  * Before leaving, logs state vector just used.
  */
-blind_inline void evaluate_rocket_state(fu32 conf)
+void evaluate_rocket_state(fu32 conf)
 {
   if (conf & Monitor_Altitude) {
     evaluate_altitude(conf);

@@ -171,7 +171,7 @@ extern fu32 sv_size_bytes;
  * Simple finite-state machine for state transition.
  * Before leaving, logs state vector just used.
  */
-blind_inline void evaluate_rocket_state(fu32 conf);
+void evaluate_rocket_state(fu32 conf);
 
 /* ------ Public API ------ */
 
