@@ -318,8 +318,9 @@ crew_send_coords(fu32 mode)
   }
 
   log_msg(id "Landed at coordinates:", mlen(22));
+  #ifdef TELEMETRY_ENABLED
   log_measurement(SEDS_DT_GPS_DATA, &payload.d.gps);
-
+  #endif
   tx_thread_sleep(LANDED_GPS_INTERVAL);
 
 #else

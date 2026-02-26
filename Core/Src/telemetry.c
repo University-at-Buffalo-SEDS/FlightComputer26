@@ -3,7 +3,9 @@
 
 #include "app_threadx.h" // should bring in tx_api.h; if not, include tx_api.h directly
 #include "can_bus.h"
+#ifdef TELEMETRY_ENABLED
 #include "sedsprintf.h"
+#endif
 #include "stm32h5xx_hal.h"
 
 #include <stdarg.h>
@@ -263,6 +265,7 @@ void telemetry_timesync_process_queue(void)
 #define NET_TIMESYNC_SMOOTH_DIV 4 /* slew = offset/div */
 #endif
 
+#ifdef TELEMETRY_ENABLED
 static SedsResult on_timesync(const SedsPacketView *pkt, void *user)
 {
   (void)user;
@@ -390,6 +393,7 @@ static SedsResult on_timesync(const SedsPacketView *pkt, void *user)
 
   return SEDS_OK;
 }
+#endif
 
 static uint64_t node_now_since_ms(void *user)
 {
@@ -406,6 +410,12 @@ static uint64_t node_now_since_ms(void *user)
 
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user)
 {
+#ifndef TELEMETRY_ENABLED
+  (void)bytes;
+  (void)len;
+  (void)user;
+  return SEDS_OK;
+#else
   (void)user;
 
   if (!bytes || len == 0)
@@ -414,10 +424,16 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user)
   }
 
   return (can_bus_send_large(bytes, len, 0x04) == HAL_OK) ? SEDS_OK : SEDS_IO;
+#endif
 }
 
 SedsResult on_sd_packet(const SedsPacketView *pkt, void *user)
 {
+#ifndef TELEMETRY_ENABLED
+  (void)pkt;
+  (void)user;
+  return SEDS_OK;
+#else
   (void)user;
   if (!pkt)
   {
@@ -441,6 +457,7 @@ SedsResult on_sd_packet(const SedsPacketView *pkt, void *user)
 
   printf("%s\r\n", buff);
   return SEDS_OK;
+#endif
 }
 
 static void telemetry_can_rx(const uint8_t *data, size_t len, void *user)
@@ -620,6 +637,7 @@ SedsResult init_telemetry_router(void)
   return ensure_router_locked();
 }
 
+#ifdef TELEMETRY_ENABLED
 static inline SedsElemKind guess_kind_from_elem_size(size_t elem_size)
 {
   if (elem_size == 4 || elem_size == 8)
@@ -628,6 +646,7 @@ static inline SedsElemKind guess_kind_from_elem_size(size_t elem_size)
   }
   return SEDS_EK_UNSIGNED;
 }
+#endif
 
 SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
                                      size_t element_count,

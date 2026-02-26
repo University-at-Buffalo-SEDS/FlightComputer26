@@ -26,12 +26,20 @@
 
 #include "main.h"
 #include "platform.h"
-
+/* Provide telemetry_set_byte_pool so rust hooks use the app memory pool */
+extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
+extern void telemetry_init_lock(void);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+static void busy_delay(volatile uint32_t n)
+{
+  while (n--)
+  {
+    __NOP();
+  }
+}
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -64,6 +72,10 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   UINT ret = TX_SUCCESS;
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
+    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+      busy_delay(500000000); // adjust until visible
+    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+
     TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
 
   telemetry_set_byte_pool(byte_pool);
@@ -85,12 +97,12 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE BEGIN App_ThreadX_Init */
 
 #ifdef SD_AVAILABLE
-  sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
+  // sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
 #endif
 
-  create_recovery_task(byte_pool);
-  create_evaluation_task(byte_pool);
-  create_distribution_task(byte_pool);
+  // create_recovery_task(byte_pool);
+  // create_evaluation_task(byte_pool);
+  // create_distribution_task(byte_pool);
 
 #ifdef TELEMETRY_ENABLED
     ret = create_telemetry_thread(byte_pool);

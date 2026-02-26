@@ -5,6 +5,8 @@
 #include "can_bus.h"
 #include "main.h"
 
+#ifdef TELEMETRY_ENABLED
+
 TX_THREAD telemetry_thread;
 
 // How often this node requests a resync from the master:
@@ -79,3 +81,18 @@ UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool)
 
   return status;
 }
+
+#else
+
+void telemetry_thread_entry(ULONG initial_input)
+{
+  (void)initial_input;
+}
+
+UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool)
+{
+  (void)byte_pool;
+  return TX_SUCCESS;
+}
+
+#endif

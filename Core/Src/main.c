@@ -41,7 +41,13 @@ extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+static void busy_delay(volatile uint32_t n)
+{
+  while (n--)
+  {
+    __NOP();
+  }
+}
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -133,6 +139,9 @@ int main(void)
   MX_ICACHE_Init();
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+      busy_delay(500000000); // adjust until visible
+    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
 
 /* Local test with no telemerty or threads */
 #ifdef DMA_LOCAL_TEST
@@ -569,20 +578,20 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(CS_BARO_GPIO_Port, CS_BARO_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, CS_BARO_Pin|BLUE_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, CS_ACCEL_Pin|CS_GYRO_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LED_Pin|CONFIGURABLE_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GREEN_LED_Pin|CONFIGURABLE_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : CS_BARO_Pin */
-  GPIO_InitStruct.Pin = CS_BARO_Pin;
+  /*Configure GPIO pins : CS_BARO_Pin BLUE_LED_Pin */
+  GPIO_InitStruct.Pin = CS_BARO_Pin|BLUE_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(CS_BARO_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : CS_ACCEL_Pin CS_GYRO_Pin */
   GPIO_InitStruct.Pin = CS_ACCEL_Pin|CS_GYRO_Pin;
@@ -603,8 +612,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LED_Pin CONFIGURABLE_Pin */
-  GPIO_InitStruct.Pin = LED_Pin|CONFIGURABLE_Pin;
+  /*Configure GPIO pins : GREEN_LED_Pin CONFIGURABLE_Pin */
+  GPIO_InitStruct.Pin = GREEN_LED_Pin|CONFIGURABLE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -862,6 +871,9 @@ void Error_Handler(void)
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1) {
+    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+    HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
+    busy_delay(100000);
   }
   /* USER CODE END Error_Handler_Debug */
 }

@@ -36,6 +36,26 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 
+# Keep USBX DCD STM32 controller sources outside generated files so CubeMX
+# regeneration cannot remove the `_ux_dcd_stm32_initialize` implementation.
+target_sources(USBX PRIVATE
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_callback.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_endpoint_create.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_endpoint_destroy.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_endpoint_reset.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_endpoint_stall.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_endpoint_status.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_frame_number_get.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_function.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_initialize.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_initialize_complete.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_interrupt_handler.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_transfer_abort.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_transfer_request.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_transfer_run.c
+    ${CMAKE_SOURCE_DIR}/Middlewares/ST/usbx/common/usbx_stm32_device_controllers/ux_dcd_stm32_uninitialize.c
+)
+
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
@@ -56,6 +76,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
+    
 
     # ARM matrix functions
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_cholesky_f32.c
@@ -89,7 +113,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 # Telemetry library
 
 # Option defaults to ON
-option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
+option(ENABLE_TELEMETRY "Enable the telemetry subsystem" OFF)
 
 # Print its state for debugging
 message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
@@ -109,14 +133,6 @@ if (ENABLE_TELEMETRY)
 
     # Set target for embedded systems
     set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
-
-    target_sources(${PROJECT_NAME} PRIVATE
-        # Telemetry sources (FC-specific)
-
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
-    )
 
     add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
     target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
