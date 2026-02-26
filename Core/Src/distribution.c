@@ -601,7 +601,7 @@ static inline void ascent_cycle(fu32 conf)
   compensate_accl(&payload.d.accl);
   sh.dt = fsec(timer_exchange(AscentKF));
 
-  predict(sh.dt);
+  ascent_predict(sh.dt);
 
   if (!dma_fetch_baro(&payload.baro)) {
     /* Run Predict in the meanwhile */
@@ -619,7 +619,7 @@ static inline void ascent_cycle(fu32 conf)
     tx_semaphore_put(&eval_focus_mode);
   }
   else {
-    update(sh.dt);
+    ascent_update(sh.dt);
     evaluate_rocket_state(conf);
   }
 }
@@ -665,6 +665,8 @@ static inline void descent_cycle(fu32 conf)
 void distribution_entry(ULONG input)
 {
   (void) input;
+
+  log_msg(id "started", mlen(7));
 
   fu32 conf = load(&config, Acq);
 

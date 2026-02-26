@@ -101,8 +101,9 @@ static inline void evaluate_altitude(fu32 mode)
     else
     { 
       co2_high(&config);
+
       if (load(&config, Acq) & option(Using_Ascent_KF)) {
-        initialize_descent();
+        descent_initialize();
       }
 
       tx_thread_sleep(100);
@@ -124,7 +125,7 @@ static inline void evaluate_altitude(fu32 mode)
   {
     co2_high(&config);
     if (load(&config, Acq) & option(Using_Ascent_KF)) {
-      initialize_descent();
+      descent_initialize();
     }
 
     if (flight < Descent) {
@@ -210,7 +211,9 @@ static inline void detect_burnout(fu32 mode)
 static inline void detect_apogee(void)
 {
   if (sv[sh.idx].v.z <= APOGEE_MAX_VEL &&
-      sv[sh.idx].v.z < sv[prev(1)].v.z)
+      sv[sh.idx].v.z < sv[prev(1)].v.z &&
+      sv[prev(1)].v.z < sv[prev(2)].v.z &&
+      sv[prev(2)].v.z < sv[prev(3)].v.z)
   {
     flight = Apogee;
     log_msg(id "likely at apogee", mlen(16));
@@ -224,7 +227,9 @@ static inline void detect_apogee(void)
 static inline void detect_descent(fu32 mode)
 {
   if (sv[sh.idx].p.z < sv[prev(1)].p.z &&
-      sv[sh.idx].v.z > sv[prev(1)].v.z)
+      sv[prev(1)].p.z < sv[prev(2)].p.z &&
+      sv[sh.idx].v.z > sv[prev(1)].v.z &&
+      sv[prev(1)].v.z > sv[prev(2)].v.z)
   {
     if (++sampl >= MIN_SAMP_DESCENT)
     {
@@ -233,7 +238,7 @@ static inline void detect_descent(fu32 mode)
       co2_high(&config);
       log_msg(id "entered drogue", mlen(14));
 
-      initialize_descent();
+      descent_initialize();
     }
   }
   else if (mode & option(Consecutive_Samples)
@@ -378,7 +383,7 @@ enter_flight_state(fu32 conf)
     log_msg(id "received launch signal", mlen(22));
     flight = Idle;
 
-    initialize_ascent();
+    ascent_initialize();
 
     /* Signal distribution task to enter main cycle. */
     fetch_or(&config, option(Launch_Triggered), Rel);
@@ -392,6 +397,8 @@ enter_flight_state(fu32 conf)
 void evaluation_entry(ULONG input)
 {
   (void) input;
+
+  log_msg(id "started", mlen(7));
 
   UINT st;
 
@@ -412,7 +419,7 @@ void evaluation_entry(ULONG input)
 
     if (conf & Using_Ascent_KF)
     {
-      update(sh.dt);
+      ascent_update(sh.dt);
     }
 
     evaluate_rocket_state(conf);

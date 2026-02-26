@@ -84,36 +84,31 @@ union bithack {
 /* ------ Public API ------ */
 
 /*
- * descentKF.m
+ * Performs one iteration of the Descent filter.
  */
-void descentKF(const struct descent *z);
-
-/*
- * ascentKF.m
- */
-void ascentKF(const struct measm_z *z);
+void descent_step(const float dt);
 
 /*
  * Sets descent filter values in shared buffers.
  * Called by Evaluation task when APOGEE state is reached.
  */
-void initialize_descent(void);
+void descent_initialize(void);
 
 /*
  * Sets ascent filter values in shared buffers.
  * Called during boot by Evaluation task.
  */
-void initialize_ascent(void);
+void ascent_initialize(void);
 
 /*
  * Transforms input vector into next-sample prediction.
  */
-void predict(const float dt);
+void ascent_predict(const float dt);
 
 /*
  * Update portion of the Ascent KF.
  */
-void update(const float dt);
+void ascent_update(const float dt);
 
 /* ------ Public API ------ */
 

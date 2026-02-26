@@ -211,7 +211,7 @@ static inline void process_action(enum message cmd)
     case Deploy_Parachute:
       co2_high(&config);
       if (config & option(Using_Ascent_KF)) {
-        initialize_descent();
+        descent_initialize();
       }
       return;
 
@@ -495,6 +495,8 @@ static void fc_timer_routine(ULONG timer_id)
 void recovery_entry(ULONG input)
 {
   (void) input;
+
+  log_msg(id "started", mlen(7));
 
   UINT st;
 

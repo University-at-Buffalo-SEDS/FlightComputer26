@@ -87,7 +87,7 @@ static matrix vec_w_c = {W_DIM, 1, (float *)(&W_c[0])};
  * Sets descent filter values in shared buffers.
  * Called by Evaluation task when APOGEE state is reached.
  */
-void initialize_descent(void)
+void descent_initialize(void)
 {
   sv_size_bytes = DESC_STAT * sizeof(float);
 
@@ -127,14 +127,12 @@ void initialize_descent(void)
 }
 
 /*
- * descentKF.m
+ * Performs one iteration of the Descent filter.
  */
-void descentKF(const struct descent *z)
+void descent_step(const float dt)
 {
   matrix state = {DESC_STAT, 1, (float *)&sv[sh.idx]};
-  matrix measm = {DESC_MEAS, 1, (float *)z};
-
-	const float dt = fsec(timer_exchange(DescentKF));
+  matrix measm = {DESC_MEAS, 1, (float *)&payload.d};
 
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
@@ -150,7 +148,7 @@ void descentKF(const struct descent *z)
  * Sets ascent filter values in shared buffers.
  * Called during boot by Evaluation task.
  */
-void initialize_ascent(void) 
+void ascent_initialize(void) 
 {
   sv_size_bytes = ASC_STAT * sizeof(float);
 
@@ -206,7 +204,7 @@ void initialize_ascent(void)
 /*
  * Transforms input vector into next-sample prediction.
  */
-void predict(const float dt)
+void ascent_predict(const float dt)
 {
   static fu8 iteration = 0;
 
@@ -264,8 +262,8 @@ void predict(const float dt)
  * Transforms state vector into sensor measurement.
  */
 static inline void
-measurement(const struct state_vec *restrict vec,
-            struct measm_z *restrict out)
+ascent_measurement(const struct state_vec *restrict vec,
+                   struct measm_z *restrict out)
 {
   const float ag = vec->a.z + GRAVITY_SI;
   const float qq2 = vec->qv.q2 * vec->qv.q2;
@@ -304,26 +302,9 @@ measurement(const struct state_vec *restrict vec,
 /*
  * Update portion of the Ascent KF.
  */
-void update(const float dt)
+void ascent_update(const float dt)
 {
   return;
-}
-
-/*
- * ascentKF.m
- */
-void ascentKF(const struct measm_z *z)
-{
-  chol_lower_triang(&state_cov, &mx_bucket);
-
-  // TODO s and x_j (L x 2L + 1), ops over x_0 and A -> s
-  // TODO x_0 becomes x_hat AFTER ^^^^
-
-  // memset(x_0, 0, sizeof *x_0);
-
-  // TODO S_hat becomes H (shared)
-
-  // TODO
 }
 
 /* ------ Ascent Kalman filter ------ */
