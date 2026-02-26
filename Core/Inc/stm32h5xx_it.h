@@ -58,9 +58,11 @@ void EXTI4_IRQHandler(void);
 void EXTI5_IRQHandler(void);
 void EXTI7_IRQHandler(void);
 void GPDMA1_Channel0_IRQHandler(void);
+void FDCAN1_IT0_IRQHandler(void);
+void FDCAN1_IT1_IRQHandler(void);
 void TIM6_IRQHandler(void);
-void USB_DRD_FS_IRQHandler(void);
 void SPI1_IRQHandler(void);
+void USB_DRD_FS_IRQHandler(void);
 void SDMMC1_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 

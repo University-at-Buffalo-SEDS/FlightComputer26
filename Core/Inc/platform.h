@@ -330,6 +330,9 @@ struct serial coords { float x, y, z; };
 #include <sedsprintf.h>
 #include "telemetry.h"
 
+extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
+extern void telemetry_init_lock(void);
+
 #define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
@@ -359,10 +362,10 @@ struct serial coords { float x, y, z; };
 #if defined (__GNUC__)
 
 #define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, ##__VA_ARGS__)
+  log_error_synchronous(fmt, ##__VA_ARGS__)
 
 #define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, ##__VA_ARGS__)
+  log_error_asynchronous(fmt, ##__VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 

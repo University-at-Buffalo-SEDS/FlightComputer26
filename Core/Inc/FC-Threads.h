@@ -5,16 +5,14 @@
 
 /* ------ Telemetry Thread ------ */
 extern TX_THREAD telemetry_thread;
-extern ULONG telemetry_thread_stack[];
-
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
 #define TLMT_TIME_SLICE 20
-#define TLMT_STACK_BYTES 8192u
+#define TLMT_STACK_BYTES (16U * 1024U)
 #define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
 
 void telemetry_thread_entry(ULONG initial_input);
-void create_telemetry_thread(void);
+UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
 /* ------ Telemetry Thread ------ */
 
 #endif // TELEMETRY_ENABLED
@@ -26,10 +24,8 @@ void create_telemetry_thread(void);
 #define RECV_STACK_ULONG (RECV_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD recovery_task;
-extern ULONG recovery_stack[];
-
 void recovery_entry(ULONG input);
-void create_recovery_task(void);
+UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 /* ------ Recovery Task ------ */
 
 /* ------ Evaluation Task ------ */
@@ -45,10 +41,9 @@ void create_recovery_task(void);
 #define EVAL_STACK_ULONG (EVAL_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD evaluation_task;
-extern ULONG evaluation_stack[];
 
 void evaluation_entry(ULONG input);
-void create_evaluation_task(void);
+UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 /* ------ Evaluation Task ------ */
 
 /* ------ Distribution Task ------ */
@@ -60,8 +55,6 @@ void create_evaluation_task(void);
 #define DIST_STACK_ULONG (DIST_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD distribution_task;
-extern ULONG distribution_stack[];
-
 void distribution_entry(ULONG input);
-void create_distribution_task(void);
+UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 /* ------ Distribution Task ------ */

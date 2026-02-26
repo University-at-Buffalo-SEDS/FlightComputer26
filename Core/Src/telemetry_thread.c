@@ -1,32 +1,28 @@
-/*
- * Thread component of the Telemetry task.
- * Invokes CAN and sedsprintf_rs router
- * from the ThreadX thread context.
- */
-
-#include "platform.h"
+// telemetry_thread.c
+#include "FC-Threads.h"
+#include "tx_api.h"
 #include "telemetry.h"
 #include "can_bus.h"
+#include "main.h"
 
-/// Stack + TCB for telemetry thread
 TX_THREAD telemetry_thread;
-ULONG telemetry_thread_stack[TLMT_STACK_ULONG];
 
 // How often this node requests a resync from the master:
-#define TIMESYNC_REQUEST_PERIOD_MS 2000u   // e.g. every 2 seconds
+#define TIMESYNC_REQUEST_PERIOD_MS 2000u // e.g. every 2 seconds
 
 #ifndef TX_TIMER_TICKS_PER_SECOND
 #error "TX_TIMER_TICKS_PER_SECOND must be defined by ThreadX."
 #endif
 
+#define TIMESYNC_REQUEST_PERIOD_TICKS \
+  ((TIMESYNC_REQUEST_PERIOD_MS * TX_TIMER_TICKS_PER_SECOND + 999u) / 1000u)
 
-static uint64_t tx_now_ms(void) {
+static uint64_t tx_now_ms(void)
+{
   ULONG ticks = tx_time_get();
   return ((uint64_t)(uint32_t)ticks * 1000ULL) / (uint64_t)TX_TIMER_TICKS_PER_SECOND;
 }
 
-
-/// Telemetry task entry.
 void telemetry_thread_entry(ULONG initial_input)
 {
   (void)initial_input;
@@ -34,55 +30,52 @@ void telemetry_thread_entry(ULONG initial_input)
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
 
-  const char started_txt[] = "Telemetry thread starting";
-  (void)log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,
-                                  started_txt,
-                                  sizeof(started_txt),
-                                  1);
-
-  uint64_t last_req_ms = 0;
-
-#ifdef SD_AVAILABLE
-  tx_thread_resume(&g_sd_log_thread);
-#endif
-
-  task_loop (DO_NOT_EXIT)
+  ULONG last_req_ticks = tx_time_get();
+  for (;;)
   {
-    can_bus_process_rx();
-    (void)process_all_queues_timeout(5);
-    can_bus_process_rx();
+    /* Poll hardware FIFO and then process reassembly + router queues. */
+    // HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
 
-    const uint64_t now_ms = tx_now_ms();
+    // can_bus_poll();
+    can_bus_process_rx();
+    (void)process_all_queues_timeout(50);
 
-    if ((uint64_t)(now_ms - last_req_ms) >= (uint64_t)TIMESYNC_REQUEST_PERIOD_MS)
+    ULONG now_ticks = tx_time_get();
+    if ((ULONG)(now_ticks - last_req_ticks) >= (ULONG)TIMESYNC_REQUEST_PERIOD_TICKS)
     {
       (void)telemetry_timesync_request();
-      last_req_ms = now_ms;
+      last_req_ticks = now_ticks;
     }
 
-    tx_thread_relinquish();
+    // tx_thread_sleep(100);
+    // HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+    tx_thread_sleep(100);
   }
 }
 
-/// Creates a preemptive, non-cooperative telemetry thread
-/// with defined parameters. This thread repeatedly drains
-/// CAN bus message queue and invokes local instance of the
-/// telemetry router to process incoming and outcoming messages.
-void create_telemetry_thread(void)
+UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool)
 {
-  UINT status = tx_thread_create(&telemetry_thread,
-                                "Telemetry Task",
-                                telemetry_thread_entry,
-                                TLMT_INPUT,
-                                telemetry_thread_stack,
-                                TLMT_STACK_BYTES,
-                                /* No preemption threshold */
-                                TLMT_PRIORITY,
-                                TLMT_PRIORITY,
-                                TLMT_TIME_SLICE,
-                                TX_AUTO_START);
 
-  if (status != TX_SUCCESS) {
-    die("Failed to create telemetry thread: %u", (unsigned)status);
+  CHAR *pointer;
+
+  /* Allocate the stack for test  */
+  if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
+                       TLMT_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
   }
+
+  UINT status = tx_thread_create(&telemetry_thread,
+                                 "Telemetry Task",
+                                 telemetry_thread_entry,
+                                 TLMT_INPUT,
+                                 pointer,
+                                 TLMT_STACK_BYTES,
+                                 /* No preemption threshold */
+                                 TLMT_PRIORITY,
+                                 TLMT_PRIORITY,
+                                 TLMT_TIME_SLICE,
+                                 TX_AUTO_START);
+
+  return status;
 }

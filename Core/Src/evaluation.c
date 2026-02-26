@@ -1,6 +1,6 @@
 /*
  * Evaluation Task
- * 
+ *
  * This task is responsible for the finite state machine
  * and data evaluation. This task suspends on a queue and
  * when woken, evaluates data according to global run time
@@ -8,7 +8,7 @@
  * may not be interrupted while doing so. In the case of
  * Ascent filter, this task also runs an update stage and
  * then proceeds to data evaluation.
- * 
+ *
  * This task also handles the side effects of state
  * transitions, such as deploying parachute and, if GPS
  * module is enabled and available (those are different),
@@ -24,7 +24,7 @@
  * number of options to tune data evaluation. Defined
  * options configure scheduling, confirmation count,
  * consecutiveness, and vigilance of state examination.
- * 
+ *
  * This task operates in always-suspend mode, and is
  * resumed by Distribution task when it deems that
  * there is enough raw data to pass.
@@ -38,8 +38,6 @@
 
 TX_SEMAPHORE eval_focus_mode;
 TX_THREAD evaluation_task;
-ULONG evaluation_stack[EVAL_STACK_ULONG];
-
 
 /* ------ Global storage ------ */
 
@@ -58,7 +56,6 @@ volatile enum state flight = Suspended;
 
 /* ------ Global storage ------ */
 
-
 /* ------ Data evaluation ------ */
 
 #define caution " (vigilant)"
@@ -72,7 +69,8 @@ static fu8 sampl = 0;
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || sv[sh.idx].p.z > sv[prev(1)].p.z) {
+  if (flight < Ascent || sv[sh.idx].p.z > sv[prev(1)].p.z)
+  {
     /* Confirms must be consecutive */
 
     if (mode & option(Consecutive_Samples) &&
@@ -93,13 +91,14 @@ static inline void evaluate_altitude(fu32 mode)
     {
       reef_high(&config);
 
-      if (flight < Reefing) {
+      if (flight < Reefing)
+      {
         flight = Reefing;
       }
       log_msg(id "fired REEF" caution, mlen_caut(10));
     }
     else
-    { 
+    {
       co2_high(&config);
 
       if (load(&config, Acq) & option(Using_Ascent_KF)) {
@@ -108,8 +107,9 @@ static inline void evaluate_altitude(fu32 mode)
 
       tx_thread_sleep(100);
       reef_high(&config);
-      
-      if (flight < Reefing) {
+
+      if (flight < Reefing)
+      {
         flight = Reefing;
       }
 
@@ -128,7 +128,8 @@ static inline void evaluate_altitude(fu32 mode)
       descent_initialize();
     }
 
-    if (flight < Descent) {
+    if (flight < Descent)
+    {
       flight = Descent;
     }
 
@@ -166,8 +167,7 @@ static inline void detect_ascent(fu32 mode)
       log_msg(id "ascending", mlen(9));
     }
   }
-  else if (mode & option(Consecutive_Samples)
-           && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sampl > 0)
   {
     sampl = 0;
     enum message cmd = Not_Launch;
@@ -195,8 +195,7 @@ static inline void detect_burnout(fu32 mode)
       log_msg(id "decelerating", mlen(12));
     }
   }
-  else if (mode & option(Consecutive_Samples)
-           && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sampl > 0)
   {
     sampl = 0;
     enum message cmd = Not_Burnout;
@@ -241,8 +240,7 @@ static inline void detect_descent(fu32 mode)
       descent_initialize();
     }
   }
-  else if (mode & option(Consecutive_Samples)
-           && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sampl > 0)
   {
     sampl = 0;
     enum message cmd = Not_Descent;
@@ -256,7 +254,7 @@ static inline void detect_descent(fu32 mode)
  */
 static inline void detect_reef(fu32 mode)
 {
-  if (sv[sh.idx].p.z <= REEF_TARGET_ALT && 
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT &&
       sv[sh.idx].p.z < sv[prev(1)].p.z)
   {
     if (++sampl >= MIN_SAMP_REEF)
@@ -267,8 +265,7 @@ static inline void detect_reef(fu32 mode)
       log_msg(id "expanded parachute", mlen(18));
     }
   }
-  else if (mode & option(Consecutive_Samples)
-           && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sampl > 0)
   {
     sampl = 0;
     enum message cmd = Not_Reefing;
@@ -286,7 +283,7 @@ static inline void detect_landed(fu32 mode)
   float dv = sv[sh.idx].v.z - sv[prev(1)].v.z;
   float da = sv[sh.idx].a.z - sv[prev(1)].a.z;
 
-  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER && 
+  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER &&
       fabsf(da) <= VAX_TOLER)
   {
     if (++sampl >= MIN_SAMP_LANDED)
@@ -299,8 +296,7 @@ static inline void detect_landed(fu32 mode)
       tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
   }
-  else if (mode & option(Consecutive_Samples)
-           && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sampl > 0)
   {
     sampl = 0;
     enum message cmd = Not_Landed;
@@ -310,14 +306,14 @@ static inline void detect_landed(fu32 mode)
 
 /* ------ Data evaluation ------ */
 
-
 /* ------ Logging ------ */
 
 static inline void
 crew_send_coords(fu32 mode)
 {
 #ifdef GPS_AVAILABLE
-  if (!(mode & option(GPS_Available))) {
+  if (!(mode & option(GPS_Available)))
+  {
     return;
   }
 
@@ -334,7 +330,6 @@ crew_send_coords(fu32 mode)
 
 /* ------ Logging ------ */
 
-
 /* ------ Evaluation Task ------ */
 
 /*
@@ -343,20 +338,39 @@ crew_send_coords(fu32 mode)
  */
 void evaluate_rocket_state(fu32 conf)
 {
-  if (conf & Monitor_Altitude) {
+  if (conf & Monitor_Altitude)
+  {
     evaluate_altitude(conf);
   }
 
-  switch (flight) {
-    case Idle:    detect_launch();        break;
-    case Launch:  detect_ascent(conf);    break;
-    case Ascent:  detect_burnout(conf);   break;
-    case Burnout: detect_apogee();        break;
-    case Apogee:  detect_descent(conf);   break;
-    case Descent: detect_reef(conf);      break;
-    case Reefing: detect_landed(conf);    break;
-    case Landed:  crew_send_coords(conf); break;
-    default: break;
+  switch (flight)
+  {
+  case Idle:
+    detect_launch();
+    break;
+  case Launch:
+    detect_ascent(conf);
+    break;
+  case Ascent:
+    detect_burnout(conf);
+    break;
+  case Burnout:
+    detect_apogee();
+    break;
+  case Apogee:
+    detect_descent(conf);
+    break;
+  case Descent:
+    detect_reef(conf);
+    break;
+  case Reefing:
+    detect_landed(conf);
+    break;
+  case Landed:
+    crew_send_coords(conf);
+    break;
+  default:
+    break;
   }
 
   log_filter_data(&sv[sh.idx], sv_size_bytes);
@@ -375,8 +389,8 @@ enter_flight_state(fu32 conf)
 {
   if (conf & Launch_Triggered)
   {
-     /* Discard unfinished (interrupted) state vector. */
-     sh.idx = prev(1);
+    /* Discard unfinished (interrupted) state vector. */
+    sh.idx = prev(1);
   }
   else
   {
@@ -396,7 +410,7 @@ enter_flight_state(fu32 conf)
  */
 void evaluation_entry(ULONG input)
 {
-  (void) input;
+  (void)input;
 
   log_msg(id "started", mlen(7));
 
@@ -405,13 +419,14 @@ void evaluation_entry(ULONG input)
   fu32 conf = load(&config, Acq);
 
   enter_flight_state(conf);
-  
-  task_loop (conf & Eval_Abort_Flag)
+
+  task_loop(conf & Eval_Abort_Flag)
   {
     /* Task suspension */
     st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
 
-    if (st != TX_SUCCESS) {
+    if (st != TX_SUCCESS)
+    {
       continue;
     }
 
@@ -426,18 +441,27 @@ void evaluation_entry(ULONG input)
   }
 }
 
-
 /*
  * Creates a configurably-preemptive, cooperative Evaluation task
  * with defined parameters. This task started by the Recovery task.
  */
-void create_evaluation_task(void)
+UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 {
+
+  CHAR *pointer;
+
+  /* Allocate the stack for test  */
+  if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
+                       EVAL_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
+  }
+
   UINT st = tx_thread_create(&evaluation_task,
                              "Evaluation Task",
                              evaluation_entry,
                              EVAL_INPUT,
-                             evaluation_stack,
+                             pointer,
                              EVAL_STACK_BYTES,
                              EVAL_PRIORITY,
                              EVAL_PREEMPT_THRESHOLD,
@@ -446,15 +470,18 @@ void create_evaluation_task(void)
 
   const char *critical = "creation failure:";
 
-  if (st != TX_SUCCESS) {
+  if (st != TX_SUCCESS)
+  {
     log_die(id "task %s %u", critical, st);
   }
 
   st = tx_semaphore_create(&eval_focus_mode, "EVALS", 0);
 
-  if (st != TX_SUCCESS) {
+  if (st != TX_SUCCESS)
+  {
     log_die(id "sema %s %u", critical, st);
   }
+  return TX_SUCCESS;
 }
 
 /* ------ Evaluation Task ------ */

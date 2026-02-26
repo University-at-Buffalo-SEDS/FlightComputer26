@@ -63,10 +63,25 @@ void Error_Handler(void);
 #define CS_ACCEL_GPIO_Port GPIOA
 #define CS_GYRO_Pin GPIO_PIN_3
 #define CS_GYRO_GPIO_Port GPIOA
+#define ACCL_EXTI_1_Pin GPIO_PIN_4
+#define ACCL_EXTI_1_GPIO_Port GPIOC
+#define ACCL_EXTI_1_EXTI_IRQn EXTI4_IRQn
+#define ACCL_EXTI_2_Pin GPIO_PIN_5
+#define ACCL_EXTI_2_GPIO_Port GPIOC
+#define ACCL_EXTI_2_EXTI_IRQn EXTI5_IRQn
+#define GYRO_EXTI_1_Pin GPIO_PIN_0
+#define GYRO_EXTI_1_GPIO_Port GPIOB
+#define GYRO_EXTI_1_EXTI_IRQn EXTI0_IRQn
+#define GYRO_EXTI_2_Pin GPIO_PIN_1
+#define GYRO_EXTI_2_GPIO_Port GPIOB
+#define GYRO_EXTI_2_EXTI_IRQn EXTI1_IRQn
 #define LED_Pin GPIO_PIN_12
 #define LED_GPIO_Port GPIOB
 #define CONFIGURABLE_Pin GPIO_PIN_14
 #define CONFIGURABLE_GPIO_Port GPIOB
+#define BARO_EXTI_Pin GPIO_PIN_7
+#define BARO_EXTI_GPIO_Port GPIOC
+#define BARO_EXTI_EXTI_IRQn EXTI7_IRQn
 
 /* USER CODE BEGIN Private defines */
 

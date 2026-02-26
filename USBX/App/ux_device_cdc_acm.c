@@ -81,7 +81,8 @@ VOID USBD_CDC_ACM_Activate(VOID *cdc_acm_instance)
 VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_Deactivate */
-  (void)cdc_acm_instance;
+  UX_SLAVE_CLASS_CDC_ACM *inst = (UX_SLAVE_CLASS_CDC_ACM *)cdc_acm_instance;
+  (void)inst;
   cdc_acm = UX_NULL;
   /* USER CODE END USBD_CDC_ACM_Deactivate */
 
@@ -97,8 +98,7 @@ VOID USBD_CDC_ACM_Deactivate(VOID *cdc_acm_instance)
 VOID USBD_CDC_ACM_ParameterChange(VOID *cdc_acm_instance)
 {
   /* USER CODE BEGIN USBD_CDC_ACM_ParameterChange */
-  UX_SLAVE_CLASS_CDC_ACM *inst = (UX_SLAVE_CLASS_CDC_ACM *)cdc_acm_instance;
-  (void)inst;
+  UX_PARAMETER_NOT_USED(cdc_acm_instance);
   /* USER CODE END USBD_CDC_ACM_ParameterChange */
 
   return;
