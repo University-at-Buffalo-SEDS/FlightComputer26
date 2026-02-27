@@ -73,7 +73,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
     HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-      busy_delay(500000000); // adjust until visible
+      busy_delay(50000); // adjust until visible
     HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
 
     TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
