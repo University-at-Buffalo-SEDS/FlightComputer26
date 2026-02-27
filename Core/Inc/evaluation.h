@@ -157,7 +157,6 @@ enum state {
 extern TX_SEMAPHORE eval_focus_mode;
 extern volatile enum state flight;
 extern struct measurement payload;
-extern struct coords rail;
 extern struct state_vec sv[];
 extern struct sv_helper sh;
 extern fu32 sv_size_bytes;

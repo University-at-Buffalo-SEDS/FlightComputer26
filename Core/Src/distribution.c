@@ -58,7 +58,8 @@ TX_THREAD distribution_task;
 /* Latest logged measurement */
 struct measurement payload = {0};
 
-struct coords rail = {0};
+/* Struct that stores launch coordinates */
+static struct coords rail = {0};
 
 /* ------ Global and static storage ------ */
 
@@ -326,7 +327,8 @@ handle_gps_data(const uint8_t *data, size_t len)
 static inline void
 distance_from_rail(struct coords *gps)
 {
-  // TODO Dynamics
+  gps->x = fabsf(gps->x - rail.x);
+  gps->x = fabsf(gps->y - rail.y);
 }
 
 #endif // GPS_AVAILABLE
@@ -673,6 +675,8 @@ static inline void descent_cycle(fu32 conf)
     return;
   }
 #endif // GPS_AVAILABLE
+
+  distance_from_rail(&payload.d.gps);
 
   sh.dt = fsec(timer_exchange(DescentKF));
 
