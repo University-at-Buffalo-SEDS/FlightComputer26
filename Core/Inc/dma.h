@@ -20,6 +20,12 @@ enum sensor {
   Sensors
 };
 
+enum dma_status {
+  DMA_Ok,
+  DMA_Busy,
+  DMA_Error,
+};
+
 struct serial baro { float alt, p, t; };
 
 struct serial measurement {
@@ -29,6 +35,11 @@ struct serial measurement {
     struct coords gps;
   } d;
   struct baro baro;
+};
+
+struct gpio_lookup {
+  const GPIO_TypeDef *port[Sensors];
+  const uint16_t pin[Sensors];
 };
 
 
@@ -43,6 +54,19 @@ struct serial measurement {
 #define RX_ACCL (1u << Sensor_Accl)
 
 #define RX_DONE (RX_BARO | RX_GYRO | RX_ACCL)
+
+/* Heuristic for sensor variant from interrupt pin.
+ * Sensor variants can be found in 'enum sensor'. 
+ *
+ * BARO_INT_PIN:    0x0080 = 00000000 10000000 => 0 + 0 = 0
+ * GYRO_INT_PIN_1:  0x0001 = 00000000 00000001 => 1 + 0 = 1
+ * GYRO_INT_PIN_2:  0x0002 = 00000000 00000010 => 1 + 0 = 1
+ * ACCL_INT_PIN_1:  0x0010 = 00000000 00010000 => 1 + 1 = 2
+ * ACCL_INT_PIN_2:  0x0020 = 00000000 00100010 => 1 + 1 = 2
+ * 
+ * Donald Knuth would be pissed */
+#define sensor_idx(pin)                                        \
+  (enum sensor)((((pin) & 0x0080u) == 0) + (((pin) & 0x0030u) != 0))
 
 
 /* ------ Producer / consumer benchmark timer ------ */

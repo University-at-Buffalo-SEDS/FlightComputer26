@@ -54,55 +54,55 @@
 #include "dma.h"
 
 
-/*
- * Each sensor data readiness flag for two buffers.
- */
+/* ------ Static storage ------ */
+
+/* Each sensor data readiness flag for two buffers. */
 static volatile fu8 is_complete[2][Sensors] = {0};
 
-/*
- * Each device's buffer accepting DMA transfers.
- */
-static atomic_uint_fast8_t transfer_imu = 0;
-static atomic_uint_fast8_t transfer_baro = 0;
+/* Each device's buffer accepting DMA transfers.
+ * 1 - Barometer, 0 - IMU. */
+static atomic_uint_fast8_t transfer[2] = {0};
 
-/*
- * Per device flag for signaling ongoing DMA transfer.
- */
-static atomic_uint_fast32_t in_progress[Sensors] = {0};
+/* Consumer-side flags for 'transfer' */
+static atomic_uint_fast8_t imu_i = 1;
+static atomic_uint_fast8_t baro_i = 1;
 
-/*
- * Double-buffered Rx for each sensor.
- */
+/* Per device flag for signaling ongoing DMA transfer. */
+static atomic_uint_fast8_t in_progress[Sensors] = {0};
+
+/* Double-buffered Rx for each sensor. */
 static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
 
 #ifdef DMA_BENCHMARK
 
-/*
- * HAL timestamp for consumer benchmark.
- * Stores relative time when RxCplt finishes transfer.
- */
+/* HAL timestamp for consumer benchmark.
+ * Stores relative time when RxCplt finishes transfer. */
 static atomic_uint_fast32_t rxts[Sensors] = {0};
 
-/*
- * Stores time, in milliseconds, that ISR took to execute.
- * Updated inside ISR, reported inside thread context. 
- */
+/* Stores time, in milliseconds, that ISR took to execute.
+ * Updated inside ISR, reported inside thread context. */
 static atomic_uint_fast32_t isr_dt = 0;
 
 #endif // DMA_BENCHMARK
 
+/* GPIO port and pin lookup based on sensor.
+ * Stored consecutively for single cache load. */
+static const struct gpio_lookup gpio = {
+  .port = {CS_BARO_GPIO_Port, CS_GYRO_GPIO_Port, CS_ACCEL_GPIO_Port},
+  .pin = {CS_BARO_Pin, CS_GYRO_Pin, CS_ACCEL_Pin}
+};
+
+/* Per-sensor buffer with transmit byte set */
+static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
+  [0][0] = BARO_TX_BYTE, [0][1 ... 7] = 0x00,
+  [1][0] = GYRO_TX_BYTE, [1][1 ... 7] = 0x00,
+  [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
+};
+
+/* ------ Static storage ------ */
+
 
 /* ------ Callbacks ------ */
-
-/*
- * Offset-to-buffer and offset-to-sensor lookup arrays.
- */
-static const fu8 dbuf[2 * Sensors] = {0, 0, 0, 1, 1, 1};
-
-static const enum sensor sens[2 * Sensors] = {
-  Sensor_Baro, Sensor_Gyro, Sensor_Accl,
-  Sensor_Baro, Sensor_Gyro, Sensor_Accl
-};
 
 /*
  * Finish transfer and publish device data flag.
@@ -123,12 +123,11 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 
   /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
   fu8 idx = (fu8)(offset) >> 3;
-
-  fu8 i = dbuf[idx];
-  fu8 t = sens[idx];
+  fu8 i = idx > 2;
+  fu8 t = idx - (i ? 3 : 0);
 
   invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
-  finish_transfer(t);
+  gpio_cs_high(t);
 
 #ifdef DMA_BENCHMARK
   store(&rxts[t], now_ms(), Rel);
@@ -137,7 +136,6 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
   is_complete[i][t] = 1;
   store(&in_progress[t], 0, Rel);
 }
-
 
 /*
  * Finish transfer but do not publish flag (drop sample).
@@ -156,15 +154,57 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
     return;
   }
 
-  fu8 t = sens[(fu8)(offset) >> 3];
+  fu8 idx = (fu8)(offset) >> 3;
+  fu8 t = idx - (idx > 2 ? 3 : 0);
 
-  finish_transfer(t);
+  gpio_cs_high(t);
   store(&in_progress[t], 0, Rel);
 }
 
+/* ------ Callbacks ------ */
+
+
+/* ------ DMA helper ------ */
+
+/*
+ * Attempts to begin a DMA transfer for the specified device.
+ * Has no side effects if there is a transfer ongoing, and
+ * pulls sensor's CS pin back high on DMA-side failures.
+ */
+static inline enum dma_status
+start_dma_transfer(enum sensor k)
+{
+  HAL_StatusTypeDef st;
+  fu8 desired = 0;
+
+  if (cas_strong(&in_progress[k], &desired, 1, Acq, Rlx))
+  {
+    /* The point of !k is to map Gyro and Accl to the same index
+     * and Baro to a different one. This works because Baro is 0. */
+    fu32 i = load(&transfer[!k], Acq);
+    gpio_cs_low(k);
+
+    st = dma_spi_txrx(tx[k], (uint8_t *)rx[i][k], SENSOR_BUF_SIZE);
+
+    if (st == HAL_OK)
+    {
+      return DMA_Ok;
+    }
+    else
+    {
+      gpio_cs_high(k);
+      store(&in_progress[k], 0, Rlx);
+      return DMA_Error;
+    }
+  }
+
+  return DMA_Busy;
+}
+
+/* ------ DMA helper ------ */
+
 
 /* ------ ISR ------ */
-
 
 /*
  * Attempts to initialize DMA transfer.
@@ -213,89 +253,17 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
   fu32 called = now_ms();
 #endif
 
-  fu8 i;
-  fu32 t = 0;
-  HAL_StatusTypeDef st;
-
-  switch (GPIO_Pin) {
-    case BARO_INT_PIN:
-    {
-      static const uint8_t tx_baro[BARO_DMA_BUF_SIZE] = {
-        [0] = BARO_TX_BYTE, [1 ... 7] = 0x00
-      };
-
-      if (cas_strong(&in_progress[Sensor_Baro], &t, 1, Acq, Rlx))
-      {
-        i = load(&transfer_baro, Acq);
-        baro_cs_low();
-  
-        st = dma_spi_txrx(tx_baro, (uint8_t *)rx[i][Sensor_Baro],
-                                              BARO_DMA_BUF_SIZE);
-        if (st != HAL_OK) {
-          baro_cs_high();
-          store(&in_progress[Sensor_Baro], 0, Rlx);
-        }
-      }
-      break;
-    }
-
-    case GYRO_INT_PIN_1:
-/*  case GYRO_INT_PIN_2:        unused for IREC '26 */
-    {
-      static const uint8_t tx_gyro[GYRO_DMA_BUF_SIZE] = {
-        [0] = GYRO_TX_BYTE, [1 ... 7] = 0x00
-      };
-
-      if (cas_weak(&in_progress[Sensor_Gyro], &t, 1, Acq, Rlx))
-      {
-        i = load(&transfer_imu, Acq);
-        gyro_cs_low();
-  
-        st = dma_spi_txrx(tx_gyro, (uint8_t *)rx[i][Sensor_Gyro],
-                                              GYRO_DMA_BUF_SIZE);
-        if (st != HAL_OK) {
-          gyro_cs_high();
-          store(&in_progress[Sensor_Gyro], 0, Rlx);
-        }
-        break;
-      }
-    }
-
-    case ACCL_INT_PIN_1:
-/*  case ACCL_INT_PIN_2:        unused for IREC '26 */
-    {
-      static const uint8_t tx_accl[ACCL_DMA_BUF_SIZE] = {
-        [0] = ACCL_TX_BYTE, [1 ... 7] = 0x00
-      };
-
-      if (cas_weak(&in_progress[Sensor_Accl], &t, 1, Acq, Rlx))
-      {
-        i = load(&transfer_imu, Acq);
-        accl_cs_low();
-        
-        st = dma_spi_txrx(tx_accl, (uint8_t *)rx[i][Sensor_Accl],
-                                              ACCL_DMA_BUF_SIZE);
-        if (st != HAL_OK) {
-          accl_cs_high();
-          store(&in_progress[Sensor_Accl], 0, Rlx);
-        }
-        break;
-      }
-    }
-
-    default: break;
-  }
+  start_dma_transfer(sensor_idx(GPIO_Pin));
 
 #ifdef DMA_BENCHMARK
   store(&isr_dt, now_ms() - called, Rel);
 #endif
 }
 
+/* ------ ISR ------ */
+
 
 /* ------ Public API ------ */
-
-
-static atomic_uint_fast8_t baro_i = 1;
 
 /*
  * Peeks at the barometer DMA buffer status,
@@ -318,20 +286,17 @@ fu8 dma_fetch_baro(struct baro *buf)
 
     is_complete[baro_i][Sensor_Baro] = 0;
 
-    baro_i = swap(&transfer_baro, baro_i, Rel);
+    baro_i = swap(&transfer[1], baro_i, Rel);
 
     dma_bench_log_fetch(Sensor_Baro);
 
     return 1;
   }
 
-  baro_i = swap(&transfer_baro, baro_i, Rel);
+  baro_i = swap(&transfer[1], baro_i, Rel);
 
   return 0;
 }
-
-
-static atomic_uint_fast8_t imu_i = 1;
 
 /*
  * Peeks at the IMU DMA buffers' statuses, and
@@ -361,7 +326,7 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     is_complete[imu_i][Sensor_Gyro] = 0;
     is_complete[imu_i][Sensor_Accl] = 0;
 
-    imu_i = swap(&transfer_imu, imu_i, Rel);
+    imu_i = swap(&transfer[0], imu_i, Rel);
 
     dma_bench_log_fetch(Sensor_Gyro);
     dma_bench_log_fetch(Sensor_Accl);
@@ -369,11 +334,10 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
     return 1;
   }
 
-  imu_i = swap(&transfer_imu, imu_i, Rel);
+  imu_i = swap(&transfer[0], imu_i, Rel);
 
   return 0;
 }
-
 
 /*
  * Fetches whatever is available in a free (tm) DMA
@@ -423,11 +387,13 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
     dma_bench_log_fetch(Sensor_Accl);
   }
 
-  imu_i = swap(&transfer_imu, imu_i, Rel);
+  imu_i = swap(&transfer[0], imu_i, Rel);
 
-  baro_i = swap(&transfer_imu, baro_i, Rel);
+  baro_i = swap(&transfer[1], baro_i, Rel);
 
   dma_bench_log_isr();
 
   return fetched;
 }
+
+/* ------ Public API ------ */

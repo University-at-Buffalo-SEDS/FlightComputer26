@@ -263,18 +263,13 @@ struct serial coords { float x, y, z; };
 #define baro_calc_alt(pres) \
   baro_relative_alt((float)pres)
 
-#define finish_transfer(device) \
-  do {                          \
-    switch (device) {           \
-      case Sensor_Baro:         \
-        baro_cs_high(); break;  \
-      case Sensor_Gyro:         \
-        gyro_cs_high(); break;  \
-      case Sensor_Accl:         \
-        accl_cs_high(); break;  \
-      default: return;          \
-    }                           \
-  } while (0)
+#define gpio_cs_low(sens)                               \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+                    gpio.pin[sens], GPIO_PIN_RESET)
+
+#define gpio_cs_high(sens)                              \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+                    gpio.pin[sens], GPIO_PIN_SET)
 
 #define terminate_transfers() \
   do {                        \
