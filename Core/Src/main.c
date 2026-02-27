@@ -140,8 +140,8 @@ int main(void)
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
   HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-      busy_delay(500000000); // adjust until visible
-    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+    busy_delay(500000000); // adjust until visible
+  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
 
 /* Local test with no telemerty or threads */
 #ifdef DMA_LOCAL_TEST
@@ -873,7 +873,7 @@ void Error_Handler(void)
   while (1) {
     HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
     HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
-    busy_delay(100000);
+    busy_delay(1000000);
   }
   /* USER CODE END Error_Handler_Debug */
 }
