@@ -117,6 +117,29 @@ fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl);
  */
 fu8 dma_fetch_baro(struct baro *buf);
 
+/*
+ * Fetches the latest pair of measurements (accelerometer,
+ * gyroscope). This function is intended to be called after
+ * dma_attempt_transfer from the same thread. If the former
+ * function was not called prior to calling this function,
+ * it will fetch old data or zeroes if the former function
+ * was never called. Do not use this function when starting
+ * DMA transfers in ISR mode. Returns 1 on success and 0 if
+ * there is an ongoing transfer.
+ */
+fu8 dma_fetch_imu_sync(struct coords *gyro, struct coords *accl);
+
+/*
+ * Fetches the latest barometer measurement. This function
+ * is intended to be called after dma_attempt_transfer from
+ * the same thread. If the former function was not called
+ * prior to calling this function, it will fetch old data or
+ * zeroes if the former function was never called. Do not
+ * use this function when starting DMA transfers in ISR mode.
+ * Returns 1 on success and 0 if there is an ongoing transfer.
+ */
+fu8 dma_fetch_baro_sync(struct baro *buf);
+
 
 /* ------ Inline API ------ */
 

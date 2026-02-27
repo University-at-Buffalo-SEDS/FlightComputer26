@@ -404,4 +404,76 @@ fu8 dma_attempt_transfer(enum sensor sensor)
   return start_dma_transfer(sensor);
 }
 
+/*
+ * Fetches the latest pair of measurements (accelerometer,
+ * gyroscope). This function is intended to be called after
+ * dma_attempt_transfer from the same thread. If the former
+ * function was not called prior to calling this function,
+ * it will fetch old data or zeroes if the former function
+ * was never called. Do not use this function when starting
+ * DMA transfers in ISR mode. Returns 1 on success and 0 if
+ * there is an ongoing transfer.
+ */
+fu8 dma_fetch_imu_sync(struct coords *gyro, struct coords *accl)
+{
+  if (!gyro || !accl) {
+    return UINT_FAST8_MAX;
+  }
+
+  if (load(&in_progress[Sensor_Gyro], Acq) ||
+      load(&in_progress[Sensor_Accl], Acq))
+  {
+    return 0;
+  }
+
+  /* The point of 'k' is to select a buffer that accepted the latest
+   * transfer. ISR variants of these functions will do the opposite
+   * to avoid data races at the expense of measurement relevance. */
+  fu8 k = imu_i ^ 1;
+
+  gyro->x = F16(rx[k][1][1], rx[k][1][2]);
+  gyro->y = F16(rx[k][1][3], rx[k][1][4]);
+  gyro->z = F16(rx[k][1][5], rx[k][1][6]);
+
+  accl->x = F16(rx[k][2][2], rx[k][2][3]);
+  accl->y = F16(rx[k][2][4], rx[k][2][5]);
+  accl->z = F16(rx[k][2][6], rx[k][2][7]);
+
+  dma_bench_log_fetch(Sensor_Gyro);
+  dma_bench_log_fetch(Sensor_Accl);
+
+  return 1;
+}
+
+/*
+ * Fetches the latest barometer measurement. This function
+ * is intended to be called after dma_attempt_transfer from
+ * the same thread. If the former function was not called
+ * prior to calling this function, it will fetch old data or
+ * zeroes if the former function was never called. Do not
+ * use this function when starting DMA transfers in ISR mode.
+ * Returns 1 on success and 0 if there is an ongoing transfer.
+ */
+fu8 dma_fetch_baro_sync(struct baro *buf)
+{
+  if (!buf) {
+    return UINT_FAST8_MAX;
+  }
+
+  if (load(&in_progress[Sensor_Baro], Acq))
+  {
+    return 0;
+  }
+
+  fu8 k = baro_i ^ 1;
+
+  buf->p = U24(rx[k][0][1], rx[k][0][2], rx[k][0][3]);
+  buf->t = U24(rx[k][0][4], rx[k][0][5], rx[k][0][6]);
+
+  dma_bench_log_fetch(Sensor_Baro);
+
+  return 1;
+}
+
+
 /* ------ Public API ------ */
