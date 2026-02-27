@@ -5,6 +5,8 @@
 #include "can_bus.h"
 #include "main.h"
 
+#define UNUSED_VALUE __attribute__((unused))
+
 #ifdef TELEMETRY_ENABLED
 
 TX_THREAD telemetry_thread;
@@ -19,7 +21,7 @@ TX_THREAD telemetry_thread;
 #define TIMESYNC_REQUEST_PERIOD_TICKS \
   ((TIMESYNC_REQUEST_PERIOD_MS * TX_TIMER_TICKS_PER_SECOND + 999u) / 1000u)
 
-static uint64_t tx_now_ms(void)
+static UNUSED_VALUE uint64_t tx_now_ms(void)
 {
   ULONG ticks = tx_time_get();
   return ((uint64_t)(uint32_t)ticks * 1000ULL) / (uint64_t)TX_TIMER_TICKS_PER_SECOND;

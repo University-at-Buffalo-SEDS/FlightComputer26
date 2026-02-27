@@ -276,7 +276,7 @@ def configure_and_build(ui: UI, cfg: BuildConfig) -> tuple[Path, Path]:
         f"-DCMAKE_BUILD_TYPE={cfg.build_type}",
         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         # cmake toolchain file is not neeeded
-        # f"-DCMAKE_TOOLCHAIN_FILE={str(cfg.toolchain_file)}",
+        f"-DCMAKE_TOOLCHAIN_FILE={str(cfg.toolchain_file)}",
         "-DCMAKE_COMMAND=cmake",
         telemetry_flag,
         "-S", str(cfg.repo_root),
