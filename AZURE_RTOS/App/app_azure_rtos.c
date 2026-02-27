@@ -188,7 +188,7 @@ VOID tx_application_define(VOID *first_unused_memory)
       /* USER CODE END  MX_USBX_Device_Init_Error */
     }
     /* USER CODE BEGIN  MX_USBX_Device_Init_Success */
-
+    cdc_printf_init();
     /* USER CODE END  MX_USBX_Device_Init_Success */
   }
 

@@ -52,7 +52,7 @@ static void busy_delay(volatile uint32_t n)
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+void cdc_printf_init(void);
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/

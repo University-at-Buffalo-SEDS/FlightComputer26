@@ -36,7 +36,7 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
+void cdc_printf_init(void);
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
