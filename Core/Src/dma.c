@@ -396,4 +396,12 @@ fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
   return fetched;
 }
 
+/*
+ * Public helper to start DMA transfer for the specified sensors.
+ */
+fu8 dma_attempt_transfer(enum sensor sensor)
+{
+  start_dma_transfer(sensor);
+}
+
 /* ------ Public API ------ */
