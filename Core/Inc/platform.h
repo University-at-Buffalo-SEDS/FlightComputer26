@@ -24,7 +24,6 @@
 
 /* ------ Bundled std headers used ------ */
 
-#include "stm32h523xx.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
