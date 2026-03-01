@@ -140,6 +140,17 @@ fu8 dma_fetch_imu_sync(struct coords *gyro, struct coords *accl);
  */
 fu8 dma_fetch_baro_sync(struct baro *buf);
 
+/*
+ * Public helper to start DMA transfer for the specified sensor.
+ */
+fu8 dma_attempt_transfer(enum sensor sensor);
+
+/*
+ * Wait until synchronous transfer completes and return
+ * the waiting time in milliseconds.
+ */
+fu32 wait_on_sync_transfer(enum sensor k);
+
 
 /* ------ Inline API ------ */
 

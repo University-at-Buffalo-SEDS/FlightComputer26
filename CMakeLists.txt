@@ -110,6 +110,12 @@ option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
 if (DMA_TESTING)
     message(STATUS "Running local DMA tests (no telemetry).")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test
+    )
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/dmatest.c
+    )
 endif()
 
 # Options defaults to OFF

@@ -8,8 +8,6 @@
 #include "testing.h"
 
 extern SPI_HandleTypeDef hspi1;
-extern SPI_HandleTypeDef hspi2;
-extern SPI_HandleTypeDef hspi3;
 
 
 static struct baro_config baro_conf = {
@@ -32,7 +30,8 @@ static struct accl_config accl_conf = {
 
 void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 {
-	if (precise) {
+	if (precise)
+	{
 		baro_conf.osr_p = BARO_OSR_X8;
   	baro_conf.iir_coef = BARO_IIR_COEF_15;
 	}
@@ -61,7 +60,8 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 
 void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 {
-	if (lowpower) {
+	if (lowpower)
+	{
 		gyro_conf.bw = Gyro_47Hz_ODR_400Hz;
 	}
 
@@ -88,7 +88,8 @@ void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 
 void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
 {
-	if (lowpower) {
+	if (lowpower)
+	{
 		accl_conf.mode = Normal_400Hz;
 	}
 
@@ -122,5 +123,5 @@ void noreturn test_sensors_sync(void)
 	test_accl_sync(&hspi1, 0);
 	test_accl_sync(&hspi1, 1);
 
-	exit(0);
+	_Exit(0);
 }

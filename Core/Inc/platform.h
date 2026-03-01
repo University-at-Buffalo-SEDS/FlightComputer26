@@ -404,12 +404,12 @@ static inline SedsResult request_ignition()
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)
+  fprintf(stderr, fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...)                                     \
   do {                                                        \
     while (1) {                                               \
-      fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__);         \
+      fprintf(stderr, fmt "\n" __VA_OPT__(,) __VA_ARGS__);    \
       HAL_Delay(1000);                                        \
     }                                                         \
   } while (0)
@@ -418,12 +418,12 @@ static inline SedsResult request_ignition()
 #if defined(__GNUC__)
 
 #define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt, ##__VA_ARGS__)
+  fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 
 #define log_die(fmt, ...)                                     \
   do {                                                        \
     while (1) {                                               \
-      fprintf(stderr, fmt, ##__VA_ARGS__);                    \
+      fprintf(stderr, fmt "\n", ##__VA_ARGS__);               \
       HAL_Delay(1000);                                        \
     }                                                         \
   } while (0)

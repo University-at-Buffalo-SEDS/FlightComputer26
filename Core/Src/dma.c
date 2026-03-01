@@ -475,5 +475,18 @@ fu8 dma_fetch_baro_sync(struct baro *buf)
   return 1;
 }
 
+/*
+ * Wait until synchronous transfer completes and return
+ * the waiting time in milliseconds.
+ */
+fu32 wait_on_sync_transfer(enum sensor k)
+{
+  fu32 called = now_ms();
+
+  while (load(&in_progress[k], Acq))
+    ;
+
+  return now_ms() - called;
+}
 
 /* ------ Public API ------ */

@@ -27,12 +27,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#ifdef DMA_LOCAL_TEST
-#include "platform.h"
-#include "dma.h"
-#endif
-
-#ifdef TEST_SENSORS
+#if defined (DMA_LOCAL_TEST) || defined (TEST_SENSORS)
   #include "testing.h"
 #endif
 
@@ -147,72 +142,15 @@ int main(void)
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
 
+
 #ifdef TEST_SENSORS
   test_sensors_sync();
 #endif
 
-/* Local test with no telemerty or threads */
 #ifdef DMA_LOCAL_TEST
-  HAL_Delay(200);
-
-  __NVIC_DisableIRQ(Baro_EXTI);
-  __NVIC_DisableIRQ(Gyro_EXTI_1);
-  __NVIC_DisableIRQ(Gyro_EXTI_2);
-  __NVIC_DisableIRQ(Accl_EXTI_1);
-  __NVIC_DisableIRQ(Accl_EXTI_2);
-
-  /* Init with default configs */
-  init_baro(NULL);
-  init_gyro(NULL);
-  init_accl(NULL);
-
-  __NVIC_EnableIRQ(Baro_EXTI);
-  __NVIC_EnableIRQ(Gyro_EXTI_1);
-  __NVIC_EnableIRQ(Gyro_EXTI_2);
-  __NVIC_EnableIRQ(Accl_EXTI_1);
-  __NVIC_EnableIRQ(Accl_EXTI_2);
-
-  struct measurement k = {0};
-  fu8 dma_api = 0;
-
-  while (1) {
-    if (dma_api & 1)
-    {
-      if (dma_fetch_imu(&k.gyro, &k.d.accl))
-      {
-        compensate_accl(&k.d.accl);
-        log_measurement(SEDS_DT_GYRO_DATA,  &k.gyro);
-        log_measurement(SEDS_DT_ACCEL_DATA, &k.d.accl);
-      }
-
-      if (dma_fetch_baro(&k.baro))
-      {
-        compensate_baro(&k.baro);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k.baro);
-      }
-    }
-    else
-    {
-      fu8 st = dma_fetch(&k, 0);
-
-      if (st == RX_DONE)
-      {
-        compensate_all(&k);
-        log_measurement(SEDS_DT_GYRO_DATA,      &k.baro);
-        log_measurement(SEDS_DT_ACCEL_DATA,     &k.gyro);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k.d.accl);
-      }
-      else
-      {
-        log_err("DMA: (testing) readiness: %u", st);
-      }
-    }
-
-    dma_api ^= 1;
-  }
-
-  /* Assert unreachable. */
+  dma_sensor_test();
 #endif
+
 
   /* USER CODE END 2 */
 
