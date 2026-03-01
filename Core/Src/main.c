@@ -32,6 +32,10 @@
 #include "dma.h"
 #endif
 
+#ifdef TEST_SENSORS
+  #include "testing.h"
+#endif
+
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
 #ifndef MIN
@@ -142,6 +146,10 @@ int main(void)
   MX_SPI2_Init();
   MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
+
+#ifdef TEST_SENSORS
+  test_sensors_sync();
+#endif
 
 /* Local test with no telemerty or threads */
 #ifdef DMA_LOCAL_TEST

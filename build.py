@@ -71,6 +71,9 @@ OPTIONS:
         userflags       - compile with flags in top-level
                         - CMakeLists; use this for the final
                         - release build (will enable LTO)
+
+        sensortest      - run synchronous sensor tests
+                        - prerequisite: notelemetry
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -106,7 +109,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "nosd",
                         "asm",
                         "dmabench",
-                        "userflags"
+                        "userflags",
+                        "sensortest"
                 }
 
 # Repo constants
@@ -170,6 +174,7 @@ def configure(buildir: Path, preset: str, options: dict):
         sd              = "-DONBOARD_SD=ON"
         dmabench        = "-DDMA_BENCH=OFF"
         flags           = "-DCUSTOM_FLAGS=OFF"
+        sensortest      = "-DSENSOR_TESTS=OFF"
 
         if options["notelemetry"]:
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -177,6 +182,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 sd = "-DONBOARD_SD=OFF"
                 if options["dmatest"]:
                         dmatest = "-DDMA_TESTING=ON"
+                if options["sensortest"]:
+                        sensortest = "-DSENSOR_TESTS=ON"
         else:
                 if options["fullcmd"]:
                         compat = "-DTELEMETRY_COMPAT=OFF"
@@ -206,6 +213,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 sd,
                 dmabench,
                 flags,
+                sensortest,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

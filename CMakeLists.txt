@@ -119,3 +119,17 @@ if (DMA_BENCH)
     message(STATUS "Running DMA benchmarks.")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_BENCHMARK)
 endif()
+
+# Options defaults to OFF
+option(SENSOR_TESTS "Synchronous sensor tests" OFF)
+
+if (SENSOR_TESTS)
+    message(STATUS "Testing sensors.")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_SENSORS)
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test
+    )
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
+    )
+endif()
