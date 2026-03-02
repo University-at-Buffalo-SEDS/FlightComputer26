@@ -27,9 +27,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#ifdef DMA_LOCAL_TEST
-#include "platform.h"
-#include "dma.h"
+#if defined (DMA_LOCAL_TEST) || defined (TEST_SENSORS)
+  #include "testing.h"
 #endif
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
@@ -66,11 +65,10 @@ DCACHE_HandleTypeDef hdcache1;
 
 FDCAN_HandleTypeDef hfdcan1;
 
-DMA_HandleTypeDef handle_GPDMA1_Channel1;
-
 SD_HandleTypeDef hsd1;
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
 DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 PCD_HandleTypeDef hpcd_USB_DRD_FS;
@@ -140,51 +138,15 @@ int main(void)
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
-/* Local test with no telemerty or threads */
-#ifdef DMA_LOCAL_TEST
-  HAL_Delay(200);
 
-  struct measurement k = {0};
-  fu8 dma_api = 0;
-
-  while (1) {
-    if (dma_api & 1)
-    {
-      if (dma_fetch_imu(&k.gyro, &k.d.accl))
-      {
-        compensate_accl(&k.d.accl);
-        log_measurement(SEDS_DT_GYRO_DATA,  &k.gyro);
-        log_measurement(SEDS_DT_ACCEL_DATA, &k.d.accl);
-      }
-
-      if (dma_fetch_baro(&k.baro))
-      {
-        compensate_baro(&k.baro);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k.baro);
-      }
-    }
-    else
-    {
-      fu8 st = dma_fetch(&k, 0);
-
-      if (st == RX_DONE)
-      {
-        compensate_all(&k);
-        log_measurement(SEDS_DT_GYRO_DATA,      &k.baro);
-        log_measurement(SEDS_DT_ACCEL_DATA,     &k.gyro);
-        log_measurement(SEDS_DT_BAROMETER_DATA, &k.d.accl);
-      }
-      else
-      {
-        log_err("DMA: (testing) readiness: %u", st);
-      }
-    }
-
-    dma_api ^= 1;
-  }
-
-  /* Assert unreeachable. */
+#ifdef TEST_SENSORS
+  test_sensors_sync();
 #endif
+
+#ifdef DMA_LOCAL_TEST
+  dma_sensor_test();
+#endif
+
 
   /* USER CODE END 2 */
 
@@ -380,32 +342,12 @@ static void MX_GPDMA1_Init(void)
   /* GPDMA1 interrupt Init */
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
   /* USER CODE END GPDMA1_Init 1 */
-  handle_GPDMA1_Channel1.Instance = GPDMA1_Channel1;
-  handle_GPDMA1_Channel1.Init.Request = DMA_REQUEST_SW;
-  handle_GPDMA1_Channel1.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
-  handle_GPDMA1_Channel1.Init.Direction = DMA_MEMORY_TO_MEMORY;
-  handle_GPDMA1_Channel1.Init.SrcInc = DMA_SINC_FIXED;
-  handle_GPDMA1_Channel1.Init.DestInc = DMA_DINC_FIXED;
-  handle_GPDMA1_Channel1.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
-  handle_GPDMA1_Channel1.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
-  handle_GPDMA1_Channel1.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
-  handle_GPDMA1_Channel1.Init.SrcBurstLength = 1;
-  handle_GPDMA1_Channel1.Init.DestBurstLength = 1;
-  handle_GPDMA1_Channel1.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0|DMA_DEST_ALLOCATED_PORT0;
-  handle_GPDMA1_Channel1.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
-  handle_GPDMA1_Channel1.Init.Mode = DMA_NORMAL;
-  if (HAL_DMA_Init(&handle_GPDMA1_Channel1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN GPDMA1_Init 2 */
 
   /* USER CODE END GPDMA1_Init 2 */

@@ -179,7 +179,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
   if (st != HAL_OK) {
     return st;
   }
-
+  
   HAL_Delay(GYRO_WAIT_MS);
 
   /* Configuration setup with default fallbacks */
