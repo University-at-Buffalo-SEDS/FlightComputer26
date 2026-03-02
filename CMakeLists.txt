@@ -182,6 +182,12 @@ option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
 if (DMA_TESTING)
     message(STATUS "Running local DMA tests (no telemetry).")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test
+    )
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/dmatest.c
+    )
 endif()
 
 # Options defaults to OFF
@@ -224,4 +230,17 @@ if (CUSTOM_FLAGS)
     # wrappers that CubeMX generated.
     set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
                                 PROPERTIES COMPILE_OPTIONS "-fno-lto")
+endif()
+# Options defaults to OFF
+option(SENSOR_TESTS "Synchronous sensor tests" OFF)
+
+if (SENSOR_TESTS)
+    message(STATUS "Testing sensors.")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_SENSORS)
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test
+    )
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
+    )
 endif()

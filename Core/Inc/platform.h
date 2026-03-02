@@ -130,6 +130,8 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* ------ ARM fast math bundled library ------ */
 
+/* ------ ARM fast math bundled library ------ */
+
 
 /* ------ Task utilities ------ */
 
@@ -266,18 +268,13 @@ struct serial coords { float x, y, z; };
 #define baro_calc_alt(pres) \
   baro_relative_alt((float)pres)
 
-#define finish_transfer(device) \
-  do {                          \
-    switch (device) {           \
-      case Sensor_Baro:         \
-        baro_cs_high(); break;  \
-      case Sensor_Gyro:         \
-        gyro_cs_high(); break;  \
-      case Sensor_Accl:         \
-        accl_cs_high(); break;  \
-      default: return;          \
-    }                           \
-  } while (0)
+#define gpio_cs_low(sens)                               \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+                    gpio.pin[sens], GPIO_PIN_RESET)
+
+#define gpio_cs_high(sens)                              \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+                    gpio.pin[sens], GPIO_PIN_SET)
 
 #define terminate_transfers() \
   do {                        \
@@ -416,12 +413,12 @@ static inline SedsResult request_ignition()
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)
+  fprintf(stderr, fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...)                                     \
   do {                                                        \
     while (1) {                                               \
-      fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__);         \
+      fprintf(stderr, fmt "\n" __VA_OPT__(,) __VA_ARGS__);    \
       HAL_Delay(1000);                                        \
     }                                                         \
   } while (0)
@@ -430,12 +427,12 @@ static inline SedsResult request_ignition()
 #if defined(__GNUC__)
 
 #define log_err_sync(fmt, ...)                                \
-  fprintf(stderr, fmt, ##__VA_ARGS__)
+  fprintf(stderr, fmt "\n", ##__VA_ARGS__)
 
 #define log_die(fmt, ...)                                     \
   do {                                                        \
     while (1) {                                               \
-      fprintf(stderr, fmt, ##__VA_ARGS__);                    \
+      fprintf(stderr, fmt "\n", ##__VA_ARGS__);               \
       HAL_Delay(1000);                                        \
     }                                                         \
   } while (0)
