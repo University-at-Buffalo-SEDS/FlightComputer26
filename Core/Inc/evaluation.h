@@ -79,6 +79,18 @@
 /* ------ Local configuration ------ */
 
 
+/* ------ Telemetry at state transitions ------ */
+
+#define FLT_REP_PREC 8
+#define MAX_MSG_SIZE 40
+
+#define URGENT_COUPLE_DELAY_MS 500
+
+#define MAX_REPORT_SIZE (MAX_MSG_SIZE + FLT_REP_PREC)
+
+/* ------ Telemetry at state transitions ------ */
+
+
 /* ------ Buffer/pool definitions ------ */
 
 #define EVALQ_SIZE 2
@@ -147,6 +159,16 @@ enum state {
   Descent,
   Reefing,
   Landed,
+
+  Flight_States
+};
+
+/*
+ * Struct of transition messages and their sizes.
+ */
+struct transition {
+  const char *message[Flight_States];
+  const int   size[Flight_States];
 };
 
 /* ------ Data containers ------ */
@@ -160,6 +182,7 @@ extern struct measurement payload;
 extern struct state_vec sv[];
 extern struct sv_helper sh;
 extern fu32 sv_size_bytes;
+extern const struct transition trans;
 
 /* ------ Exported globals ------ */
 

@@ -49,19 +49,79 @@ struct state_vec sv[SV_HIST_SIZE] = {0};
 
 struct sv_helper sh = {0};
 
+static fu8 sampl = 0;
+
 /* Length of state vector to log, in bytes. Varies per KF. */
 fu32 sv_size_bytes = ASC_STAT * sizeof(float);
 
 volatile enum state flight = Suspended;
 
+const struct transition trans = {
+  .message = {
+    [Suspended] = "",
+    [Idle]      = "",
+    [Launch]    = "Launch detected. Acceleration in Z:",
+    [Ascent]    = "Ascending. Velocity in Z:",
+    [Burnout]   = "Decelerating. Altitude:",
+    [Apogee]    = "Approaching apogee. Altitude:",
+    [Descent]   = "Descending in drogue. Altitude:",
+    [Reefing]   = "Expanded parachute. Altitude:",
+    [Landed]    = "Landed. Coordinates will follow.",
+  },
+  .size = { /* Excludes NUL */
+    [Suspended] = 0,
+    [Idle]      = 0,
+    [Launch]    = 36,
+    [Ascent]    = 26,
+    [Burnout]   = 24,
+    [Apogee]    = 30,
+    [Descent]   = 32,
+    [Reefing]   = 30,
+    [Landed]    = 32,
+  }
+};
+
 /* ------ Global storage ------ */
 
 /* ------ Data evaluation ------ */
 
-#define caution " (vigilant)"
-#define mlen_caut(len) (mlen(len) + sizeof(caution))
+/*
+ * Concatenates transition message with desired metric,
+ * and logs transition report with given size to match
+ * the telemetry API.
+ */
+static inline void log_transition(float metric)
+{
+  int rep_size = sizeof(id) - 1;
+  char buf[MAX_REPORT_SIZE] = id;
+  
+  rep_size += snprintf(buf + rep_size,
+                       trans.size[flight] + FLT_REP_PREC + 2,
+                       "%s %.*g\n",
+                       trans.message[flight],
+                       FLT_REP_PREC, metric);
 
-static fu8 sampl = 0;
+  log_msg(buf, rep_size);
+}
+
+/*
+ * Concatenates transition message with desired metric,
+ * and logs transition report with given size to match
+ * the telemetry API. Includes vigilant mark ( V ).
+ */
+static inline void log_vigilant(float metric)
+{
+  int rep_size = sizeof(id) - 1;
+  char buf[MAX_REPORT_SIZE] = id;
+  
+  rep_size += snprintf(buf + rep_size,
+                       trans.size[flight] + FLT_REP_PREC + 4,
+                       "V %s %.*g\n",
+                       trans.message[flight],
+                       FLT_REP_PREC, metric);
+
+  log_msg(buf, rep_size);
+}
 
 /*
  * Cautiously examine altitude changes. Act in place.
@@ -91,29 +151,25 @@ static inline void evaluate_altitude(fu32 mode)
     {
       reef_high(&config);
 
-      if (flight < Reefing)
-      {
-        flight = Reefing;
-      }
-      log_msg(id "fired REEF" caution, mlen_caut(10));
+      flight = Reefing;
+      log_vigilant(sv[sh.idx].p.z);
     }
     else
     {
       co2_high(&config);
 
+      flight = Descent;
+      log_vigilant(sv[sh.idx].p.z);
+
       if (load(&config, Acq) & option(Using_Ascent_KF)) {
         descent_initialize();
       }
 
-      tx_thread_sleep(100);
+      tx_thread_sleep(URGENT_COUPLE_DELAY_MS);
       reef_high(&config);
 
-      if (flight < Reefing)
-      {
-        flight = Reefing;
-      }
-
-      log_msg(id "fired PYRO->REEF" caution, mlen_caut(16));
+      flight = Reefing;
+      log_vigilant(sv[sh.idx].p.z);
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
@@ -124,16 +180,13 @@ static inline void evaluate_altitude(fu32 mode)
   else
   {
     co2_high(&config);
+
     if (load(&config, Acq) & option(Using_Ascent_KF)) {
       descent_initialize();
     }
 
-    if (flight < Descent)
-    {
-      flight = Descent;
-    }
-
-    log_msg(id "fired PYRO" caution, mlen_caut(10));
+    flight = Descent;
+    log_vigilant(sv[sh.idx].p.z);
   }
 }
 
@@ -147,7 +200,7 @@ static inline void detect_launch(void)
       sv[sh.idx].a.z >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
-    log_msg(id "launch detected", mlen(15));
+    log_transition(sv[sh.idx].a.z);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -164,7 +217,7 @@ static inline void detect_ascent(fu32 mode)
     {
       flight = Ascent;
       sampl = 0;
-      log_msg(id "ascending", mlen(9));
+      log_transition(sv[sh.idx].v.z);
     }
   }
   else if (mode & option(Consecutive_Samples) && sampl > 0)
@@ -192,7 +245,7 @@ static inline void detect_burnout(fu32 mode)
     {
       flight = Burnout;
       sampl = 0;
-      log_msg(id "decelerating", mlen(12));
+      log_transition(sv[sh.idx].p.z);
     }
   }
   else if (mode & option(Consecutive_Samples) && sampl > 0)
@@ -215,7 +268,7 @@ static inline void detect_apogee(void)
       sv[prev(2)].v.z < sv[prev(3)].v.z)
   {
     flight = Apogee;
-    log_msg(id "likely at apogee", mlen(16));
+    log_transition(sv[sh.idx].p.z);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -235,7 +288,7 @@ static inline void detect_descent(fu32 mode)
       flight = Descent;
       sampl = 0;
       co2_high(&config);
-      log_msg(id "entered drogue", mlen(14));
+      log_transition(sv[sh.idx].p.z);
 
       descent_initialize();
     }
@@ -262,7 +315,7 @@ static inline void detect_reef(fu32 mode)
       flight = Reefing;
       sampl = 0;
       reef_high(&config);
-      log_msg(id "expanded parachute", mlen(18));
+      log_transition(sv[sh.idx].p.z);
     }
   }
   else if (mode & option(Consecutive_Samples) && sampl > 0)
@@ -289,7 +342,7 @@ static inline void detect_landed(fu32 mode)
     if (++sampl >= MIN_SAMP_LANDED)
     {
       flight = Landed;
-      log_msg(id "S.W.E.E.T. landed", mlen(17));
+      log_msg(trans.message[Landed], trans.size[Landed]);
 
       /* Needed to avoid locks on landing coordinates reporting. */
       enum message cmd = fc_mask(Evaluation_Focus);
@@ -317,7 +370,6 @@ crew_send_coords(fu32 mode)
     return;
   }
 
-  log_msg(id "Landed at coordinates:", mlen(22));
   #ifdef TELEMETRY_ENABLED
   log_measurement(SEDS_DT_GPS_DATA, &payload.d.gps);
   #endif

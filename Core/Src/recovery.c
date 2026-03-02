@@ -95,6 +95,25 @@ static struct accl_config accl_conf = {
 /* ------ Recovery logic ------ */
 
 /*
+ * Concatenates transition message with desired metric,
+ * and logs transition report with given size to match
+ * the telemetry API. Includes recovery mark ( R ).
+ */
+static inline void log_recovery(float metric)
+{
+  int rep_size = sizeof(id) - 1;
+  char buf[MAX_REPORT_SIZE] = id;
+  
+  rep_size += snprintf(buf + rep_size,
+                       trans.size[flight] + FLT_REP_PREC + 4,
+                       "R %s %.*g\n",
+                       trans.message[flight],
+                       FLT_REP_PREC, metric);
+
+  log_msg(buf, rep_size);
+}
+
+/*
  * (Re)initializes indicated sensor(s). Disables
  * DMA interrupt for the duration of reinitialization
  * of concerned sensor. This is the place to perform
@@ -121,26 +140,26 @@ initialize_sensors(enum sensor_mask sensor)
   if (sensor & Init_Gyro)
   {
     __NVIC_DisableIRQ(Gyro_EXTI_1);
-    __NVIC_DisableIRQ(Gyro_EXTI_2);
+/*  __NVIC_DisableIRQ(Gyro_EXTI_2);         unused for IREC 2026 */
 
     if (!(sensor & Disable))
     {
       reinit(init_gyro(&gyro_conf), fails, Init_Gyro);
       __NVIC_EnableIRQ(Gyro_EXTI_1);
-      __NVIC_EnableIRQ(Gyro_EXTI_2);
+/*    __NVIC_EnableIRQ(Gyro_EXTI_2);        unused for IREC 2026 */
     }
   }
 
   if (sensor & Init_Accl)
   {
     __NVIC_DisableIRQ(Accl_EXTI_1);
-    __NVIC_DisableIRQ(Accl_EXTI_2);
+/*  __NVIC_DisableIRQ(Accl_EXTI_2);         unused for IREC 2026 */
 
     if (!(sensor & Disable))
     {
       reinit(init_accl(&accl_conf), fails, Init_Accl);
       __NVIC_EnableIRQ(Accl_EXTI_1);
-      __NVIC_EnableIRQ(Accl_EXTI_2);
+/*    __NVIC_EnableIRQ(Accl_EXTI_2);        unused for IREC 2026 */
     }
   }
   
@@ -212,6 +231,10 @@ static inline void process_action(enum message cmd)
   switch (cmd) {
     case Deploy_Parachute:
       co2_high(&config);
+
+      flight = Descent;
+      log_recovery(sv[sh.idx].p.z);
+
       if (config & option(Using_Ascent_KF)) {
         descent_initialize();
       }
@@ -221,6 +244,9 @@ static inline void process_action(enum message cmd)
     if (config & option(Parachute_Deployed))
     {
       reef_high(&config);
+
+      flight = Reefing;
+      log_recovery(sv[sh.idx].p.z);
     }
     else
     {

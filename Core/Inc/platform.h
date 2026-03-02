@@ -24,6 +24,7 @@
 
 /* ------ Bundled std headers used ------ */
 
+#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
