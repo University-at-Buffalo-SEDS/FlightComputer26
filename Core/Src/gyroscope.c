@@ -19,11 +19,16 @@ gyro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *val)
   }
 
   HAL_StatusTypeDef st;
-  uint8_t cmd = gyro_cmd_read(reg);
+  uint8_t tx[2] = { gyro_cmd_read(reg), 0x00 };
+  uint8_t rx[2] = { 0 };
 
   gyro_cs_low();
-  st = HAL_SPI_TransmitReceive(hspi, &cmd, val, 1, HAL_MAX_DELAY);
+  st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
   gyro_cs_high();
+
+  if (st == HAL_OK) {
+    *val = rx[1];
+  }
 
   return st;
 }
@@ -197,7 +202,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
     if (conf->bw >= Gyro_532Hz_ODR_2000Hz &&
         conf->bw <= Gyro_32Hz_ODR_100Hz)
     {
-      valid.rng = conf->rng;
+      valid.bw = conf->bw;
     }
   }
 
