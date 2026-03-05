@@ -62,13 +62,9 @@ gyro_burst_read(SPI_HandleTypeDef *hspi, uint8_t start, uint8_t *buf, uint16_t l
   HAL_StatusTypeDef st;
   uint8_t cmd = gyro_cmd_read(start);
 
-  gyro_cs_low();
-  st = HAL_SPI_Transmit(hspi, &cmd, 1, HAL_MAX_DELAY);
 
-  if (st == HAL_OK) {
-    st = HAL_SPI_Receive(hspi, buf, len, HAL_MAX_DELAY);  
-  }
-  gyro_cs_high();
+
+  
 
   return st;
 }
@@ -83,16 +79,20 @@ HAL_StatusTypeDef
 gyro_read_raw(SPI_HandleTypeDef *hspi, struct gyro_raw *data)
 {
     HAL_StatusTypeDef st;
-    uint8_t buf[6];
+    uint8_t tx[7] = { [0] = gyro_cmd_read(GYRO_RATE_X_LSB), [1 ... 6] = 0x00};
+    uint8_t rx[7];
 
-    st = gyro_burst_read(hspi, GYRO_RATE_X_LSB, buf, sizeof buf);
+    gyro_cs_low();
+    st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
+    gyro_cs_high();
+    
     if (st != HAL_OK) {
       return st;
     }
 
-    data->x = (int16_t)((uint16_t)buf[1] << 8 | buf[0]);
-    data->y = (int16_t)((uint16_t)buf[3] << 8 | buf[2]);
-    data->z = (int16_t)((uint16_t)buf[5] << 8 | buf[4]);
+    data->x = (int16_t)((uint16_t)rx[2] << 8 | rx[1]);
+    data->y = (int16_t)((uint16_t)rx[2] << 8 | rx[3]);
+    data->z = (int16_t)((uint16_t)rx[6] << 8 | rx[5]);
 
     return HAL_OK;
 }
