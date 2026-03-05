@@ -49,27 +49,6 @@ gyro_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t val)
   return st;
 }
 
-/*
- * Read the gyroscope axes data.
- */
-static inline HAL_StatusTypeDef
-gyro_burst_read(SPI_HandleTypeDef *hspi, uint8_t start, uint8_t *buf, uint16_t len)
-{
-  if (!buf || !len) {
-    return HAL_ERROR;
-  }
-
-  HAL_StatusTypeDef st;
-  uint8_t cmd = gyro_cmd_read(start);
-
-
-
-  
-
-  return st;
-}
-
-
 /* ------ Utilities for raw integer and float (DPS) formats ------ */
 
 /*
@@ -85,7 +64,7 @@ gyro_read_raw(SPI_HandleTypeDef *hspi, struct gyro_raw *data)
     gyro_cs_low();
     st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
     gyro_cs_high();
-    
+
     if (st != HAL_OK) {
       return st;
     }
