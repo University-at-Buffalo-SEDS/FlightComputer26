@@ -94,8 +94,5 @@ struct coords;
 HAL_StatusTypeDef gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf);
 HAL_StatusTypeDef gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf);
 
-HAL_StatusTypeDef gyro_read_raw(SPI_HandleTypeDef *hspi, struct gyro_raw *data);
-void gyro_convert(const struct gyro_raw *raw, struct coords *buf);
-
 
 #endif // GYROSCOPE_H
