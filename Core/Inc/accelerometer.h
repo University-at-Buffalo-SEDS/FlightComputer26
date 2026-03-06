@@ -92,9 +92,9 @@ struct accl_config {
 #define accl_cmd_write(reg) ((uint8_t)((reg) & 0x7F))
 
 #define accl_cs_low()                                                  \
-  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_RESET)
 #define accl_cs_high()                                                 \
-  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_SET)
 
 
 /* ------ Public API ------ */

@@ -51,7 +51,7 @@ accl_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data)
 }
 
 /*
- * Read the accelermoter axes data (datasheet sections 5.3.4 & 6.1.2).
+ * Read the accelerometer axes data (datasheet sections 5.3.4 & 6.1.2).
  */
 HAL_StatusTypeDef
 accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
@@ -66,9 +66,9 @@ accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
   accl_cs_high();
   
   if (st == HAL_OK) {
-    data->x = (float)((rx[3] << 8) | rx[2]) * MG;
-    data->y = (float)((rx[5] << 8) | rx[4]) * MG;
-    data->z = (float)((rx[7] << 8) | rx[6]) * MG;
+    data->x = (float)(int16_t)((rx[3] << 8) | rx[2]) * MG;
+    data->y = (float)(int16_t)((rx[5] << 8) | rx[4]) * MG;
+    data->z = (float)(int16_t)((rx[7] << 8) | rx[6]) * MG;
   }
 
   return st;
@@ -102,7 +102,7 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
   HAL_Delay(ACCL_WAIT_MS);
 
   /* Dummy read (result ignored) */ 
-  st = accl_read_reg(hspi, ACCL_CHIP_ADDR, &id);
+  (void) accl_read_reg(hspi, ACCL_CHIP_ADDR, &id);
 
   /* Match chip ID */ 
   st = accl_read_reg(hspi, ACCL_CHIP_ADDR, &id);

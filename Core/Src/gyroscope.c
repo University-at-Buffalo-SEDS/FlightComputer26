@@ -67,22 +67,21 @@ HAL_StatusTypeDef
 gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf)
 {
   HAL_StatusTypeDef st;
-  uint8_t tx[7] = { [0] = gyro_cmd_read(GYRO_RATE_X_LSB), [1 ... 6] = 0x00};
+  uint8_t tx[7] = {[0] = gyro_cmd_read(GYRO_RATE_X_LSB),
+                   [1 ... 6] = 0x00};
   uint8_t rx[7];
 
   gyro_cs_low();
   st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
   gyro_cs_high();
 
-  if (st != HAL_OK) {
-    return st;
+  if (st == HAL_OK) {
+    buf->x = (float)(int16_t)((rx[2] << 8) | rx[1]) * inv_sens[init_rng];
+    buf->y = (float)(int16_t)((rx[4] << 8) | rx[3]) * inv_sens[init_rng];
+    buf->z = (float)(int16_t)((rx[6] << 8) | rx[5]) * inv_sens[init_rng];
   }
 
-  buf->x = (float)(int16_t)((rx[2] << 8) | rx[1]) * inv_sens[init_rng];
-  buf->y = (float)(int16_t)((rx[4] << 8) | rx[3]) * inv_sens[init_rng];
-  buf->z = (float)(int16_t)((rx[6] << 8) | rx[5]) * inv_sens[init_rng];
-
-  return HAL_OK;
+  return st;
 }
 
 
