@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <math.h>
@@ -255,19 +256,6 @@ extern DCACHE_HandleTypeDef hdcache1;
 #include "accelerometer.h"
 
 struct serial coords { float x, y, z; };
-
-#define init_baro(conf) baro_init(&hspi1, (conf))
-#define init_gyro(conf) gyro_init(&hspi1, (conf))
-#define init_accl(conf) accl_init(&hspi1, (conf))
-
-#define baro_comp_temp(temp) \
-  baro_compensate_temp((uint32_t)temp)
-
-#define baro_comp_pres(pres) \
-  baro_compensate_pres((uint32_t)pres)
-
-#define baro_calc_alt(pres) \
-  baro_relative_alt((float)pres)
 
 #define gpio_cs_low(sens)                               \
   HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \

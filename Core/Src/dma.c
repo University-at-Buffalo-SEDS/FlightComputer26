@@ -5,73 +5,49 @@
  * Consumer: Distribution Task
  *
  * This module implements the HAL Interrupt Service
- * Routine and two DMA transfer callbacks for
- * completion and error handling.
+ * Routine, DMA transfer callbacks for completion and
+ * error handling, logical sensor selector function,
+ * DMA transfer routine, and public fetching functions.
  *
- * The ISR is called by HAL after it receivies a signal
- * on one or two of the designated GPIO pins. Depedning
- * on the pin, a DMA transfer is initiated for a corre-
- * -sponding device into one of two receive buffers.
- * The device's CS pin is set low.
- *
- * One buffer consists of 3 sections (for each device).
- * Every time a completion callback receives, it will:
- *
- * 1. Infer the buffer and section (thus the device
- *    type) by calculating pointer offset from the
- *    beginning of the receive buffer.
- *
- * 2. If the pointer matches any valid section,
- *    invalidate data cache for that section and
- *    pull CS pin of the corresponding device high.
- *
- *    [!] If the offset is beyond the Receive buffers,
- *        it will pull CS pins of ALL device up, thus
- *        possibly terminating active transfers.
- *
- * 3. Set the 'ready' flag for the concerned device.
- *
- * The error callback will perform the same sequence
- * of events EXCEPT for invalidating data cache and
- * setting the 'ready' flag.
- *
- * The consumer is provided with two options:
- * 
- * 1. Parse specific device {Barometer, IMU}.
- *    In this case, data is copied for the
- *    whole device or not copied at all.
- *
- * 2. Fetch anything that is available per sensor
- *    (Barometer, Gyroscope, Accelerometer). In
- *    this case, a mask is returned that represents
- *    devices for which data was fetched.
- *
- * Compensation aggregators per sensor are provided
- * as inline helpers in the header (dma.h).
+ * Compensation is performed in fetching functions and
+ * is not needed to be done elsewhere.
  */
 
 #include "platform.h"
+#include "recovery.h"
 #include "dma.h"
+
+#define id "DM "
+
+TX_THREAD dma_task;
 
 
 /* ------ Static storage ------ */
 
-/* Each sensor data readiness flag for two buffers. */
-static volatile fu8 is_complete[2][Sensors] = {0};
+static const struct gpio_lookup gpio = {
+  .port = {CS_BARO_GPIO_Port, CS_GYRO_GPIO_Port, CS_ACCEL_GPIO_Port},
+  .pin  = {CS_BARO_Pin, CS_GYRO_Pin, CS_ACCEL_Pin},
+  .drdy = {BARO_MASK, GYRO_MASK, ACCL_MASK}
+};
 
-/* Each device's buffer accepting DMA transfers.
- * 1 - Barometer, 0 - IMU. */
-static atomic_uint_fast8_t transfer[2] = {0};
+static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
+  [0][0] = BARO_TX_BYTE, [0][1 ... 7] = 0x00,
+  [1][0] = GYRO_TX_BYTE, [1][1 ... 7] = 0x00,
+  [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
+};
 
-/* Consumer-side flags for 'transfer' */
-static atomic_uint_fast8_t imu_i = 1;
-static atomic_uint_fast8_t baro_i = 1;
+/* IREC 2027: include temperature (indices 3, 4, 5). */
+static uint8_t baro_rx[3] = {0};
+static uint8_t gyro_rx[6] = {0};
+static uint8_t accl_rx[6] = {0};
 
-/* Per device flag for signaling ongoing DMA transfer. */
-static atomic_uint_fast8_t in_progress[Sensors] = {0};
+static atomic_uint_fast8_t locks[Sensors] = {0};
 
-/* Double-buffered Rx for each sensor. */
-static volatile uint8_t rx[2][Sensors][SENSOR_BUF_SIZE] = {0};
+static volatile uint8_t rx[SENSOR_BUF_SIZE] = {0};
+
+static struct selector select = {Sensors, 0};
+
+static struct dma_flags flags = {0, 0};
 
 #ifdef DMA_BENCHMARK
 
@@ -85,408 +61,352 @@ static atomic_uint_fast32_t isr_dt = 0;
 
 #endif // DMA_BENCHMARK
 
-/* GPIO port and pin lookup based on sensor.
- * Stored consecutively for single cache load. */
-static const struct gpio_lookup gpio = {
-  .port = {CS_BARO_GPIO_Port, CS_GYRO_GPIO_Port, CS_ACCEL_GPIO_Port},
-  .pin = {CS_BARO_Pin, CS_GYRO_Pin, CS_ACCEL_Pin}
-};
-
-/* Per-sensor buffer with transmit byte set */
-static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
-  [0][0] = BARO_TX_BYTE, [0][1 ... 7] = 0x00,
-  [1][0] = GYRO_TX_BYTE, [1][1 ... 7] = 0x00,
-  [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
-};
-
 /* ------ Static storage ------ */
 
 
-/* ------ Callbacks ------ */
+/* ------ Mini-mutex ------ */
+
+static inline void lock(enum sensor k)
+{
+  fu8 unlocked = 0;
+
+  /* Simplified mutex variant without opportunistic spin.
+   * Why? On one-threaded MCU, a contender task will not
+   * release the lock unless we give control back to it.
+   * Strong LL/SC semantics to avoid spurious yield.
+   */
+  while (cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
+  {
+    // FIXME: block on predicate instead of just moving to the end of runq?
+    tx_thread_relinquish();
+  }
+}
+
+static inline void unlock(enum sensor k)
+{
+  store(&locks[k], 0, Rel);
+}
+
+/* ------ Mini-mutex ------ */
+
+
+/* ------ Public fetching functions ------ */
 
 /*
- * Finish transfer and publish device data flag.
+ * Tries to fetches barometer data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
+ */
+bool fetch_baro(struct baro *buf)
+{
+  if (!(fetch_and(&flags.relv, ~BARO_MASK, Acq) & BARO_MASK))
+  {
+    return false;
+  }
+
+  fu32 pres;
+
+  lock(Sensor_Baro);
+
+  pres = U24(baro_rx[0], baro_rx[1], baro_rx[2]);
+
+  unlock(Sensor_Baro);
+
+  dma_bench_log(Sensor_Baro);
+
+  buf->p = baro_compensate_pres(pres);
+  buf->alt = baro_relative_alt(buf->p);
+  
+  return true;
+}
+
+/*
+ * Tries to fetches gyroscope data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
+ */
+bool fetch_gyro(struct coords *buf)
+{
+  if (!(fetch_and(&flags.relv, ~GYRO_MASK, Acq) & GYRO_MASK))
+  {
+    return false;
+  }
+
+  fi16 gx, gy, gz;
+
+  lock(Sensor_Gyro);
+
+  gx = I16(gyro_rx[0], gyro_rx[1]);
+  gy = I16(gyro_rx[2], gyro_rx[3]);
+  gz = I16(gyro_rx[4], gyro_rx[5]);
+  
+  unlock(Sensor_Gyro);
+
+  dma_bench_log(Sensor_Gyro);
+
+  // TODO: div by sensivity after merging DMA with newest drivers
+
+  return true;
+}
+
+/*
+ * Tries to fetches acceletometer data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
+ */
+bool fetch_accl(struct coords *buf)
+{
+  if (!(fetch_and(&flags.relv, ~ACCL_MASK, Acq) & ACCL_MASK))
+  {
+    return false;
+  }
+
+  fi16 ax, ay, az;
+
+  lock(Sensor_Accl);
+
+  ax = I16(accl_rx[0], accl_rx[1]);
+  ay = I16(accl_rx[2], accl_rx[3]);
+  az = I16(accl_rx[4], accl_rx[5]);
+  
+  unlock(Sensor_Accl);
+
+  dma_bench_log(Sensor_Accl);
+
+  buf->x = ax * MG;
+  buf->y = ay * MG;
+  buf->z = az * MG;
+
+  return true;
+}
+
+/* ------ Public fetching functions ------ */
+
+
+/* ------ ISR and callbacks ------ */
+
+/*
+ * Sets valid flag and wakes DMA task.
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-  if (!hspi || !hspi->pRxBuffPtr) {
-    terminate_transfers();
-    return;
-  }
+	(void) hspi; /* We only set up SPI1 */
 
-  ptrdiff_t offset = hspi->pRxBuffPtr - &rx[0][0][0];
-
-  if (offset < 0 || offset >= sizeof rx) {
-    terminate_transfers();
-    return;
-  }
-
-  /* >> 3 is division by 8 (i.e., SENSOR_BUF_SIZE) */
-  fu8 idx = (fu8)(offset) >> 3;
-  fu8 i = idx > 2;
-  fu8 t = idx - (i ? 3 : 0);
-
-  invalidate_dcache_addr_int(rx[i][t], SENSOR_BUF_SIZE);
-  gpio_cs_high(t);
-
-#ifdef DMA_BENCHMARK
-  store(&rxts[t], now_ms(), Rel);
-#endif
-
-  is_complete[i][t] = 1;
-  store(&in_progress[t], 0, Rel);
+	gpio_cs_high(select.next);
+  select.valid = 1;
+	tx_thread_wait_abort(&dma_task);
 }
 
 /*
- * Finish transfer but do not publish flag (drop sample).
+ * Sets invalid flag and wakes DMA task.
  */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
-  if (!hspi || !hspi->pRxBuffPtr) {
-    terminate_transfers();
-    return;
-  }
+	(void) hspi; /* We only set up SPI1 */
 
-  ptrdiff_t offset = hspi->pRxBuffPtr - &rx[0][0][0];
-
-  if (offset < 0 || offset >= sizeof rx) {
-    terminate_transfers();
-    return;
-  }
-
-  fu8 idx = (fu8)(offset) >> 3;
-  fu8 t = idx - (idx > 2 ? 3 : 0);
-
-  gpio_cs_high(t);
-  store(&in_progress[t], 0, Rel);
+	gpio_cs_high(select.next);
+  select.valid = 0;
+	tx_thread_wait_abort(&dma_task);
 }
 
-/* ------ Callbacks ------ */
-
-
-/* ------ DMA helper ------ */
-
 /*
- * Attempts to begin a DMA transfer for the specified device.
- * Has no side effects if there is a transfer ongoing, and
- * pulls sensor's CS pin back high on DMA-side failures.
- */
-static inline enum dma_status
-start_dma_transfer(enum sensor k)
-{
-  HAL_StatusTypeDef st;
-  fu8 desired = 0;
-
-  if (cas_strong(&in_progress[k], &desired, 1, Acq, Rlx))
-  {
-    /* The point of !k is to map Gyro and Accl to the same index
-     * and Baro to a different one. This works because Baro is 0. */
-    fu32 i = load(&transfer[!k], Acq);
-    gpio_cs_low(k);
-
-    st = dma_spi_txrx(tx[k], (uint8_t *)rx[i][k], SENSOR_BUF_SIZE);
-
-    if (st == HAL_OK)
-    {
-      return DMA_Ok;
-    }
-    else
-    {
-      gpio_cs_high(k);
-      store(&in_progress[k], 0, Rlx);
-      return DMA_Error;
-    }
-  }
-
-  return DMA_Busy;
-}
-
-/* ------ DMA helper ------ */
-
-
-/* ------ ISR ------ */
-
-/*
- * Attempts to initialize DMA transfer.
- *
- * This ISR may be expensive depending on how often
- * the sensors will generate DRDY events. I includied
- * a microbenchmark to estimate the time this ISR and
- * DMA take to execute. The performance effect of this
- * ISR on other tasks will also be evident from tests.
- *
- * If this ISR proves to crowd out tasks, we generally
- * have 3 other options of using the benefits of DMA:
- *
- * 1. Tune IMU for higher precision. This may sound
- *    lazy and redundant, but it will relax the ISR
- *    and make Predict to Update ratio closer to 1.
- *
- * 2. Starting DMA transfer synchronously on demand.
- *    This will require:
- *    a) checking if there is new data (relatively
- *       cheap if we keep ISR to receive and register
- *       DRDY events in atomic flags),
- *    b) starting DMA transfer in advance to allow
- *       DMA arbiter time to write into memory (how
- *       we determine 'advance' for each sensor and
- *       KF scenario is another good question!),
- *    c) checking if the transfer completed by the
- *       time we need the new data.
- *
- * 3. Make consumer notify the ISR via atomic flag
- *    that it consumed whatever was in the buffers,
- *    and perform transfer on CAS. This will yield
- *    older data (which is ~ok?? for speedy consumers).
- *
- * 4. Not that I cannot count, but I don't think this
- *    is a viable option: begin transfer on TX timer.
- *    Because scheduling is not deterministic (tasks
- *    yield cooperatively and not all of them are RR,
- *    e.g. Recovery), this timer may end up playing
- *    blind baseball with Distribution task that may
- *    periodically wait on active transfers.
+ * Sets data readiness flag for a sensor that rose SPI edge.
  */
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
-#ifdef DMA_BENCHMARK
-  fu32 called = now_ms();
-#endif
-
-  start_dma_transfer(sensor_idx(GPIO_Pin));
-
-#ifdef DMA_BENCHMARK
-  store(&isr_dt, now_ms() - called, Rel);
-#endif
+	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
 }
 
-/* ------ ISR ------ */
+/* ------ ISR and callbacks ------ */
 
 
-/* ------ Public API ------ */
+/* ------ Transfer routine ------ */
 
 /*
- * Peeks at the barometer DMA buffer status,
- * and fetches the latest pair of measurements
- * (temperature, pressure), if available.
- * Returns 1 on successful fetch and 0 otherwise. 
+ * Propagates raw data from DMA buffer to one of the shared
+ * buffers.
  */
-fu8 dma_fetch_baro(struct baro *buf)
+static inline void propagate_rx(void)
 {
-  if (!buf) {
-    return UINT_FAST8_MAX;
-  }
+  lock(select.next);
 
-  dma_bench_log_isr();
-
-  if (is_complete[baro_i][Sensor_Baro])
+  switch (select.next)
   {
-    buf->p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
-    buf->t = U24(rx[baro_i][0][4], rx[baro_i][0][5], rx[baro_i][0][6]);
+    case Sensor_Baro:
+      memcpy(baro_rx, (uint8_t *)(rx + 1), sizeof baro_rx);
+      break;
 
-    is_complete[baro_i][Sensor_Baro] = 0;
+    case Sensor_Gyro:
+      memcpy(gyro_rx, (uint8_t *)(rx + 1), sizeof gyro_rx);
+      break;
 
-    baro_i = swap(&transfer[1], baro_i, Rel);
-
-    dma_bench_log_fetch(Sensor_Baro);
-
-    return 1;
+    case Sensor_Accl:
+      memcpy(accl_rx, (uint8_t *)(rx + 2), sizeof accl_rx);
+      break;
   }
 
-  baro_i = swap(&transfer[1], baro_i, Rel);
+  unlock(select.next);
 
-  return 0;
+  dma_bench_refresh(select.next);
+
+  /* Relevance flags use the same EXTI pin masks. */
+  (void) fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
 }
 
 /*
- * Peeks at the IMU DMA buffers' statuses, and
- * fetches the latest pair of measurements
- * (accelerometer, gyroscope), if available.
- * Returns 1 on successful fetch and 0 otherwise.
+ * Begins DMA transfer and blocks for a timeout until it
+ * elapses or until the task is woken by a callback.
  */
-fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl)
+static inline void start_dma_transfer(void)
 {
-  if (!gyro || !accl) {
-    return UINT_FAST8_MAX;
-  }
+  HAL_StatusTypeDef st;
 
-  dma_bench_log_isr();
+  gpio_cs_low(select.next);
 
-  if (is_complete[imu_i][Sensor_Gyro] &&
-      is_complete[imu_i][Sensor_Accl])
+  st = dma_spi_txrx(tx[select.next], (uint8_t *)rx, SENSOR_BUF_SIZE);
+
+  if (st != HAL_OK)
   {
-    gyro->x = F16(rx[imu_i][1][1], rx[imu_i][1][2]);
-    gyro->y = F16(rx[imu_i][1][3], rx[imu_i][1][4]);
-    gyro->z = F16(rx[imu_i][1][5], rx[imu_i][1][6]);
-
-    accl->x = F16(rx[imu_i][2][2], rx[imu_i][2][3]);
-    accl->y = F16(rx[imu_i][2][4], rx[imu_i][2][5]);
-    accl->z = F16(rx[imu_i][2][6], rx[imu_i][2][7]);
-
-    is_complete[imu_i][Sensor_Gyro] = 0;
-    is_complete[imu_i][Sensor_Accl] = 0;
-
-    imu_i = swap(&transfer[0], imu_i, Rel);
-
-    dma_bench_log_fetch(Sensor_Gyro);
-    dma_bench_log_fetch(Sensor_Accl);
-
-    return 1;
+    /* Immediate error while trying to start a transfer => 
+     * => repeat the same transfer on the next iteration. */
+    gpio_cs_high(select.next);
+    return;
   }
 
-  imu_i = swap(&transfer[0], imu_i, Rel);
+  /* Sensor's drdy flag is erased after starting DMA transfer
+   * but before a callback fires. This is a compromise between 
+   * a) erasing a flag despite possible SPI errors (see right
+   * above) and b) almost certainly erasing a newer drdy flag.
+   */
+  (void) fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
 
-  return 0;
+  /* As a lightweght substitute for a binary condvar,
+   * this suspension should be aborted by a callback.
+   */
+  st = tx_thread_sleep(DMA_TIMEOUT_MS);
+
+  if (st == TX_WAIT_ABORTED && select.valid)
+  {
+    propagate_rx();
+  }
 }
 
-/*
- * Fetches whatever is available in a free (tm) DMA
- * buffer. Returns a relevancy mask, which has bits
- * set for devices whose data was fetched.
- */
-fu8 dma_fetch(struct measurement *buf, fu8 skip_mask)
-{ 
-  if (!buf) {
-    return UINT_FAST8_MAX;
-  }
-  
-  fu8 fetched = 0;
+/* ------ Transfer routine ------ */
 
-  if (!(skip_mask & RX_BARO) && is_complete[baro_i][Sensor_Baro])
-  {
-    buf->baro.p = U24(rx[baro_i][0][1], rx[baro_i][0][2], rx[baro_i][0][3]);
-    buf->baro.t = U24(rx[baro_i][0][4], rx[baro_i][0][5], rx[baro_i][0][6]);
 
-    is_complete[baro_i][Sensor_Baro] = 0;
-    fetched |= RX_BARO;
-
-    dma_bench_log_fetch(Sensor_Baro);
-  }
-
-  if (!(skip_mask & RX_GYRO) && is_complete[imu_i][Sensor_Gyro])
-  {
-    buf->gyro.x = F16(rx[imu_i][1][1], rx[imu_i][1][2]);
-    buf->gyro.y = F16(rx[imu_i][1][3], rx[imu_i][1][4]);
-    buf->gyro.z = F16(rx[imu_i][1][5], rx[imu_i][1][6]);
-
-    is_complete[imu_i][Sensor_Gyro] = 0;
-    fetched |= RX_GYRO;
-
-    dma_bench_log_fetch(Sensor_Gyro);
-  }
-
-  if (!(skip_mask & RX_ACCL) && is_complete[imu_i][Sensor_Accl])
-  {
-    buf->d.accl.x = F16(rx[imu_i][2][2], rx[imu_i][2][3]);
-    buf->d.accl.y = F16(rx[imu_i][2][4], rx[imu_i][2][5]);
-    buf->d.accl.z = F16(rx[imu_i][2][6], rx[imu_i][2][7]);
-
-    is_complete[imu_i][Sensor_Accl] = 0;
-    fetched |= RX_ACCL;
-
-    dma_bench_log_fetch(Sensor_Accl);
-  }
-
-  imu_i = swap(&transfer[0], imu_i, Rel);
-
-  baro_i = swap(&transfer[1], baro_i, Rel);
-
-  dma_bench_log_isr();
-
-  return fetched;
-}
+/* ------ DMA task and sensor selector ------ */
 
 /*
- * Public helper to start DMA transfer for the specified sensor.
+ * Beginning of the DMA task. This task should started once
+ * and not blocked or reset, though it is technically AC-Safe.
+ * It includes a minimized expression for a selector of 64
+ * (2^6) possible states, where are encoded in a truth table
+ * over 6 variables - data readiness and relevance flags for
+ * each of 3 sensors. Data readiness is updated from and ISR,
+ * and relevance is set when a buffer is produced and unset
+ * when it is consumed.
  */
-fu8 dma_attempt_transfer(enum sensor sensor)
+void dma_entry(ULONG input)
 {
-  return start_dma_transfer(sensor);
-}
+  (void) input;
 
-/*
- * Fetches the latest pair of measurements (accelerometer,
- * gyroscope). This function is intended to be called after
- * dma_attempt_transfer from the same thread. If the former
- * function was not called prior to calling this function,
- * it will fetch old data or zeroes if the former function
- * was never called. Do not use this function when starting
- * DMA transfers in ISR mode. Returns 1 on success and 0 if
- * there is an ongoing transfer.
- */
-fu8 dma_fetch_imu_sync(struct coords *gyro, struct coords *accl)
-{
-  if (!gyro || !accl) {
-    return UINT_FAST8_MAX;
-  }
+  fu16 drdy_snapshot;
+  fu16 relv_snapshot;
 
-  if (load(&in_progress[Sensor_Gyro], Acq) ||
-      load(&in_progress[Sensor_Accl], Acq))
+  task_loop (DO_NOT_EXIT)
   {
-    return 0;
+    drdy_snapshot = load(&flags.drdy, Acq);
+
+    if (load(&config, Acq) & option(Using_Ascent_KF))
+    {
+      if (drdy_snapshot == 0)
+      {
+        tx_thread_relinquish();
+      }
+
+      /* Step 1. Calculate inputs to selection logic.
+       */ 
+      bool dr_b = drdy_snapshot & BARO_MASK;
+      bool dr_g = drdy_snapshot & GYRO_MASK;
+      bool dr_a = drdy_snapshot & ACCL_MASK;
+
+      relv_snapshot = load(&flags.relv, Acq);
+
+      bool re_b = relv_snapshot & BARO_MASK;
+      bool re_g = relv_snapshot & GYRO_MASK;
+      bool re_a = relv_snapshot & ACCL_MASK;
+
+      /* Step 2. Select transfer target based on drdy and alternating
+       * selectors p_dev and p_imu. The below expressions are results
+       * of Quine-McCluskey minimization for drdy and relv flag sets, 
+       * each consisting of 3 sensors. Since expressions are mutually
+       * exclusive on the domain of 64 states, the most expensive one
+       * (in our case - Barometer) is evaluated with wildcard 'else'.
+       */
+      if (dr_g && ((!dr_b && (re_g || !dr_a)) || (!re_g && (!dr_a ||
+                                                    re_a || re_b))))
+      {
+        select.next = Sensor_Gyro;
+      }
+      else if (dr_a && (((!dr_g || re_g) && (!dr_b || !re_a)) ||
+                                            (dr_g && re_b && re_g)))
+      {
+        select.next = Sensor_Accl;
+      }
+      else
+      {
+        select.next = Sensor_Baro;
+      }
+    }
+    else
+    {
+      if (drdy_snapshot & BARO_MASK)
+      {
+        select.next = Sensor_Baro;
+      }
+      else
+      {
+        tx_thread_relinquish();
+      }
+    }
+    
+    start_dma_transfer();
   }
-
-  /* The point of 'k' is to select a buffer that accepted the latest
-   * transfer. ISR variants of these functions will do the opposite
-   * to avoid data races at the expense of measurement relevance. */
-  fu8 k = imu_i ^ 1;
-
-  gyro->x = F16(rx[k][1][1], rx[k][1][2]);
-  gyro->y = F16(rx[k][1][3], rx[k][1][4]);
-  gyro->z = F16(rx[k][1][5], rx[k][1][6]);
-
-  accl->x = F16(rx[k][2][2], rx[k][2][3]);
-  accl->y = F16(rx[k][2][4], rx[k][2][5]);
-  accl->z = F16(rx[k][2][6], rx[k][2][7]);
-
-  dma_bench_log_fetch(Sensor_Gyro);
-  dma_bench_log_fetch(Sensor_Accl);
-
-  return 1;
 }
 
 /*
- * Fetches the latest barometer measurement. This function
- * is intended to be called after dma_attempt_transfer from
- * the same thread. If the former function was not called
- * prior to calling this function, it will fetch old data or
- * zeroes if the former function was never called. Do not
- * use this function when starting DMA transfers in ISR mode.
- * Returns 1 on success and 0 if there is an ongoing transfer.
+ * Creates a preemptive, cooperative DMA task with defined parameters.
  */
-fu8 dma_fetch_baro_sync(struct baro *buf)
+UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 {
-  if (!buf) {
-    return UINT_FAST8_MAX;
-  }
+	UINT st;
+  CHAR *pointer;
 
-  if (load(&in_progress[Sensor_Baro], Acq))
+	const char *critical = "creation failure:";
+
+  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
+												DMA_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
   {
-    return 0;
+    log_die(id "pool %s %u", critical, st);
   }
 
-  fu8 k = baro_i ^ 1;
+  st = tx_thread_create(&distribution_task,
+                        "DMA Task",
+                        dma_entry,
+                        DMA_INPUT,
+                        pointer,
+                        DMA_STACK_BYTES,
+                        DMA_PRIORITY,
+                        /* No preemption threshold */
+                        DMA_PRIORITY,
+                        TX_NO_TIME_SLICE,
+                        TX_AUTO_START);
 
-  buf->p = U24(rx[k][0][1], rx[k][0][2], rx[k][0][3]);
-  buf->t = U24(rx[k][0][4], rx[k][0][5], rx[k][0][6]);
+	if (st != TX_SUCCESS)
+  {
+    log_die(id "task %s %u", critical, st);
+  }
 
-  dma_bench_log_fetch(Sensor_Baro);
-
-  return 1;
+  return TX_SUCCESS;
 }
 
-/*
- * Wait until synchronous transfer completes and return
- * the waiting time in milliseconds.
- */
-fu32 wait_on_sync_transfer(enum sensor k)
-{
-  fu32 called = now_ms();
-
-  while (load(&in_progress[k], Acq))
-    ;
-
-  return now_ms() - called;
-}
-
-/* ------ Public API ------ */
+/* ------ DMA task and sensor selector ------ */

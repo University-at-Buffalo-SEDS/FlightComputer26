@@ -78,10 +78,11 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
     TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
 
+#ifdef TELEMETRY_ENABLED
   telemetry_set_byte_pool(byte_pool);
   /* Initialize telemetry lock used by Rust (telemetry_lock/telemetry_unlock). */
   telemetry_init_lock();
-#ifdef TELEMETRY_ENABLED
+
   if (init_telemetry_router() != SEDS_OK) {
     Error_Handler();
   }
@@ -97,15 +98,17 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE BEGIN App_ThreadX_Init */
 
 #ifdef SD_AVAILABLE
-  // sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
+  sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
 #endif
 
-  // create_recovery_task(byte_pool);
-  // create_evaluation_task(byte_pool);
-  // create_distribution_task(byte_pool);
+  create_recovery_task(byte_pool);
+  create_dma_task(byte_pool);
+  create_evaluation_task(byte_pool);
+  create_distribution_task(byte_pool);
 
 #ifdef TELEMETRY_ENABLED
-    ret = create_telemetry_thread(byte_pool);
+  ret = create_telemetry_thread(byte_pool);
+
   if (ret != TX_SUCCESS)
   {
     Error_Handler();

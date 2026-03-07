@@ -10,20 +10,12 @@
 
 /* ------ Containers ------ */
 
-/* Discriminants must comply with decode_ptr() dev[]. */
-
 enum sensor {
   Sensor_Baro = 0,
   Sensor_Gyro = 1,
   Sensor_Accl = 2,
 
   Sensors
-};
-
-enum dma_status {
-  DMA_Ok,
-  DMA_Busy,
-  DMA_Error,
 };
 
 struct serial baro { float alt, p, t; };
@@ -40,6 +32,17 @@ struct serial measurement {
 struct gpio_lookup {
   const GPIO_TypeDef *port[Sensors];
   const uint16_t pin[Sensors];
+  const uint16_t drdy[Sensors];
+};
+
+struct selector {
+  volatile fu8 next;
+  volatile fu8 valid;
+};
+
+struct dma_flags {
+  atomic_uint_fast16_t drdy;
+  atomic_uint_fast16_t relv;
 };
 
 
@@ -47,47 +50,32 @@ struct gpio_lookup {
 
 #define SENSOR_BUF_SIZE 8
 
-#define DMA_RX_NULL UINT8_MAX
+#define DMA_TIMEOUT_MS 50
 
-#define RX_BARO (1u << Sensor_Baro)
-#define RX_GYRO (1u << Sensor_Gyro)
-#define RX_ACCL (1u << Sensor_Accl)
+#define BARO_MASK BARO_EXTI_Pin
+#define GYRO_MASK (GYRO_EXTI_1_Pin | GYRO_EXTI_2_Pin)
+#define ACCL_MASK (ACCL_EXTI_1_Pin | ACCL_EXTI_2_Pin)
 
-#define RX_DONE (RX_BARO | RX_GYRO | RX_ACCL)
-
-/* Heuristic for sensor variant from interrupt pin.
- * Sensor variants can be found in 'enum sensor'. 
- *
- * BARO_INT_PIN:    0x0080 = 00000000 10000000 => 0 + 0 = 0
- * GYRO_INT_PIN_1:  0x0001 = 00000000 00000001 => 1 + 0 = 1
- * GYRO_INT_PIN_2:  0x0002 = 00000000 00000010 => 1 + 0 = 1
- * ACCL_INT_PIN_1:  0x0010 = 00000000 00010000 => 1 + 1 = 2
- * ACCL_INT_PIN_2:  0x0020 = 00000000 00100010 => 1 + 1 = 2
- * 
- * Donald Knuth would be pissed */
-#define sensor_idx(pin)                                        \
-  (enum sensor)((((pin) & 0x0080u) == 0) + (((pin) & 0x0030u) != 0))
+#define IMU_ID (Sensor_Gyro | Sensor_Accl)
 
 
 /* ------ Producer / consumer benchmark timer ------ */
 
 #ifdef DMA_BENCHMARK
 
-#define dma_bench_log_fetch(dev)                              \
+#define dma_bench_log(dev)                                    \
   do {                                                        \
     fu32 dt = now_ms() - load(&rxts[dev], Acq);               \
     log_err("DMA: %u: consumed in %u ms", dev, dt);           \
   } while (0)
 
-#define dma_bench_log_isr()                                   \
-  do {                                                        \
-    log_err("DMA: last ISR took %u ms", load(&isr_dt, Acq));  \
-  } while (0)
+#define dma_bench_refresh(dev)                                \
+  store(&rxts[dev], now_ms(), Rel)
 
 #else
 
-#define dma_bench_log_fetch(dev)  (void)0
-#define dma_bench_log_isr()       (void)0  
+#define dma_bench_log(dev)     (void)0
+#define dma_bench_refresh(dev) (void)0  
 
 #endif // DMA_BENCHMARK
 
@@ -95,94 +83,22 @@ struct gpio_lookup {
 /* ------ Public API ------ */
 
 /*
- * Fetches whatever is available in a free (tm) DMA
- * buffer. Returns a relevancy mask, which has bits
- * set for devices whose data was fetched.
+ * Tries to fetches barometer data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
  */
-fu8 dma_fetch(struct measurement *buf, fu8 skip_mask);
+bool fetch_baro(struct baro *buf);
 
 /*
- * Peeks at the IMU DMA buffers' statuses, and
- * fetches the latest pair of measurements
- * (accelerometer, gyroscope), if available.
- * Returns 1 on successful fetch and 0 otherwise. 
+ * Tries to fetches gyroscope data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
  */
-fu8 dma_fetch_imu(struct coords *gyro, struct coords *accl);
+bool fetch_gyro(struct coords *buf);
 
 /*
- * Peeks at the barometer DMA buffer status,
- * and fetches the latest pair of measurements
- * (temperature, pressure), if available.
- * Returns 1 on successful fetch and 0 otherwise. 
+ * Tries to fetches acceletometer data from shared buffer.
+ * Returns true on success and false if new data is unavailable.
  */
-fu8 dma_fetch_baro(struct baro *buf);
-
-/*
- * Fetches the latest pair of measurements (accelerometer,
- * gyroscope). This function is intended to be called after
- * dma_attempt_transfer from the same thread. If the former
- * function was not called prior to calling this function,
- * it will fetch old data or zeroes if the former function
- * was never called. Do not use this function when starting
- * DMA transfers in ISR mode. Returns 1 on success and 0 if
- * there is an ongoing transfer.
- */
-fu8 dma_fetch_imu_sync(struct coords *gyro, struct coords *accl);
-
-/*
- * Fetches the latest barometer measurement. This function
- * is intended to be called after dma_attempt_transfer from
- * the same thread. If the former function was not called
- * prior to calling this function, it will fetch old data or
- * zeroes if the former function was never called. Do not
- * use this function when starting DMA transfers in ISR mode.
- * Returns 1 on success and 0 if there is an ongoing transfer.
- */
-fu8 dma_fetch_baro_sync(struct baro *buf);
-
-/*
- * Public helper to start DMA transfer for the specified sensor.
- */
-fu8 dma_attempt_transfer(enum sensor sensor);
-
-/*
- * Wait until synchronous transfer completes and return
- * the waiting time in milliseconds.
- */
-fu32 wait_on_sync_transfer(enum sensor k);
-
-
-/* ------ Inline API ------ */
-
-/*
- * Calls compensation functions from the barometer driver.
- */
-static inline void compensate_baro(struct baro *buf)
-{
-  buf->t   = baro_comp_temp(buf->t);
-  buf->p   = baro_comp_pres(buf->p);
-  buf->alt = baro_calc_alt (buf->p);
-}
-
-
-/*
- * Performs correction on accelerometer measurements.
- */
-static inline void compensate_accl(struct coords *buf)
-{
-  buf->x *= MG;
-  buf->y *= MG;
-  buf->z *= MG;
-}
-
-/*
- * Aggregates sensor compensation functions.
- */
-static inline void compensate_all(struct measurement *buf)
-{
-  compensate_baro(&buf->baro);
-  compensate_accl(&buf->d.accl);
-}
+bool fetch_accl(struct coords *buf);
 
 
 #endif // DMA_H

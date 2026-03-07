@@ -76,10 +76,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
-    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
-    
 
     # ARM matrix functions
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_cholesky_f32.c
@@ -133,6 +129,12 @@ if (ENABLE_TELEMETRY)
 
     # Set target for embedded systems
     set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
+
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
+    )
 
     add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
     target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)

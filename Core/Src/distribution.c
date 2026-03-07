@@ -50,6 +50,8 @@
 #include "dma.h"
 
 TX_THREAD distribution_task;
+
+
 /* ------ Global and static storage ------ */
 
 #define id "DI "
@@ -58,10 +60,15 @@ TX_THREAD distribution_task;
 /* Latest logged measurement */
 struct measurement payload = {0};
 
+#ifdef GPS_AVAILABLE
+
 /* Struct that stores launch coordinates */
 static struct coords rail = {0};
 
+#endif // GPS_AVAILABLE
+
 /* ------ Global and static storage ------ */
+
 
 /* ------ Packet handling definitions ------ */
 
@@ -156,6 +163,7 @@ static inline enum message decode_cmd(const uint8_t *raw)
 #endif // TELEMETRY_CMD_COMPAT
 
 /* ------ Packet handling definitions ------ */
+
 
 /* ------ GPS handling functions ------ */
 
@@ -335,6 +343,7 @@ distance_from_rail(struct coords *gps)
 
 /* ------ GPS handling functions ------ */
 
+
 /* ------ Packet handling functions ------ */
 
 #define INVALID_MESSAGE_STATUS 0xFFu
@@ -411,14 +420,41 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
 
 /* ------ Packet handling functions ------ */
 
+
 /* ------ Sensor data sanity checks ------ */
 
 /*
- * IMU sanity check against BMI088 data range.
+ * Gyroscope sanity check against its data range.
  */
 static inline enum message
-validate_imu(const struct coords *gyro,
-             const struct coords *accl, fu32 conf)
+validate_gyro(const struct coords *gyro, fu32 conf)
+{
+  enum message st = fc_mask(Sensor_Measm_Code);
+
+  if (conf & option(Validate_Measms))
+  {
+    if (gyro->x > MAX_DPS || gyro->x < MIN_DPS)
+    {
+      st |= Bad_Attitude_X;
+    }
+    if (gyro->y > MAX_DPS || gyro->y < MIN_DPS)
+    {
+      st |= Bad_Attitude_Y;
+    }
+    if (gyro->z > MAX_DPS || gyro->z < MIN_DPS)
+    {
+      st |= Bad_Attitude_Z;
+    }
+  }
+
+  return st;
+}
+
+/*
+ * Accelerometer sanity check against its data range.
+ */
+static inline enum message
+validate_accl(const struct coords *accl, fu32 conf)
 {
   enum message st = fc_mask(Sensor_Measm_Code);
 
@@ -435,18 +471,6 @@ validate_imu(const struct coords *gyro,
     if (accl->z > MAX_ACC || accl->z < MIN_ACC)
     {
       st |= Bad_Accel_Z;
-    }
-    if (gyro->x > MAX_DPS || gyro->x < MIN_DPS)
-    {
-      st |= Bad_Attitude_X;
-    }
-    if (gyro->y > MAX_DPS || gyro->y < MIN_DPS)
-    {
-      st |= Bad_Attitude_Y;
-    }
-    if (gyro->z > MAX_DPS || gyro->z < MIN_DPS)
-    {
-      st |= Bad_Attitude_Z;
     }
   }
 
@@ -483,7 +507,8 @@ static inline enum message IREC26_unused
 validate_all(const struct measurement *buf, fu32 conf)
 {
   return validate_baro(&buf->baro, conf) |
-         validate_imu(&buf->gyro, &buf->d.accl, conf);
+         validate_gyro(&buf->gyro, conf) |
+         validate_accl(&buf->d.accl, conf);
 }
 
 /* ------ Sensor data sanity checks ------ */
@@ -505,33 +530,42 @@ static inline void pre_launch(void)
 
   fu32 conf = load(&config, Acq);
 
-  task_loop(conf & option(Launch_Triggered))
+  task_loop (conf & option(Launch_Triggered))
   {
     if (st != TX_SUCCESS)
     {
       log_err(pilot "heartbeat failed: %u", st);
     }
 
-    if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
+    if (fetch_gyro(&payload.gyro))
     {
-      tx_thread_relinquish();
-      continue;
+      st = validate_gyro(&payload.gyro, conf);
+
+      if (st == Sensor_Measm_Code)
+      {
+        log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
+      }
+      else
+      {
+        log_err(pilot "malformed GYRO data: %u", st);
+      }
     }
 
-    st = validate_imu(&payload.gyro, &payload.d.accl, conf);
-
-    if (st == Sensor_Measm_Code)
+    if (fetch_accl(&payload.d.accl))
     {
-      compensate_accl(&payload.d.accl);
-      log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
-      log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
-    }
-    else
-    {
-      log_err(pilot "malformed IMU data: %u", st);
+      st = validate_accl(&payload.d.accl, conf);
+
+      if (st == Sensor_Measm_Code)
+      {
+        log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+      }
+      else
+      {
+        log_err(pilot "malformed ACCEL data: %u", st);
+      }
     }
 
-    if (dma_fetch_baro(&payload.baro))
+    if (fetch_baro(&payload.baro))
     {
       accum_baro += fsec(timer_exchange(IntervalBaro));
       ++ctr_gps;
@@ -540,7 +574,6 @@ static inline void pre_launch(void)
 
       if (st == Sensor_Measm_Code)
       {
-        compensate_baro(&payload.baro);
         log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
       }
       else
@@ -599,31 +632,53 @@ static inline void pre_launch(void)
 /*
  * Data cycle for the Ascent filter.
  */
-static inline void ascent_cycle(fu32 conf)
+static inline void ascent_cycle(fu32 conf, fu8 *imu)
 {
   fu32 st;
 
-  if (!dma_fetch_imu(&payload.gyro, &payload.d.accl))
+  if (fetch_gyro(&payload.gyro))
   {
-    /* Wait for IMU measurements */
+    st = validate_gyro(&payload.gyro, conf);
+
+    if (st == Sensor_Measm_Code)
+    {
+      *imu |= Sensor_Gyro;
+    }
+    else
+    {
+      *imu &= ~Sensor_Gyro;
+      tx_queue_send(&shared, &st, TX_NO_WAIT);
+    }
+  }
+
+  if (fetch_accl(&payload.d.accl))
+  {
+    st = validate_accl(&payload.d.accl, conf);
+
+    if (st == Sensor_Measm_Code)
+    {
+      *imu |= Sensor_Accl;
+    }
+    else
+    {
+      *imu &= ~Sensor_Accl;
+      tx_queue_send(&shared, &st, TX_NO_WAIT);
+    }
+  }
+
+  if ((*imu & IMU_ID) != IMU_ID)
+  {
     tx_thread_relinquish();
     return;
   }
 
-  st = validate_imu(&payload.gyro, &payload.d.accl, conf);
+  *imu &= ~IMU_ID;
 
-  if (st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return;
-  }
-
-  compensate_accl(&payload.d.accl);
   sh.dt = fsec(timer_exchange(AscentKF));
 
   ascent_predict(sh.dt);
 
-  if (!dma_fetch_baro(&payload.baro))
+  if (!fetch_baro(&payload.baro))
   {
     /* Run Predict in the meanwhile */
     return;
@@ -641,7 +696,8 @@ static inline void ascent_cycle(fu32 conf)
   {
     tx_semaphore_put(&eval_focus_mode);
   }
-  else {
+  else
+  {
     ascent_update(sh.dt);
     evaluate_rocket_state(conf);
   }
@@ -654,7 +710,7 @@ static inline void descent_cycle(fu32 conf)
 {
   fu32 st;
 
-  if (!dma_fetch_baro(&payload.baro))
+  if (!fetch_baro(&payload.baro))
   {
     tx_thread_relinquish();
     return;
@@ -674,9 +730,11 @@ static inline void descent_cycle(fu32 conf)
     tx_thread_relinquish();
     return;
   }
-#endif // GPS_AVAILABLE
 
   distance_from_rail(&payload.d.gps);
+
+#endif // GPS_AVAILABLE
+
 
   sh.dt = fsec(timer_exchange(DescentKF));
 
@@ -697,6 +755,8 @@ void distribution_entry(ULONG input)
 
   fu32 conf = load(&config, Acq);
 
+  fu8 imu = 0;
+
   /* Enter pre-launch loop only once. */
   if (!(conf & option(Launch_Triggered)))
   {
@@ -707,7 +767,7 @@ void distribution_entry(ULONG input)
   {
     conf = load(&config, Acq);
 
-    conf &option(Using_Ascent_KF) ? ascent_cycle(conf)
+    conf &option(Using_Ascent_KF) ? ascent_cycle(conf, &imu)
                                   : descent_cycle(conf);
   }
 }

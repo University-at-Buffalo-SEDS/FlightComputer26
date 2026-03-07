@@ -4,12 +4,13 @@
 #ifdef TELEMETRY_ENABLED
 
 /* ------ Telemetry Thread ------ */
-extern TX_THREAD telemetry_thread;
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
 #define TLMT_TIME_SLICE 20
 #define TLMT_STACK_BYTES (16U * 1024U)
 #define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
+
+extern TX_THREAD telemetry_thread;
 
 void telemetry_thread_entry(ULONG initial_input);
 UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
@@ -24,6 +25,7 @@ UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
 #define RECV_STACK_ULONG (RECV_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD recovery_task;
+
 void recovery_entry(ULONG input);
 UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 /* ------ Recovery Task ------ */
@@ -55,6 +57,22 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 #define DIST_STACK_ULONG (DIST_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD distribution_task;
+
 void distribution_entry(ULONG input);
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 /* ------ Distribution Task ------ */
+
+/* ------ DMA Task ------ */
+#define DMA_INPUT 0
+#define DMA_TIME_SLICE 15
+#define DMA_SLEEP_BARO 10
+#define DMA_SLEEP_IMU 5
+#define DMA_PRIORITY 5
+#define DMA_STACK_BYTES 2048
+#define DMA_STACK_ULONG (DMA_STACK_BYTES / sizeof(ULONG))
+
+extern TX_THREAD dma_task;
+
+void dma_entry(ULONG input);
+UINT create_dma_task(TX_BYTE_POOL *byte_pool);
+/* ------ DMA Task ------ */

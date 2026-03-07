@@ -132,7 +132,7 @@ initialize_sensors(enum sensor_mask sensor)
 
     if (!(sensor & Disable))
     {
-      reinit(init_baro(&baro_conf), fails, Init_Baro);
+      reinit(baro_init(&hspi1, &baro_conf), fails, Init_Baro);
       __NVIC_EnableIRQ(Baro_EXTI);
     }
   }
@@ -144,7 +144,7 @@ initialize_sensors(enum sensor_mask sensor)
 
     if (!(sensor & Disable))
     {
-      reinit(init_gyro(&gyro_conf), fails, Init_Gyro);
+      reinit(gyro_init(&hspi1, &gyro_conf), fails, Init_Gyro);
       __NVIC_EnableIRQ(Gyro_EXTI_1);
 /*    __NVIC_EnableIRQ(Gyro_EXTI_2);        unused for IREC 2026 */
     }
@@ -157,7 +157,7 @@ initialize_sensors(enum sensor_mask sensor)
 
     if (!(sensor & Disable))
     {
-      reinit(init_accl(&accl_conf), fails, Init_Accl);
+      reinit(accl_init(&hspi1, &accl_conf), fails, Init_Accl);
       __NVIC_EnableIRQ(Accl_EXTI_1);
 /*    __NVIC_EnableIRQ(Accl_EXTI_2);        unused for IREC 2026 */
     }
