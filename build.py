@@ -38,10 +38,6 @@ OPTIONS:
                         - specified preset (or default);
                         - option has highest precedence
 
-        dmatest         - enables local DMA testing
-                        - does not start ThreadX
-                        - prerequisite: notelemetry
-
         fullcmd         - expect full FC commands in
                         - handler and not byte codes;
                         - prerequisite: telemetry
@@ -101,7 +97,6 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "stlink",
                         "notelemetry", 
                         "clean",
-                        "dmatest",
                         "fullcmd",
                         "batching",
                         "configure",
@@ -169,7 +164,6 @@ def configure(buildir: Path, preset: str, options: dict):
         batch           = "-DMESSAGE_BATCHING=OFF"
         telem           = "-DENABLE_TELEMETRY=ON"
         compat          = "-DTELEMETRY_COMPAT=ON"
-        dmatest         = "-DDMA_TESTING=OFF"
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
         dmabench        = "-DDMA_BENCH=OFF"
@@ -180,8 +174,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 telem = "-DENABLE_TELEMETRY=OFF"
                 gps = "-DEXTERNAL_GPS=OFF"
                 sd = "-DONBOARD_SD=OFF"
-                if options["dmatest"]:
-                        dmatest = "-DDMA_TESTING=ON"
                 if options["sensortest"]:
                         sensortest = "-DSENSOR_TESTS=ON"
         else:

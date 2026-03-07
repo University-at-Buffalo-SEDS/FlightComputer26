@@ -133,11 +133,6 @@ int main(void)
   test_sensors_sync();
 #endif
 
-#ifdef DMA_LOCAL_TEST
-  dma_sensor_test();
-#endif
-
-
   /* USER CODE END 2 */
 
   MX_ThreadX_Init();
