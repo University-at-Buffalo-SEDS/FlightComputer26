@@ -286,12 +286,6 @@ struct serial coords { float x, y, z; };
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7
 
-#define Baro_EXTI   EXTI7_IRQn
-#define Gyro_EXTI_1 EXTI0_IRQn
-#define Gyro_EXTI_2 EXTI1_IRQn
-#define Accl_EXTI_1 EXTI4_IRQn
-#define Accl_EXTI_2 EXTI5_IRQn
-
 /* Driver-specific data conversions */
 
 #define U32(b0, b1, b2, b3)                                         \
@@ -307,6 +301,53 @@ struct serial coords { float x, y, z; };
 #define F16(b0, b1) ((float)I16(b0, b1))
 
 /* ------ Sensor drivers and data collection ------ */
+
+
+/* ------ Master-side interrupt control ------ */
+
+#define SPI1_GLOBAL_IRQ   SPI1_IRQn
+#define DMA_RECEIVER_SPI1 GPDMA1_Channel0_IRQn
+
+#define Baro_EXTI   EXTI7_IRQn
+#define Gyro_EXTI_1 EXTI0_IRQn
+#define Gyro_EXTI_2 EXTI1_IRQn
+#define Accl_EXTI_1 EXTI4_IRQn
+#define Accl_EXTI_2 EXTI5_IRQn
+
+#define irq_off(irq) HAL_NVIC_DisableIRQ((irq))
+#define irq_on(irq)  HAL_NVIC_EnableIRQ((irq))
+
+/*
+ * The difference from __disable_irq() is that this
+ * function does not disable all interrupts, making
+ * it possible to use HAL time, delay, and ThreadX.
+ * The enabler just restores these interrupts in NVIC.
+ */
+static inline void clear_spi1_irq(void)
+{
+  irq_off(SPI1_GLOBAL_IRQ);
+  irq_off(DMA_RECEIVER_SPI1);
+
+  irq_off(Baro_EXTI);
+  irq_off(Gyro_EXTI_1);
+/*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
+  irq_off(Accl_EXTI_1);
+/*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
+}
+
+static inline void restore_spi1_irq(void)
+{
+  irq_on(SPI1_GLOBAL_IRQ);
+  irq_on(DMA_RECEIVER_SPI1);
+
+  irq_on(Baro_EXTI);
+  irq_on(Gyro_EXTI_1);
+/*irq_on(Gyro_EXTI_2);    not used for IREC 2026 */
+  irq_on(Accl_EXTI_1);
+/*irq_on(Accl_EXTI_2);    not used for IREC 2026 */
+}
+
+/* ------ Master-side interrupt control ------ */
 
 
 /* ------ Telemetry API abstraction ------ */
@@ -358,13 +399,13 @@ extern void telemetry_init_lock(void);
 #endif // GNUC
 #endif // >= C23
 
-/* Ignition request from the Valve board over telemetry */
-
-/* Ground Station repo: backend/src/rocket_commands.rs
- * pub enum ActuatorBoardCommands -> IgniterSequence */
+/* Ignition request from remote Valve board.
+ * Ground Station repo: backend/src/rocket_commands.rs
+ * pub enum ActuatorBoardCommands -> IgniterSequence
+ */
 #define IGNITION_COMMAND 13
 
-static inline SedsResult request_ignition()
+static inline SedsResult request_ignition(void)
 {
   uint8_t vcmd = IGNITION_COMMAND;
   return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
@@ -439,7 +480,7 @@ static inline SedsResult request_ignition()
 /* ------ Telemetry API abstraction ------ */
 
 
-/* ------ On-board SD card (conditional) ------ */
+/* ------ On-board SD card ------ */
 
 #ifdef SD_AVAILABLE
 
@@ -448,7 +489,7 @@ static inline SedsResult request_ignition()
 
 #endif // SD_AVAILABLE
 
-/* ------ On-board SD card (conditional) ------ */
+/* ------ On-board SD card ------ */
 
 
 #endif // PLATFORM_H

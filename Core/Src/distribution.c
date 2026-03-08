@@ -205,7 +205,7 @@ enqueue_gps_data(const uint8_t *buf)
  * Fetches latest available GPS packet, or checks
  * for timeout. Returns the amount of new entries
  * added since last call. Safe when the calling
- * thread is asynchronously cancelled.
+ * thread is asynchronously canceled.
  */
 static inline fu8
 fetch_gps_data(struct coords *buf)

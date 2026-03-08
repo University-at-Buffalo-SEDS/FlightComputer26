@@ -30,13 +30,16 @@ extern atomic_uint_fast32_t config;
 #define MAX_REINIT_ATTEMPTS 3
 
 enum sensor_mask : fu8 {
-  Init_Baro = 0x01,
-  Init_Gyro = 0x02,
-  Init_Accl = 0x04,
+  Init_Baro = (1u << 0),
+  Init_Gyro = (1u << 1),
+  Init_Accl = (1u << 2),
 
-  Disable   = 0x80,
+  Shut_Baro = (1u << 4),
+  Shut_Gyro = (1u << 5),
+  Shut_Accl = (1u << 6),
 
-  Init_All = (Init_Baro | Init_Gyro | Init_Accl)
+  Init_All = (Init_Baro | Init_Gyro | Init_Accl),
+  Shut_All = (Shut_Baro | Shut_Gyro | Shut_Accl)
 };
 
 #define reinit(fn, ctr, sens)             \

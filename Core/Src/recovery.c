@@ -39,10 +39,10 @@
 #include "recovery.h"
 #include "kalman.h"
 #include "dma.h"
-#include "tx_api.h"
 
 TX_QUEUE shared;
 TX_THREAD recovery_task;
+
 
 /* ------ Global and static storage ------ */
 
@@ -92,6 +92,7 @@ static struct accl_config accl_conf = {
 
 /* ------ Global and static storage ------ */
 
+
 /* ------ Recovery logic ------ */
 
 /*
@@ -126,41 +127,40 @@ initialize_sensors(enum sensor_mask sensor)
 {
   enum sensor_mask fails = 0;
 
+  clear_spi1_irq();
+
   if (sensor & Init_Baro)
   {
-    __NVIC_DisableIRQ(Baro_EXTI);
-
-    if (!(sensor & Disable))
-    {
-      reinit(baro_init(&hspi1, &baro_conf), fails, Init_Baro);
-      __NVIC_EnableIRQ(Baro_EXTI);
-    }
+    reinit(baro_init(&hspi1, &baro_conf), fails, Init_Baro);
   }
 
   if (sensor & Init_Gyro)
   {
-    __NVIC_DisableIRQ(Gyro_EXTI_1);
-/*  __NVIC_DisableIRQ(Gyro_EXTI_2);         unused for IREC 2026 */
-
-    if (!(sensor & Disable))
-    {
-      reinit(gyro_init(&hspi1, &gyro_conf), fails, Init_Gyro);
-      __NVIC_EnableIRQ(Gyro_EXTI_1);
-/*    __NVIC_EnableIRQ(Gyro_EXTI_2);        unused for IREC 2026 */
-    }
+    reinit(gyro_init(&hspi1, &gyro_conf), fails, Init_Gyro);
   }
 
   if (sensor & Init_Accl)
   {
-    __NVIC_DisableIRQ(Accl_EXTI_1);
-/*  __NVIC_DisableIRQ(Accl_EXTI_2);         unused for IREC 2026 */
+    reinit(accl_init(&hspi1, &accl_conf), fails, Init_Accl);
+  }
 
-    if (!(sensor & Disable))
-    {
-      reinit(accl_init(&hspi1, &accl_conf), fails, Init_Accl);
-      __NVIC_EnableIRQ(Accl_EXTI_1);
-/*    __NVIC_EnableIRQ(Accl_EXTI_2);        unused for IREC 2026 */
-    }
+  restore_spi1_irq();
+
+  if (sensor & Shut_Baro)
+  {
+    irq_off(Baro_EXTI);
+  }
+
+  if (sensor & Shut_Gyro)
+  {
+    irq_off(Gyro_EXTI_1);
+/*  irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
+  }
+
+  if (sensor & Shut_Accl)
+  {
+    irq_off(Accl_EXTI_1);
+/*  irq_off(Accl_EXTI_2);   not used for IREC 2026 */
   }
   
   if (fails != 0)
@@ -301,16 +301,16 @@ static inline void process_action(enum message cmd)
     tx_thread_reset(&evaluation_task);
     return;
 
+  case Reinit_Barometer:
+    barometer_fallback();
+    return;
+
   case Enable_IMU:
     initialize_sensors(Init_Gyro | Init_Accl);
     return;
 
   case Disable_IMU:
-    initialize_sensors(Disable | Init_Gyro | Init_Accl);
-    return;
-
-  case Reinit_Barometer:
-    barometer_fallback();
+    initialize_sensors(Shut_Gyro | Shut_Accl);
     return;
 
   default:
@@ -450,7 +450,8 @@ static inline void decode_message(enum message msg)
 
 /* ------ Recovery logic ------ */
 
-/* ------ Timer ------ */
+
+/* ------ Timer routine ------ */
 
 /*
  * This routine is called from ThreadX interrupt
@@ -522,7 +523,8 @@ static void fc_timer_routine(ULONG timer_id)
   }
 }
 
-/* ------ Timer ------ */
+/* ------ Timer routine ------ */
+
 
 /* ------ Recovery task ------ */
 
