@@ -572,7 +572,7 @@ void recovery_entry(ULONG input)
  */
 UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 {
-
+  UINT st;
   CHAR *pointer;
 
   /* Allocate the stack for test  */
@@ -581,17 +581,18 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   {
     return TX_POOL_ERROR;
   }
-  UINT st = tx_thread_create(&recovery_task,
-                             "Recovery Task",
-                             recovery_entry,
-                             RECV_INPUT,
-                             pointer,
-                             RECV_STACK_BYTES,
-                             RECV_PRIORITY,
-                             /* No preemption threshold */
-                             RECV_PRIORITY,
-                             TX_NO_TIME_SLICE,
-                             TX_AUTO_START);
+  
+  st = tx_thread_create(&recovery_task,
+                        "Recovery Task",
+                        recovery_entry,
+                        RECV_INPUT,
+                        pointer,
+                        RECV_STACK_BYTES,
+                        RECV_PRIORITY,
+                        /* No preemption threshold */
+                        RECV_PRIORITY,
+                        TX_NO_TIME_SLICE,
+                        TX_AUTO_START);
 
   const char *critical = "creation failure:";
 
@@ -616,6 +617,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   {
     log_die(id "timer %s %u", critical, st);
   }
+
   return TX_SUCCESS;
 }
 

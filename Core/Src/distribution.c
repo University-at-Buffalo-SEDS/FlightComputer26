@@ -778,30 +778,32 @@ void distribution_entry(ULONG input)
  */
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 {
-
+  UINT st;
   CHAR *pointer;
 
-  /* Allocate the stack for test  */
+  /* Allocate the stack for test */
   if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
                        DIST_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
   {
     return TX_POOL_ERROR;
   }
-  UINT st = tx_thread_create(&distribution_task,
-                             "Distribution Task",
-                             distribution_entry,
-                             DIST_INPUT,
-                             pointer,
-                             DIST_STACK_BYTES,
-                             DIST_PRIORITY,
-                             /* No preemption threshold */
-                             DIST_PRIORITY,
-                             TX_NO_TIME_SLICE,
-                             TX_AUTO_START);
+
+  st = tx_thread_create(&distribution_task,
+                        "Distribution Task",
+                        distribution_entry,
+                        DIST_INPUT,
+                        pointer,
+                        DIST_STACK_BYTES,
+                        DIST_PRIORITY,
+                        /* No preemption threshold */
+                        DIST_PRIORITY,
+                        TX_NO_TIME_SLICE,
+                        TX_AUTO_START);
 
   if (st != TX_SUCCESS)
   {
     log_die(id "task creation failure: %u", st);
   }
+
   return TX_SUCCESS;
 }

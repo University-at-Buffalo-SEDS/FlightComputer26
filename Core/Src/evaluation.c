@@ -500,7 +500,7 @@ void evaluation_entry(ULONG input)
  */
 UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 {
-
+  UINT st;
   CHAR *pointer;
 
   /* Allocate the stack for test  */
@@ -510,16 +510,16 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     return TX_POOL_ERROR;
   }
 
-  UINT st = tx_thread_create(&evaluation_task,
-                             "Evaluation Task",
-                             evaluation_entry,
-                             EVAL_INPUT,
-                             pointer,
-                             EVAL_STACK_BYTES,
-                             EVAL_PRIORITY,
-                             EVAL_PREEMPT_THRESHOLD,
-                             EVAL_TIME_SLICE,
-                             TX_DONT_START);
+  st = tx_thread_create(&evaluation_task,
+                        "Evaluation Task",
+                        evaluation_entry,
+                        EVAL_INPUT,
+                        pointer,
+                        EVAL_STACK_BYTES,
+                        EVAL_PRIORITY,
+                        EVAL_PREEMPT_THRESHOLD,
+                        EVAL_TIME_SLICE,
+                        TX_DONT_START);
 
   const char *critical = "creation failure:";
 
@@ -534,6 +534,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   {
     log_die(id "sema %s %u", critical, st);
   }
+
   return TX_SUCCESS;
 }
 
