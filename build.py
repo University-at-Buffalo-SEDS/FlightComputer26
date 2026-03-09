@@ -198,7 +198,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
                 telem,
-                dmatest,
                 batch,
                 compat,
                 gps,

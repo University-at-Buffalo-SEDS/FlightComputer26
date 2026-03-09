@@ -24,11 +24,14 @@
 
 /* ------ Bundled std headers used ------ */
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdatomic.h>
-#include <string.h>
-#include <math.h>
+#include <stdio.h>        // IWYU pragma: export
+#include <stddef.h>       // IWYU pragma: export
+#include <stdarg.h>       // IWYU pragma: export
+#include <stdint.h>       // IWYU pragma: export
+#include <stdbool.h>      // IWYU pragma: export
+#include <stdatomic.h>    // IWYU pragma: export
+#include <string.h>       // IWYU pragma: export
+#include <math.h>         // IWYU pragma: export
 
 /* ------ Bundled std headers used ------ */
 
@@ -99,8 +102,8 @@ enum seds_atomic_mo {
 
 /* ------ ARM fast math bundled library ------ */
 
-#include "dsp/fast_math_functions.h"
-#include "dsp/matrix_functions.h"
+#include "dsp/fast_math_functions.h"    // IWYU pragma: export
+#include "dsp/matrix_functions.h"       // IWYU pragma: export
 
 /* CMSIS matrix aliases for convenience */
 typedef arm_matrix_instance_f32 matrix;
@@ -112,21 +115,23 @@ typedef arm_matrix_instance_f32 matrix;
   * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
   *
   * There is no such instruction for inverse square root
-  * => bithack + Newton-Raphson below to avoid FP division. */
-#define vsqrt     arm_sqrt_f32;
+  * => bithack + Newton-Raphson to avoid FP division. */
+#define vsqrt                 arm_sqrt_f32;
 
 /* These functions take pointers to arm_matrix_instance_f32;
  * this is the reason there are wrappers inside KF functions. */
-#define chol			arm_mat_cholesky_f32
-#define transpose arm_mat_trans_f32
-#define xmul 			arm_mat_mult_f32
-#define xadd			arm_mat_add_f32
-#define xsub      arm_mat_sub_f32
-#define xinv      arm_mat_inverse_f32
+#define chol_lower_triang			arm_mat_cholesky_f32
+#define transpose             arm_mat_trans_f32
+#define matrix_mult 			    arm_mat_mult_f32
+#define matrix_add			      arm_mat_add_f32
+#define matrix_sub            arm_mat_sub_f32
+#define matrix_inv            arm_mat_inverse_f32
 
 /* I don't quite get the point of this function.
  * Maybe because it's *floating point*. */
-#define xinit     arm_mat_init_f32
+#define matrix_init           arm_mat_init_f32
+
+/* ------ ARM fast math bundled library ------ */
 
 /* ------ ARM fast math bundled library ------ */
 
@@ -140,7 +145,7 @@ typedef arm_matrix_instance_f32 matrix;
 /* Data memory barrier */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
-#include "cmsis_compiler.h"
+#include "cmsis_compiler.h"   // IWYU pragma: export
 
 #else
 #define __DMB() atomic_thread_fence(AcqRel)
@@ -161,9 +166,9 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* ------ ThreadX API includes ------ */
 
-#include "tx_api.h"
-#include "tx_port.h"
-#include "FC-Threads.h"
+#include "tx_api.h"           // IWYU pragma: export
+#include "tx_port.h"          // IWYU pragma: export
+#include "FC-Threads.h"       // IWYU pragma: export
 
 /* ------ ThreadX API includes ------ */
 
@@ -176,18 +181,22 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define IREC26_unused __attribute__((unused))
 
+#define constexpr __attribute__((const))
+
+#define blind_inline __attribute__((always_inline))
+
 /* ------ Type attributes ------ */
 
 
 /* ------ HAL Aliases ------ */
 
-#include "stm32h5xx.h"
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "stm32h5xx_hal_gpio.h"
-#include "stm32h5xx_hal_dcache.h"
-#include "core_cm33.h"
+#include "stm32h5xx.h"                // IWYU pragma: export
+#include "stm32h5xx_hal.h"            // IWYU pragma: export
+#include "stm32h5xx_hal_def.h"        // IWYU pragma: export
+#include "stm32h5xx_hal_spi.h"        // IWYU pragma: export
+#include "stm32h5xx_hal_gpio.h"       // IWYU pragma: export
+#include "stm32h5xx_hal_dcache.h"     // IWYU pragma: export
+#include "core_cm33.h"                // IWYU pragma: export
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
@@ -243,24 +252,11 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* ------ Sensor drivers and data collection ------ */
 
-#include "barometer.h"
-#include "gyroscope.h"
-#include "accelerometer.h"
+#include "barometer.h"        // IWYU pragma: export
+#include "gyroscope.h"        // IWYU pragma: export
+#include "accelerometer.h"    // IWYU pragma: export
 
 struct serial coords { float x, y, z; };
-
-#define init_baro(conf) baro_init(&hspi1, (conf))
-#define init_gyro(conf) gyro_init(&hspi1, (conf))
-#define init_accl(conf) accl_init(&hspi1, (conf))
-
-#define baro_comp_temp(temp) \
-  baro_compensate_temp((uint32_t)temp)
-
-#define baro_comp_pres(pres) \
-  baro_compensate_pres((uint32_t)pres)
-
-#define baro_calc_alt(pres) \
-  baro_relative_alt((float)pres)
 
 #define gpio_cs_low(sens)                               \
   HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
@@ -291,12 +287,6 @@ struct serial coords { float x, y, z; };
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7
 
-#define Baro_EXTI   EXTI7_IRQn
-#define Gyro_EXTI_1 EXTI0_IRQn
-#define Gyro_EXTI_2 EXTI1_IRQn
-#define Accl_EXTI_1 EXTI4_IRQn
-#define Accl_EXTI_2 EXTI5_IRQn
-
 /* Driver-specific data conversions */
 
 #define U32(b0, b1, b2, b3)                                         \
@@ -314,12 +304,62 @@ struct serial coords { float x, y, z; };
 /* ------ Sensor drivers and data collection ------ */
 
 
-/* ------ Telemetry API abstraction ------ */
+/* ------ Master-side interrupt control ------ */
+
+#define SPI1_GLOBAL_IRQ   SPI1_IRQn
+#define DMA_RECEIVER_SPI1 GPDMA1_Channel0_IRQn
+
+#define Baro_EXTI   EXTI7_IRQn
+#define Gyro_EXTI_1 EXTI0_IRQn
+#define Gyro_EXTI_2 EXTI1_IRQn
+#define Accl_EXTI_1 EXTI4_IRQn
+#define Accl_EXTI_2 EXTI5_IRQn
+
+#define irq_off(irq) HAL_NVIC_DisableIRQ((irq))
+#define irq_on(irq)  HAL_NVIC_EnableIRQ((irq))
+
+/*
+ * The difference from __disable_irq() is that this
+ * function does not disable all interrupts, making
+ * it possible to use HAL time, delay, and ThreadX.
+ * The enabler just restores these interrupts in NVIC.
+ */
+static inline void clear_spi1_irq(void)
+{
+  irq_off(SPI1_GLOBAL_IRQ);
+  irq_off(DMA_RECEIVER_SPI1);
+
+  irq_off(Baro_EXTI);
+  irq_off(Gyro_EXTI_1);
+/*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
+  irq_off(Accl_EXTI_1);
+/*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
+}
+
+static inline void restore_spi1_irq(void)
+{
+  irq_on(SPI1_GLOBAL_IRQ);
+  irq_on(DMA_RECEIVER_SPI1);
+
+  irq_on(Baro_EXTI);
+  irq_on(Gyro_EXTI_1);
+/*irq_on(Gyro_EXTI_2);    not used for IREC 2026 */
+  irq_on(Accl_EXTI_1);
+/*irq_on(Accl_EXTI_2);    not used for IREC 2026 */
+}
+
+/* ------ Master-side interrupt control ------ */
+
+
+/* ------ Telemetry interface ------ */
 
 #ifdef TELEMETRY_ENABLED
 
-#include <sedsprintf.h>
-#include "telemetry.h"
+#include <sedsprintf.h>         // IWYU pragma: export
+#include "telemetry.h"          // IWYU pragma: export
+
+extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
+extern void telemetry_init_lock(void);
 
 #define log_msg_sync(msg, size)                             \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
@@ -350,23 +390,23 @@ struct serial coords { float x, y, z; };
 #if defined (__GNUC__)
 
 #define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt, ##__VA_ARGS__)
+  log_error_synchronous(fmt, ##__VA_ARGS__)
 
 #define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt, ##__VA_ARGS__)
+  log_error_asynchronous(fmt, ##__VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
 #endif // GNUC
 #endif // >= C23
 
-/* Ignition request from the Valve board over telemetry */
-
-/* Ground Station repo: backend/src/rocket_commands.rs
- * pub enum ActuatorBoardCommands -> IgniterSequence */
+/* Ignition request from remote Valve board.
+ * Ground Station repo: backend/src/rocket_commands.rs
+ * pub enum ActuatorBoardCommands -> IgniterSequence
+ */
 #define IGNITION_COMMAND 13
 
-static inline SedsResult request_ignition()
+static inline SedsResult request_ignition(void)
 {
   uint8_t vcmd = IGNITION_COMMAND;
   return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
@@ -380,8 +420,6 @@ static inline SedsResult request_ignition()
 #define SEDS_DT_BAROMETER_DATA "Barometer"
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
-
-#include <stdio.h>
 
 #define log_msg_sync(msg, size) printf("\n%s\n", (msg))
 
@@ -438,7 +476,7 @@ static inline SedsResult request_ignition()
 
 #endif // TELEMETRY_ENABLED
 
-/* ------ Telemetry API abstraction ------ */
+/* ------ Telemetry interface ------ */
 
 
 #endif // PLATFORM_H
