@@ -1,0 +1,175 @@
+/*
+ * BMI088 Gyroscope driver over SPI.
+ */
+
+#include "platform.h"
+#include "gyroscope.h"
+
+
+/* ------ Static ------ */
+
+/* Set by gyro_init */
+static enum gyro_range init_rng = Gyro_Range_2000Dps;
+
+/* Inverted to avoid division at runtime */
+static const float inv_sens[Gyro_Range_Entries] = {
+  1.0f/16.384f, 1.0f/32.768f, 1.0f/65.536f, 1.0f/131.072f, 1.0f/262.144f
+};
+
+
+/* ------ Synchronous SPI helpers ------ */
+
+/*
+ * Synchronously read one value at the specified register.
+ */
+static inline HAL_StatusTypeDef
+gyro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *val)
+{
+  if (!val) {
+    return HAL_ERROR;
+  }
+
+  HAL_StatusTypeDef st;
+  uint8_t tx[2] = { gyro_cmd_read(reg), 0x00 };
+  uint8_t rx[2] = { 0 };
+
+  gyro_cs_low();
+  st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
+  gyro_cs_high();
+
+  if (st == HAL_OK) {
+    *val = rx[1];
+  }
+
+  return st;
+}
+
+/*
+ * Synchronously write new value to a specified writeable register. 
+ */
+static inline HAL_StatusTypeDef
+gyro_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t val)
+{
+  HAL_StatusTypeDef st;
+  uint8_t tx[2] = { gyro_cmd_write(reg), val };
+
+  gyro_cs_low();
+  st = HAL_SPI_Transmit(hspi, tx, sizeof tx, HAL_MAX_DELAY);
+  gyro_cs_high();
+
+  return st;
+}
+
+/*
+ * Read XYZ (LSB first then MSB) — datasheet §5.5.2.
+ */
+HAL_StatusTypeDef
+gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf)
+{
+  HAL_StatusTypeDef st;
+  uint8_t tx[7] = {[0] = gyro_cmd_read(GYRO_RATE_X_LSB),
+                   [1 ... 6] = 0x00};
+  uint8_t rx[7];
+
+  gyro_cs_low();
+  st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
+  gyro_cs_high();
+
+  if (st == HAL_OK) {
+    buf->x = (float)(int16_t)((rx[2] << 8) | rx[1]) * inv_sens[init_rng];
+    buf->y = (float)(int16_t)((rx[4] << 8) | rx[3]) * inv_sens[init_rng];
+    buf->z = (float)(int16_t)((rx[6] << 8) | rx[5]) * inv_sens[init_rng];
+  }
+
+  return st;
+}
+
+
+/* ------ Initialization ------ */
+
+/*
+ * Initializes gyroscope with specified parameters.
+ * Bandwidth and range values can be found in gyroscope.h.
+ * Do not call from interrupts or callbacks. Idempotent.
+ */
+HAL_StatusTypeDef
+gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
+{
+  HAL_StatusTypeDef st;
+
+  HAL_Delay(GYRO_WAIT_MS);
+
+  /* Match chip ID */
+  uint8_t id = 0;
+  st = gyro_read_reg(hspi, GYRO_CHIP_ID, &id);
+
+  if (st != HAL_OK) {
+    return st;
+  }
+  if (id != GYRO_CHIP_ID_VALUE) {
+      log_err("GYRO: CHIP_ID=0x%02X (expected 0x0F)", id);
+      return HAL_ERROR;
+  }
+
+  /* Soft reset (0xB6 → 0x14), then wait ≥30ms */
+  st = gyro_write_reg(hspi, GYRO_SOFTRESET, 0xB6);
+  if (st != HAL_OK) {
+    return st;
+  }
+  
+  HAL_Delay(GYRO_WAIT_MS);
+
+  /* Normal mode (write 0x00 to GYRO_LPM1 per §4.1.2) */
+  st = gyro_write_reg(hspi, GYRO_LPM1, 0x00);
+  if (st != HAL_OK) {
+    return st;
+  }
+  
+  HAL_Delay(GYRO_WAIT_MS);
+
+  /* Configuration setup with default fallbacks */
+  struct gyro_config valid = {
+    .rng = Gyro_Range_2000Dps,
+    .bw  = Gyro_532Hz_ODR_2000Hz,
+  };
+
+  if (conf) {
+    if (conf->rng >= Gyro_Range_2000Dps &&
+        conf->rng < Gyro_Range_Entries)
+    {
+      valid.rng = conf->rng;
+    }
+    if (conf->bw >= Gyro_532Hz_ODR_2000Hz &&
+        conf->bw <= Gyro_32Hz_ODR_100Hz)
+    {
+      valid.bw = conf->bw;
+    }
+  }
+
+  init_rng = valid.rng;
+
+  /* Set range */
+  st = gyro_write_reg(hspi, GYRO_RANGE, (uint8_t)valid.rng);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  /* Set bandwidth and ODR */
+  st = gyro_write_reg(hspi, GYRO_BANDWIDTH, (uint8_t)valid.bw);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  /* Set interrupt pin INT3 (PB0) to raise on new data */
+  st = gyro_write_reg(hspi, GYRO_INT_CONF, GYRO_INT_CONF_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  st = gyro_write_reg(hspi, GYRO_INT_MAP, GYRO_INT_MAP_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  return HAL_OK;
+}
