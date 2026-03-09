@@ -36,7 +36,7 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
   	baro_conf.iir_coef = BARO_IIR_COEF_15;
 	}
 
-	assert(init_baro(&baro_conf) == HAL_OK);
+	assert(baro_init(&hspi1, &baro_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
 	/* x - temp, y - pres, z - alt */
@@ -65,7 +65,7 @@ void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 		gyro_conf.bw = Gyro_47Hz_ODR_400Hz;
 	}
 
-	assert(init_gyro(&gyro_conf) == HAL_OK);
+	assert(gyro_init(&hspi1, &gyro_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
 	struct coords q = {0};
@@ -93,7 +93,7 @@ void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
 		accl_conf.mode = Normal_400Hz;
 	}
 
-	assert(init_accl(&accl_conf) == HAL_OK);
+	assert(accl_init(&hspi1, &accl_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
 	struct coords q = {0};

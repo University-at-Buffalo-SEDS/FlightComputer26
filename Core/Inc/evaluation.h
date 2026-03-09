@@ -195,6 +195,16 @@ extern const struct transition trans;
  */
 void evaluate_rocket_state(fu32 conf);
 
+#ifdef TELEMETRY_ENABLED
+
+/*
+ * Calls appropriate handler based on sender id.
+ * Invoked from the Telemetry thread.
+ */
+SedsResult on_fc_packet(const SedsPacketView *pkt, void *user);
+
+#endif // TELEMETRY_ENABLED
+
 /* ------ Public API ------ */
 
 

@@ -5,6 +5,7 @@
 #ifndef TESTING_H
 #define TESTING_H
 
+#include "platform.h"
 
 #define SENSOR_SYNC_STEPS 128
 

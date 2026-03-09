@@ -1,18 +1,9 @@
 // fixed_version.c
-#include "telemetry.h"
 
-#include "app_threadx.h" // should bring in tx_api.h; if not, include tx_api.h directly
+#include "platform.h"
+#include "evaluation.h"
 #include "can_bus.h"
-#ifdef TELEMETRY_ENABLED
-#include "sedsprintf.h"
-#endif
-#include "stm32h5xx_hal.h"
-
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include "main.h"
+#include "telemetry.h"
 
 /*
  * Wrapper-wide lock domain:
@@ -494,6 +485,12 @@ static SedsResult ensure_router_locked(void)
       {
           .endpoint = (uint32_t)SEDS_EP_SD_CARD,
           .packet_handler = on_sd_packet,
+          .serialized_handler = NULL,
+          .user = NULL,
+      },
+      {
+          .endpoint = (uint32_t)SEDS_EP_FLIGHT_CONTROLLER,
+          .packet_handler = on_fc_packet,
           .serialized_handler = NULL,
           .user = NULL,
       },
