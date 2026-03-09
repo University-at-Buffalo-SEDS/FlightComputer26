@@ -24,14 +24,14 @@
 
 /* ------ Bundled std headers used ------ */
 
-#include <stdio.h>
-#include <stddef.h>
-#include "stdarg.h"
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdatomic.h>
-#include <string.h>
-#include <math.h>
+#include <stdio.h>        // IWYU pragma: export
+#include <stddef.h>       // IWYU pragma: export
+#include <stdarg.h>       // IWYU pragma: export
+#include <stdint.h>       // IWYU pragma: export
+#include <stdbool.h>      // IWYU pragma: export
+#include <stdatomic.h>    // IWYU pragma: export
+#include <string.h>       // IWYU pragma: export
+#include <math.h>         // IWYU pragma: export
 
 /* ------ Bundled std headers used ------ */
 
@@ -102,8 +102,8 @@ enum seds_atomic_mo {
 
 /* ------ ARM fast math bundled library ------ */
 
-#include "dsp/fast_math_functions.h"
-#include "dsp/matrix_functions.h"
+#include "dsp/fast_math_functions.h"    // IWYU pragma: export
+#include "dsp/matrix_functions.h"       // IWYU pragma: export
 
 /* CMSIS matrix aliases for convenience */
 typedef arm_matrix_instance_f32 matrix;
@@ -145,7 +145,7 @@ typedef arm_matrix_instance_f32 matrix;
 /* Data memory barrier */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
-#include "cmsis_compiler.h"
+#include "cmsis_compiler.h"   // IWYU pragma: export
 
 #else
 #define __DMB() atomic_thread_fence(AcqRel)
@@ -166,9 +166,9 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* ------ ThreadX API includes ------ */
 
-#include "tx_api.h"
-#include "tx_port.h"
-#include "FC-Threads.h"
+#include "tx_api.h"           // IWYU pragma: export
+#include "tx_port.h"          // IWYU pragma: export
+#include "FC-Threads.h"       // IWYU pragma: export
 
 /* ------ ThreadX API includes ------ */
 
@@ -190,13 +190,13 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* ------ HAL Aliases ------ */
 
-#include "stm32h5xx.h"
-#include "stm32h5xx_hal.h"
-#include "stm32h5xx_hal_def.h"
-#include "stm32h5xx_hal_spi.h"
-#include "stm32h5xx_hal_gpio.h"
-#include "stm32h5xx_hal_dcache.h"
-#include "core_cm33.h"
+#include "stm32h5xx.h"                // IWYU pragma: export
+#include "stm32h5xx_hal.h"            // IWYU pragma: export
+#include "stm32h5xx_hal_def.h"        // IWYU pragma: export
+#include "stm32h5xx_hal_spi.h"        // IWYU pragma: export
+#include "stm32h5xx_hal_gpio.h"       // IWYU pragma: export
+#include "stm32h5xx_hal_dcache.h"     // IWYU pragma: export
+#include "core_cm33.h"                // IWYU pragma: export
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
@@ -252,9 +252,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* ------ Sensor drivers and data collection ------ */
 
-#include "barometer.h"
-#include "gyroscope.h"
-#include "accelerometer.h"
+#include "barometer.h"        // IWYU pragma: export
+#include "gyroscope.h"        // IWYU pragma: export
+#include "accelerometer.h"    // IWYU pragma: export
 
 struct serial coords { float x, y, z; };
 
@@ -355,8 +355,8 @@ static inline void restore_spi1_irq(void)
 
 #ifdef TELEMETRY_ENABLED
 
-#include <sedsprintf.h>
-#include "telemetry.h"
+#include <sedsprintf.h>         // IWYU pragma: export
+#include "telemetry.h"          // IWYU pragma: export
 
 extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
 extern void telemetry_init_lock(void);
@@ -421,8 +421,6 @@ static inline SedsResult request_ignition(void)
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
 
-#include <stdio.h>
-
 #define log_msg_sync(msg, size) printf("\n%s\n", (msg))
 
 #define log_msg log_msg_sync
@@ -485,8 +483,8 @@ static inline SedsResult request_ignition(void)
 
 #ifdef SD_AVAILABLE
 
-#include "sd_card.h"
-#include "fx_stm32_sd_driver.h"
+#include "sd_card.h"                  // IWYU pragma: export
+#include "fx_stm32_sd_driver.h"       // IWYU pragma: export
 
 #endif // SD_AVAILABLE
 
