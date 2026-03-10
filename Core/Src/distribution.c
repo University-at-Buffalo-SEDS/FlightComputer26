@@ -724,6 +724,7 @@ static inline void descent_cycle(fu32 conf)
     if (st == fc_mask(Sensor_Measm_Code))
     {
       descent_update(sh.dt);
+      st = CAN_EVALUATE;
     }
     else
     {
@@ -740,9 +741,15 @@ static inline void descent_cycle(fu32 conf)
   {
     distance_from_rail(&payload.d.gps);
     descent_update(sh.dt);
+    st = CAN_EVALUATE;
   }
 
 #endif // GPS_AVAILABLE
+
+  if (st == CAN_EVALUATE)
+  {
+    evaluate_rocket_state(conf);
+  }
 }
 
 /*

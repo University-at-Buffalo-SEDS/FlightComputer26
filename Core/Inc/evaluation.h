@@ -106,6 +106,8 @@
 
 #define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
 
+#define CAN_EVALUATE UINT_FAST32_MAX
+
 /* ------ Buffer/pool definitions ------ */
 
 
