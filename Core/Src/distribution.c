@@ -2,11 +2,13 @@
  * Distribution Task
  *
  * Serves as the Flight Computer coordination module.
+ * Distributes data across Kalman filters and generates
+ * sensor data reports for the Recovery task.
  * Provides telemetry handler for GND commands and GPS data.
  *
- * This task includes a packet handler that is comptime
- * subscribed to messages incoming to the FLIGHT_CONTROLLER
- * endpoint. This handler deposits messages into the Recovery
+ * This task includes a packet handler that is subscribed to
+ * messages incoming to the FLIGHT_CONTROLLER endpoint.
+ * This handler deposits messages into the Recovery
  * queue and receives GPS data from the telemetry router.
  *
  * Before entering the normal operation (flight) loop,
@@ -16,31 +18,26 @@
  * and to inform the Ground Station of any issues.
  *
  * The pilot loop is left and ignition is requested from the
- * Valve board upon receiving the 'ENTER_DIST_CYCLE' atomic
+ * Valve board upon receiving the 'Launch_Triggered' atomic
  * flag from the Evaluation Task, which sets this flag after
- * being (in turn) started by the Recovery Task, which resumes
- * after receiving the 'START' signal on its blocking queue,
- * which (in turn) is deposited there by the telemetry handler
+ * being in turn started by the Recovery Task, which resumes
+ * after receiving the 'Launch' signal on its blocking queue,
+ * which in turn is deposited there by the telemetry handler
  * (below). This allows for sequential and safe module
  * initialization and consent.
  *
  * When fetching a pack of data (barometer, gyroscope, and
  * accelerometer readings) from DMA buffers, it is not
- * guaranteed that all three readings will be ready at once.
- * The underlying DMA fetch function is thus called repetedly
- * from the main loop until it (the function) notifies the
- * caller (this task) that the buffer is ready and it can
- * proceed. This is made to simplify synchronization within
- * the Interrupt Service Routine, where ThreadX API, and
- * therefore its wait/wake service, is unavailable. When
- * using Descent KF, this task will inform DMA that it can
- * skip Accel and Gyro readings, but will yield indefinitely
- * if no GPS data is available, until it either becomes
- * available or Recovery task falls back to using Ascent KF.
+ * guaranteed that all three readings will be ready when
+ * required by the distribution task (although DMA task tries
+ * its best to start a transfer for the most likely needed sensor).
+ * The Distribution task will attempt to proceed with minimum
+ * available data. See KF function declarations in 'kalman.h'
+ * to see the required minimum for each stage of each filter,
+ * as well as logic below.
  *
- * The data is then passed for preliminary compensation
- * (provided by device drivers), and placed inside the
- * data evaluation buffer and telemetry (UART and SD) queues.
+ * The data is then passed for filtering and evaluation, and
+ * then placed inside the telemetry (UART and SD) queues.
  */
 
 #include "kalman.h"
@@ -267,8 +264,7 @@ validate_gps_relative(const struct coords *gps)
       !lon_within_launch_site(gps->y))
   {
     log_err(telid "GPS coords beyond launch site:"
-                  " LAT: %f, LON: %f",
-            gps->x, gps->y);
+                  " LAT: %f, LON: %f", gps->x, gps->y);
   }
 
   if (gps->z > MAX_SEA || gps->z < MIN_SEA)
@@ -513,6 +509,7 @@ validate_all(const struct measurement *buf, fu32 conf)
 
 /* ------ Sensor data sanity checks ------ */
 
+
 /* ------ Distribution Task ------ */
 
 /*
@@ -583,6 +580,7 @@ static inline void pre_launch(void)
     }
 
 #ifdef GPS_AVAILABLE
+
     if (conf & option(GPS_Available) &&
         fetch_gps_data(&payload.d.gps))
     {
@@ -593,17 +591,17 @@ static inline void pre_launch(void)
 
       /* As long as we are stationary, update launch coordinates
        * with newest available. */
-      memcpy(&rail, &payload.d.gps, sizeof(struct coords));
+      rail = payload.d.gps;
 
       if (counter != 0 &&
           (fabsf(rail.x - payload.d.gps.x) > GPS_RAIL_TOLER ||
            fabsf(rail.y - payload.d.gps.y) > GPS_RAIL_TOLER))
       {
         log_err(id "contraversial launch coords: "
-                   "LAT: %f, LON: %f",
-                rail.x, rail.y);
+                   "LAT: %f, LON: %f", rail.x, rail.y);
       }
     }
+
 #endif // GPS_AVAILABLE
 
     if (!(++counter & 31))
@@ -678,6 +676,9 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
   ascent_predict(sh.dt);
 
+  log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
+  log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+
   if (!fetch_baro(&payload.baro))
   {
     /* Run Predict in the meanwhile */
@@ -701,6 +702,8 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
     ascent_update(sh.dt);
     evaluate_rocket_state(conf);
   }
+
+  log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
 }
 
 /*
@@ -726,6 +729,8 @@ static inline void descent_cycle(fu32 conf)
     {
       tx_queue_send(&shared, &st, TX_NO_WAIT);
     }
+
+    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
   }
 
 #ifdef GPS_AVAILABLE
