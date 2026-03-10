@@ -32,7 +32,8 @@
 
 
 /* Number of iterations - 1 for quaternion matrix
- * renormalization. Set by Recovery task. */
+ * renormalization. Set by Recovery task.
+ */
 volatile fu8 renorm_step_mask = RENORM_STEP;
 
 
@@ -43,12 +44,15 @@ volatile fu8 renorm_step_mask = RENORM_STEP;
  */
 static inline constexpr float invsqrtf(float x)
 {
-  /* Brought right from Quake 3 Arena! */
+  /* Brought right from Quake 3 Arena!
+   */
   union bithack k = {.f = x};
   k.d = 0x5f3759df - (k.d >> 1);
 
-  /* Newton-Raphson alg */
-  for (fu8 i = 0; i < NR_ITERATIONS; ++i) {
+  /* Newton-Raphson alg
+   */
+  for (fu8 i = 0; i < NR_ITERATIONS; ++i)
+  {
     k.f *= 1.5f - 0.5f * x * k.f * k.f;
   }
 
@@ -97,12 +101,14 @@ void descent_initialize(void)
   memset(R, 0, sizeof R);
   memset(H, 0, sizeof H);
 
-  for (fu8 i = 0; i < DESC_STAT; ++i) {
+  for (fu8 i = 0; i < DESC_STAT; ++i)
+  {
     Q[i][i] = TOLERANCE;
     A[i][i] = 1.0f;
   }
 
-  for (fu8 i = 0; i < DESC_MEAS - 1; ++i) {
+  for (fu8 i = 0; i < DESC_MEAS - 1; ++i)
+  {
     H[i][i] = 1.0f;
     R[i][i] = 10.0f;
   }
@@ -117,10 +123,10 @@ void descent_initialize(void)
   obsrvance.numRows = obsrvance.numCols = DESC_MEAS;
 
   /* Disable interrupts from IMU */
-  __NVIC_DisableIRQ(Gyro_EXTI_1);
-  __NVIC_DisableIRQ(Gyro_EXTI_2);
-  __NVIC_DisableIRQ(Accl_EXTI_1);
-  __NVIC_DisableIRQ(Accl_EXTI_2);
+  irq_off(Gyro_EXTI_1);
+/*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
+  irq_off(Accl_EXTI_1);
+/*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
 
   timer_update(DescentKF);
   fetch_and(&config, ~option(Using_Ascent_KF), Rel);
@@ -168,7 +174,8 @@ void ascent_initialize(void)
   memset(R, 0, sizeof R);
   memset(H, 0, sizeof H);
 
-  for (fu8 k = 0; k < 3; ++k) {
+  for (fu8 k = 0; k < 3; ++k)
+  {
     Q[k][k] = 1e-4f;
     Q[k + 3][k + 3] = 1e-2f;
     Q[k + 6][k + 6] = 1e-2f;
@@ -179,7 +186,8 @@ void ascent_initialize(void)
     P[k + 13][k + 13] = 1e-2f;
   }
 
-  for (fu8 k = 9; k < 9 + 4; ++k) {
+  for (fu8 k = 9; k < 9 + 4; ++k)
+  {
     Q[k][k] = TOLERANCE * TOLERANCE;
     P[k][k] = TOLERANCE;
   }
@@ -198,11 +206,13 @@ void ascent_initialize(void)
   measm_cov.numCols = measm_cov.numRows = ASC_MEAS;
   obsrvance.numRows = obsrvance.numCols = ASC_MEAS;
 
-  /* This deduction is due Using_Ascent_KF being in DEFAULT_OPTIONS */
+  /* This deduction is due Using_Ascent_KF being in DEFAULT_OPTIONS
+   */
   if (!(load(&config, Acq) & option(Using_Ascent_KF)))
   {
     /* If it somehow happened that we initialize Ascent KF mid-flight,
-     * ask non-preemtive recovery to reinitialize IMU with interrupts. */
+     * ask non-preemtive recovery to reinitialize IMU with interrupts.
+     */
     enum message cmd = fc_mask(Enable_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
