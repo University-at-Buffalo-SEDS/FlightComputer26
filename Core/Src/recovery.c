@@ -150,17 +150,31 @@ initialize_sensors(enum sensor_mask sensor)
   {
     irq_off(Baro_EXTI);
   }
+  else
+  {
+    irq_on(Baro_EXTI);
+  }
 
   if (sensor & Shut_Gyro)
   {
     irq_off(Gyro_EXTI_1);
 /*  irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
   }
+  else
+  {
+    irq_on(Gyro_EXTI_1);
+/*  irq_on(Gyro_EXTI_2);   not used for IREC 2026 */
+  }
 
   if (sensor & Shut_Accl)
   {
     irq_off(Accl_EXTI_1);
 /*  irq_off(Accl_EXTI_2);   not used for IREC 2026 */
+  }
+  else
+  {
+    irq_on(Accl_EXTI_1);
+/*  irq_on(Accl_EXTI_2);   not used for IREC 2026 */
   }
   
   if (fails != 0)
