@@ -710,35 +710,34 @@ static inline void descent_cycle(fu32 conf)
 {
   fu32 st;
 
-  if (!fetch_baro(&payload.baro))
-  {
-    tx_thread_relinquish();
-    return;
-  }
+  sh.dt = fsec(timer_exchange(DescentKF));
 
-  st = validate_baro(&payload.baro, conf);
-  if (st != fc_mask(Sensor_Measm_Code))
+  descent_predict(sh.dt);
+
+  if (fetch_baro(&payload.baro))
   {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return;
+    st = validate_baro(&payload.baro, conf);
+
+    if (st == fc_mask(Sensor_Measm_Code))
+    {
+      descent_update(sh.dt);
+    }
+    else
+    {
+      tx_queue_send(&shared, &st, TX_NO_WAIT);
+    }
   }
 
 #ifdef GPS_AVAILABLE
-  if (conf & option(GPS_Available) &&
-      !fetch_gps_data(&payload.d.gps))
+
+  if ((conf & option(GPS_Available)) &&
+      fetch_gps_data(&payload.d.gps))
   {
-    tx_thread_relinquish();
-    return;
+    distance_from_rail(&payload.d.gps);
+    descent_update(sh.dt);
   }
 
-  distance_from_rail(&payload.d.gps);
-
 #endif // GPS_AVAILABLE
-
-
-  sh.dt = fsec(timer_exchange(DescentKF));
-
-  // call descent filter
 }
 
 /*

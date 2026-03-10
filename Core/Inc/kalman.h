@@ -84,9 +84,16 @@ union bithack {
 /* ------ Public API ------ */
 
 /*
- * Performs one iteration of the Descent filter.
+ * Predict step of the Descent filter.
+ * Required sensor readings: None.
  */
-void descent_step(const float dt);
+void descent_predict(const float dt);
+
+/*
+ * Update step of the Descent filter.
+ * Required sensor readings: Barometer or GPS.
+ */
+void descent_update(const float dt);
 
 /*
  * Sets descent filter values in shared buffers.
@@ -95,20 +102,22 @@ void descent_step(const float dt);
 void descent_initialize(void);
 
 /*
- * Sets ascent filter values in shared buffers.
- * Called during boot by Evaluation task.
- */
-void ascent_initialize(void);
-
-/*
- * Transforms input vector into next-sample prediction.
+ * Predict step of the Ascent filter.
+ * Required sensor readings: IMU.
  */
 void ascent_predict(const float dt);
 
 /*
- * Update portion of the Ascent KF.
+ * Update step of the Ascent filter.
+ * Required sensor readings: Barometer.
  */
 void ascent_update(const float dt);
+
+/*
+ * Sets ascent filter values in shared buffers.
+ * Called during boot by Evaluation task.
+ */
+void ascent_initialize(void);
 
 /* ------ Public API ------ */
 

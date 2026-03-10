@@ -127,9 +127,10 @@ void descent_initialize(void)
 }
 
 /*
- * Performs one iteration of the Descent filter.
+ * Predict step of the Descent filter.
+ * Required sensor readings: None.
  */
-void descent_step(const float dt)
+void descent_predict(const float dt)
 {
   matrix state = {DESC_STAT, 1, (float *)&sv[sh.idx]};
   matrix measm = {DESC_MEAS, 1, (float *)&payload.d};
@@ -137,6 +138,15 @@ void descent_step(const float dt)
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
 	// TODO
+}
+
+/*
+ * Update step of the Descent filter.
+ * Required sensor readings: Barometer or GPS.
+ */
+void descent_update(const float dt)
+{
+  // TODO
 }
 
 /* ------ Descent Kalman filter ------ */
@@ -202,7 +212,8 @@ void ascent_initialize(void)
 }
 
 /*
- * Transforms input vector into next-sample prediction.
+ * Predict step of the Ascent filter.
+ * Required sensor readings: IMU.
  */
 void ascent_predict(const float dt)
 {
@@ -300,11 +311,12 @@ ascent_measurement(const struct state_vec *restrict vec,
 }
 
 /*
- * Update portion of the Ascent KF.
+ * Update step of the Ascent filter.
+ * Required sensor readings: Barometer.
  */
 void ascent_update(const float dt)
 {
-  return;
+  // TODO
 }
 
 /* ------ Ascent Kalman filter ------ */
