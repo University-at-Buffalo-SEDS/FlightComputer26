@@ -711,7 +711,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
  */
 static inline void descent_cycle(fu32 conf)
 {
-  fu32 st;
+  fu32 st = 0;
 
   sh.dt = fsec(timer_exchange(DescentKF));
 
