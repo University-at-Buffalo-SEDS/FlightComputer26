@@ -327,6 +327,20 @@ static inline void process_action(enum message cmd)
     initialize_sensors(Shut_Gyro | Shut_Accl);
     return;
 
+  case Advance_State:
+    if (flight + 1 < Flight_States)
+    {
+      ++flight;
+    }
+    break;
+
+  case Rewind_State:
+    if (flight - 1 >= Suspended)
+    {
+      --flight;
+    }
+    break;
+
   default:
     break;
   }

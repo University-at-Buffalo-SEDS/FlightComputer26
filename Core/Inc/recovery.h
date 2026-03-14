@@ -129,6 +129,8 @@ enum message : fu32 {
   Reinit_Barometer = Actionable_Decrees + 8,
   Reinit_IMU       = Actionable_Decrees + 9,
   Disable_IMU      = Actionable_Decrees + 10,
+  Advance_State    = Actionable_Decrees + 11,
+  Rewind_State     = Actionable_Decrees + 12,
 
   GPS_Data_Code = (1u << 18),
 

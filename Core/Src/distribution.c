@@ -94,6 +94,8 @@ enum remote_cmd_compat : uint8_t
 
   /* HITL */
   Compat_Disable_IMU,
+  Compat_Advance_State,
+  Compat_Rewind_State,
 
   /* Production */
   Compat_Monitor_Altitude,
@@ -110,16 +112,16 @@ enum remote_cmd_compat : uint8_t
   Revoke_Validate_Measms,
 
   /* HITL */
-  Compat_Abort_After_15,
   Compat_Abort_After_40,
+  Compat_Abort_After_100,
 
   /* Production */
-  Compat_Abort_After_70,
+  Compat_Abort_After_250,
 
   /* HITL */
-  Compat_Reinit_After_12,
-  Compat_Reinit_After_26,
-  Compat_Reinit_After_44,
+  Compat_Reinit_After_15,
+  Compat_Reinit_After_30,
+  Compat_Reinit_After_50,
 
   Compat_Messages
 };
@@ -136,6 +138,8 @@ static const enum message extmap[Compat_Messages] = {
     Reinit_Barometer,
     Reinit_IMU,
     Disable_IMU,
+    Advance_State,
+    Rewind_State,
 
     Monitor_Altitude,
     revoke(Monitor_Altitude),
