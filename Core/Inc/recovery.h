@@ -127,7 +127,7 @@ enum message : fu32 {
   Evaluation_Focus = Actionable_Decrees + 6,
   Evaluation_Abort = Actionable_Decrees + 7,
   Reinit_Barometer = Actionable_Decrees + 8,
-  Enable_IMU       = Actionable_Decrees + 9,
+  Reinit_IMU       = Actionable_Decrees + 9,
   Disable_IMU      = Actionable_Decrees + 10,
 
   GPS_Data_Code = (1u << 18),

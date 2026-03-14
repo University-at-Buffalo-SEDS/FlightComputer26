@@ -77,33 +77,46 @@ static struct coords rail = {0};
 
 enum remote_cmd_compat : uint8_t
 {
-
-  /* Matches 'Actionable_Decrees' */
+  /* Production */
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,
   Compat_Reinit_Sensors,
   Compat_Launch_Signal,
+
+  /* HITL */
   Compat_Evaluation_Relax,
   Compat_Evaluation_Focus,
   Compat_Evaluation_Abort,
+
+  /* Production */
   Compat_Reinit_Barometer,
-  Compat_Enable_IMU,
+  Compat_Reinit_IMU,
+
+  /* HITL */
   Compat_Disable_IMU,
 
-  /* Excludes internal config options */
+  /* Production */
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,
+
+  /* HITL */
   Compat_Consecutive_Samples,
   Revoke_Consecutive_Samples,
   Compat_Reset_Failures,
   Revoke_Reset_Failures,
+
+  /* Production */
   Compat_Validate_Measms,
   Revoke_Validate_Measms,
 
+  /* HITL */
   Compat_Abort_After_15,
   Compat_Abort_After_40,
+
+  /* Production */
   Compat_Abort_After_70,
 
+  /* HITL */
   Compat_Reinit_After_12,
   Compat_Reinit_After_26,
   Compat_Reinit_After_44,
@@ -121,7 +134,7 @@ static const enum message extmap[Compat_Messages] = {
     Evaluation_Focus,
     Evaluation_Abort,
     Reinit_Barometer,
-    Enable_IMU,
+    Reinit_IMU,
     Disable_IMU,
 
     Monitor_Altitude,

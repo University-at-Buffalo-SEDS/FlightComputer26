@@ -319,7 +319,7 @@ static inline void process_action(enum message cmd)
     barometer_fallback();
     return;
 
-  case Enable_IMU:
+  case Reinit_IMU:
     initialize_sensors(Init_Gyro | Init_Accl);
     return;
 
