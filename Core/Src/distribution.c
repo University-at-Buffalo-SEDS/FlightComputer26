@@ -146,12 +146,12 @@ static const enum message extmap[Compat_Messages] = {
     Validate_Measms,
     revoke(Validate_Measms),
 
-    Abort_After_15,
     Abort_After_40,
-    Abort_After_70,
-    Reinit_After_12,
-    Reinit_After_26,
-    Reinit_After_44,
+    Abort_After_100,
+    Abort_After_250,
+    Reinit_After_15,
+    Reinit_After_30,
+    Reinit_After_50,
 };
 
 #define MIN_CMD_SIZE 1

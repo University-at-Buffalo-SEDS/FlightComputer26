@@ -163,15 +163,15 @@ enum message : fu32 {
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 27),
 
-  Abort_After_15 = Abortion_Thresholds + 15,
-  Abort_After_40 = Abortion_Thresholds + 40,
-  Abort_After_70 = Abortion_Thresholds + 70,
+  Abort_After_40  = Abortion_Thresholds + 40,
+  Abort_After_100 = Abortion_Thresholds + 100,
+  Abort_After_250 = Abortion_Thresholds + 250,
 
   Reinit_Thresholds = Runtime_Configuration | (1u << 26),
 
-  Reinit_After_12 = Reinit_Thresholds + 12,
-  Reinit_After_26 = Reinit_Thresholds + 26,
-  Reinit_After_44 = Reinit_Thresholds + 44,
+  Reinit_After_15 = Reinit_Thresholds + 15,
+  Reinit_After_30 = Reinit_Thresholds + 30,
+  Reinit_After_50 = Reinit_Thresholds + 50,
 
   /* ... */
 
