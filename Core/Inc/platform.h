@@ -224,7 +224,7 @@ extern DCACHE_HandleTypeDef hdcache1;
   do {                                                                  \
     HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET);               \
     timer_update(AssertREEF);                                           \
-    fetch_or(conf, option(REEF_Asserted), Rel);                         \
+    fetch_or(conf, option(Parachute_Expanded | REEF_Asserted), Rel);    \
   } while (0)
 
 /* Data cache calls */
