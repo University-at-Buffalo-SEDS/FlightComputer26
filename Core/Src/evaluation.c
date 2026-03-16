@@ -142,7 +142,8 @@ static inline void evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (sv[sh.idx].p.z <= REEF_TARGET_ALT)
+  if (sv[sh.idx].p.z <= REEF_TARGET_ALT &&
+      !(mode & option(Parachute_Expanded)))
   {
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
@@ -161,9 +162,7 @@ static inline void evaluate_altitude(fu32 mode)
       flight = Descent;
       log_vigilant(sv[sh.idx].p.z);
 
-      if (load(&config, Acq) & option(Using_Ascent_KF)) {
-        descent_initialize();
-      }
+      descent_initialize();
 
       tx_thread_sleep(URGENT_COUPLE_DELAY_MS);
       reef_high(&config);
@@ -177,16 +176,14 @@ static inline void evaluate_altitude(fu32 mode)
     /* Confirm we are falling before firing CO2. */
     fetch_or(&config, option(Confirm_Altitude), Rlx);
   }
-  else
+  else if (!(mode & option(Parachute_Deployed)))
   {
     co2_high(&config);
-
-    if (load(&config, Acq) & option(Using_Ascent_KF)) {
-      descent_initialize();
-    }
-
+    
     flight = Descent;
     log_vigilant(sv[sh.idx].p.z);
+    
+    descent_initialize();
   }
 }
 
