@@ -193,6 +193,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 	(void) hspi; /* We only set up SPI1 */
 
 	gpio_cs_high(select.next);
+  invalidate_dcache_addr_int(rx, sizeof rx);
   select.valid = 1;
 	tx_thread_wait_abort(&dma_task);
 }
