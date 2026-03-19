@@ -75,9 +75,15 @@ static inline void lock(enum sensor k)
    * release the lock unless we give control back to it.
    * Strong LL/SC semantics to avoid spurious yield.
    */
-  while (cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
+  while (!cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
   {
-    // FIXME: block on predicate instead of just moving to the end of runq?
+    /* This is a strong mauvais on general-case MPMC systems,
+     * but in our case:
+     * 1. There is only one contender task,
+     * 2. The contender task is round-robin, FIFO scheduled,
+     * 3. Critical sections are very short.
+     * 4. Blocking on ThreadX predicates (mutex, event flags),
+     *    is more expensive scheduler-wise. */
     tx_thread_relinquish();
   }
 }
