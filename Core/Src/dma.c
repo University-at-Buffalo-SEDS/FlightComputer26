@@ -55,10 +55,6 @@ static struct dma_flags flags = {0, 0};
  * Stores relative time when RxCplt finishes transfer. */
 static atomic_uint_fast32_t rxts[Sensors] = {0};
 
-/* Stores time, in milliseconds, that ISR took to execute.
- * Updated inside ISR, reported inside thread context. */
-static atomic_uint_fast32_t isr_dt = 0;
-
 #endif // DMA_BENCHMARK
 
 /* ------ Static storage ------ */
