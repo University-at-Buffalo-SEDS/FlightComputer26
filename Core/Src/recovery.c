@@ -520,14 +520,23 @@ static void fc_timer_routine(ULONG timer_id)
     config |= option(Reset_Failures);
     failures = 0;
 
+    if (config & option(In_Aborted_State))
+    {
+      to_abort = TO_ABORT * 10;
+
+      enum message cmd = fc_mask(Launch_Signal);
+      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    }
+
 #else /* FOR TESTS ONLY */
     /* Auto "launch" on first timeout */
     static fu8 test_launched = 0;
 
     if (!test_launched)
     {
-      tx_thread_resume(&evaluation_task);
       test_launched = 1;
+      enum message cmd = fc_mask(Launch_Signal);
+      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
 
 #endif // TELEMETRY_ENABLED
