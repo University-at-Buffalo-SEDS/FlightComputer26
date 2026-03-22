@@ -213,7 +213,7 @@ void ascent_initialize(void)
     /* If it somehow happened that we initialize Ascent KF mid-flight,
      * ask non-preemtive recovery to reinitialize IMU with interrupts.
      */
-    enum message cmd = fc_mask(Enable_IMU);
+    enum message cmd = fc_mask(Reinit_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
 
