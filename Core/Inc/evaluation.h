@@ -82,7 +82,7 @@
 /* ------ Telemetry at state transitions ------ */
 
 #define FLT_REP_PREC 8
-#define MAX_MSG_SIZE 40
+#define MAX_MSG_SIZE 42
 
 #define URGENT_COUPLE_DELAY_MS 500
 
@@ -184,12 +184,29 @@ extern struct measurement payload;
 extern struct state_vec sv[];
 extern struct sv_helper sh;
 extern fu32 sv_size_bytes;
-extern const struct transition trans;
 
 /* ------ Exported globals ------ */
 
 
 /* ------ Public API ------ */
+
+extern const char *trans[];
+
+/*
+ * Concatenates transition message with desired metric,
+ * and logs transition report with given size to match
+ * the telemetry API.
+ */
+static inline void log_transition(const char *task, float metric)
+{
+  int rep_size = 0;
+  char buf[MAX_REPORT_SIZE];
+  
+  rep_size = snprintf(buf, sizeof(task) + sizeof(trans[flight]) + FLT_REP_PREC + 1,
+                         "%s%s %.*g\n", task, trans[flight], FLT_REP_PREC, metric);
+
+  log_msg(buf, rep_size);
+}
 
 /*
  * Simple finite-state machine for state transition.

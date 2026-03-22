@@ -90,29 +90,19 @@ static struct accl_config accl_conf = {
     .rng = Accl_Range_24g,
 };
 
+static const struct description confmap[] = {
+  { Monitor_Altitude,    "vigilant-mode" },
+  { Consecutive_Samples, "consectuive-samples" },
+  { Eval_Focus_Flag,     "eval-focus" },
+  { Eval_Abort_Flag,     "eval-abort" },
+  { Reset_Failures,      "reset-failures" },
+  { Validate_Measms,     "validate-measms" },
+};
+
 /* ------ Global and static storage ------ */
 
 
 /* ------ Recovery logic ------ */
-
-/*
- * Concatenates transition message with desired metric,
- * and logs transition report with given size to match
- * the telemetry API. Includes recovery mark ( R ).
- */
-static inline void log_recovery(float metric)
-{
-  int rep_size = sizeof(id) - 1;
-  char buf[MAX_REPORT_SIZE] = id;
-  
-  rep_size += snprintf(buf + rep_size,
-                       trans.size[flight] + FLT_REP_PREC + 4,
-                       "R %s %.*g\n",
-                       trans.message[flight],
-                       FLT_REP_PREC, metric);
-
-  log_msg(buf, rep_size);
-}
 
 /*
  * (Re)initializes indicated sensor(s). Disables
@@ -247,7 +237,7 @@ static inline void process_action(enum message cmd)
       co2_high(&config);
 
       flight = Descent;
-      log_recovery(sv[sh.idx].p.z);
+      log_transition(id, sv[sh.idx].p.z);
 
       if (config & option(Using_Ascent_KF)) {
         descent_initialize();
@@ -260,11 +250,11 @@ static inline void process_action(enum message cmd)
       reef_high(&config);
 
       flight = Reefing;
-      log_recovery(sv[sh.idx].p.z);
+      log_transition(id, sv[sh.idx].p.z);
     }
     else
     {
-      log_err(id "rejected REEF before PYRO");
+      log_err(id "rejected REEF before CO2");
     }
     return;
 
@@ -273,7 +263,12 @@ static inline void process_action(enum message cmd)
     return;
 
   case Launch_Signal:
-    if (gps_delay_count || gps_malform_count)
+    if (config & option(In_Aborted_State))
+    {
+      config &= ~option(In_Aborted_State);
+      tx_thread_resume(&distribution_task);
+    }
+    else if (gps_delay_count || gps_malform_count)
     {
       log_err(id "GPS: %u delayed and %u malformed "
                  "during pre-launch. Counters are reset.",
@@ -281,12 +276,6 @@ static inline void process_action(enum message cmd)
 
       gps_delay_count = 0;
       gps_malform_count = 0;
-    }
-
-    if (config & option(In_Aborted_State))
-    {
-      tx_thread_resume(&distribution_task);
-      config &= ~option(In_Aborted_State);
     }
 
     /* Start Evaluation and begin rocket launch chain. */
@@ -347,31 +336,70 @@ static inline void process_action(enum message cmd)
 }
 
 /*
+ * Constant-folded mask of all possible user options.
+ * Allows to extend enum message without modifying code.
+ */
+static inline constexpr enum message user_options()
+{
+  enum message options = 0;
+
+  for (fu32 k = 1; k < option(User_Option_Bound); k *= 2)
+  {
+    options |= k;
+  }
+
+  return options;
+}
+
+/*
+ * Updates global configuration and lists all currently
+ * set options.
+ */
+static inline void update_config(enum message incoming)
+{
+  const enum message valid = user_options();
+  const fu16 amount = popcount(valid);
+
+  if ((incoming & valid) == 0 || (incoming & ~valid) != 0 ||
+      (incoming & (incoming - 1)) != 0)
+  {
+    log_err(id "option ill-formed: %u", (unsigned)incoming);
+    return;
+  }
+
+  config |= incoming;
+
+  int rep_size = sizeof(id) + 9 - 1;
+  char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
+
+  for (fu16 k = 0; k < namecount(confmap) && k < amount; ++k)
+  {
+    if ((config & confmap[k].val) == option(confmap[k].val))
+    {
+      rep_size += snprintf(buf + rep_size, sizeof confmap[k].name,
+                                           "%s ", confmap[k].name);
+    }
+  }
+
+  log_msg(buf, rep_size);
+}
+
+/*
  * Applies or revokes passed runtime configuration option.
  */
 static inline void process_config(enum message code)
 {
   if (code & Abortion_Thresholds)
   {
-    to_abort = code & ~Abortion_Thresholds;
+    to_abort = threshold(code & ~Abortion_Thresholds);
   }
   else if (code & Reinit_Thresholds)
   {
-    to_reinit = code & ~Reinit_Thresholds;
-  }
-  else if (code & Revoke_Option)
-  {
-    config &= ~(code & ~Revoke_Option);
-  }
-  /* If nothing else matched, must have exactly 1 bit set
-   * (i.e., a power of 2) to be a valid config option. */
-  else if (!(code & (code - 1)))
-  {
-    config |= code;
+    to_reinit = threshold(code & ~Reinit_Thresholds);
   }
   else
   {
-    log_err(id "invalid config option: %u", (unsigned)code);
+    update_config(option(code));
   }
 }
 
@@ -383,7 +411,7 @@ static inline void process_report(enum message code)
   if (code != Sensor_Measm_Code)
   {
     ++failures;
-    log_err(id "dirty data report (%u)", (unsigned)code);
+    log_err(id "dirty data report: %u", (unsigned)code);
 
     if (failures >= to_abort)
     {
@@ -413,13 +441,6 @@ static inline void process_gps_code(enum message code)
     if (config & option(Launch_Triggered))
     {
       log_err(id "delayed GPS packet (%u)", gps_delay_count);
-      return;
-    }
-
-    if (gps_delay_count >= MAX_GPS_DELAYS)
-    {
-      barometer_fallback();
-      return;
     }
     break;
 
@@ -429,18 +450,16 @@ static inline void process_gps_code(enum message code)
     if (config & option(Launch_Triggered))
     {
       log_err(id "malformed GPS packet (%u)", gps_malform_count);
-      return;
-    }
-
-    if (gps_malform_count >= GPS_MAX_MALFORMED)
-    {
-      barometer_fallback();
-      return;
     }
     break;
 
-  default:
-    break;
+  default: return;
+  }
+
+  if (gps_delay_count >= MAX_GPS_DELAYS ||
+      gps_malform_count >= GPS_MAX_MALFORMED)
+  {
+    barometer_fallback();
   }
 }
 
@@ -449,30 +468,41 @@ static inline void process_gps_code(enum message code)
  */
 static inline void decode_message(enum message msg)
 {
+  if (msg & FlightComputer_Mask)
+  {
+    msg = fc_unmask(msg);
+
+    if (msg < Spurious_Confirmations)
+    {
+      return process_report(msg);
+    }
+    else if (msg & GPS_Data_Code)
+    {
+      return process_gps_code(msg);
+    }
+    else if (msg & Spurious_Confirmations)
+    {
+      msg &= ~Spurious_Confirmations;
+      log_err(id "unconfirmed transition: %u", (unsigned)msg);
+      return;
+    }
+  }
+
   if (msg & GroundStation_Heartbeat)
   {
     timer_update(HeartbeatGND);
   }
-  else if (msg & Runtime_Configuration)
-  {
-    process_config(option(fc_unmask(msg)));
-  }
-  else if (msg & GPS_Data_Code)
-  {
-    process_gps_code(fc_unmask(msg));
-  }
   else if (msg & Actionable_Decrees)
   {
-    process_action(fc_unmask(msg));
+    process_action(msg);
   }
-  else if (msg & Spurious_Confirmations)
+  else if (msg & Runtime_Configuration)
   {
-    msg &= ~(FC_Identifier | Spurious_Confirmations);
-    log_err(id "unconfirmed transition: %u", (unsigned)msg);
+    process_config(msg);
   }
-  else if (fc_unmask(msg))
+  else /* Didn't match anything */
   {
-    process_report(fc_unmask(msg));
+    log_err(id "you need to push up %u times", (unsigned)msg);
   }
 }
 

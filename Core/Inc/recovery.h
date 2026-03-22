@@ -22,6 +22,8 @@ extern atomic_uint_fast32_t config;
 #define GPS_TIME_DRIFT_MS 40
 #define GPS_MAX_MALFORMED 15
 
+#define MAX_SERVICE_THRESHOLD 0xFFu
+
 /* ------ Thresholds for data reports  ------ */
 
 
@@ -48,7 +50,8 @@ enum sensor_mask : fu8 {
     for (; k < MAX_REINIT_ATTEMPTS ||     \
            (fn) != HAL_OK; ++k)           \
            ;                              \
-    if (k >= MAX_REINIT_ATTEMPTS) {       \
+    if (k >= MAX_REINIT_ATTEMPTS)         \
+    {                                     \
       (ctr) += (sens);                    \
     }                                     \
   } while (0)
@@ -109,6 +112,8 @@ enum message : fu32 {
   Bad_Accel_Y    = (1u << 6),
   Bad_Accel_Z    = (1u << 7),
 
+  /* Range reserved for possibly more sensors */
+
   Spurious_Confirmations = (1u << 16),
 
   Not_Launch  = Spurious_Confirmations + 1,
@@ -134,54 +139,64 @@ enum message : fu32 {
 
   GPS_Data_Code = (1u << 18),
 
-  Bad_Lattitude  = GPS_Data_Code | (1u << 1),
-  Bad_Longtitude = GPS_Data_Code | (1u << 2),
-  Bad_Sea_Level  = GPS_Data_Code | (1u << 3),
-  GPS_Delayed    = GPS_Data_Code | (1u << 4),
-  GPS_Malformed  = GPS_Data_Code | (1u << 5),
+  Bad_Lattitude  = GPS_Data_Code | 1u,
+  Bad_Longtitude = GPS_Data_Code | (1u << 1),
+  Bad_Sea_Level  = GPS_Data_Code | (1u << 2),
+  GPS_Delayed    = GPS_Data_Code | (1u << 3),
+  GPS_Malformed  = GPS_Data_Code | (1u << 4),
 
-  /* ... */
-
+  /* This is the only type of FC message that is stored
+   * in global config. Other types are consumed immediately. */
   Runtime_Configuration = (1u << 29),
 
+  /* User flags */
   Monitor_Altitude    = Runtime_Configuration | 1u,
-  GPS_Available       = Runtime_Configuration | (1u << 1),
-  Consecutive_Samples = Runtime_Configuration | (1u << 2),
-  Parachute_Deployed  = Runtime_Configuration | (1u << 3),
-  Parachute_Expanded  = Runtime_Configuration | (1u << 4),
-  Init_Failure_Record = Runtime_Configuration | (1u << 5),
-  Confirm_Altitude    = Runtime_Configuration | (1u << 6),
-  Eval_Focus_Flag     = Runtime_Configuration | (1u << 7),
-  Eval_Abort_Flag     = Runtime_Configuration | (1u << 8),
-  Reset_Failures      = Runtime_Configuration | (1u << 9),
-  Launch_Triggered    = Runtime_Configuration | (1u << 10),
-  Validate_Measms     = Runtime_Configuration | (1u << 11),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 12),
-  In_Aborted_State    = Runtime_Configuration | (1u << 13),
-  Lost_GroundStation  = Runtime_Configuration | (1u << 14),
-  CO2_Asserted        = Runtime_Configuration | (1u << 15),
-  REEF_Asserted       = Runtime_Configuration | (1u << 16),
+  Consecutive_Samples = Runtime_Configuration | (1u << 1),
+  Eval_Focus_Flag     = Runtime_Configuration | (1u << 2),
+  Eval_Abort_Flag     = Runtime_Configuration | (1u << 3),
+  Reset_Failures      = Runtime_Configuration | (1u << 4),
+  Validate_Measms     = Runtime_Configuration | (1u << 5),
 
-  Revoke_Option = Runtime_Configuration | (1u << 20),
+  User_Option_Bound   = Runtime_Configuration | (1u << 6), 
 
-  Abortion_Thresholds = Runtime_Configuration | (1u << 27),
+  /* Internal flags */
+  Launch_Triggered    = Runtime_Configuration | (1u << 7),
+  Parachute_Deployed  = Runtime_Configuration | (1u << 8),
+  Parachute_Expanded  = Runtime_Configuration | (1u << 9),
+  CO2_Asserted        = Runtime_Configuration | (1u << 10),
+  REEF_Asserted       = Runtime_Configuration | (1u << 11),
+  GPS_Available       = Runtime_Configuration | (1u << 12),
+  Lost_GroundStation  = Runtime_Configuration | (1u << 13),
+  Init_Failure_Record = Runtime_Configuration | (1u << 14),
+  In_Aborted_State    = Runtime_Configuration | (1u << 15),
+  Confirm_Altitude    = Runtime_Configuration | (1u << 16),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 17),
+
+  Abortion_Thresholds = Runtime_Configuration | (1u << 20),
 
   Abort_After_40  = Abortion_Thresholds + 40,
   Abort_After_100 = Abortion_Thresholds + 100,
   Abort_After_250 = Abortion_Thresholds + 250,
 
-  Reinit_Thresholds = Runtime_Configuration | (1u << 26),
+  Reinit_Thresholds = Runtime_Configuration | (1u << 21),
 
   Reinit_After_15 = Reinit_Thresholds + 15,
   Reinit_After_30 = Reinit_Thresholds + 30,
   Reinit_After_50 = Reinit_Thresholds + 50,
 
+  Revoke_Option = Runtime_Configuration | (1u << 28),
+
   /* ... */
 
   GroundStation_Heartbeat = (1u << 30),
-  FC_Identifier = (1u << 31),
+  FlightComputer_Mask = (1u << 31),
 
-  Invalid_Message = UINT32_MAX
+  Invalid_Message = UINT_FAST32_MAX
+};
+
+struct description {
+  enum message val;
+  const char *name;
 };
 
 /* ------ Universal Flight Computer message ------ */
@@ -193,14 +208,21 @@ enum message : fu32 {
 #define mlen(len) (len + sizeof(id))
 
 /* Endpoint identifier: FC */
-#define fc_mask(message)    ((message) | FC_Identifier)
-#define fc_unmask(message)  ((message) & ~FC_Identifier)
+#define fc_mask(message)    ((message) | FlightComputer_Mask)
+#define fc_unmask(message)  ((message) & ~FlightComputer_Mask)
 
 /* When sending commands TO decode_message() */
 #define revoke(opt) ((opt) | Revoke_Option)
 
 /* When manipulating config OUTSIDE decode_message() */
 #define option(opt) ((opt) & ~Runtime_Configuration)
+
+/* To filter out inadequate thresholds */
+#define threshold(raw) ((raw) & MAX_SERVICE_THRESHOLD)
+
+#define namecount(arr) (sizeof(arr) / sizeof(struct description))
+
+#define MAX_CONFIG_REPORT_SIZE 128
 
 /* ------ Helper macros ------ */
 
@@ -209,7 +231,7 @@ enum message : fu32 {
 
 /* Run time config options applied on boot.
  * Users are welcome to edit the defaults here. */
-#define DEFAULT_OPTIONS ( (fu32) (0                   \
+#define DEFAULT_OPTIONS ( (enum message) (0           \
                           | Consecutive_Samples       \
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \

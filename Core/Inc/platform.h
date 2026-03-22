@@ -142,6 +142,8 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define task_loop(exit_predicate) while (!(exit_predicate))
 
+#define popcount(mask) (fu16)__builtin_popcount((unsigned)(mask))
+
 /* Data memory barrier */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
