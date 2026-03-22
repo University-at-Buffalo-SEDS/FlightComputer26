@@ -204,7 +204,7 @@ struct description {
 
 /* ------ Helper macros ------ */
 
-/* Length of task identifier */
+/* Length of task identifier (for sync logging) */
 #define mlen(len) (len + sizeof(id))
 
 /* Endpoint identifier: FC */

@@ -82,7 +82,7 @@
 /* ------ Telemetry at state transitions ------ */
 
 #define FLT_REP_PREC 8
-#define MAX_MSG_SIZE 42
+#define MAX_MSG_SIZE 56
 
 #define URGENT_COUPLE_DELAY_MS 500
 
@@ -199,13 +199,16 @@ extern const char *trans[];
  */
 static inline void log_transition(const char *task, float metric)
 {
-  int rep_size = 0;
   char buf[MAX_REPORT_SIZE];
   
-  rep_size = snprintf(buf, sizeof(task) + sizeof(trans[flight]) + FLT_REP_PREC + 1,
-                         "%s%s %.*g\n", task, trans[flight], FLT_REP_PREC, metric);
+  snprintf(buf,
+           sizeof(task) + sizeof(trans[flight]) + FLT_REP_PREC + 4,
+           "%s%s %.*g\n",
+           task, trans[flight],
+           FLT_REP_PREC,
+           metric);
 
-  log_msg(buf, rep_size);
+  log_msg(buf);
 }
 
 /*

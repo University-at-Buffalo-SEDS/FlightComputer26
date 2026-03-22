@@ -367,9 +367,9 @@ extern void telemetry_init_lock(void);
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
 
-#define log_msg(msg, size)                                  \
-  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
-                             (msg), (size), sizeof(char))
+#define log_msg(msg)                                        \
+  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,   \
+                                    (msg))
 
 #define log_measurement(type, buf)                          \
   log_telemetry_asynchronous((type), (buf), 3, sizeof(float));

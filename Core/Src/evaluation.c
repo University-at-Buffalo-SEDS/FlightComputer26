@@ -291,7 +291,7 @@ static inline void detect_landed(fu32 mode)
     if (++sampl >= MIN_SAMP_LANDED)
     {
       flight = Landed;
-      log_msg(trans[Landed], sizeof trans[Landed]);
+      log_msg(trans[Landed]);
 
       /* Needed to avoid locks on landing coordinates reporting. */
       enum message cmd = fc_mask(Evaluation_Focus);
@@ -396,7 +396,7 @@ enter_flight_state(fu32 conf)
   }
   else
   {
-    log_msg(id "received launch signal", mlen(22));
+    log_msg(id "received launch signal");
     flight = Idle;
 
     ascent_initialize();
@@ -414,7 +414,7 @@ void evaluation_entry(ULONG input)
 {
   (void)input;
 
-  log_msg(id "started", mlen(7));
+  log_msg(id "started");
 
   UINT st;
 

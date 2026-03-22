@@ -641,7 +641,7 @@ static inline void pre_launch(void)
   /* Request Valve board to ignite the engine. */
   task_loop(request_ignition() == SEDS_OK);
 
-  log_msg(id "ignition requested, in flight mode", mlen(34));
+  log_msg(id "ignition requested, in flight mode");
 }
 
 /*
@@ -779,7 +779,7 @@ void distribution_entry(ULONG input)
 {
   (void)input;
 
-  log_msg(id "started", mlen(7));
+  log_msg(id "started");
 
   fu32 conf = load(&config, Acq);
 

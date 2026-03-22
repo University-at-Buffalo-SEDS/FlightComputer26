@@ -197,9 +197,7 @@ static inline void auto_abort(void)
   }
   else
   {
-    log_msg(id "aborted! Expecting commands "
-               "or launch signal.",
-            mlen(45));
+    log_msg(id "aborted! Expecting commands or launch signal.");
 
     config |= option(In_Aborted_State);
   }
@@ -221,7 +219,7 @@ static inline void barometer_fallback(void)
   if (!(config & option(GPS_Available)))
   {
     config |= option(Monitor_Altitude);
-    log_msg(id "Entered vigilant mode", mlen(26));
+    log_msg(id "Entered vigilant mode");
   }
 }
 
@@ -369,19 +367,21 @@ static inline void update_config(enum message incoming)
 
   config |= incoming;
 
-  int rep_size = sizeof(id) + 9 - 1;
+  int cursor = sizeof(id) + 9 - 1;
   char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
 
   for (fu16 k = 0; k < namecount(confmap) && k < amount; ++k)
   {
     if ((config & confmap[k].val) == option(confmap[k].val))
     {
-      rep_size += snprintf(buf + rep_size, sizeof confmap[k].name,
-                                           "%s ", confmap[k].name);
+      cursor += snprintf(buf + cursor,
+                         sizeof confmap[k].name,
+                         "%s ",
+                         confmap[k].name);
     }
   }
 
-  log_msg(buf, rep_size);
+  log_msg(buf);
 }
 
 /*
@@ -605,7 +605,7 @@ void recovery_entry(ULONG input)
 {
   (void)input;
 
-  log_msg(id "started", mlen(7));
+  log_msg(id "started");
 
   UINT st;
 
