@@ -710,14 +710,11 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
     return;
   }
 
-  if (conf & option(Eval_Focus_Flag))
+  tx_semaphore_put(&eval_focus_mode);
+
+  if (conf & Eval_Focus_Flag)
   {
-    tx_semaphore_put(&eval_focus_mode);
-  }
-  else
-  {
-    ascent_update(sh.dt);
-    evaluate_rocket_state(conf);
+    tx_thread_relinquish();
   }
 
   log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);

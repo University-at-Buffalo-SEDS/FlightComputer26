@@ -432,14 +432,9 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
-    conf = load(&config, Acq);
+    ascent_update(sh.dt);
 
-    if (conf & Using_Ascent_KF)
-    {
-      ascent_update(sh.dt);
-    }
-
-    evaluate_rocket_state(conf);
+    evaluate_rocket_state(load(&config, Acq));
   }
 }
 
