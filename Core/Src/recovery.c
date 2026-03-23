@@ -38,7 +38,6 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "kalman.h"
-#include "dma.h"
 
 TX_QUEUE shared;
 TX_THREAD recovery_task;
@@ -356,7 +355,6 @@ static inline constexpr enum message user_options()
 static inline void update_config(enum message incoming)
 {
   const enum message valid = user_options();
-  const fu16 amount = popcount(valid);
 
   if ((incoming & valid) == 0 || (incoming & ~valid) != 0 ||
       (incoming & (incoming - 1)) != 0)
@@ -370,7 +368,7 @@ static inline void update_config(enum message incoming)
   int cursor = sizeof(id) + 9 - 1;
   char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
 
-  for (fu16 k = 0; k < namecount(confmap) && k < amount; ++k)
+  for (fu16 k = 0; k < namecount(confmap); ++k)
   {
     if ((config & confmap[k].val) == option(confmap[k].val))
     {
