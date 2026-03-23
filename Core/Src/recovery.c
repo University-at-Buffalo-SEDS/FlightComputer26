@@ -218,6 +218,7 @@ static inline void barometer_fallback(void)
   if (!(config & option(GPS_Available)))
   {
     config |= option(Monitor_Altitude);
+    config |= option(Validate_Measms);
     log_msg(id "Entered vigilant mode");
   }
 }
@@ -355,15 +356,23 @@ static inline constexpr enum message user_options()
 static inline void update_config(enum message incoming)
 {
   const enum message valid = user_options();
+  fu32 raw = incoming & ~Revoke_Option;
 
-  if ((incoming & valid) == 0 || (incoming & ~valid) != 0 ||
-      (incoming & (incoming - 1)) != 0)
+  if ((raw & valid) == 0 || (raw & ~valid) != 0 ||
+      (raw & (raw - 1)) != 0)
   {
     log_err(id "option ill-formed: %u", (unsigned)incoming);
     return;
   }
 
-  config |= incoming;
+  if (incoming & Revoke_Option)
+  {
+    config &= ~raw;
+  }
+  else
+  {
+    config |= raw;
+  }
 
   int cursor = sizeof(id) + 9 - 1;
   char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
