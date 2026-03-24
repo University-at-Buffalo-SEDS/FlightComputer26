@@ -232,27 +232,23 @@ static inline void process_action(enum message cmd)
 
   switch (cmd) {
     case Deploy_Parachute:
-      co2_high(&config);
-
       flight = Descent;
+
+      release_parachute();
       log_transition(id, sv[sh.idx].p.z);
 
-      if (config & option(Using_Ascent_KF)) {
+      if (config & option(Using_Ascent_KF))
+      {
+        config &= ~option(Using_Ascent_KF);
         descent_initialize();
       }
       return;
 
   case Expand_Parachute:
-    if (config & option(Parachute_Deployed))
+    if (expand_parachute())
     {
-      reef_high(&config);
-
       flight = Reefing;
       log_transition(id, sv[sh.idx].p.z);
-    }
-    else
-    {
-      log_err(id "rejected REEF before CO2");
     }
     return;
 

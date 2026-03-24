@@ -102,14 +102,14 @@ static inline void evaluate_altitude(fu32 mode)
 
     if (mode & option(Parachute_Deployed))
     {
-      reef_high(&config);
+      expand_parachute();
 
       flight = Reefing;
       log_transition(id_vigilant, sv[sh.idx].p.z);
     }
     else
     {
-      co2_high(&config);
+      release_parachute();
 
       flight = Descent;
       log_transition(id_vigilant, sv[sh.idx].p.z);
@@ -117,7 +117,7 @@ static inline void evaluate_altitude(fu32 mode)
       descent_initialize();
 
       tx_thread_sleep(URGENT_COUPLE_DELAY_MS);
-      reef_high(&config);
+      expand_parachute();
 
       flight = Reefing;
       log_transition(id_vigilant, sv[sh.idx].p.z);
@@ -130,7 +130,7 @@ static inline void evaluate_altitude(fu32 mode)
   }
   else if (!(mode & option(Parachute_Deployed)))
   {
-    co2_high(&config);
+    release_parachute();
     
     flight = Descent;
     log_transition(id_vigilant, sv[sh.idx].p.z);
@@ -236,7 +236,7 @@ static inline void detect_descent(fu32 mode)
     {
       flight = Descent;
       sampl = 0;
-      co2_high(&config);
+      release_parachute();
       log_transition(id, sv[sh.idx].p.z);
 
       descent_initialize();
@@ -263,7 +263,7 @@ static inline void detect_reef(fu32 mode)
     {
       flight = Reefing;
       sampl = 0;
-      reef_high(&config);
+      expand_parachute();
       log_transition(id, sv[sh.idx].p.z);
     }
   }

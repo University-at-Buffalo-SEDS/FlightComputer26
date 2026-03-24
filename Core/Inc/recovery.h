@@ -6,6 +6,7 @@
 #define RECOVERY_H
 
 #include "platform.h"
+#include "evaluation.h"
 
 extern TX_QUEUE shared;
 extern atomic_uint_fast32_t config;
@@ -297,6 +298,55 @@ static inline fu32 timer_fetch(enum fc_timer u)
 }
 
 /* ------ On-board relative timer implementation ------ */
+
+
+/* ------ Parachute deployment routines ------ */
+
+/*
+ * Performs safe deployment routine.
+ * Returns true on successful deployment and false otherwise.
+ */
+static inline bool release_parachute(void)
+{
+  if (flight < Ascent)
+  {
+    log_err("SE blocked deployment, state %u", flight);
+    return false;
+  }
+
+  co2_high();
+
+  timer_update(AssertCO2);
+  fetch_or(&config, option(Parachute_Deployed | CO2_Asserted), Rel);
+
+  return true;
+}
+
+/*
+ * Performs safe expansion routine.
+ * Returns true on successful deployment and false otherwise.
+ */
+static inline bool expand_parachute(void)
+{
+  if (flight < Ascent)
+  {
+    log_err("ND blocked expansion, state %u", flight);
+    return false;
+  }
+  
+  if (!(load(&config, Acq) & option(Parachute_Deployed)))
+  {
+    log_err("ND blocked expansion: no deployment");
+    return false;
+  }
+
+  timer_update(AssertREEF);
+  fetch_or(&config, option(Parachute_Expanded | REEF_Asserted), Rel);
+
+  return true;
+}
+
+/* ------ Parachute deployment routines ------ */
 
 
 #endif // RECOVERY_H
