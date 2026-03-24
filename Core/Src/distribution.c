@@ -764,6 +764,10 @@ static inline void descent_cycle(fu32 conf)
   {
     evaluate_rocket_state(conf);
   }
+  else
+  {
+    tx_thread_relinquish();
+  }
 }
 
 /*
