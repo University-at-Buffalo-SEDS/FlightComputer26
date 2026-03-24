@@ -381,10 +381,10 @@ extern void telemetry_init_lock(void);
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+  log_error_synchronous(fmt __VA_OPT__(,) __VA_ARGS__)
                            
 #define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+  log_error_asynchronous(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
