@@ -417,16 +417,29 @@ static inline void process_report(enum message code)
 {
   if (code != Sensor_Measm_Code)
   {
-    ++failures;
+    bool bad_baro = (code & Bad_Altitude) || (code & Bad_Pressure);
+
+    bool maybe_gps = (config & option(GPS_Available)) &&
+                      gps_delay_count < GPS_SUS_DELAYS &&
+                      gps_malform_count < GPS_SUS_MALFORMED;
+
     log_err(id "dirty data report: %u", (unsigned)code);
 
-    if (failures >= to_abort)
+    if (flight <= Apogee || (bad_baro && !maybe_gps))
     {
-      auto_abort();
-    }
-    else if (failures >= to_reinit)
-    {
-      initialize_sensors(Init_All);
+      ++failures;
+
+      if (failures >= to_abort)
+      {
+        auto_abort();
+      }
+      else if (failures >= to_reinit)
+      {
+        /* Broad heuristic because Baro takes a while to init
+         */
+        bad_baro ? initialize_sensors(Init_All)
+                 : initialize_sensors(Init_Gyro | Init_Accl);
+      }
     }
   }
   else if (config & option(Reset_Failures))
@@ -463,7 +476,7 @@ static inline void process_gps_code(enum message code)
   default: return;
   }
 
-  if (gps_delay_count >= MAX_GPS_DELAYS ||
+  if (gps_delay_count >= GPS_MAX_DELAYS ||
       gps_malform_count >= GPS_MAX_MALFORMED)
   {
     barometer_fallback();

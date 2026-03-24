@@ -18,9 +18,13 @@ extern atomic_uint_fast32_t config;
 #define RENORM_STEP 0
 
 #define GPS_DELAY_MS 125
-#define MAX_GPS_DELAYS 16
 #define GPS_TIME_DRIFT_MS 40
-#define GPS_MAX_MALFORMED 15
+
+#define GPS_MAX_DELAYS 40
+#define GPS_MAX_MALFORMED 30
+
+#define GPS_SUS_DELAYS (GPS_MAX_DELAYS / 2)
+#define GPS_SUS_MALFORMED (GPS_MAX_MALFORMED / 2)
 
 #define MAX_SERVICE_THRESHOLD 0xFFu
 
