@@ -336,6 +336,8 @@ handle_gps_data(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
+  fetch_or(&config, option(GPS_Available), Rlx);
+
   enqueue_gps_data(data);
 
   return SEDS_OK;
