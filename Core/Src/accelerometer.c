@@ -66,9 +66,9 @@ accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
   accl_cs_high();
   
   if (st == HAL_OK) {
-    data->x = (float)(int16_t)((rx[3] << 8) | rx[2]) * MG;
-    data->y = (float)(int16_t)((rx[5] << 8) | rx[4]) * MG;
-    data->z = (float)(int16_t)((rx[7] << 8) | rx[6]) * MG;
+    data->x = (float)(int16_t)((rx[3] << 8) | rx[2]) * LSB_TO_G;
+    data->y = (float)(int16_t)((rx[5] << 8) | rx[4]) * LSB_TO_G;
+    data->z = (float)(int16_t)((rx[7] << 8) | rx[6]) * LSB_TO_G;
   }
 
   return st;
