@@ -652,33 +652,34 @@ static inline void pre_launch(void)
 static inline void ascent_cycle(fu32 conf, fu8 *imu)
 {
   fu32 st;
+  struct coords suspect;
 
-  if (fetch_gyro(&payload.gyro))
+  if (fetch_gyro(&suspect))
   {
-    st = validate_gyro(&payload.gyro, conf);
+    st = validate_gyro(&suspect, conf);
 
     if (st == Sensor_Measm_Code)
     {
+      payload.gyro = suspect;
       *imu |= Sensor_Gyro;
     }
     else
     {
-      *imu &= ~Sensor_Gyro;
       tx_queue_send(&shared, &st, TX_NO_WAIT);
     }
   }
 
-  if (fetch_accl(&payload.d.accl))
+  if (fetch_accl(&suspect))
   {
-    st = validate_accl(&payload.d.accl, conf);
+    st = validate_accl(&suspect, conf);
 
     if (st == Sensor_Measm_Code)
     {
+      payload.d.accl = suspect;
       *imu |= Sensor_Accl;
     }
     else
     {
-      *imu &= ~Sensor_Accl;
       tx_queue_send(&shared, &st, TX_NO_WAIT);
     }
   }
