@@ -85,8 +85,9 @@ struct accl_config {
 
 /* ------ Helper definitions ------ */
 
-#define LSB_TO_G                                                       \
-  (powf(2.0f, 5.3012645553364) / 32768.0f * 1.5f)
+#define SCALE_HEURISTIC
+
+#define FC26_LINEAR_SCALE 2.4626349334804733002
 
 #define accl_cmd_read(reg)  ((uint8_t)((reg) | 0x80u))
 #define accl_cmd_write(reg) ((uint8_t)((reg) & 0x7F))

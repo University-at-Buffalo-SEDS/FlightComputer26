@@ -50,6 +50,10 @@ accl_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data)
   return st;
 }
 
+/* This factor depends on data range. Set during init.
+ */
+static float lsb_to_g;
+
 /*
  * Read the accelerometer axes data (datasheet sections 5.3.4 & 6.1.2).
  */
@@ -66,9 +70,9 @@ accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
   accl_cs_high();
   
   if (st == HAL_OK) {
-    data->x = (float)(int16_t)((rx[3] << 8) | rx[2]) * LSB_TO_G;
-    data->y = (float)(int16_t)((rx[5] << 8) | rx[4]) * LSB_TO_G;
-    data->z = (float)(int16_t)((rx[7] << 8) | rx[6]) * LSB_TO_G;
+    data->x = (float)(int16_t)((rx[3] << 8) | rx[2]) * lsb_to_g;
+    data->y = (float)(int16_t)((rx[5] << 8) | rx[4]) * lsb_to_g;
+    data->z = (float)(int16_t)((rx[7] << 8) | rx[6]) * lsb_to_g;
   }
 
   return st;
@@ -132,6 +136,12 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
       valid.rng = conf->rng;
     }
   }
+
+  lsb_to_g = (float)(1u << (valid.rng + 0x01)) / 32768.0f * 1.5f;
+
+#ifdef SCALE_HEURISTIC
+  lsb_to_g *= FC26_LINEAR_SCALE;
+#endif
 
   /* Bandwith of low pass filter (datasheet 5.3.10) */
   st = accl_write_reg(hspi, ACCL_CONF, (uint8_t)valid.mode);
