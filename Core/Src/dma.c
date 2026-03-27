@@ -13,6 +13,7 @@
  * is not needed to be done elsewhere.
  */
 
+#include "accelerometer.h"
 #include "platform.h"
 #include "recovery.h"
 #include "dma.h"
@@ -175,9 +176,9 @@ bool fetch_accl(struct coords *buf)
 
   dma_bench_log(Sensor_Accl);
 
-  buf->x = ax * MG;
-  buf->y = ay * MG;
-  buf->z = az * MG;
+  buf->x = ax * lsb_to_g;
+  buf->y = ay * lsb_to_g;
+  buf->z = az * lsb_to_g;
 
   return true;
 }

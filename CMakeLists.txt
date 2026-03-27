@@ -69,9 +69,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
     ${CMAKE_SOURCE_DIR}/Core/Src/gyroscope.c
     ${CMAKE_SOURCE_DIR}/Core/Src/accelerometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 

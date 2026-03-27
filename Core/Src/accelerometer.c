@@ -5,6 +5,10 @@
 #include "platform.h"
 #include "accelerometer.h"
 
+/* This factor depends on data range. Set during init.
+ */
+float lsb_to_g;
+
 
 /* ------ Synchronous SPI helpers ------ */
 
@@ -49,10 +53,6 @@ accl_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data)
 
   return st;
 }
-
-/* This factor depends on data range. Set during init.
- */
-static float lsb_to_g;
 
 /*
  * Read the accelerometer axes data (datasheet sections 5.3.4 & 6.1.2).

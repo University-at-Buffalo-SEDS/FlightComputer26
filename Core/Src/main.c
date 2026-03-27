@@ -68,6 +68,8 @@ FDCAN_HandleTypeDef hfdcan1;
 SD_HandleTypeDef hsd1;
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
+DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 PCD_HandleTypeDef hpcd_USB_DRD_FS;
 
