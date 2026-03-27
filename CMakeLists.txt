@@ -75,7 +75,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 # Telemetry library
 
 # Option defaults to ON
-option(ENABLE_TELEMETRY "Enable the telemetry subsystem" OFF)
+option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
 
 # Print its state for debugging
 message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
@@ -110,7 +110,7 @@ if (DMA_BENCH)
 endif()
 
 # Options defaults to OFF
-option(SENSOR_TESTS "Synchronous sensor tests" ON)
+option(SENSOR_TESTS "Synchronous sensor tests" OFF)
 
 if (SENSOR_TESTS)
     message(STATUS "Testing sensors.")

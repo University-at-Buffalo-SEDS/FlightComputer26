@@ -87,7 +87,7 @@ struct accl_config {
 
 #define SCALE_HEURISTIC
 
-#define FC26_LINEAR_SCALE 2.4626349334804733002
+#define FC26_LINEAR_SCALE 2.4607705003298646087
 
 #define accl_cmd_read(reg)  ((uint8_t)((reg) | 0x80u))
 #define accl_cmd_write(reg) ((uint8_t)((reg) & 0x7F))
