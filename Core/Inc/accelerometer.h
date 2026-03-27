@@ -85,16 +85,17 @@ struct accl_config {
 
 /* ------ Helper definitions ------ */
 
-#define MG                                                             \
-  ((float)(1u << (Accl_Range_24g + 0x01u)) / 32768.0f * 1.5f)
+#define SCALE_HEURISTIC
+
+#define FC26_LINEAR_SCALE 2.4626349334804733002
 
 #define accl_cmd_read(reg)  ((uint8_t)((reg) | 0x80u))
 #define accl_cmd_write(reg) ((uint8_t)((reg) & 0x7F))
 
 #define accl_cs_low()                                                  \
-  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_RESET)
 #define accl_cs_high()                                                 \
-  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(CS_ACCEL_GPIO_Port, CS_ACCEL_Pin, GPIO_PIN_SET)
 
 
 /* ------ Public API ------ */

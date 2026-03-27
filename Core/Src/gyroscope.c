@@ -6,6 +6,17 @@
 #include "gyroscope.h"
 
 
+/* ------ Static ------ */
+
+/* Set by gyro_init */
+static enum gyro_range init_rng = Gyro_Range_2000Dps;
+
+/* Inverted to avoid division at runtime */
+static const float inv_sens[Gyro_Range_Entries] = {
+  1.0f/16.384f, 1.0f/32.768f, 1.0f/65.536f, 1.0f/131.072f, 1.0f/262.144f
+};
+
+
 /* ------ Synchronous SPI helpers ------ */
 
 /*
@@ -19,11 +30,16 @@ gyro_read_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t *val)
   }
 
   HAL_StatusTypeDef st;
-  uint8_t cmd = gyro_cmd_read(reg);
+  uint8_t tx[2] = { gyro_cmd_read(reg), 0x00 };
+  uint8_t rx[2] = { 0 };
 
   gyro_cs_low();
-  st = HAL_SPI_TransmitReceive(hspi, &cmd, val, 1, HAL_MAX_DELAY);
+  st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
   gyro_cs_high();
+
+  if (st == HAL_OK) {
+    *val = rx[1];
+  }
 
   return st;
 }
@@ -45,98 +61,27 @@ gyro_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t val)
 }
 
 /*
- * Read the gyroscope axes data.
- */
-static inline HAL_StatusTypeDef
-gyro_burst_read(SPI_HandleTypeDef *hspi, uint8_t start, uint8_t *buf, uint16_t len)
-{
-  if (!buf || !len) {
-    return HAL_ERROR;
-  }
-
-  HAL_StatusTypeDef st;
-  uint8_t cmd = gyro_cmd_read(start);
-
-  gyro_cs_low();
-  st = HAL_SPI_Transmit(hspi, &cmd, 1, HAL_MAX_DELAY);
-
-  if (st == HAL_OK) {
-    st = HAL_SPI_Receive(hspi, buf, len, HAL_MAX_DELAY);  
-  }
-  gyro_cs_high();
-
-  return st;
-}
-
-
-/* ------ Utilities for raw integer and float (DPS) formats ------ */
-
-/*
  * Read XYZ (LSB first then MSB) — datasheet §5.5.2.
- */
-HAL_StatusTypeDef
-gyro_read_raw(SPI_HandleTypeDef *hspi, struct gyro_raw *data)
-{
-    HAL_StatusTypeDef st;
-    uint8_t buf[6];
-
-    st = gyro_burst_read(hspi, GYRO_RATE_X_LSB, buf, sizeof buf);
-    if (st != HAL_OK) {
-      return st;
-    }
-
-    data->x = (int16_t)((uint16_t)buf[1] << 8 | buf[0]);
-    data->y = (int16_t)((uint16_t)buf[3] << 8 | buf[2]);
-    data->z = (int16_t)((uint16_t)buf[5] << 8 | buf[4]);
-
-    return HAL_OK;
-}
-
-/* Set by gyro_init */
-static enum gyro_range init_rng = Gyro_Range_Entries;
-
-/* Inverted to avoid division at runtime */
-static const float inv_sensivity[Gyro_Range_Entries] = {
-  1.0f/16.384f, 1.0f/32.768f, 1.0f/65.536f, 1.0f/131.072f, 1.0f/262.144f
-};
-
-/*
- * Convert raw axes readings to degrees per second.
- */
-void
-gyro_convert(const struct gyro_raw *raw, struct coords *buf)
-{
-    if (!raw || !buf) {
-      return;
-    }
-
-    /* Pre-initialization fallback */
-    if (init_rng == Gyro_Range_Entries) {
-      init_rng = Gyro_Range_2000Dps;
-    }
-
-    buf->x = (float)raw->x * inv_sensivity[init_rng];
-    buf->y = (float)raw->y * inv_sensivity[init_rng];
-    buf->z = (float)raw->z * inv_sensivity[init_rng];
-}
-
-/*
- * Read raw values and convert them to degrees per second.
  */
 HAL_StatusTypeDef
 gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf)
 {
   HAL_StatusTypeDef st;
-  struct gyro_raw data;
+  uint8_t tx[7] = {[0] = gyro_cmd_read(GYRO_RATE_X_LSB),
+                   [1 ... 6] = 0x00};
+  uint8_t rx[7];
 
-  st = gyro_read_raw(hspi, &data);
-  if (st != HAL_OK) {
-    return st;
+  gyro_cs_low();
+  st = HAL_SPI_TransmitReceive(hspi, tx, rx, sizeof tx, HAL_MAX_DELAY);
+  gyro_cs_high();
+
+  if (st == HAL_OK) {
+    buf->x = (float)(int16_t)((rx[2] << 8) | rx[1]) * inv_sens[init_rng];
+    buf->y = (float)(int16_t)((rx[4] << 8) | rx[3]) * inv_sens[init_rng];
+    buf->z = (float)(int16_t)((rx[6] << 8) | rx[5]) * inv_sens[init_rng];
   }
 
-  gyro_convert(&data, buf);
-  
-  return HAL_OK;
+  return st;
 }
 
 
@@ -162,7 +107,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
     return st;
   }
   if (id != GYRO_CHIP_ID_VALUE) {
-      log_err("ACCL: CHIP_ID=0x%02X (expected 0x0F)", id);
+      log_err("GYRO: CHIP_ID=0x%02X (expected 0x0F)", id);
       return HAL_ERROR;
   }
 
@@ -190,16 +135,18 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
 
   if (conf) {
     if (conf->rng >= Gyro_Range_2000Dps &&
-        conf->rng <= Gyro_Range_125Dps)
+        conf->rng < Gyro_Range_Entries)
     {
       valid.rng = conf->rng;
     }
     if (conf->bw >= Gyro_532Hz_ODR_2000Hz &&
         conf->bw <= Gyro_32Hz_ODR_100Hz)
     {
-      valid.rng = conf->rng;
+      valid.bw = conf->bw;
     }
   }
+
+  init_rng = valid.rng;
 
   /* Set range */
   st = gyro_write_reg(hspi, GYRO_RANGE, (uint8_t)valid.rng);

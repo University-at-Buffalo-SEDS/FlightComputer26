@@ -66,7 +66,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
 
     ${CMAKE_SOURCE_DIR}/Core/Src/main.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
     ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
     ${CMAKE_SOURCE_DIR}/Core/Src/gyroscope.c
     ${CMAKE_SOURCE_DIR}/Core/Src/accelerometer.c
@@ -233,8 +232,10 @@ if (CUSTOM_FLAGS)
     set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
                                 PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()
+
+
 # Options defaults to OFF
-option(SENSOR_TESTS "Synchronous sensor tests" OFF)
+option(SENSOR_TESTS "Synchronous sensor tests" ON)
 
 if (SENSOR_TESTS)
     message(STATUS "Testing sensors.")
