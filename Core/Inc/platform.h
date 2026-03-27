@@ -415,9 +415,9 @@ static inline SedsResult request_ignition(void)
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
 
-#define log_msg_sync(msg) printf("\n%s\n", (msg))
+#define log_msg_sync(msg, size) printf("\n%s\n", (msg))
 
-#define log_msg log_msg_sync
+#define log_msg(msg) log_msg_sync(msg, 0)
 
 #define log_measurement(type, buf)                            \
   do {                                                        \
