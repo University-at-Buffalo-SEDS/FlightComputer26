@@ -142,6 +142,8 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define task_loop(exit_predicate) while (!(exit_predicate))
 
+#define popcount(mask) (fu16)__builtin_popcount((unsigned)(mask))
+
 /* Data memory barrier */
 
 #if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
@@ -205,27 +207,19 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define now_ms() HAL_GetTick()
 
-/* Parachute deployment functions */
+/* Parachute deployment macros */
 
-#define co2_low()                                                       \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET);
+#define co2_low()                                             \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-#define co2_high(conf)                                                  \
-  do {                                                                  \
-    HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET);                \
-    timer_update(AssertCO2);                                            \
-    fetch_or(conf, option(Parachute_Deployed | CO2_Asserted), Rel);     \
-  } while (0)
+#define co2_high()                                            \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
 
-#define reef_low()                                                      \
-    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET);
+#define reef_low()                                            \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define reef_high(conf)                                                 \
-  do {                                                                  \
-    HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET);               \
-    timer_update(AssertREEF);                                           \
-    fetch_or(conf, option(REEF_Asserted), Rel);                         \
-  } while (0)
+#define reef_high(conf)                                       \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Data cache calls */
 
@@ -351,7 +345,7 @@ static inline void restore_spi1_irq(void)
 /* ------ Master-side interrupt control ------ */
 
 
-/* ------ Telemetry interface ------ */
+/* ------ Telemetry API abstraction ------ */
 
 #ifdef TELEMETRY_ENABLED
 
@@ -365,9 +359,9 @@ extern void telemetry_init_lock(void);
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
                             (msg), (size), sizeof(char))
 
-#define log_msg(msg, size)                                  \
-  log_telemetry_asynchronous(SEDS_DT_MESSAGE_DATA,          \
-                             (msg), (size), sizeof(char))
+#define log_msg(msg)                                        \
+  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,   \
+                                    (msg))
 
 #define log_measurement(type, buf)                          \
   log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
@@ -379,10 +373,10 @@ extern void telemetry_init_lock(void);
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                              \
-  log_error_syncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+  log_error_synchronous(fmt __VA_OPT__(,) __VA_ARGS__)
                            
 #define log_err(fmt, ...)                                   \
-  log_error_asyncronous(fmt __VA_OPT__(,) __VA_ARGS__)
+  log_error_asynchronous(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
@@ -421,7 +415,7 @@ static inline SedsResult request_ignition(void)
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
 
-#define log_msg_sync(msg, size) printf("\n%s\n", (msg))
+#define log_msg_sync(msg) printf("\n%s\n", (msg))
 
 #define log_msg log_msg_sync
 
@@ -476,7 +470,7 @@ static inline SedsResult request_ignition(void)
 
 #endif // TELEMETRY_ENABLED
 
-/* ------ Telemetry interface ------ */
+/* ------ Telemetry API abstraction ------ */
 
 
 #endif // PLATFORM_H
