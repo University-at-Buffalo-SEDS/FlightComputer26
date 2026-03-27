@@ -65,11 +65,10 @@ DCACHE_HandleTypeDef hdcache1;
 
 FDCAN_HandleTypeDef hfdcan1;
 
-DMA_HandleTypeDef handle_GPDMA1_Channel1;
-
 SD_HandleTypeDef hsd1;
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
 DMA_HandleTypeDef handle_GPDMA1_Channel0;
 
 PCD_HandleTypeDef hpcd_USB_DRD_FS;
@@ -343,32 +342,12 @@ static void MX_GPDMA1_Init(void)
   /* GPDMA1 interrupt Init */
     HAL_NVIC_SetPriority(GPDMA1_Channel0_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
 
   /* USER CODE END GPDMA1_Init 1 */
-  handle_GPDMA1_Channel1.Instance = GPDMA1_Channel1;
-  handle_GPDMA1_Channel1.Init.Request = DMA_REQUEST_SW;
-  handle_GPDMA1_Channel1.Init.BlkHWRequest = DMA_BREQ_SINGLE_BURST;
-  handle_GPDMA1_Channel1.Init.Direction = DMA_MEMORY_TO_MEMORY;
-  handle_GPDMA1_Channel1.Init.SrcInc = DMA_SINC_FIXED;
-  handle_GPDMA1_Channel1.Init.DestInc = DMA_DINC_FIXED;
-  handle_GPDMA1_Channel1.Init.SrcDataWidth = DMA_SRC_DATAWIDTH_BYTE;
-  handle_GPDMA1_Channel1.Init.DestDataWidth = DMA_DEST_DATAWIDTH_BYTE;
-  handle_GPDMA1_Channel1.Init.Priority = DMA_LOW_PRIORITY_LOW_WEIGHT;
-  handle_GPDMA1_Channel1.Init.SrcBurstLength = 1;
-  handle_GPDMA1_Channel1.Init.DestBurstLength = 1;
-  handle_GPDMA1_Channel1.Init.TransferAllocatedPort = DMA_SRC_ALLOCATED_PORT0|DMA_DEST_ALLOCATED_PORT0;
-  handle_GPDMA1_Channel1.Init.TransferEventMode = DMA_TCEM_BLOCK_TRANSFER;
-  handle_GPDMA1_Channel1.Init.Mode = DMA_NORMAL;
-  if (HAL_DMA_Init(&handle_GPDMA1_Channel1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_DMA_ConfigChannelAttributes(&handle_GPDMA1_Channel1, DMA_CHANNEL_NPRIV) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN GPDMA1_Init 2 */
 
   /* USER CODE END GPDMA1_Init 2 */
@@ -586,14 +565,8 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-
   HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI5_IRQn);
 
   HAL_NVIC_SetPriority(EXTI7_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI7_IRQn);
