@@ -759,38 +759,42 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
     return HAL_ERROR;
   }
 
-  /* Let measurements settle (~2 frames) */
-  uint8_t odr_sel = 0;
-  baro_read_u8(hspi, BARO_ODR, &odr_sel);
-  uint32_t period_ms = BARO_PERIOD_MS_FROM_ODRSEL(odr_sel);
-  HAL_Delay(2u * period_ms);
-
-  /* Try to validate first mesurements */
-  float p = 0.0f, t = 0.0f;
-
-  for (uint8_t i = 0; i < 5; ++i)
+  /* Try to validate first mesurements, but only once per boot
+   */
+  if (gnd_lvl_pressure == 0.0f)
   {
-    st = baro_wait_drdy(hspi, 5);
-    if (st != HAL_OK) {
-      HAL_Delay(5);
-      continue;
-    }
+    /* Let measurements settle (~2 frames) */
+    uint8_t odr_sel = 0;
+    baro_read_u8(hspi, BARO_ODR, &odr_sel);
+    uint32_t period_ms = BARO_PERIOD_MS_FROM_ODRSEL(odr_sel);
+    HAL_Delay(2u * period_ms);
 
-    st = baro_fetch_temp_pres(hspi, &t, &p);
-    if (st == HAL_OK && p >= BARO_MIN_PA && p <= BARO_MAX_PA)
+    float p = 0.0f, t = 0.0f;
+  
+    for (uint8_t i = 0; i < 5; ++i)
     {
-      break; /* Validation successful */
+      st = baro_wait_drdy(hspi, 5);
+      if (st != HAL_OK) {
+        HAL_Delay(5);
+        continue;
+      }
+  
+      st = baro_fetch_temp_pres(hspi, &t, &p);
+      if (st == HAL_OK && p >= BARO_MIN_PA && p <= BARO_MAX_PA)
+      {
+        break; /* Validation successful */
+      }
+  
+      HAL_Delay(10);
     }
-
-    HAL_Delay(10);
+  
+    if (p < BARO_MIN_PA || p > BARO_MAX_PA) {
+      log_err("BARO: baseline pressure invalid: %.1f Pa", p);
+      return HAL_ERROR;
+    }
+  
+    gnd_lvl_pressure = p;
   }
-
-  if (p < BARO_MIN_PA || p > BARO_MAX_PA) {
-    log_err("BARO: baseline pressure invalid: %.1f Pa", p);
-    return HAL_ERROR;
-  }
-
-  gnd_lvl_pressure = p;
 
   return HAL_OK;
 }
