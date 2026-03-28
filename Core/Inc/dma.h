@@ -56,8 +56,6 @@ struct dma_flags {
 #define GYRO_MASK (GYRO_EXTI_1_Pin | GYRO_EXTI_2_Pin)
 #define ACCL_MASK (ACCL_EXTI_1_Pin | ACCL_EXTI_2_Pin)
 
-#define IMU_ID (Sensor_Gyro | Sensor_Accl)
-
 
 /* ------ Producer / consumer benchmark timer ------ */
 

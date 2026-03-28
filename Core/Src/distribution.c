@@ -686,6 +686,10 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
   if ((*imu & IMU_ID) != IMU_ID)
   {
+    if (*imu & ASCENT_PREDICT_DONE)
+    {
+      goto fast_forward;
+    }
     tx_thread_relinquish();
     return;
   }
@@ -695,9 +699,12 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   sh.dt = fsec(timer_exchange(AscentKF));
 
   ascent_predict(sh.dt);
+  *imu |= ASCENT_PREDICT_DONE;
 
   log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
   log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+
+fast_forward:
 
   if (!fetch_baro(&payload.baro))
   {
@@ -713,6 +720,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
     return;
   }
 
+  *imu &= ~ASCENT_PREDICT_DONE;
   tx_semaphore_put(&eval_focus_mode);
 
   log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);

@@ -91,7 +91,7 @@
 /* ------ Telemetry at state transitions ------ */
 
 
-/* ------ Buffer/pool definitions ------ */
+/* ------ Service definitions ------ */
 
 #define EVALQ_SIZE 2
 
@@ -108,7 +108,10 @@
 
 #define CAN_EVALUATE UINT_FAST32_MAX
 
-/* ------ Buffer/pool definitions ------ */
+#define IMU_ID (Sensor_Gyro | Sensor_Accl)
+#define ASCENT_PREDICT_DONE (fu8)(1u << 7)
+
+/* ------ Service definitions ------ */
 
 
 /* ------ Data containers ------ */

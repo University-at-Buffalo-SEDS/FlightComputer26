@@ -4,7 +4,7 @@
 #include "app_threadx.h"
 #include "can_bus.h"
 #include "sedsprintf.h"
-#include "stm32H5xx_hal.h"
+#include "stm32h5xx_hal.h"
 
 #include <stdarg.h>
 #include <stdbool.h>
