@@ -114,42 +114,46 @@
 #define baro_osr_make(osr_t, osr_p)                                 \
   (((osr_t) << BARO_OSR_T_SHIFT) | ((osr_p) << BARO_OSR_P_SHIFT))
 
-#define BARO_OSR_X1 0u
-#define BARO_OSR_X2 1u
-#define BARO_OSR_X4 2u
-#define BARO_OSR_X8 3u
-#define BARO_OSR_X16 4u
-#define BARO_OSR_X32 5u
+enum baro_osr : uint8_t {
+  Baro_OSR_x1 = 0u,
+  Baro_OSR_x2 = 1u,
+  Baro_OSR_x4 = 2u,
+  Baro_OSR_x8 = 3u,
+  Baro_OSR_x16 = 4u,
+  Baro_OSR_x32 = 5u,
+};
 
-// ODR 
-#define BARO_ODR_200    0x00
-#define BARO_ODR_100    0x01
-#define BARO_ODR_50     0x02
-#define BARO_ODR_25     0x03
-#define BARO_ODR_12P5   0x04
-#define BARO_ODR_6P25   0x05
-#define BARO_ODR_3P1    0x06
-#define BARO_ODR_1P5    0x07
-#define BARO_ODR_0P78   0x08
-#define BARO_ODR_0P39   0x09
-#define BARO_ODR_0P2    0x0A
-#define BARO_ODR_0P1    0x0B
-#define BARO_ODR_0P05   0x0C
-#define BARO_ODR_0P02   0x0D
-#define BARO_ODR_0P01   0x0E
-#define BARO_ODR_0P006  0x0F
-#define BARO_ODR_0P003  0x10
-#define BARO_ODR_0P0015 0x11
+enum baro_odr : uint8_t {
+  Baro_ODR_200    = 0x00,
+  Baro_ODR_100    = 0x01,
+  Baro_ODR_50     = 0x02,
+  Baro_ODR_25     = 0x03,
+  Baro_ODR_12P5   = 0x04,
+  Baro_ODR_6P25   = 0x05,
+  Baro_ODR_3P1    = 0x06,
+  Baro_ODR_1P5    = 0x07,
+  Baro_ODR_0P78   = 0x08,
+  Baro_ODR_0P39   = 0x09,
+  Baro_ODR_0P2    = 0x0A,
+  Baro_ODR_0P1    = 0x0B,
+  Baro_ODR_0P05   = 0x0C,
+  Baro_ODR_0P02   = 0x0D,
+  Baro_ODR_0P01   = 0x0E,
+  Baro_ODR_0P006  = 0x0F,
+  Baro_ODR_0P003  = 0x10,
+  Baro_ODR_0P0015 = 0x11,
+};
 
-// IIR filter coefficients
-#define BARO_IIR_COEF_0    0x00   /* Bypass, default */
-#define BARO_IIR_COEF_1    0x01
-#define BARO_IIR_COEF_3    0x02
-#define BARO_IIR_COEF_7    0x03
-#define BARO_IIR_COEF_15   0x04
-#define BARO_IIR_COEF_31   0x05
-#define BARO_IIR_COEF_63   0x06
-#define BARO_IIR_COEF_127  0x07
+enum baro_iir_coef : uint8_t {
+  Baro_IIR_Coef_0   = 0x00, /* Bypass, default */
+  Baro_IIR_Coef_1   = 0x01,
+  Baro_IIR_Coef_3   = 0x02,
+  Baro_IIR_Coef_7   = 0x03,
+  Baro_IIR_Coef_15  = 0x04,
+  Baro_IIR_Coef_31  = 0x05,
+  Baro_IIR_Coef_63  = 0x06,
+  Baro_IIR_Coef_127 = 0x07,
+};
 
 // Default OSR/ODR
 #define BARO_DEFAULT_OSR                                            \
