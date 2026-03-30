@@ -2,7 +2,7 @@
  * Kalman Filters
  *
  * This file includes implementations of:
- *   - Unscented (ascent) Kalman filter;
+ *   - Extended (ascent) Kalman filter;
  *	 - Regular (descent) Kalman filter;
  *   - Covariance initialization functions;
  *	 - Context and type-specifc math functions.

@@ -168,13 +168,6 @@ enum state {
   Flight_States
 };
 
-/*
- * Struct of transition messages and their sizes.
- */
-struct transition {
-  const char *message[Flight_States];
-  const int   size[Flight_States];
-};
 
 /* ------ Data containers ------ */
 
