@@ -253,5 +253,6 @@ endif()
 option(USB_ENUM "Debug with IO-dependent functions" OFF)
 
 if (USB_ENUM)
+    message(STATUS "Assuming USB enumeration.")
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
 endif()

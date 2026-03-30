@@ -105,7 +105,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "asm",
                         "dmabench",
                         "userflags",
-                        "sensortest"
+                        "sensortest",
+                        "nousb"
                 }
 
 # Repo constants
@@ -169,6 +170,7 @@ def configure(buildir: Path, preset: str, options: dict):
         dmabench        = "-DDMA_BENCH=OFF"
         flags           = "-DCUSTOM_FLAGS=OFF"
         sensortest      = "-DSENSOR_TESTS=OFF"
+        usb             = "-DUSB_ENUM=ON"
 
         if options["notelemetry"]:
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -176,6 +178,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 sd = "-DONBOARD_SD=OFF"
                 if options["sensortest"]:
                         sensortest = "-DSENSOR_TESTS=ON"
+                if options["nousb"]:
+                        usb = "-DUSB_ENUM=OFF"
         else:
                 if options["fullcmd"]:
                         compat = "-DTELEMETRY_COMPAT=OFF"
@@ -205,6 +209,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 dmabench,
                 flags,
                 sensortest,
+                usb,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",
