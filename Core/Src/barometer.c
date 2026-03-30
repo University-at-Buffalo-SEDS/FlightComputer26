@@ -684,23 +684,23 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
 
   /* Configuration setup with default fallbacks */
   struct baro_config valid = {
-    .osr_t = BARO_OSR_X1,
-    .osr_p = BARO_OSR_X2,
+    .osr_t = Baro_OSR_x1,
+    .osr_p = Baro_OSR_x2,
     .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = BARO_IIR_COEF_0,
+    .iir_coef = Baro_IIR_Coef_0,
   };
 
   if (conf) {
-    if (conf->osr_t <= BARO_OSR_X32) {
+    if (conf->osr_t <= Baro_OSR_x32) {
       valid.osr_t = conf->osr_t;
     }
-    if (conf->osr_p <= BARO_OSR_X32) {
+    if (conf->osr_p <= Baro_OSR_x32) {
       valid.osr_p = conf->osr_p;
     }
-    if (conf->odr <= BARO_ODR_0P0015) {
+    if (conf->odr <= Baro_ODR_0P0015) {
       valid.odr = conf->odr;
     }
-    if (conf->iir_coef <= BARO_IIR_COEF_127) {
+    if (conf->iir_coef <= Baro_IIR_Coef_127) {
       valid.iir_coef = conf->iir_coef;
     }
   }
