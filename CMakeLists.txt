@@ -109,7 +109,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 # Telemetry library
 
 # Option defaults to ON
-option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
+option(ENABLE_TELEMETRY "Enable the telemetry subsystem" OFF)
 
 # Print its state for debugging
 message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
@@ -120,11 +120,11 @@ if (ENABLE_TELEMETRY)
 
     set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_MAX_STACK_PAYLOAD "128" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_MAX_QUEUE_SIZE "4096" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_MAX_QUEUE_SIZE "1024" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_MAX_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_STARTING_RECENT_RX_IDS "16" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_STARTING_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
 
     # Set target for embedded systems
@@ -160,7 +160,7 @@ if (TELEMETRY_COMPAT)
 endif()
 
 # Option defaults to ON
-option(EXTERNAL_GPS "Availability of external GPS module." ON)
+option(EXTERNAL_GPS "Availability of external GPS module." OFF)
 message(STATUS "External GPS: ${EXTERNAL_GPS}")
 
 if (EXTERNAL_GPS)

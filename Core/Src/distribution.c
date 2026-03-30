@@ -45,7 +45,7 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
-
+#include "main.h"
 TX_THREAD distribution_task;
 
 
@@ -841,7 +841,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "task creation failure: %u", st);
+    Error_Handler();
   }
 
   return TX_SUCCESS;
