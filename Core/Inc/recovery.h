@@ -242,7 +242,6 @@ struct description {
                           | Eval_Focus_Flag           \
                           | Reset_Failures            \
                           | Validate_Measms           \
-                          | GPS_Available             \
                           | Using_Ascent_KF           \
                         ) )
 
