@@ -11,10 +11,10 @@ extern SPI_HandleTypeDef hspi1;
 
 
 static struct baro_config baro_conf = {
-    .osr_t = BARO_OSR_X1,
-    .osr_p = BARO_OSR_X2,
+    .osr_t = Baro_OSR_x1,
+    .osr_p = Baro_OSR_x2,
     .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = BARO_IIR_COEF_0,
+    .iir_coef = Baro_IIR_Coef_0,
 };
 
 static struct gyro_config gyro_conf = {
@@ -32,8 +32,8 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 {
 	if (precise)
 	{
-		baro_conf.osr_p = BARO_OSR_X8;
-  	baro_conf.iir_coef = BARO_IIR_COEF_15;
+		baro_conf.osr_p = Baro_OSR_x8;
+  	baro_conf.iir_coef = Baro_IIR_Coef_15;
 	}
 
 	assert(baro_init(&hspi1, &baro_conf) == HAL_OK);
