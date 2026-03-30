@@ -472,6 +472,10 @@ static inline SedsResult request_ignition(void)
 
 #else
 
+/* Ignore warnings on logged metrics that are now unused.
+ */
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 #define log_msg_sync(msg, size) 
 
 #define log_msg(msg) log_msg_sync(msg, 0)
@@ -486,7 +490,7 @@ static inline SedsResult request_ignition(void)
 
 #define log_err log_err_sync
 
-#define request_ignition() 
+#define request_ignition() SEDS_OK
 
 #endif // USB_ENUMERATES
 
