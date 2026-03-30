@@ -218,7 +218,7 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define reef_low()                                            \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define reef_high(conf)                                       \
+#define reef_high()                                           \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 /* Data cache calls */

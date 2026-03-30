@@ -74,6 +74,7 @@ static inline void lock(enum sensor k)
    */
   while (!cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
   {
+    unlocked = 0;
     tx_thread_relinquish();
   }
 }

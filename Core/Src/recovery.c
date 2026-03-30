@@ -185,6 +185,7 @@ static inline void auto_abort(void)
 
   gps_delay_count = 0;
   gps_malform_count = 0;
+  config &= ~option(Defer_Baro_Fallback);
 
   if (config & option(Lost_GroundStation))
   {
@@ -213,14 +214,20 @@ static inline void barometer_fallback(void)
   baro_conf.osr_p = BARO_OSR_X8;
   baro_conf.iir_coef = BARO_IIR_COEF_15;
 
+  if (config & option(Using_Ascent_KF))
+  {
+    /* The second part of this function will be
+     * executed during Descent KF initialization.
+     */
+    config |= option(Defer_Baro_Fallback);
+    return;
+  }
+
   initialize_sensors(Init_Baro);
 
-  if (!(config & option(GPS_Available)))
-  {
-    config |= option(Monitor_Altitude);
-    config |= option(Validate_Measms);
-    log_msg(id "Entered vigilant mode");
-  }
+  config |= option(Monitor_Altitude);
+  config |= option(Validate_Measms);
+  log_msg(id "Entered vigilant mode");
 }
 
 /*
@@ -299,7 +306,7 @@ static inline void process_action(enum message cmd)
     return;
 
   case Reinit_Barometer:
-    barometer_fallback();
+    initialize_sensors(Init_Baro);
     return;
 
   case Reinit_IMU:
@@ -456,7 +463,7 @@ static inline void process_gps_code(enum message code)
 
     if (config & option(Launch_Triggered))
     {
-      log_err(id "delayed GPS packet (%u)", gps_delay_count);
+      log_err(id "delayed GPS packets: %u", gps_delay_count);
     }
     break;
 
@@ -465,7 +472,7 @@ static inline void process_gps_code(enum message code)
 
     if (config & option(Launch_Triggered))
     {
-      log_err(id "malformed GPS packet (%u)", gps_malform_count);
+      log_err(id "malformed GPS packets: %u", gps_malform_count);
     }
     break;
 
@@ -518,7 +525,7 @@ static inline void decode_message(enum message msg)
   }
   else /* Didn't match anything */
   {
-    log_err(id "you need to push up %u times", (unsigned)msg);
+    log_err(id "slap yourself %u times", (unsigned)msg);
   }
 }
 

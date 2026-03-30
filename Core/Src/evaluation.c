@@ -77,7 +77,7 @@ const char *trans[Flight_States] = {
 
 /*
  * Cautiously examine altitude changes. Act in place.
- * Must be used if 'barometer fallback' mode is enabled.
+ * Must call if 'barometer fallback' (aka vigilant) mode is enabled.
  */
 static inline void evaluate_altitude(fu32 mode)
 {

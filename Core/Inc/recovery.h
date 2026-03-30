@@ -176,6 +176,7 @@ enum message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 15),
   Confirm_Altitude    = Runtime_Configuration | (1u << 16),
   Using_Ascent_KF     = Runtime_Configuration | (1u << 17),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 18),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 20),
 
@@ -339,6 +340,8 @@ static inline bool expand_parachute(void)
     log_err("ND blocked expansion: no deployment");
     return false;
   }
+
+  reef_high();
 
   timer_update(AssertREEF);
   fetch_or(&config, option(Parachute_Expanded | REEF_Asserted), Rel);

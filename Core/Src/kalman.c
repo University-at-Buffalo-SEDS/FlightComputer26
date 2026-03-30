@@ -128,8 +128,19 @@ void descent_initialize(void)
   irq_off(Accl_EXTI_1);
 /*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
 
+  enum message toggle = Using_Ascent_KF;
+
+  if (load(&config, Acq) & option(Defer_Baro_Fallback))
+  {
+    toggle |= Defer_Baro_Fallback;
+    fetch_or(&config, option(Monitor_Altitude | Validate_Measms), Rlx);
+
+    enum message cmd = fc_mask(Reinit_Barometer);
+    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+  }
+
   timer_update(DescentKF);
-  fetch_and(&config, ~option(Using_Ascent_KF), Rel);
+  fetch_and(&config, ~option(toggle), Rel);
 }
 
 /*
