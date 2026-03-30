@@ -40,12 +40,13 @@
  * then placed inside the telemetry (UART and SD) queues.
  */
 
+#include "FC-Threads.h"
 #include "kalman.h"
 #include "platform.h"
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
-#include "main.h"
+
 TX_THREAD distribution_task;
 
 
@@ -836,12 +837,12 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
                         DIST_PRIORITY,
                         /* No preemption threshold */
                         DIST_PRIORITY,
-                        TX_NO_TIME_SLICE,
+                        DIST_TIME_SLICE,
                         TX_AUTO_START);
 
   if (st != TX_SUCCESS)
   {
-    Error_Handler();
+    log_die(id "task creation failure: %u", st);
   }
 
   return TX_SUCCESS;

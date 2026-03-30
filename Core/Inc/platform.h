@@ -415,6 +415,8 @@ static inline SedsResult request_ignition(void)
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
 
+#ifdef USB_ENUMERATES
+
 #define log_msg_sync(msg, size) printf("\n%s\n", (msg))
 
 #define log_msg(msg) log_msg_sync(msg, 0)
@@ -467,6 +469,26 @@ static inline SedsResult request_ignition(void)
 
 #define request_ignition()                                    \
   ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
+
+#else
+
+#define log_msg_sync(msg, size) 
+
+#define log_msg(msg) log_msg_sync(msg, 0)
+
+#define log_measurement(type, buf) 
+
+#define log_filter_data(buf, size) 
+
+#define log_err_sync(fmt, ...) 
+
+#define log_die(fmt, ...) 
+
+#define log_err log_err_sync
+
+#define request_ignition() 
+
+#endif // USB_ENUMERATES
 
 #endif // TELEMETRY_ENABLED
 

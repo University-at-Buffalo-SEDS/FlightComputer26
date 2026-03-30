@@ -248,3 +248,10 @@ if (SENSOR_TESTS)
         ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
     )
 endif()
+
+# Options defaults to OFF
+option(USB_ENUM "Debug with IO-dependent functions" OFF)
+
+if (USB_ENUM)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
+endif()
