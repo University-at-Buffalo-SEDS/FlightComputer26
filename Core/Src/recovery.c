@@ -73,10 +73,10 @@ static fu16 gps_malform_count = 0;
  * modified and passed to init at runtime */
 
 static struct baro_config baro_conf = {
-    .osr_t = BARO_OSR_X1,
-    .osr_p = BARO_OSR_X2,
+    .osr_t = Baro_OSR_x1,
+    .osr_p = Baro_OSR_x2,
     .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = BARO_IIR_COEF_0,
+    .iir_coef = Baro_IIR_Coef_0,
 };
 
 static struct gyro_config gyro_conf = {
@@ -211,8 +211,8 @@ static inline void barometer_fallback(void)
 {
   config &= ~option(GPS_Available);
 
-  baro_conf.osr_p = BARO_OSR_X8;
-  baro_conf.iir_coef = BARO_IIR_COEF_15;
+  baro_conf.osr_p = Baro_OSR_x8;
+  baro_conf.iir_coef = Baro_IIR_Coef_15;
 
   if (config & option(Using_Ascent_KF))
   {
