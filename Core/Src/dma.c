@@ -61,26 +61,19 @@ static atomic_uint_fast32_t rxts[Sensors] = {0};
 /* ------ Static storage ------ */
 
 
-/* ------ Mini-mutex ------ */
+/* ------ Spinlock ------ */
 
 static inline void lock(enum sensor k)
 {
   fu8 unlocked = 0;
 
-  /* Simplified mutex variant without opportunistic spin.
-   * Why? On one-threaded MCU, a contender task will not
-   * release the lock unless we give control back to it.
-   * Strong LL/SC semantics to avoid spurious yield.
+  /* Spinlock with context switch? What the fuck?
+   * But in our case it makes sense because critical sections
+   * are too tiny to use blocking primitives and regular spinlock
+   * wouldn't concede the only physical core to a contender thread.
    */
   while (!cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
   {
-    /* This is a strong mauvais on general-case MPMC systems,
-     * but in our case:
-     * 1. There is only one contender task,
-     * 2. The contender task is round-robin, FIFO scheduled,
-     * 3. Critical sections are very short.
-     * 4. Blocking on ThreadX predicates (mutex, event flags),
-     *    is more expensive scheduler-wise. */
     tx_thread_relinquish();
   }
 }
@@ -90,7 +83,7 @@ static inline void unlock(enum sensor k)
   store(&locks[k], 0, Rel);
 }
 
-/* ------ Mini-mutex ------ */
+/* ------ Spinlock ------ */
 
 
 /* ------ Public fetching functions ------ */

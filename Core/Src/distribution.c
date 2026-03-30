@@ -539,12 +539,10 @@ validate_all(const struct measurement *buf, fu32 conf)
  */
 static inline void pre_launch(void)
 {
-  fu32 st = 0, counter = 0;
+  fu32 st = 0, counter = 0, conf = 0;
 
   float accum_baro = 0, accum_gps = 0;
   fu32 ctr_baro = 0, ctr_gps = 0;
-
-  fu32 conf = load(&config, Acq);
 
   task_loop (conf & option(Launch_Triggered))
   {
@@ -797,7 +795,8 @@ void distribution_entry(ULONG input)
 
   fu8 imu = 0;
 
-  /* Enter pre-launch loop only once. */
+  /* Enter pre-launch loop only once.
+   */
   if (!(conf & option(Launch_Triggered)))
   {
     pre_launch();
@@ -807,8 +806,8 @@ void distribution_entry(ULONG input)
   {
     conf = load(&config, Acq);
 
-    conf &option(Using_Ascent_KF) ? ascent_cycle(conf, &imu)
-                                  : descent_cycle(conf);
+    conf & option(Using_Ascent_KF) ? ascent_cycle(conf, &imu)
+                                   : descent_cycle(conf);
   }
 }
 

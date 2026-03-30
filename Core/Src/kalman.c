@@ -8,7 +8,7 @@
  *	 - Context and type-specifc math functions.
  *
  * The entirety of logic in this file is executed within
- * the context of either Distribution Evaluation task,
+ * the context of either Distribution or Evaluation task,
  * which invoke parts of one of two filters based on the
  * flight state and global run time configuration. All
  * invokationsare performed synchronously.
