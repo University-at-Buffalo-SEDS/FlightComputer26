@@ -204,7 +204,7 @@ endif()
 # Custom compilation and linker flags
 
 # Option defaults to OFF
-option(CUSTOM_FLAGS "User-defined flags" OFF)
+option(CUSTOM_FLAGS "User-defined flags" ON)
 message(STATUS "Custom flags: ${CUSTOM_FLAGS}")
 
 if (CUSTOM_FLAGS)

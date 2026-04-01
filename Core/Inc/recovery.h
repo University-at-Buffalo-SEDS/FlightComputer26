@@ -52,7 +52,7 @@ enum sensor_mask : fu8 {
 #define reinit(fn, ctr, sens)             \
   do {                                    \
     fu8 k = 0;                            \
-    for (; k < MAX_REINIT_ATTEMPTS ||     \
+    for (; k < MAX_REINIT_ATTEMPTS &&     \
            (fn) != HAL_OK; ++k)           \
            ;                              \
     if (k >= MAX_REINIT_ATTEMPTS)         \
