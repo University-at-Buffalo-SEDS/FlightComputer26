@@ -390,7 +390,7 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
     log_die(id "pool %s %u", critical, st);
   }
 
-  st = tx_thread_create(&distribution_task,
+  st = tx_thread_create(&dma_task,
                         "DMA Task",
                         dma_entry,
                         DMA_INPUT,

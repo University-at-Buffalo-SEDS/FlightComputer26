@@ -547,11 +547,6 @@ static inline void pre_launch(void)
 
   task_loop (conf & option(Launch_Triggered))
   {
-    if (st != TX_SUCCESS)
-    {
-      log_err(pilot "heartbeat failed: %u", st);
-    }
-
     if (fetch_gyro(&payload.gyro))
     {
       st = validate_gyro(&payload.gyro, conf);
@@ -583,7 +578,7 @@ static inline void pre_launch(void)
     if (fetch_baro(&payload.baro))
     {
       accum_baro += fsec(timer_exchange(IntervalBaro));
-      ++ctr_gps;
+      ++ctr_baro;
 
       st = validate_baro(&payload.baro, conf);
 
@@ -640,7 +635,8 @@ static inline void pre_launch(void)
   }
 
   /* Request Valve board to ignite the engine. */
-  task_loop(request_ignition() == SEDS_OK);
+  task_loop(request_ignition() == SEDS_OK)
+    ;
 
   log_msg(id "ignition requested, in flight mode");
 }

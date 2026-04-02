@@ -486,7 +486,7 @@ static inline SedsResult request_ignition(void)
 
 #define log_err_sync(fmt, ...) 
 
-#define log_die(fmt, ...) 
+#define log_die(fmt, ...) Error_Handler()
 
 #define log_err log_err_sync
 

@@ -422,7 +422,7 @@ void evaluation_entry(ULONG input)
 
   enter_flight_state(conf);
 
-  task_loop(conf & Eval_Abort_Flag)
+  task_loop(conf & option(Eval_Abort_Flag))
   {
     /* Task suspension */
     st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
@@ -434,7 +434,9 @@ void evaluation_entry(ULONG input)
 
     ascent_update(sh.dt);
 
-    evaluate_rocket_state(load(&config, Acq));
+    conf = load(&config, Acq);
+
+    evaluate_rocket_state(conf);
   }
 }
 
