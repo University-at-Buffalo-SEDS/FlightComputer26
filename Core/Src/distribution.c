@@ -40,7 +40,6 @@
  * then placed inside the telemetry (UART and SD) queues.
  */
 
-#include "FC-Threads.h"
 #include "kalman.h"
 #include "platform.h"
 #include "evaluation.h"
@@ -54,6 +53,8 @@ TX_THREAD distribution_task;
 
 #define id "DI "
 #define pilot "PI "
+#define pi_bar "BAR"
+#define pi_gps "GPS"
 
 /* Latest logged measurement */
 struct measurement payload = {0};
@@ -557,7 +558,7 @@ static inline void pre_launch(void)
       }
       else
       {
-        log_err(pilot "malformed GYRO data: %u", st);
+        log_err(pilot "malformed Gyro data: %u", st);
       }
     }
 
@@ -571,7 +572,7 @@ static inline void pre_launch(void)
       }
       else
       {
-        log_err(pilot "malformed ACCEL data: %u", st);
+        log_err(pilot "malformed Accl data: %u", st);
       }
     }
 
@@ -617,22 +618,23 @@ static inline void pre_launch(void)
 
 #endif // GPS_AVAILABLE
 
-    if (!(++counter & 31))
+    if (!(++counter & 255))
     {
       if (ctr_baro > 0)
       {
-        log_err(pilot "gathering baro every %f sec", accum_baro / ctr_baro);
+        log_transition(pi_bar, accum_baro / ctr_baro);
       }
       if (ctr_gps > 0)
       {
-        log_err(pilot "gathering gps every %f sec", accum_gps / ctr_gps);
+        log_transition(pi_gps, accum_gps / ctr_gps);
       }
     }
 
     conf = load(&config, Acq);
   }
 
-  /* Request Valve board to ignite the engine. */
+  /* Request Valve board to ignite the engine.
+   */
   task_loop(request_ignition() == SEDS_OK)
     ;
 

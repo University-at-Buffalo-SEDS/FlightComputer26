@@ -57,7 +57,7 @@ fu32 sv_size_bytes = ASC_STAT * sizeof(float);
 volatile enum state flight = Suspended;
 
 const char *trans[Flight_States] = {
-    [Suspended] = "",
+    [Suspended] = " interval in pilot mode:",
     [Idle]      = "",
     [Launch]    = "Launch detected. Acceleration in Z:",
     [Ascent]    = "Ascending. Velocity in Z:",
@@ -396,12 +396,11 @@ enter_flight_state(fu32 conf)
   }
   else
   {
-    log_msg(id "received launch signal");
-    flight = Idle;
-
     ascent_initialize();
-
-    /* Signal distribution task to enter main cycle. */
+    log_msg(id "received launch signal");
+    
+    /* Signal distribution task to enter main cycle.
+     */
     fetch_or(&config, option(Launch_Triggered), Rel);
   }
 }
