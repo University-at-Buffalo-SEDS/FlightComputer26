@@ -38,7 +38,7 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
 };
 
 /* IREC 2027: include temperature (indices 3, 4, 5). */
-static uint8_t baro_rx[3] = {0};
+static uint8_t baro_rx[6] = {0};
 static uint8_t gyro_rx[6] = {0};
 static uint8_t accl_rx[6] = {0};
 
@@ -100,16 +100,18 @@ bool fetch_baro(struct baro *buf)
     return false;
   }
 
-  fu32 pres;
+  fu32 pres, temp;
 
   lock(Sensor_Baro);
 
   pres = U24(baro_rx[0], baro_rx[1], baro_rx[2]);
+  temp = U24(baro_rx[3], baro_rx[4], baro_rx[5]);
 
   unlock(Sensor_Baro);
 
   dma_bench_log(Sensor_Baro);
 
+  buf->t = baro_compensate_temp(temp);
   buf->p = baro_compensate_pres(pres);
   buf->alt = baro_relative_alt(buf->p);
   
@@ -231,7 +233,7 @@ static inline void propagate_rx(void)
   switch (select.next)
   {
     case Sensor_Baro:
-      memcpy(baro_rx, (uint8_t *)(rx + 1), sizeof baro_rx);
+      memcpy(baro_rx, (uint8_t *)(rx + 2), sizeof baro_rx);
       break;
 
     case Sensor_Gyro:

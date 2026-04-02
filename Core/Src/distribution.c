@@ -53,7 +53,7 @@ TX_THREAD distribution_task;
 /* ------ Global and static storage ------ */
 
 #define id "DI "
-#define pilot "PILOT "
+#define pilot "PI "
 
 /* Latest logged measurement */
 struct measurement payload = {0};
@@ -503,7 +503,7 @@ validate_baro(const struct baro *baro, fu32 conf)
 
   if (conf & option(Validate_Measms))
   {
-    if (baro->p > MAX_PRS || baro->p < MAX_PRS)
+    if (baro->p > MAX_PRS || baro->p < MIN_PRS)
     {
       st |= Bad_Pressure;
     }
@@ -619,8 +619,6 @@ static inline void pre_launch(void)
 
     if (!(++counter & 31))
     {
-      // FIXME ask to provide explicit packet type for
-      // rates.
       if (ctr_baro > 0)
       {
         log_err(pilot "gathering baro every %f sec", accum_baro / ctr_baro);

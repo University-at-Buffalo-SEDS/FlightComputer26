@@ -198,7 +198,7 @@ static inline void log_transition(const char *task, float metric)
   char buf[MAX_REPORT_SIZE];
   
   snprintf(buf,
-           sizeof(task) + sizeof(trans[flight]) + FLT_REP_PREC + 4,
+           8 + sizeof(trans[flight]) + FLT_REP_PREC,
            "%s%s %.*g\n",
            task, trans[flight],
            FLT_REP_PREC,
