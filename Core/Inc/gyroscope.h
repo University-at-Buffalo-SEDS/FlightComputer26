@@ -20,6 +20,7 @@
 #define GYRO_FIFO_CONFIG_0  0x3D
 #define GYRO_FIFO_CONFIG_1  0x3E
 #define GYRO_FIFO_DATA      0x3F
+#define GYRO_INT_CTRL       0x15
 #define GYRO_INT_CONF       0x16
 #define GYRO_INT_MAP        0x18
 
@@ -32,8 +33,11 @@
 
 #define GYRO_CHIP_ID_VALUE  0x0F
 
-/* [0000] 0001 : INT3 to active high PP
-                 INT4 to active low  PP */
+/* 1000 0000 : DRDY interrupt */
+#define GYRO_INT_CTRL_VAL 0x80u
+
+/* 0000 0001 : INT3 to active high PP
+               INT4 to active low  PP */
 #define GYRO_INT_CONF_VAL 0x01u
 
 /* 0000 0001 : INT3 mapped to new data
