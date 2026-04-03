@@ -155,17 +155,6 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
     return st;
   }
 
-  /* Set interrupt pin INT3 (PB0) to raise on new data */
-  st = accl_write_reg(hspi, ACCL_INT_CONF, ACCL_INT_CONF_VAL);
-  if (st != HAL_OK) {
-    return st;
-  }
-
-  st = accl_write_reg(hspi, ACCL_INT_MAP, ACCL_INT_MAP_VAL);
-  if (st != HAL_OK) {
-    return st;
-  }
-
   /* Enable active mode (datasheet 5.3.20) */
   st = accl_write_reg(hspi, ACCL_PWR_CONF, (uint8_t)Active_Mode);
   if (st != HAL_OK) {
@@ -181,6 +170,17 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
   }
 
   HAL_Delay(1);
+
+  /* Set interrupt pin INT1 (PC4) to raise on new data */
+  st = accl_write_reg(hspi, ACCL_INT_CONF, ACCL_INT_CONF_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  st = accl_write_reg(hspi, ACCL_INT_MAP, ACCL_INT_MAP_VAL);
+  if (st != HAL_OK) {
+    return st;
+  }
 
   return HAL_OK;
 }

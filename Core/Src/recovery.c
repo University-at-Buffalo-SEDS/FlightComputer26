@@ -81,11 +81,11 @@ static struct baro_config baro_conf = {
 
 static struct gyro_config gyro_conf = {
     .rng = Gyro_Range_2000Dps,
-    .bw = Gyro_532Hz_ODR_2000Hz,
+    .bw = Gyro_32Hz_ODR_100Hz,
 };
 
 static struct accl_config accl_conf = {
-    .mode = Normal_1600Hz,
+    .mode = Normal_100Hz,
     .rng = Accl_Range_24g,
 };
 

@@ -630,6 +630,8 @@ static inline void pre_launch(void)
       }
     }
 
+    tx_thread_relinquish();
+
     conf = load(&config, Acq);
   }
 
