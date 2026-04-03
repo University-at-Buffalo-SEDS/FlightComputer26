@@ -141,10 +141,9 @@ bool fetch_gyro(struct coords *buf)
 
   dma_bench_log(Sensor_Gyro);
 
-  // TODO: div by sensivity after merging DMA with newest drivers
-  buf->x = gx;
-  buf->y = gy;
-  buf->z = gz;
+  buf->x = gx * inv_sens[init_rng];
+  buf->y = gy * inv_sens[init_rng];
+  buf->z = gz * inv_sens[init_rng];
 
   return true;
 }

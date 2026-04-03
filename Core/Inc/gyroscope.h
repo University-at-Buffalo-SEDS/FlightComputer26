@@ -95,6 +95,9 @@ struct gyro_raw {
 
 struct coords;
 
+extern enum gyro_range init_rng;
+extern const float inv_sens[];
+
 HAL_StatusTypeDef gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf);
 HAL_StatusTypeDef gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf);
 

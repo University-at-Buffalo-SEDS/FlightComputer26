@@ -9,10 +9,10 @@
 /* ------ Static ------ */
 
 /* Set by gyro_init */
-static enum gyro_range init_rng = Gyro_Range_2000Dps;
+enum gyro_range init_rng = Gyro_Range_2000Dps;
 
 /* Inverted to avoid division at runtime */
-static const float inv_sens[Gyro_Range_Entries] = {
+const float inv_sens[Gyro_Range_Entries] = {
   1.0f/16.384f, 1.0f/32.768f, 1.0f/65.536f, 1.0f/131.072f, 1.0f/262.144f
 };
 
