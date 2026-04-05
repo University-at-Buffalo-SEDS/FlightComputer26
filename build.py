@@ -60,9 +60,8 @@ OPTIONS:
         asm             - generate assembly code for the
                         - preset and options chosen
 
-        dmabench        - compile DMA with microbenchmark;
-                        - slows down DMA consumer and logs
-                        - time information on SP/SC delays
+        bench           - compile with benchmarks, even
+                        - otherwise you can leave them in code
 
         userflags       - compile with flags in top-level
                         - CMakeLists; use this for the final
@@ -70,6 +69,9 @@ OPTIONS:
 
         sensortest      - run synchronous sensor tests
                         - prerequisite: notelemetry
+
+        nousb           - do not assume enumerated USB
+                        - prerequisute: notelemetry
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -103,7 +105,7 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "nogps",
                         "nosd",
                         "asm",
-                        "dmabench",
+                        "bench",
                         "userflags",
                         "sensortest",
                         "nousb"
@@ -167,7 +169,7 @@ def configure(buildir: Path, preset: str, options: dict):
         compat          = "-DTELEMETRY_COMPAT=ON"
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
-        dmabench        = "-DDMA_BENCH=OFF"
+        bench           = "-DFC_BENCH=OFF"
         flags           = "-DCUSTOM_FLAGS=OFF"
         sensortest      = "-DSENSOR_TESTS=OFF"
         usb             = "-DUSB_ENUM=ON"
@@ -190,8 +192,8 @@ def configure(buildir: Path, preset: str, options: dict):
                 if options["nosd"]:
                         sd = "-DONBOARD_SD=OFF"
 
-        if options["dmabench"]:
-                dmabench = "-DDMA_BENCH=ON"
+        if options["bench"]:
+                bench = "-DFC_BENCH=ON"
 
         if options["userflags"]:
                 flags = "-DCUSTOM_FLAGS=ON"
@@ -206,7 +208,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 compat,
                 gps,
                 sd,
-                dmabench,
+                bench,
                 flags,
                 sensortest,
                 usb,

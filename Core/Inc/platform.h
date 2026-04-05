@@ -154,6 +154,10 @@ typedef arm_matrix_instance_f32 matrix;
 
 #endif // DMB support
 
+/* Basic heap management */
+
+extern void *_sbrk(ptrdiff_t incr);
+
 /* ------ Task utilities ------ */
 
 

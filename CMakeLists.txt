@@ -141,71 +141,62 @@ if (ENABLE_TELEMETRY)
 endif()
 
 
-# Packet handling options
+# Flight Computer options
 
-# Option defaults to OFF
-option(MESSAGE_BATCHING "Handle batched messages in FC handler." OFF)
-message(STATUS "Message batching: ${MESSAGE_BATCHING}")
+option(MESSAGE_BATCHING "Handle batched messages"       OFF)
+option(TELEMETRY_COMPAT "Byte payload compatibility"    ON)
+option(EXTERNAL_GPS     "GPS board availability"        OFF)
+option(ONBOARD_SD       "On-board logger storage"       ON)
+option(FC_BENCH         "Project-wide benchmark"        OFF)
+option(CUSTOM_FLAGS     "User-defined flags"            ON)
+option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
+option(USB_ENUM         "Assume USB for IO functions"   OFF)
+
+message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
+message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
+message(STATUS "External GPS:           ${EXTERNAL_GPS}")
+message(STATUS "SD card:                ${ONBOARD_SD}")
+message(STATUS "Benchmarks:             ${FC_BENCH}")
+message(STATUS "Custom flags:           ${CUSTOM_FLAGS}")
+message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
+message(STATUS "USB enumeration:        ${USB_ENUM}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
 endif()
 
-# Option defaults to ON
-option(TELEMETRY_COMPAT "FC command compatibility with 1-byte payload." ON)
-message(STATUS "Command compatibility: ${TELEMETRY_COMPAT}")
-
 if (TELEMETRY_COMPAT)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_CMD_COMPAT)
 endif()
-
-# Option defaults to ON
-option(EXTERNAL_GPS "Availability of external GPS module." OFF)
-message(STATUS "External GPS: ${EXTERNAL_GPS}")
 
 if (EXTERNAL_GPS)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GPS_AVAILABLE)
 endif()
 
-# Option defaults to ON
-option(ONBOARD_SD "Logger storage on FC board." ON)
-message(STATUS "SD card: ${ONBOARD_SD}")
-
 if (ONBOARD_SD)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
 endif()
 
-
-# DMA testing
-
-# Option defaults to OFF
-option(DMA_TESTING "Local DMA testing (outputs to terminal emulator)" OFF)
-
-if (DMA_TESTING)
-    message(STATUS "Running local DMA tests (no telemetry).")
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_LOCAL_TEST)
+if (FC_BENCH OR SENSOR_TESTS)
     target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Test
     )
+endif()
+
+if (FC_BENCH)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_BENCHMARK)
+endif()
+
+if (SENSOR_TESTS)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_SENSORS)
     target_sources(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Test/dmatest.c
+        ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
     )
 endif()
 
-# Options defaults to OFF
-option(DMA_BENCH "DMA produce/consume delay benchmark" OFF)
-
-if (DMA_BENCH)
-    message(STATUS "Running DMA benchmarks.")
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DMA_BENCHMARK)
+if (USB_ENUM)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
 endif()
-
-
-# Custom compilation and linker flags
-
-# Option defaults to OFF
-option(CUSTOM_FLAGS "User-defined flags" ON)
-message(STATUS "Custom flags: ${CUSTOM_FLAGS}")
 
 if (CUSTOM_FLAGS)
     set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
@@ -228,31 +219,8 @@ if (CUSTOM_FLAGS)
         $<$<CONFIG:Release>:${LINK_RELEASE}>
     )
 
-    # Newlib is compiled without LTO, so we must maintain this for syscall
+    # Newlib is compiled without LTO; we must preserve this for syscall
     # wrappers that CubeMX generated.
     set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
                                 PROPERTIES COMPILE_OPTIONS "-fno-lto")
-endif()
-
-
-# Options defaults to OFF
-option(SENSOR_TESTS "Synchronous sensor tests" OFF)
-
-if (SENSOR_TESTS)
-    message(STATUS "Testing sensors.")
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_SENSORS)
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Test
-    )
-    target_sources(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
-    )
-endif()
-
-# Options defaults to OFF
-option(USB_ENUM "Debug with IO-dependent functions" OFF)
-
-if (USB_ENUM)
-    message(STATUS "Assuming USB enumeration.")
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
 endif()

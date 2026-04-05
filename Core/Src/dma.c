@@ -13,8 +13,8 @@
  * is not needed to be done elsewhere.
  */
 
-#include "accelerometer.h"
 #include "platform.h"
+#include "sweetbench.h"
 #include "recovery.h"
 #include "dma.h"
 
@@ -102,6 +102,8 @@ bool fetch_baro(struct baro *buf)
 
   fu32 pres, temp;
 
+  sweetbench_catch(0);
+
   lock(Sensor_Baro);
 
   pres = U24(baro_rx[0], baro_rx[1], baro_rx[2]);
@@ -109,11 +111,11 @@ bool fetch_baro(struct baro *buf)
 
   unlock(Sensor_Baro);
 
-  dma_bench_log(Sensor_Baro);
-
   buf->t = baro_compensate_temp(temp);
   buf->p = baro_compensate_pres(pres);
   buf->alt = baro_relative_alt(buf->p);
+
+  sweetbench_start(0, 10, false);
   
   return true;
 }
@@ -131,6 +133,8 @@ bool fetch_gyro(struct coords *buf)
 
   fi16 gx, gy, gz;
 
+  sweetbench_catch(1);
+
   lock(Sensor_Gyro);
 
   gx = I16(gyro_rx[0], gyro_rx[1]);
@@ -144,6 +148,8 @@ bool fetch_gyro(struct coords *buf)
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
   buf->z = gz * inv_sens[init_rng];
+
+  sweetbench_start(1, 10, false);
 
   return true;
 }
@@ -161,6 +167,8 @@ bool fetch_accl(struct coords *buf)
 
   fi16 ax, ay, az;
 
+  sweetbench_catch(2);
+
   lock(Sensor_Accl);
 
   ax = I16(accl_rx[0], accl_rx[1]);
@@ -169,11 +177,11 @@ bool fetch_accl(struct coords *buf)
   
   unlock(Sensor_Accl);
 
-  dma_bench_log(Sensor_Accl);
-
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
   buf->z = az * lsb_to_g;
+
+  sweetbench_start(2, 10, false);
 
   return true;
 }
