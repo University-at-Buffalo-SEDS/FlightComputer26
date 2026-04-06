@@ -237,12 +237,12 @@ struct description {
 
 /* Run time config options applied on boot.
  * Users are welcome to edit the defaults here. */
-#define DEFAULT_OPTIONS ( (enum message) (0           \
-                          | Consecutive_Samples       \
-                          | Eval_Focus_Flag           \
-                          | Reset_Failures            \
-                          | Validate_Measms           \
-                          | Using_Ascent_KF           \
+#define DEFAULT_OPTIONS ( (enum message) (0                   \
+                          | option(Consecutive_Samples)       \
+                          | option(Eval_Focus_Flag)           \
+                          | option(Reset_Failures)            \
+                          | option(Validate_Measms)           \
+                          | option(Using_Ascent_KF)           \
                         ) )
 
 /* ------ User default configuration ------ */

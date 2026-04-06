@@ -662,7 +662,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   {
     st = validate_gyro(&suspect, conf);
 
-    if (st == Sensor_Measm_Code)
+    if (st == fc_mask(Sensor_Measm_Code))
     {
       payload.gyro = suspect;
       *imu |= Sensor_Gyro;
@@ -677,7 +677,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   {
     st = validate_accl(&suspect, conf);
 
-    if (st == Sensor_Measm_Code)
+    if (st == fc_mask(Sensor_Measm_Code))
     {
       payload.d.accl = suspect;
       *imu |= Sensor_Accl;
@@ -776,7 +776,8 @@ static inline void descent_cycle(fu32 conf)
   {
     distance_from_rail(&payload.d.gps);
     descent_update(sh.dt);
-    st = CAN_EVALUATE;
+
+    // st = CAN_EVALUATE; // Alex seemed unsure of this.
   }
 
 #endif // GPS_AVAILABLE

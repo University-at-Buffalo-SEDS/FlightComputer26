@@ -389,7 +389,7 @@ void evaluate_rocket_state(fu32 conf)
 static inline void
 enter_flight_state(fu32 conf)
 {
-  if (conf & Launch_Triggered)
+  if (conf & option(Launch_Triggered))
   {
     /* Discard unfinished (interrupted) state vector. */
     sh.idx = prev(1);
@@ -398,6 +398,8 @@ enter_flight_state(fu32 conf)
   {
     ascent_initialize();
     log_msg(id "received launch signal");
+
+    flight = Idle;
     
     /* Signal distribution task to enter main cycle.
      */

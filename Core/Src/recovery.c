@@ -598,7 +598,7 @@ static void fc_timer_routine(ULONG timer_id)
     {
       test_launched = 1;
       enum message cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
 #endif // TELEMETRY_ENABLED
