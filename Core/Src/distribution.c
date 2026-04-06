@@ -345,7 +345,7 @@ handle_gps_data(const uint8_t *data, size_t len)
 
   enqueue_gps_data(data);
 
-  sweetbench_start(10, 50, false);
+  sweetbench_start(10, 50);
 
   return SEDS_OK;
 }

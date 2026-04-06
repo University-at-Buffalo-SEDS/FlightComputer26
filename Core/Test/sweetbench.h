@@ -103,7 +103,7 @@ static inline void _sb_catch(fu16 idx)
 #define _sb_slf(x) x
 #define _sb_ovl(_1, _2, _3, fn, ...) fn
 
-#define _sb_so1(i) 				_sb_setoff((i), _SB_COUNT, true)
+#define _sb_so1(i) 				_sb_setoff((i), _SB_COUNT, false)
 #define _sb_so2(i, c) 		_sb_setoff((i), (c), true)
 #define _sb_so3(i, c, f) 	_sb_setoff((i), (c), (f))
 

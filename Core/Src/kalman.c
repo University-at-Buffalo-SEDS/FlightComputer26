@@ -164,7 +164,7 @@ void descent_predict(const float dt)
  */
 void descent_update(const float dt)
 {
-  sweetbench_start(4);
+  sweetbench_start(4, 50, true);
 
   // TODO
 
@@ -342,7 +342,7 @@ ascent_measurement(const struct state_vec *restrict vec,
  */
 void ascent_update(const float dt)
 {
-  sweetbench_start(3);
+  sweetbench_start(3, 50, true);
 
   // TODO
 

@@ -106,7 +106,7 @@ bool fetch_baro(struct baro *buf)
   buf->p = baro_compensate_pres(pres);
   buf->alt = baro_relative_alt(buf->p);
 
-  sweetbench_start(0, 10, false);
+  sweetbench_start(0, 150);
   
   return true;
 }
@@ -138,7 +138,7 @@ bool fetch_gyro(struct coords *buf)
   buf->y = gy * inv_sens[init_rng];
   buf->z = gz * inv_sens[init_rng];
 
-  sweetbench_start(1, 10, false);
+  sweetbench_start(1, 150);
 
   return true;
 }
@@ -170,7 +170,7 @@ bool fetch_accl(struct coords *buf)
   buf->y = ay * lsb_to_g;
   buf->z = az * lsb_to_g;
 
-  sweetbench_start(2, 10, false);
+  sweetbench_start(2, 150);
 
   return true;
 }

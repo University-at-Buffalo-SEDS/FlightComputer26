@@ -117,7 +117,7 @@ initialize_sensors(enum sensor_mask sensor)
 {
   enum sensor_mask fails = 0;
 
-  sweetbench_start(5, 1, false);
+  sweetbench_start(5, 1);
 
   clear_spi1_irq();
 
@@ -520,7 +520,7 @@ static inline void decode_message(enum message msg)
   {
     sweetbench_catch(11);
     timer_update(HeartbeatGND);
-    sweetbench_start(11, 100, false);
+    sweetbench_start(11, 100);
   }
   else if (msg & Actionable_Decrees)
   {
@@ -621,7 +621,7 @@ static void fc_timer_routine(ULONG timer_id)
     }
   }
 
-  sweetbench_start(6, 10, false);
+  sweetbench_start(6, 10);
 }
 
 /* ------ Timer routine ------ */
