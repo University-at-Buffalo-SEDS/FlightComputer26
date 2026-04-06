@@ -57,27 +57,6 @@ struct dma_flags {
 #define ACCL_MASK (ACCL_EXTI_1_Pin | ACCL_EXTI_2_Pin)
 
 
-/* ------ Producer / consumer benchmark timer ------ */
-
-#ifdef DMA_BENCHMARK
-
-#define dma_bench_log(dev)                                    \
-  do {                                                        \
-    fu32 dt = now_ms() - load(&rxts[dev], Acq);               \
-    log_err("DMA: %u: consumed in %u ms", dev, dt);           \
-  } while (0)
-
-#define dma_bench_refresh(dev)                                \
-  store(&rxts[dev], now_ms(), Rel)
-
-#else
-
-#define dma_bench_log(dev)     (void)0
-#define dma_bench_refresh(dev) (void)0  
-
-#endif // DMA_BENCHMARK
-
-
 /* ------ Public API ------ */
 
 /*

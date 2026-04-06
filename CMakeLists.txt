@@ -89,6 +89,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
+    ${CMAKE_SOURCE_DIR}/Core/Test
 )
 
 # Add project symbols (macros)
@@ -175,12 +176,6 @@ endif()
 
 if (ONBOARD_SD)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
-endif()
-
-if (FC_BENCH OR SENSOR_TESTS)
-    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Test
-    )
 endif()
 
 if (FC_BENCH)

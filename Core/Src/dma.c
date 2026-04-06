@@ -143,8 +143,6 @@ bool fetch_gyro(struct coords *buf)
   
   unlock(Sensor_Gyro);
 
-  dma_bench_log(Sensor_Gyro);
-
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
   buf->z = gz * inv_sens[init_rng];
@@ -253,8 +251,6 @@ static inline void propagate_rx(void)
   }
 
   unlock(select.next);
-
-  dma_bench_refresh(select.next);
 
   /* Relevance flags use the same EXTI pin masks. */
   (void) fetch_or(&flags.relv, gpio.drdy[select.next], Rel);

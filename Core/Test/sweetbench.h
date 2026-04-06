@@ -3,7 +3,7 @@
  *
  * The first version of this benchmark is designed to
  * measure the time it takes to execute between any two
- * points in the code, including synchronization and
+ * points in one thread, including synchronization and
  * preemption overheads (sans out-of-order execution,
  * because Cortex-M33 has an in-order issue pipeline).
  */
@@ -11,8 +11,9 @@
 #ifndef _SWEETBENCH_H
 #define _SWEETBENCH_H
 
-#include "platform.h"
+#ifdef FC_BENCHMARK
 
+#include "platform.h"
 
 #define _SB_ID		"SB "
 #define _SB_MAX		32
@@ -27,17 +28,11 @@ struct _sb_context {
 
 static struct _sb_context **_sb_meta = NULL;
 
-
-#ifdef FC_BENCHMARK
-
 static void __attribute__((constructor)) _sb_init(void)
 {
 	_sb_meta = _sbrk(_SB_MAX * sizeof(struct _sb_context));
 	memset(_sb_meta, 0, _SB_MAX * sizeof(struct _sb_context));
 }
-
-#endif // FC_BENCHMARK
-
 
 static inline void _sb_log(fu16 idx)
 {
@@ -106,8 +101,6 @@ static inline void _sb_catch(fu16 idx)
 #define _sb_so1(i) 				_sb_setoff((i), _SB_COUNT, true)
 #define _sb_so2(i, c) 		_sb_setoff((i), (c), true)
 #define _sb_so3(i, c, f) 	_sb_setoff((i), (c), (f))
-
-#ifdef FC_BENCHMARK
 
 #define sweetbench_start(...)	\
 	_sb_slf(_sb_ovl(__VA_ARGS__, _sb_so3, _sb_so2, _sb_so1)(__VA_ARGS__))
