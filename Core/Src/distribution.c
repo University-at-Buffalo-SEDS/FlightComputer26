@@ -45,6 +45,7 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "dma.h"
+#include "sweetbench.h"
 
 TX_THREAD distribution_task;
 
@@ -328,6 +329,8 @@ validate_gps_serial(const uint8_t *data, size_t len)
 static inline SedsResult
 handle_gps_data(const uint8_t *data, size_t len)
 {
+  sweetbench_catch(10);
+
   timer_update(HeartbeatRF);
 
   fu32 rep = validate_gps_serial(data, len);
@@ -341,6 +344,8 @@ handle_gps_data(const uint8_t *data, size_t len)
   fetch_or(&config, option(GPS_Available), Rlx);
 
   enqueue_gps_data(data);
+
+  sweetbench_start(10, 50, false);
 
   return SEDS_OK;
 }
@@ -651,6 +656,8 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   fu32 st;
   struct coords suspect;
 
+  sweetbench_start(8);
+
   if (fetch_gyro(&suspect))
   {
     st = validate_gyro(&suspect, conf);
@@ -722,9 +729,13 @@ fast_forward:
 
   log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
 
+  sweetbench_catch(8);
+
   if (conf & Eval_Focus_Flag)
   {
+    sweetbench_start(7, 10);
     tx_thread_relinquish();
+    sweetbench_catch(7);
   }
 }
 
@@ -734,6 +745,8 @@ fast_forward:
 static inline void descent_cycle(fu32 conf)
 {
   fu32 st = 0;
+
+  sweetbench_start(9);
 
   sh.dt = fsec(timer_exchange(DescentKF));
 
@@ -771,6 +784,7 @@ static inline void descent_cycle(fu32 conf)
   if (st == CAN_EVALUATE)
   {
     evaluate_rocket_state(conf);
+    sweetbench_catch(9);
   }
   else
   {

@@ -29,6 +29,7 @@
 #include "platform.h"
 #include "kalman.h"
 #include "dma.h"
+#include "sweetbench.h"
 
 
 /* Number of iterations - 1 for quaternion matrix
@@ -163,7 +164,11 @@ void descent_predict(const float dt)
  */
 void descent_update(const float dt)
 {
+  sweetbench_start(4);
+
   // TODO
+
+  sweetbench_catch(4);
 }
 
 /* ------ Descent Kalman filter ------ */
@@ -337,7 +342,11 @@ ascent_measurement(const struct state_vec *restrict vec,
  */
 void ascent_update(const float dt)
 {
+  sweetbench_start(3);
+
   // TODO
+
+  sweetbench_catch(3);
 }
 
 /* ------ Ascent Kalman filter ------ */

@@ -37,7 +37,6 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
   [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
 };
 
-/* IREC 2027: include temperature (indices 3, 4, 5). */
 static uint8_t baro_rx[6] = {0};
 static uint8_t gyro_rx[6] = {0};
 static uint8_t accl_rx[6] = {0};
@@ -49,14 +48,6 @@ static volatile uint8_t rx[SENSOR_BUF_SIZE] = {0};
 static struct selector select = {Sensors, 0};
 
 static struct dma_flags flags = {0, 0};
-
-#ifdef DMA_BENCHMARK
-
-/* HAL timestamp for consumer benchmark.
- * Stores relative time when RxCplt finishes transfer. */
-static atomic_uint_fast32_t rxts[Sensors] = {0};
-
-#endif // DMA_BENCHMARK
 
 /* ------ Static storage ------ */
 

@@ -48,11 +48,16 @@ static inline void _sb_log(fu16 idx)
 static inline void
 _sb_setoff(fu16 idx, size_t count, bool flush)
 {
-	if (idx >= _SB_MAX || _sb_meta[idx]->setoff != 0)
+	if (idx >= _SB_MAX)
 	{
-		/* Either more than two setoffs before catch or bad ID.
-		 */
 		log_err(_SB_ID "error in %u", idx);
+		return;
+	}
+
+	if (_sb_meta[idx]->setoff != 0)
+	{
+		/* Multiple start is allowed for branching.
+		 */
 		return;
 	}
 
@@ -76,7 +81,7 @@ static inline void _sb_catch(fu16 idx)
 
 	if (_sb_meta[idx]->count == 0)
 	{
-		/* Catch before start is allowed for flexibility.
+		/* Catch before start is allowed for inverse benchmarking.
 		 */
 		return;
 	}

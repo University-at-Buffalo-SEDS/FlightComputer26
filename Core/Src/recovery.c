@@ -38,6 +38,7 @@
 #include "evaluation.h"
 #include "recovery.h"
 #include "kalman.h"
+#include "sweetbench.h"
 
 TX_QUEUE shared;
 TX_THREAD recovery_task;
@@ -116,6 +117,8 @@ initialize_sensors(enum sensor_mask sensor)
 {
   enum sensor_mask fails = 0;
 
+  sweetbench_start(5, 1, false);
+
   clear_spi1_irq();
 
   if (sensor & Init_Baro)
@@ -171,6 +174,8 @@ initialize_sensors(enum sensor_mask sensor)
     config |= option(Init_Failure_Record);
     log_err(id "some of requested reinit failed: %u", fails);
   }
+
+  sweetbench_catch(5);
 }
 
 /*
@@ -513,7 +518,9 @@ static inline void decode_message(enum message msg)
 
   if (msg & GroundStation_Heartbeat)
   {
+    sweetbench_catch(11);
     timer_update(HeartbeatGND);
+    sweetbench_start(11, 100, false);
   }
   else if (msg & Actionable_Decrees)
   {
@@ -549,6 +556,8 @@ static inline void decode_message(enum message msg)
 static void fc_timer_routine(ULONG timer_id)
 {
   (void)timer_id;
+
+  sweetbench_catch(6);
 
   if (config & option(CO2_Asserted) &&
       timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
@@ -611,6 +620,8 @@ static void fc_timer_routine(ULONG timer_id)
       config |= option(GPS_Available);
     }
   }
+
+  sweetbench_start(6, 10, false);
 }
 
 /* ------ Timer routine ------ */
