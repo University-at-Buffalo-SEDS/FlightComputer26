@@ -557,7 +557,7 @@ static inline void pre_launch(void)
     {
       st = validate_gyro(&payload.gyro, conf);
 
-      if (st == Sensor_Measm_Code)
+      if (st == fc_mask(Sensor_Measm_Code))
       {
         log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
       }
@@ -571,7 +571,7 @@ static inline void pre_launch(void)
     {
       st = validate_accl(&payload.d.accl, conf);
 
-      if (st == Sensor_Measm_Code)
+      if (st == fc_mask(Sensor_Measm_Code))
       {
         log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
       }
@@ -588,7 +588,7 @@ static inline void pre_launch(void)
 
       st = validate_baro(&payload.baro, conf);
 
-      if (st == Sensor_Measm_Code)
+      if (st == fc_mask(Sensor_Measm_Code))
       {
         log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
       }

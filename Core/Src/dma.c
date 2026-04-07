@@ -361,6 +361,7 @@ void dma_entry(ULONG input)
       else
       {
         tx_thread_relinquish();
+        continue;
       }
     }
     
