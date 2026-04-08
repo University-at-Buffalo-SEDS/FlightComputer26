@@ -83,15 +83,9 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* Initialize telemetry lock used by Rust (telemetry_lock/telemetry_unlock). */
   telemetry_init_lock();
 
-  if (init_telemetry_router() != SEDS_OK) {
-    Error_Handler();
-  }
-
 #endif
 
   /* Log after router is initialized, before threads start */
-  char started_txt[] = "Starting Threadx Scheduler";
-  log_msg_sync(started_txt, sizeof started_txt);
 
   /* USER CODE END App_ThreadX_MEM_POOL */
 
@@ -101,11 +95,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   sd_logger_init("seds_log.txt", fx_stm32_sd_driver, NULL);
 #endif
 
-  create_recovery_task(byte_pool);
-  create_dma_task(byte_pool);
-  create_evaluation_task(byte_pool);
-  create_distribution_task(byte_pool);
-
 #ifdef TELEMETRY_ENABLED
   ret = create_telemetry_thread(byte_pool);
 
@@ -114,6 +103,13 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
     Error_Handler();
   }
 #endif
+
+  create_recovery_task(byte_pool);
+  create_dma_task(byte_pool);
+  create_evaluation_task(byte_pool);
+  create_distribution_task(byte_pool);
+
+
 
   /* USER CODE END App_ThreadX_Init */
 

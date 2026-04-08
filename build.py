@@ -25,7 +25,7 @@ OPTIONS:
 	                - target (requires dfu-utils)
 
         flash-st        - alternative to flash-dfu, but
-                        - uses STLink (requires stlink)
+                        - uses STM32_Programmer_CLI over SWD
 
         stlink          - open STLink connection for
                         - debugger and exit 
@@ -119,6 +119,7 @@ ELF             = "FlightComputer26.elf"
 FC_ADDR         = "0x08000000"
 DEBUG_HOST      = "127.0.0.1"
 DEBUG_PORT      = 4242
+STM32_PROG_CLI  = "STM32_Programmer_CLI"
 
 
 def run(cmd: list[str], *, pipeline: bool = False):
@@ -138,6 +139,15 @@ def run(cmd: list[str], *, pipeline: bool = False):
 
         except Exception as e:
                 sys.exit(f"Command failed: {e}")
+
+
+def require_tool(name: str) -> str:
+        path = shutil.which(name)
+
+        if path is None:
+                sys.exit(f"Required tool not found in PATH: {name}")
+
+        return path
 
 
 def parse(argv: list[str]):
@@ -253,12 +263,17 @@ def flash(path: Path, options: dict):
         cmd = []
 
         if options["flash-dfu"]:
+                require_tool("dfu-util")
                 cmd = [ "dfu-util", "-a", "0",
                         "-s", FC_ADDR, "-D", str(path),
                 ]
         elif options["flash-st"]:
-                cmd = [ "st-flash", "write",
-                        str(path), FC_ADDR,
+                stm32prog = require_tool(STM32_PROG_CLI)
+                cmd = [ stm32prog,
+                        "-c", "port=SWD", "mode=UR", "reset=HWrst",
+                        "-w", str(path), FC_ADDR,
+                        "-v",
+                        "-rst",
                 ]
 
         run(cmd)
