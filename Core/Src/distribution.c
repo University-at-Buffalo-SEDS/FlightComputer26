@@ -649,7 +649,43 @@ static inline void pre_launch(void)
 }
 
 /*
- * Data cycle for the Ascent filter.
+ * Data cycle for the Ascent filter: Update stage.
+ */
+static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
+{
+  fu32 st;
+
+  if (!fetch_baro(&payload.baro))
+  {
+    /* Run Predict in the meanwhile */
+    return;
+  }
+
+  st = validate_baro(&payload.baro, conf);
+
+  if (st != fc_mask(Sensor_Measm_Code))
+  {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return;
+  }
+
+  *imu &= ~ASCENT_PREDICT_DONE;
+  tx_semaphore_put(&eval_focus_mode);
+
+  log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+
+  sweetbench_catch(8);
+
+  if (conf & Eval_Focus_Flag)
+  {
+    sweetbench_start(7, 10);
+    tx_thread_relinquish();
+    sweetbench_catch(7);
+  }
+}
+
+/*
+ * Data cycle for the Ascent filter: Predict stage.
  */
 static inline void ascent_cycle(fu32 conf, fu8 *imu)
 {
@@ -692,9 +728,12 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   {
     if (*imu & ASCENT_PREDICT_DONE)
     {
-      goto fast_forward;
+      ascent_cycle_update(conf, imu);
     }
-    tx_thread_relinquish();
+    else
+    {
+      tx_thread_relinquish();
+    }
     return;
   }
 
@@ -708,35 +747,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
   log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
 
-fast_forward:
-
-  if (!fetch_baro(&payload.baro))
-  {
-    /* Run Predict in the meanwhile */
-    return;
-  }
-
-  st = validate_baro(&payload.baro, conf);
-
-  if (st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return;
-  }
-
-  *imu &= ~ASCENT_PREDICT_DONE;
-  tx_semaphore_put(&eval_focus_mode);
-
-  log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-
-  sweetbench_catch(8);
-
-  if (conf & Eval_Focus_Flag)
-  {
-    sweetbench_start(7, 10);
-    tx_thread_relinquish();
-    sweetbench_catch(7);
-  }
+  ascent_cycle_update(conf, imu);
 }
 
 /*
@@ -777,7 +788,10 @@ static inline void descent_cycle(fu32 conf)
     distance_from_rail(&payload.d.gps);
     descent_update(sh.dt);
 
-    // st = CAN_EVALUATE; // Alex seemed unsure of this.
+    if (!(conf & option(Monitor_Altitude)))
+    {
+      st = CAN_EVALUATE;
+    }
   }
 
 #endif // GPS_AVAILABLE
