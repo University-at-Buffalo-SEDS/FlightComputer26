@@ -58,7 +58,7 @@ TX_THREAD distribution_task;
 #define pi_gps "GPS"
 
 /* Latest logged measurement */
-struct measurement payload = {0};
+struct measurement meas = {0};
 
 #ifdef GPS_AVAILABLE
 
@@ -280,11 +280,10 @@ validate_gps_absolute(const struct coords *gps)
 static inline enum message
 validate_gps_relative(const struct coords *gps)
 {
-  if (!lat_within_launch_site(gps->x) ||
-      !lon_within_launch_site(gps->y))
+  if (!proxim_lat(gps->x) || !proxim_lon(gps->y))
   {
-    log_err(telid "GPS coords beyond launch site:"
-                  " LAT: %f, LON: %f", gps->x, gps->y);
+    log_err(telid "GPS too far off site "
+                  "LAT: %f, LON: %f", gps->x, gps->y);
   }
 
   if (gps->z > MAX_SEA || gps->z < MIN_SEA)
@@ -546,92 +545,69 @@ validate_all(const struct measurement *buf, fu32 conf)
  */
 static inline void pre_launch(void)
 {
-  fu32 st = 0, counter = 0, conf = 0;
+  fu32 ctr = 0, conf = 0;
 
-  float accum_baro = 0, accum_gps = 0;
+  float acc_baro = 0, acc_gps = 0;
   fu32 ctr_baro = 0, ctr_gps = 0;
 
   task_loop (conf & option(Launch_Triggered))
   {
-    if (fetch_gyro(&payload.gyro))
-    {
-      st = validate_gyro(&payload.gyro, conf);
+    fu32 st = fc_mask(Sensor_Measm_Code);
 
-      if (st == fc_mask(Sensor_Measm_Code))
-      {
-        log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
-      }
-      else
-      {
-        log_err(pilot "malformed Gyro data: %u", st);
-      }
+    if (fetch_gyro(&meas.gyro))
+    {
+      st |= validate_gyro(&meas.gyro, conf);
+      log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
     }
 
-    if (fetch_accl(&payload.d.accl))
+    if (fetch_accl(&meas.d.accl))
     {
-      st = validate_accl(&payload.d.accl, conf);
-
-      if (st == fc_mask(Sensor_Measm_Code))
-      {
-        log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
-      }
-      else
-      {
-        log_err(pilot "malformed Accl data: %u", st);
-      }
+      st |= validate_accl(&meas.d.accl, conf);
+      log_measm(SEDS_DT_ACCEL_DATA, &meas.d.accl);
     }
 
-    if (fetch_baro(&payload.baro))
+    if (fetch_baro(&meas.baro))
     {
-      accum_baro += fsec(timer_exchange(IntervalBaro));
+      acc_baro += fsec(timer_exchange(IntervalBaro));
       ++ctr_baro;
 
-      st = validate_baro(&payload.baro, conf);
+      st |= validate_baro(&meas.baro, conf);
+      log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
+    }
 
-      if (st == fc_mask(Sensor_Measm_Code))
-      {
-        log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
-      }
-      else
-      {
-        log_err(pilot "malformed Baro data: %u", st);
-      }
+    if (st != fc_mask(Sensor_Measm_Code))
+    {
+      log_err(pilot "malformed measm: %u", fc_unmask(st));
     }
 
 #ifdef GPS_AVAILABLE
 
     if (conf & option(GPS_Available) &&
-        fetch_gps_data(&payload.d.gps))
+        fetch_gps_data(&meas.d.gps))
     {
-      accum_gps += fsec(timer_exchange(IntervalGPS));
-      ++ctr_gps;
-      /* GPS data is validated by the Telemetry thread,
-       * and reported by the RF board. */
+      acc_gps += fsec(timer_exchange(IntervalGPS));
 
-      /* As long as we are stationary, update launch coordinates
-       * with newest available. */
-      rail = payload.d.gps;
+      rail = meas.d.gps;
 
-      if (counter != 0 &&
-          (fabsf(rail.x - payload.d.gps.x) > GPS_RAIL_TOLER ||
-           fabsf(rail.y - payload.d.gps.y) > GPS_RAIL_TOLER))
+      if (!within(rail.x - meas.d.gps.x, GPS_RAIL_TOLER) ||
+          !within(rail.y - meas.d.gps.y, GPS_RAIL_TOLER))
       {
-        log_err(id "contraversial launch coords: "
+        log_err(id "new GPS reference "
                    "LAT: %f, LON: %f", rail.x, rail.y);
       }
     }
 
 #endif // GPS_AVAILABLE
 
-    if (!(++counter & 255))
+    if (!(++ctr & 255))
     {
       if (ctr_baro > 0)
       {
-        log_transition(pi_bar, accum_baro / ctr_baro);
+        log_transition(pi_bar, acc_baro / ctr_baro);
       }
       if (ctr_gps > 0)
       {
-        log_transition(pi_gps, accum_gps / ctr_gps);
+        log_transition(pi_gps, acc_gps / ctr_gps);
       }
     }
 
@@ -655,13 +631,13 @@ static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
 {
   fu32 st;
 
-  if (!fetch_baro(&payload.baro))
+  if (!fetch_baro(&meas.baro))
   {
     /* Run Predict in the meanwhile */
     return;
   }
 
-  st = validate_baro(&payload.baro, conf);
+  st = validate_baro(&meas.baro, conf);
 
   if (st != fc_mask(Sensor_Measm_Code))
   {
@@ -672,7 +648,7 @@ static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
   *imu &= ~ASCENT_PREDICT_DONE;
   tx_semaphore_put(&eval_focus_mode);
 
-  log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+  log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
 
   sweetbench_catch(8);
 
@@ -700,7 +676,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      payload.gyro = suspect;
+      meas.gyro = suspect;
       *imu |= Sensor_Gyro;
     }
     else
@@ -715,7 +691,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      payload.d.accl = suspect;
+      meas.d.accl = suspect;
       *imu |= Sensor_Accl;
     }
     else
@@ -744,8 +720,8 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   ascent_predict(sh.dt);
   *imu |= ASCENT_PREDICT_DONE;
 
-  log_measurement(SEDS_DT_GYRO_DATA, &payload.gyro);
-  log_measurement(SEDS_DT_ACCEL_DATA, &payload.d.accl);
+  log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
+  log_measm(SEDS_DT_ACCEL_DATA, &meas.d.accl);
 
   ascent_cycle_update(conf, imu);
 }
@@ -763,9 +739,9 @@ static inline void descent_cycle(fu32 conf)
 
   descent_predict(sh.dt);
 
-  if (fetch_baro(&payload.baro))
+  if (fetch_baro(&meas.baro))
   {
-    st = validate_baro(&payload.baro, conf);
+    st = validate_baro(&meas.baro, conf);
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
@@ -777,15 +753,15 @@ static inline void descent_cycle(fu32 conf)
       tx_queue_send(&shared, &st, TX_NO_WAIT);
     }
 
-    log_measurement(SEDS_DT_BAROMETER_DATA, &payload.baro);
+    log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
   }
 
 #ifdef GPS_AVAILABLE
 
   if ((conf & option(GPS_Available)) &&
-      fetch_gps_data(&payload.d.gps))
+      fetch_gps_data(&meas.d.gps))
   {
-    distance_from_rail(&payload.d.gps);
+    distance_from_rail(&meas.d.gps);
     descent_update(sh.dt);
 
     if (!(conf & option(Monitor_Altitude)))

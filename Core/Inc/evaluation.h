@@ -70,11 +70,14 @@
 
 #define GPS_RAIL_TOLER 0.05f
 
-#define lat_within_launch_site(k)                         \
-  (fabsf((float)(k) - LAUNCH_SITE_LAT) <= GPS_TOLER)
+#define within(expr, bound)                               \
+  (fabsf((float)(expr)) <= (bound))
 
-#define lon_within_launch_site(k)                         \
-  (fabsf((float)(k) - LAUNCH_SITE_LON) <= GPS_TOLER)
+#define proxim_lat(k)                                     \
+  within((k) - LAUNCH_SITE_LAT, GPS_TOLER)
+
+#define proxim_lon(k)                                     \
+  within((k) - LAUNCH_SITE_LON, GPS_TOLER)
 
 /* ------ Local configuration ------ */
 
@@ -176,7 +179,7 @@ enum state {
 
 extern TX_SEMAPHORE eval_focus_mode;
 extern volatile enum state flight;
-extern struct measurement payload;
+extern struct measurement meas;
 extern struct state_vec sv[];
 extern struct sv_helper sh;
 extern fu32 sv_size_bytes;

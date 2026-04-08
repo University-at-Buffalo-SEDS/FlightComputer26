@@ -151,7 +151,7 @@ void descent_initialize(void)
 void descent_predict(const float dt)
 {
   matrix state = {DESC_STAT, 1, (float *)&sv[sh.idx]};
-  matrix measm = {DESC_MEAS, 1, (float *)&payload.d};
+  matrix measm = {DESC_MEAS, 1, (float *)&meas.d};
 
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 

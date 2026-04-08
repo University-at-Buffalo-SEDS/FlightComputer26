@@ -367,7 +367,7 @@ extern void telemetry_init_lock(void);
   log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,   \
                                     (msg))
 
-#define log_measurement(type, buf)                          \
+#define log_measm(type, buf)                          \
   log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
 
 #define log_filter_data(buf, size)                          \
@@ -425,7 +425,7 @@ static inline SedsResult request_ignition(void)
 
 #define log_msg(msg) log_msg_sync(msg, 0)
 
-#define log_measurement(type, buf)                            \
+#define log_measm(type, buf)                            \
   do {                                                        \
     printf("Measurement: " type "\n");                        \
     fwrite((buf), sizeof(float), 3, stdout);                  \
@@ -484,7 +484,7 @@ static inline SedsResult request_ignition(void)
 
 #define log_msg(msg) log_msg_sync(msg, 0)
 
-#define log_measurement(type, buf) 
+#define log_measm(type, buf) 
 
 #define log_filter_data(buf, size) 
 

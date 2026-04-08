@@ -48,7 +48,7 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 
 		if (st == HAL_OK)
 		{
-			log_measurement(SEDS_DT_BAROMETER_DATA, &q);
+			log_measm(SEDS_DT_BAROMETER_DATA, &q);
 		}
 		else
 		{
@@ -76,7 +76,7 @@ void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 
 		if (st == HAL_OK)
 		{
-			log_measurement(SEDS_DT_GYRO_DATA, &q);
+			log_measm(SEDS_DT_GYRO_DATA, &q);
 		}
 		else
 		{
@@ -104,7 +104,7 @@ void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
 
 		if (st == HAL_OK)
 		{
-			log_measurement(SEDS_DT_ACCEL_DATA, &q);
+			log_measm(SEDS_DT_ACCEL_DATA, &q);
 		}
 		else
 		{

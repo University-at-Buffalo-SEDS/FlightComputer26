@@ -320,7 +320,7 @@ crew_send_coords(fu32 mode)
   }
 
   #ifdef TELEMETRY_ENABLED
-  log_measurement(SEDS_DT_GPS_DATA, &payload.d.gps);
+  log_measm(SEDS_DT_GPS_DATA, &payload.d.gps);
   #endif
   tx_thread_sleep(LANDED_GPS_INTERVAL);
 
