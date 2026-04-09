@@ -22,6 +22,7 @@
 #include "app_usbx_device.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "main.h"
 
 /* USER CODE END Includes */
 
@@ -56,6 +57,7 @@ extern PCD_HandleTypeDef           hpcd_USB_DRD_FS;
 static VOID app_ux_device_thread_entry(ULONG thread_input);
 static UINT USBD_ChangeFunction(ULONG Device_State);
 /* USER CODE BEGIN PFP */
+static void usb_diag_set(uint8_t green_on, uint8_t blue_on);
 
 /* USER CODE END PFP */
 
@@ -71,6 +73,7 @@ UINT MX_USBX_Device_Init(VOID *memory_ptr)
   UCHAR *pointer;
   TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
   /* USER CODE BEGIN MX_USBX_Device_Init 0 */
+  // usb_diag_set(0U, 0U);
   /* USER CODE END MX_USBX_Device_Init 0 */
 
   /* USER CODE BEGIN MX_USBX_Device_Init 1 */
@@ -81,6 +84,7 @@ UINT MX_USBX_Device_Init(VOID *memory_ptr)
                        TX_NO_WAIT) != TX_SUCCESS)
   {
     /* USER CODE BEGIN MAIN_THREAD_ALLOCATE_STACK_ERROR */
+    // usb_diag_set(0U, 1U);
     return TX_POOL_ERROR;
     /* USER CODE END MAIN_THREAD_ALLOCATE_STACK_ERROR */
   }
@@ -92,11 +96,13 @@ UINT MX_USBX_Device_Init(VOID *memory_ptr)
                        UX_DEVICE_APP_THREAD_START_OPTION) != TX_SUCCESS)
   {
     /* USER CODE BEGIN MAIN_THREAD_CREATE_ERROR */
+    // usb_diag_set(0U, 1U);
     return TX_THREAD_ERROR;
     /* USER CODE END MAIN_THREAD_CREATE_ERROR */
   }
 
   /* USER CODE BEGIN MX_USBX_Device_Init 2 */
+  // usb_diag_set(1U, 0U);
   /* USER CODE END MX_USBX_Device_Init 2 */
 
   return ret;
@@ -123,6 +129,7 @@ UINT MX_USBX_Device_Stack_Init(void)
   UCHAR *language_id_framework;
 
   /* USER CODE BEGIN MX_USBX_Device_Stack_Init 0 */
+  // usb_diag_set(0U, 0U);
 
   /* USER CODE END MX_USBX_Device_Stack_Init 0 */
   /* Get Device Framework High Speed and get the length */
@@ -151,6 +158,7 @@ UINT MX_USBX_Device_Stack_Init(void)
                                  USBD_ChangeFunction) != UX_SUCCESS)
   {
     /* USER CODE BEGIN USBX_DEVICE_INITIALIZE_ERROR */
+    // usb_diag_set(0U, 1U);
     return UX_ERROR;
     /* USER CODE END USBX_DEVICE_INITIALIZE_ERROR */
   }
@@ -178,6 +186,7 @@ UINT MX_USBX_Device_Stack_Init(void)
                                      &cdc_acm_parameter) != UX_SUCCESS)
   {
     /* USER CODE BEGIN USBX_DEVICE_CDC_ACM_REGISTER_ERROR */
+    // usb_diag_set(0U, 1U);
     return UX_ERROR;
     /* USER CODE END USBX_DEVICE_CDC_ACM_REGISTER_ERROR */
   }
@@ -185,6 +194,7 @@ UINT MX_USBX_Device_Stack_Init(void)
   /* Initialize and link controller HAL driver */
   ux_dcd_stm32_initialize((ULONG)USB_DRD_FS, (ULONG)&hpcd_USB_DRD_FS);
   /* USER CODE BEGIN MX_USBX_Device_Stack_Init_PostTreatment */
+  // usb_diag_set(1U, 0U);
   /* USER CODE END MX_USBX_Device_Stack_Init_PostTreatment */
 
   /* USER CODE BEGIN MX_USBX_Device_Stack_Init 1 */
@@ -203,6 +213,8 @@ static VOID app_ux_device_thread_entry(ULONG thread_input)
 {
   /* USER CODE BEGIN app_ux_device_thread_entry */
   extern PCD_HandleTypeDef hpcd_USB_DRD_FS;
+  (void)thread_input;
+  // usb_diag_set(0U, 1U);
   HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x00, PCD_SNG_BUF, 0x40);
   HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x80, PCD_SNG_BUF, 0x80);
   HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x01, PCD_SNG_BUF, 0xC0);
@@ -210,6 +222,7 @@ static VOID app_ux_device_thread_entry(ULONG thread_input)
   HAL_PCDEx_PMAConfig(&hpcd_USB_DRD_FS, 0x82, PCD_SNG_BUF, 0x140);
   ux_dcd_stm32_initialize((ULONG)USB_DRD_FS, (ULONG)&hpcd_USB_DRD_FS);
   HAL_PCD_Start(&hpcd_USB_DRD_FS);
+  // usb_diag_set(1U, 1U);
   /* USER CODE END app_ux_device_thread_entry */
 }
 
@@ -275,6 +288,7 @@ static UINT USBD_ChangeFunction(ULONG Device_State)
     case UX_DEVICE_ATTACHED:
 
       /* USER CODE BEGIN UX_DEVICE_ATTACHED */
+      // usb_diag_set(1U, 1U);
 
       /* USER CODE END UX_DEVICE_ATTACHED */
 
@@ -291,6 +305,7 @@ static UINT USBD_ChangeFunction(ULONG Device_State)
     case UX_DCD_STM32_DEVICE_CONNECTED:
 
       /* USER CODE BEGIN UX_DCD_STM32_DEVICE_CONNECTED */
+      // usb_diag_set(1U, 1U);
 
       /* USER CODE END UX_DCD_STM32_DEVICE_CONNECTED */
 
@@ -299,6 +314,7 @@ static UINT USBD_ChangeFunction(ULONG Device_State)
     case UX_DCD_STM32_DEVICE_DISCONNECTED:
 
       /* USER CODE BEGIN UX_DCD_STM32_DEVICE_DISCONNECTED */
+      // usb_diag_set(0U, 1U);
 
       /* USER CODE END UX_DCD_STM32_DEVICE_DISCONNECTED */
 

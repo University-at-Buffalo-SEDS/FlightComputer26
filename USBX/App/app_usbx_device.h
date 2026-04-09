@@ -44,7 +44,7 @@ extern "C" {
 /* Exported constants --------------------------------------------------------*/
 
 #define UX_DEVICE_APP_THREAD_STACK_SIZE   1024
-#define UX_DEVICE_APP_THREAD_PRIO         10
+#define UX_DEVICE_APP_THREAD_PRIO         4
 
 /* USER CODE BEGIN EC */
 
