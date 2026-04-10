@@ -1,15 +1,14 @@
 /*
  * Shared platform header
  *
- * The purpose of this file is to unify the Flight
- * Computer board API and helpers, providing a single
- * point of reference and modification. This file also
- * enables easier conditional compilation and poisoning.
+ * The purpose of this file is to unify external APIs
+ * used by the Flight Computer, providing a single point
+ * of reference and modification, easier conditional
+ * compilation and poisoning.
  *
  * This header provides the following components for the
  * DMA, Distribution, Evaluation, and Recovery modules:
  *
- * - Type-specific Max, Min, and Abs helper macros;
  * - GPIO and EXTI port mappings;
  * - ThreadX, HAL, sedsprintf_rs, and driver includes;
  * - Variadic aliases for select sedsprintf_rs functions;
@@ -21,22 +20,31 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
+#include <stdio.h>                      // IWYU pragma: export
+#include <string.h>                     // IWYU pragma: export
+#include <math.h>                       // IWYU pragma: export
 
-/* ------ Bundled std headers used ------ */
+#include "dsp/fast_math_functions.h"    // IWYU pragma: export
+#include "dsp/matrix_functions.h"       // IWYU pragma: export
 
-#include <stdio.h>        // IWYU pragma: export
-#include <stddef.h>       // IWYU pragma: export
-#include <stdarg.h>       // IWYU pragma: export
-#include <stdint.h>       // IWYU pragma: export
-#include <stdbool.h>      // IWYU pragma: export
-#include <stdatomic.h>    // IWYU pragma: export
-#include <string.h>       // IWYU pragma: export
-#include <math.h>         // IWYU pragma: export
+#include "tx_api.h"                     // IWYU pragma: export
+#include "tx_port.h"                    // IWYU pragma: export
 
-/* ------ Bundled std headers used ------ */
+#include "stm32h5xx.h"                  // IWYU pragma: export
+#include "stm32h5xx_hal.h"              // IWYU pragma: export
+#include "stm32h5xx_hal_def.h"          // IWYU pragma: export
+#include "stm32h5xx_hal_spi.h"          // IWYU pragma: export
+#include "stm32h5xx_hal_gpio.h"         // IWYU pragma: export
+#include "stm32h5xx_hal_dcache.h"       // IWYU pragma: export
+#include "core_cm33.h"                  // IWYU pragma: export
+
+#include "main.h"                       // IWYU pragma: export
+#include "barometer.h"                  // IWYU pragma: export
+#include "gyroscope.h"                  // IWYU pragma: export
+#include "accelerometer.h"              // IWYU pragma: export
 
 
-/* ------ Pre-compilation checks ------ */
+/* Platform checks */
 
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
   #error "C11 or later required for atomic and generics."
@@ -54,89 +62,22 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
   #error "STM32H523xx series MCU required."
 #endif
 
-/* ------ Pre-compilation checks ------ */
 
+/* CMSIS math */
 
-/* ------ Platform integer aliases ----- */
-
-/* Fast means the _fastest_ integer of minimum width. 
- * Determined by the bundled library. */
-
-typedef uint_fast8_t  fu8;
-typedef uint_fast16_t fu16;
-typedef uint_fast32_t fu32;
-typedef uint_fast64_t fu64;
-
-typedef int_fast8_t  fi8;
-typedef int_fast16_t fi16;
-typedef int_fast32_t fi32;
-typedef int_fast64_t fi64;
-
-/* ------ Platform integer aliases ----- */
-
-
-/* ------ Atomic ops and MO aliases ------ */
-
-enum seds_atomic_mo {
-  Rlx    = memory_order_relaxed,
-  Con    = memory_order_consume,
-  Acq    = memory_order_acquire,
-  Rel    = memory_order_release,
-  AcqRel = memory_order_acq_rel,
-  SeqCst = memory_order_seq_cst
-};
-
-#define load        atomic_load_explicit
-#define store       atomic_store_explicit
-#define swap        atomic_exchange_explicit
-#define fetch_add   atomic_fetch_add_explicit
-#define fetch_sub   atomic_fetch_sub_explicit
-#define fetch_and   atomic_fetch_and_explicit
-#define fetch_or    atomic_fetch_or_explicit
-#define fetch_xor   atomic_fetch_xor_explicit
-#define cas_weak    atomic_compare_exchange_weak_explicit
-#define cas_strong  atomic_compare_exchange_strong_explicit
-
-/* ------ Atomic ops and MO aliases ------ */
-
-
-/* ------ ARM fast math bundled library ------ */
-
-#include "dsp/fast_math_functions.h"    // IWYU pragma: export
-#include "dsp/matrix_functions.h"       // IWYU pragma: export
-
-/* CMSIS matrix aliases for convenience */
 typedef arm_matrix_instance_f32 matrix;
 
-/* If used without ARM CC, will degrade to math.h sqrtf(),
-  * which will emit a single VSQRT.F32 FPU instruction.
-  *
-  * developer.arm.com:
-  * The-Cortex-M33-Instruction-Set/Floating-point-instructions/VSQRT 
-  *
-  * There is no such instruction for inverse square root
-  * => bithack + Newton-Raphson to avoid FP division. */
-#define vsqrt                 arm_sqrt_f32;
-
-/* These functions take pointers to arm_matrix_instance_f32;
- * this is the reason there are wrappers inside KF functions. */
-#define chol_lower_triang			arm_mat_cholesky_f32
-#define transpose             arm_mat_trans_f32
-#define matrix_mult 			    arm_mat_mult_f32
-#define matrix_add			      arm_mat_add_f32
-#define matrix_sub            arm_mat_sub_f32
-#define matrix_inv            arm_mat_inverse_f32
-
-/* I don't quite get the point of this function.
- * Maybe because it's *floating point*. */
-#define matrix_init           arm_mat_init_f32
-
-/* ------ ARM fast math bundled library ------ */
-
-/* ------ ARM fast math bundled library ------ */
+#define vsqrt         arm_sqrt_f32;
+#define chol_lo_tri		arm_mat_cholesky_f32
+#define transpose     arm_mat_trans_f32
+#define matrix_mult   arm_mat_mult_f32
+#define matrix_add		arm_mat_add_f32
+#define matrix_sub    arm_mat_sub_f32
+#define matrix_inv    arm_mat_inverse_f32
+#define matrix_init   arm_mat_init_f32
 
 
-/* ------ Task utilities ------ */
+/* Misc utilities */
 
 #define DO_NOT_EXIT 0
 
@@ -144,88 +85,28 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define popcount(mask) (fu16)__builtin_popcount((unsigned)(mask))
 
-/* Data memory barrier */
+extern void *_sbrk(ptrdiff_t);
 
-#if defined(__ARMCC_VERSION) || defined(__GNUC__) || defined(__ICCARM__)
-#include "cmsis_compiler.h"   // IWYU pragma: export
+#if defined(__ARMCC_VERSION) || defined(__GNUC__)
+
+#include "cmsis_compiler.h" // IWYU pragma: export
 
 #else
+
 #define __DMB() atomic_thread_fence(AcqRel)
 
-#endif // DMB support
-
-/* Basic heap management */
-
-extern void *_sbrk(ptrdiff_t incr);
-
-/* ------ Task utilities ------ */
+#endif
 
 
-/* ------ IREC 2026 GPIO port maps ------ */
-
-#define PYRO_PORT GPIOB
-#define CO2_PIN   GPIO_PIN_5
-#define REEF_PIN  GPIO_PIN_6
-
-/* ------ IREC 2026 GPIO port maps ------ */
-
-
-/* ------ ThreadX API includes ------ */
-
-#include "tx_api.h"           // IWYU pragma: export
-#include "tx_port.h"          // IWYU pragma: export
-#include "FC-Threads.h"       // IWYU pragma: export
-
-/* ------ ThreadX API includes ------ */
-
-
-/* ------ Type attributes ------ */
-
-#define serial __attribute__((packed, aligned(4)))
-
-#define tx_align __attribute__((aligned(sizeof(ULONG))))
-
-#define IREC26_unused __attribute__((unused))
-
-#define constexpr __attribute__((const))
-
-#define blind_inline __attribute__((always_inline))
-
-/* ------ Type attributes ------ */
-
-
-/* ------ HAL Aliases ------ */
-
-#include "stm32h5xx.h"                // IWYU pragma: export
-#include "stm32h5xx_hal.h"            // IWYU pragma: export
-#include "stm32h5xx_hal_def.h"        // IWYU pragma: export
-#include "stm32h5xx_hal_spi.h"        // IWYU pragma: export
-#include "stm32h5xx_hal_gpio.h"       // IWYU pragma: export
-#include "stm32h5xx_hal_dcache.h"     // IWYU pragma: export
-#include "core_cm33.h"                // IWYU pragma: export
+/* General HAL aliases */
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 
-/* Get currect tick for custom timer */
-
 #define now_ms() HAL_GetTick()
 
-/* Parachute deployment macros */
-
-#define co2_low()                                             \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
-
-#define co2_high()                                            \
-  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
-
-#define reef_low()                                            \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
-
-#define reef_high()                                           \
-  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
-
-/* Data cache calls */
+#define irq_off(irq) HAL_NVIC_DisableIRQ((irq))
+#define irq_on(irq)  HAL_NVIC_EnableIRQ((irq))
 
 #define invalidate_dcache() HAL_DCACHE_Invalidate(&hdcache1)
 
@@ -239,22 +120,9 @@ extern DCACHE_HandleTypeDef hdcache1;
                              (uint32_t *)(buf),       \
                              (size)))
 
-/* DMA transmit-receive */
-
 #define dma_spi_txrx(txbuf, rxbuf, size)              \
   (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
                                (rxbuf), (size)))
-
-/* ------ HAL Aliases ------ */
-
-
-/* ------ Sensor drivers and data collection ------ */
-
-#include "barometer.h"        // IWYU pragma: export
-#include "gyroscope.h"        // IWYU pragma: export
-#include "accelerometer.h"    // IWYU pragma: export
-
-struct serial coords { float x, y, z; };
 
 #define gpio_cs_low(sens)                               \
   HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
@@ -264,6 +132,9 @@ struct serial coords { float x, y, z; };
   HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
                     gpio.pin[sens], GPIO_PIN_SET)
 
+
+/* Sensor-specific */
+
 #define terminate_transfers() \
   do {                        \
     baro_cs_high();           \
@@ -271,21 +142,23 @@ struct serial coords { float x, y, z; };
     accl_cs_high();           \
   } while (0)
 
-/* Identification bytes for DMA Tx buffers */
+#define BARO_CS_PORT CS_BARO_GPIO_Port
+#define GYRO_CS_PORT CS_GYRO_GPIO_Port
+#define ACCL_CS_PORT CS_ACCEL_GPIO_Port
+
+#define BARO_CS_PIN CS_BARO_Pin
+#define GYRO_CS_PIN CS_GYRO_Pin
+#define ACCL_CS_PIN CS_ACCEL_Pin
 
 #define BARO_TX_BYTE ((uint8_t)(BARO_DATA_0 | BARO_SPI_READ_BIT))
 #define GYRO_TX_BYTE ((uint8_t)(gyro_cmd_read(GYRO_RATE_X_LSB)))
 #define ACCL_TX_BYTE ((uint8_t)(accl_cmd_read(ACCL_X_LSB)))
-
-/* Peripheral sensor EXT interrupt pins */
 
 #define ACCL_INT_PIN_1  GPIO_PIN_4
 #define ACCL_INT_PIN_2  GPIO_PIN_5
 #define GYRO_INT_PIN_1  GPIO_PIN_0
 #define GYRO_INT_PIN_2  GPIO_PIN_1
 #define BARO_INT_PIN    GPIO_PIN_7
-
-/* Driver-specific data conversions */
 
 #define U32(b0, b1, b2, b3)                                         \
   (((uint32_t)(b3) << 24) | ((uint32_t)(b2) << 16) |                \
@@ -299,11 +172,6 @@ struct serial coords { float x, y, z; };
 
 #define F16(b0, b1) ((float)I16(b0, b1))
 
-/* ------ Sensor drivers and data collection ------ */
-
-
-/* ------ Master-side interrupt control ------ */
-
 #define SPI1_GLOBAL_IRQ   SPI1_IRQn
 #define DMA_RECEIVER_SPI1 GPDMA1_Channel0_IRQn
 
@@ -313,48 +181,28 @@ struct serial coords { float x, y, z; };
 #define Accl_EXTI_1 EXTI4_IRQn
 #define Accl_EXTI_2 EXTI5_IRQn
 
-#define irq_off(irq) HAL_NVIC_DisableIRQ((irq))
-#define irq_on(irq)  HAL_NVIC_EnableIRQ((irq))
 
-/*
- * The difference from __disable_irq() is that this
- * function does not disable all interrupts, making
- * it possible to use HAL time, delay, and ThreadX.
- * The enabler just restores these interrupts in NVIC.
- */
-static inline void clear_spi1_irq(void)
-{
-  irq_off(SPI1_GLOBAL_IRQ);
-  irq_off(DMA_RECEIVER_SPI1);
+/* Deployment-specific */
 
-  irq_off(Baro_EXTI);
-  irq_off(Gyro_EXTI_1);
-/*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
-  irq_off(Accl_EXTI_1);
-/*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
-}
+#define co2_low()                                             \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-static inline void restore_spi1_irq(void)
-{
-  irq_on(SPI1_GLOBAL_IRQ);
-  irq_on(DMA_RECEIVER_SPI1);
+#define co2_high()                                            \
+  HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
 
-  irq_on(Baro_EXTI);
-  irq_on(Gyro_EXTI_1);
-/*irq_on(Gyro_EXTI_2);    not used for IREC 2026 */
-  irq_on(Accl_EXTI_1);
-/*irq_on(Accl_EXTI_2);    not used for IREC 2026 */
-}
+#define reef_low()                                            \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-/* ------ Master-side interrupt control ------ */
+#define reef_high()                                           \
+  HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
 
-/* ------ Telemetry API abstraction ------ */
+/* Telemetry */
 
 #ifdef TELEMETRY_ENABLED
 
-#include <sedsprintf.h>         // IWYU pragma: export
-#include "telemetry.h"          // IWYU pragma: export
+#include <sedsprintf.h> // IWYU pragma: export
+#include "telemetry.h"  // IWYU pragma: export
 
 extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
 extern void telemetry_init_lock(void);
@@ -395,13 +243,10 @@ extern void telemetry_init_lock(void);
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
-#endif // GNUC
-#endif // >= C23
+#endif /* GNUC*/
+#endif /* C >= 23 */
 
-/* Ignition request from remote Valve board.
- * Ground Station repo: backend/src/rocket_commands.rs
- * pub enum ActuatorBoardCommands -> IgniterSequence
- */
+/* GroundStation26: backend/src/rocket_commands.rs */
 #define IGNITION_COMMAND 13
 
 static inline SedsResult request_ignition(void)
@@ -466,18 +311,16 @@ static inline SedsResult request_ignition(void)
     }                                                         \
   } while (0)
 
-#endif // GNU C
-#endif // >= C23
+#endif /* GNUC*/
+#endif /* C >= 23 */
 
 #define log_err log_err_sync
 
 #define request_ignition()                                    \
   ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
 
-#else
+#else /* Do not log at all */
 
-/* Ignore warnings on logged metrics that are now unused.
- */
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
 #define log_msg_sync(msg, size) 
@@ -496,23 +339,19 @@ static inline SedsResult request_ignition(void)
 
 #define request_ignition() SEDS_OK
 
-#endif // USB_ENUMERATES
+#endif /* USB_ENUMERATES */
 
-#endif // TELEMETRY_ENABLED
-
-/* ------ Telemetry API abstraction ------ */
+#endif /* TELEMETRY_ENABLED */
 
 
-/* ------ On-board SD card ------ */
+/* SD */
 
 #ifdef SD_AVAILABLE
 
-#include "sd_card.h"                  // IWYU pragma: export
-#include "fx_stm32_sd_driver.h"       // IWYU pragma: export
+#include "sd_card.h"            // IWYU pragma: export
+#include "fx_stm32_sd_driver.h" // IWYU pragma: export
 
-#endif // SD_AVAILABLE
-
-/* ------ On-board SD card ------ */
+#endif /* SD_AVAILABLE */
 
 
-#endif // PLATFORM_H
+#endif /* PLATFORM_H */

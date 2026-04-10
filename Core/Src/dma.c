@@ -14,21 +14,24 @@
  */
 
 #include "platform.h"
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fctasks.h"
+#include "fccommon.h"
+#include "fcapi.h"
+#include "fcconfig.h"
 #include "sweetbench.h"
-#include "recovery.h"
-#include "dma.h"
 
 #define id "DM "
 
+
 TX_THREAD dma_task;
 
-
-/* ------ Static storage ------ */
-
-static const struct gpio_lookup gpio = {
-  .port = {CS_BARO_GPIO_Port, CS_GYRO_GPIO_Port, CS_ACCEL_GPIO_Port},
-  .pin  = {CS_BARO_Pin, CS_GYRO_Pin, CS_ACCEL_Pin},
-  .drdy = {BARO_MASK, GYRO_MASK, ACCL_MASK}
+static const gpio_map gpio = {
+  .port   = {BARO_CS_PORT, GYRO_CS_PORT, ACCL_CS_PORT},
+  .pin    = {BARO_CS_PIN, GYRO_CS_PIN, ACCL_CS_PIN},
+  .drdy   = {BARO_MASK, GYRO_MASK, ACCL_MASK},
+  .offset = {0x2u, 0x1u, 0x2u}
 };
 
 static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
@@ -37,29 +40,23 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
   [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
 };
 
-static uint8_t baro_rx[6] = {0};
-static uint8_t gyro_rx[6] = {0};
-static uint8_t accl_rx[6] = {0};
+static volatile uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
+
+static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
 static atomic_uint_fast8_t locks[Sensors] = {0};
 
-static volatile uint8_t rx[SENSOR_BUF_SIZE] = {0};
+static dmasel select = {Sensors, 0};
 
-static struct selector select = {Sensors, 0};
-
-static struct dma_flags flags = {0, 0};
-
-/* ------ Static storage ------ */
+static fdma flags = {0, 0};
 
 
-/* ------ Spinlock ------ */
-
-static inline void lock(enum sensor k)
+static inline void lock(sens k)
 {
   fu8 unlocked = 0;
 
-  /* Spinlock with context switch? What the fuck?
-   * But in our case it makes sense because critical sections
+  /* Spinlock with immediate context switch? What the fuck?
+   * In our case this makes sense because critical sections
    * are too tiny to use blocking primitives and regular spinlock
    * wouldn't concede the only physical core to a contender thread.
    */
@@ -70,21 +67,17 @@ static inline void lock(enum sensor k)
   }
 }
 
-static inline void unlock(enum sensor k)
+static inline void unlock(sens k)
 {
   store(&locks[k], 0, Rel);
 }
 
-/* ------ Spinlock ------ */
-
-
-/* ------ Public fetching functions ------ */
 
 /*
- * Tries to fetches barometer data from shared buffer.
- * Returns true on success and false if new data is unavailable.
+ * Tries to fetch barometer from shared buffer.
+ * Returns true on success and false otherwise.
  */
-bool fetch_baro(struct baro *buf)
+bool fetch_baro(baro *buf)
 {
   if (!(fetch_and(&flags.relv, ~BARO_MASK, Acq) & BARO_MASK))
   {
@@ -97,14 +90,19 @@ bool fetch_baro(struct baro *buf)
 
   lock(Sensor_Baro);
 
-  pres = U24(baro_rx[0], baro_rx[1], baro_rx[2]);
-  temp = U24(baro_rx[3], baro_rx[4], baro_rx[5]);
+  pres = U24(taskrx[Sensor_Baro][0],
+             taskrx[Sensor_Baro][1],
+             taskrx[Sensor_Baro][2]);
+
+  temp = U24(taskrx[Sensor_Baro][3],
+             taskrx[Sensor_Baro][4],
+             taskrx[Sensor_Baro][5]);
 
   unlock(Sensor_Baro);
 
-  buf->t = baro_compensate_temp(temp);
-  buf->p = baro_compensate_pres(pres);
-  buf->alt = baro_relative_alt(buf->p);
+  buf->tmp = baro_compensate_temp(temp);
+  buf->prs = baro_compensate_pres(pres);
+  buf->alt = baro_relative_alt(buf->prs);
 
   sweetbench_start(0, 150);
   
@@ -112,10 +110,10 @@ bool fetch_baro(struct baro *buf)
 }
 
 /*
- * Tries to fetches gyroscope data from shared buffer.
- * Returns true on success and false if new data is unavailable.
+ * Tries to fetch gyroscope from shared buffer.
+ * Returns true on success and false otherwise.
  */
-bool fetch_gyro(struct coords *buf)
+bool fetch_gyro(f_xyz *buf)
 {
   if (!(fetch_and(&flags.relv, ~GYRO_MASK, Acq) & GYRO_MASK))
   {
@@ -128,9 +126,9 @@ bool fetch_gyro(struct coords *buf)
 
   lock(Sensor_Gyro);
 
-  gx = I16(gyro_rx[0], gyro_rx[1]);
-  gy = I16(gyro_rx[2], gyro_rx[3]);
-  gz = I16(gyro_rx[4], gyro_rx[5]);
+  gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
+  gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
+  gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
   
   unlock(Sensor_Gyro);
 
@@ -144,10 +142,10 @@ bool fetch_gyro(struct coords *buf)
 }
 
 /*
- * Tries to fetches acceletometer data from shared buffer.
- * Returns true on success and false if new data is unavailable.
+ * Tries to fetch accelerometer from shared buffer.
+ * Returns true on success and false otherwise.
  */
-bool fetch_accl(struct coords *buf)
+bool fetch_accl(f_xyz *buf)
 {
   if (!(fetch_and(&flags.relv, ~ACCL_MASK, Acq) & ACCL_MASK))
   {
@@ -160,9 +158,9 @@ bool fetch_accl(struct coords *buf)
 
   lock(Sensor_Accl);
 
-  ax = I16(accl_rx[0], accl_rx[1]);
-  ay = I16(accl_rx[2], accl_rx[3]);
-  az = I16(accl_rx[4], accl_rx[5]);
+  ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
+  ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
+  az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
   
   unlock(Sensor_Accl);
 
@@ -175,31 +173,24 @@ bool fetch_accl(struct coords *buf)
   return true;
 }
 
-/* ------ Public fetching functions ------ */
-
-
-/* ------ ISR and callbacks ------ */
 
 /*
- * Sets valid flag and wakes DMA task.
+ * Success callback. Sets valid flag, invalidates data cache
+ * for the DMA buffer and wakes DMA task.
  */
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-	(void) hspi; /* We only set up SPI1 */
-
 	gpio_cs_high(select.next);
-  invalidate_dcache_addr_int(rx, sizeof rx);
+  invalidate_dcache_addr_int(dmarx, sizeof dmarx);
   select.valid = 1;
 	tx_thread_wait_abort(&dma_task);
 }
 
 /*
- * Sets invalid flag and wakes DMA task.
+ * Error callback. Sets invalid flag and wakes DMA task.
  */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
-	(void) hspi; /* We only set up SPI1 */
-
 	gpio_cs_high(select.next);
   select.valid = 0;
 	tx_thread_wait_abort(&dma_task);
@@ -213,10 +204,6 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
 }
 
-/* ------ ISR and callbacks ------ */
-
-
-/* ------ Transfer routine ------ */
 
 /*
  * Propagates raw data from DMA buffer to one of the shared
@@ -226,20 +213,9 @@ static inline void propagate_rx(void)
 {
   lock(select.next);
 
-  switch (select.next)
-  {
-    case Sensor_Baro:
-      memcpy(baro_rx, (uint8_t *)(rx + 2), sizeof baro_rx);
-      break;
-
-    case Sensor_Gyro:
-      memcpy(gyro_rx, (uint8_t *)(rx + 1), sizeof gyro_rx);
-      break;
-
-    case Sensor_Accl:
-      memcpy(accl_rx, (uint8_t *)(rx + 2), sizeof accl_rx);
-      break;
-  }
+  memcpy(taskrx[select.next],
+         (uint8_t *)(dmarx + gpio.offset[select.next]),
+         sizeof taskrx / 3);
 
   unlock(select.next);
 
@@ -257,12 +233,10 @@ static inline void start_dma_transfer(void)
 
   gpio_cs_low(select.next);
 
-  st = dma_spi_txrx(tx[select.next], (uint8_t *)rx, SENSOR_BUF_SIZE);
+  st = dma_spi_txrx(tx[select.next], (uint8_t *)dmarx, SENSOR_BUF_SIZE);
 
   if (st != HAL_OK)
   {
-    /* Immediate error while trying to start a transfer => 
-     * => repeat the same transfer on the next iteration. */
     gpio_cs_high(select.next);
     return;
   }
@@ -285,20 +259,10 @@ static inline void start_dma_transfer(void)
   }
 }
 
-/* ------ Transfer routine ------ */
-
-
-/* ------ DMA task and sensor selector ------ */
 
 /*
- * Beginning of the DMA task. This task should started once
- * and not blocked or reset, though it is technically AC-Safe.
- * It includes a minimized expression for a selector of 64
- * (2^6) possible states, where are encoded in a truth table
- * over 6 variables - data readiness and relevance flags for
- * each of 3 sensors. Data readiness is updated from and ISR,
- * and relevance is set when a buffer is produced and unset
- * when it is consumed.
+ * Loops sensor selector and blocks on DMA transfers.
+ * This IO task should be "futex"-ed most of the time.
  */
 void dma_entry(ULONG input)
 {
@@ -311,15 +275,14 @@ void dma_entry(ULONG input)
   {
     drdy_snapshot = load(&flags.drdy, Acq);
 
-    if (load(&config, Acq) & option(Using_Ascent_KF))
+    if (load(&g_conf, Acq) & option(Using_Ascent_KF))
     {
       if (drdy_snapshot == 0)
       {
         tx_thread_relinquish();
+        continue;
       }
 
-      /* Step 1. Calculate inputs to selection logic.
-       */ 
       bool dr_b = drdy_snapshot & BARO_MASK;
       bool dr_g = drdy_snapshot & GYRO_MASK;
       bool dr_a = drdy_snapshot & ACCL_MASK;
@@ -330,12 +293,8 @@ void dma_entry(ULONG input)
       bool re_g = relv_snapshot & GYRO_MASK;
       bool re_a = relv_snapshot & ACCL_MASK;
 
-      /* Step 2. Select transfer target based on drdy and alternating
-       * selectors p_dev and p_imu. The below expressions are results
-       * of Quine-McCluskey minimization for drdy and relv flag sets, 
-       * each consisting of 3 sensors. Since expressions are mutually
-       * exclusive on the domain of 64 states, the most expensive one
-       * (in our case - Barometer) is evaluated with wildcard 'else'.
+      /* The selector is defined as a simplified boolean expression
+       * of 6 inputs (and 2^6 - 6 possible outcomes).
        */
       if (dr_g && ((!dr_b && (re_g || !dr_a)) || (!re_g && (!dr_a ||
                                                     re_a || re_b))))
@@ -370,7 +329,8 @@ void dma_entry(ULONG input)
 }
 
 /*
- * Creates a preemptive, cooperative DMA task with defined parameters.
+ * Creates a preemptive, cooperative DMA task with defined
+ * parameters.
  */
 UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 {
@@ -406,5 +366,3 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 
   return TX_SUCCESS;
 }
-
-/* ------ DMA task and sensor selector ------ */

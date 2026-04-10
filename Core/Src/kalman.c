@@ -2,20 +2,15 @@
  * Kalman Filters
  *
  * This file includes implementations of:
- *   - Extended (ascent) Kalman filter;
- *	 - Regular (descent) Kalman filter;
- *   - Covariance initialization functions;
- *	 - Context and type-specifc math functions.
+ *   - Extended (ascent) Kalman filter,
+ *	 - Regular (descent) Kalman filter,
+ *   - Covariance initialization functions,
+ *	 - Domain-specifc math functions.
  *
  * The entirety of logic in this file is executed within
  * the context of either Distribution or Evaluation task,
  * which invoke parts of one of two filters based on the
- * flight state and global run time configuration. All
- * invokationsare performed synchronously.
- *
- * This file does not implement linear algebra functions,
- * and instead casts structs to column vectors and passes
- * references to their wrappers to the CMSIS library.
+ * flight state and global run time configuration.
  *
  * Both KF implementations share the same buffers, the size
  * of which equals to the largest demanded size among the
@@ -24,46 +19,15 @@
  * the newly selected filter.
  */
 
-#include "evaluation.h"
-#include "recovery.h"
 #include "platform.h"
-#include "kalman.h"
-#include "dma.h"
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fctasks.h"
+#include "fccommon.h"
+#include "fcapi.h"
+#include "fcconfig.h"
 #include "sweetbench.h"
 
-
-/* Number of iterations - 1 for quaternion matrix
- * renormalization. Set by Recovery task.
- */
-volatile fu8 renorm_step_mask = RENORM_STEP;
-
-
-/* ------ Local math functions ------ */
-
-/*
- * Inverse square root function using bithack.
- */
-static inline constexpr float invsqrtf(float x)
-{
-  /* Brought right from Quake 3 Arena!
-   */
-  union bithack k = {.f = x};
-  k.d = 0x5f3759df - (k.d >> 1);
-
-  /* Newton-Raphson alg
-   */
-  for (fu8 i = 0; i < NR_ITERATIONS; ++i)
-  {
-    k.f *= 1.5f - 0.5f * x * k.f * k.f;
-  }
-
-  return k.f;
-}
-
-/* ------ Local math functions ------ */
-
-
-/* ------ Shared static buffers ------ */
 
 static float P[L][L] = {0};
 static float Q[L][L] = {0};
@@ -83,19 +47,70 @@ static const float W_c[W_DIM] = {[0] = W_0_c, [1 ... W_l] = W_l_c};
 static matrix vec_w_a = {W_DIM, 1, (float *)(&W_a[0])};
 static matrix vec_w_c = {W_DIM, 1, (float *)(&W_c[0])};
 
-/* ------ Shared static buffers ------ */
 
+/*
+ * Inverse square root. Brought right from Quake 3 Arena!
+ */
+static inline constexpr float invsqrtf(float x)
+{
+  f32u k = {.f = x};
 
-/* ------ Descent Kalman filter ------ */
+  k.d = 0x5f3759df - (k.d >> 1);
+
+  for (fu8 i = 0; i < NR_ITERATIONS; ++i)
+  {
+    k.f *= 1.5f - 0.5f * x * k.f * k.f;
+  }
+
+  return k.f;
+}
+
+/*
+ * Transforms state vector into sensor measurement. (??)
+ */
+static inline void
+kf_measm(kf_svec *restrict vec, measm *restrict out)
+{
+  // const float ag = vec->a.z + GRAVITY_SI;
+  // const float qq2 = vec->qv.q2 * vec->qv.q2;
+  // const float qq3 = vec->qv.q3 * vec->qv.q3;
+  // const float qq4 = vec->qv.q4 * vec->qv.q4;
+
+  // const float q12 = vec->qv.q1 * vec->qv.q2;
+  // const float q13 = vec->qv.q1 * vec->qv.q3;
+  // const float q14 = vec->qv.q1 * vec->qv.q4;
+  // const float q23 = vec->qv.q2 * vec->qv.q3;
+  // const float q24 = vec->qv.q2 * vec->qv.q4;
+  // const float q34 = vec->qv.q3 * vec->qv.q4;
+  // /* 
+  //  * DCM body->nav from quaternion (scalar-first w,x,y,z)
+  //  * Manually transposed (as used). Each value used once
+  //  * => array is not used to allow for compile-time folding
+  //  */
+  // const float r11 = 1.0f - (2.0f * (qq3 + qq4));
+  // const float r12 = 2.0f * (q23 + q14);
+  // const float r13 = 2.0f * (q24 - q13);
+  // const float r21 = 2.0f * (q23 - q14);
+  // const float r22 = 1.0f - (2.0f * (qq2 + qq4));
+  // const float r23 = 2.0f * (q34 + q12);
+  // const float r31 = 2.0f * (q24 + q13);
+  // const float r32 = 2.0f * (q34 - q12);
+  // const float r33 = 1.0f - (2.0f * (qq2 + qq3));
+
+  // out->d.axis.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
+  // out->d.axis.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
+  // out->d.axis.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
+
+  // out->gyro = vec->w;
+  // out->d.alt = vec->p.z;
+}
+
 
 /*
  * Sets descent filter values in shared buffers.
- * Called by Evaluation task when APOGEE state is reached.
  */
 void descent_initialize(void)
 {
-  sv_size_bytes = DESC_STAT * sizeof(float);
-
   memset(P, 0, sizeof P);
   memset(Q, 0, sizeof Q);
   memset(A, 0, sizeof A);
@@ -123,35 +138,34 @@ void descent_initialize(void)
   measm_cov.numCols = measm_cov.numRows = DESC_MEAS;
   obsrvance.numRows = obsrvance.numCols = DESC_MEAS;
 
-  /* Disable interrupts from IMU */
   irq_off(Gyro_EXTI_1);
 /*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
   irq_off(Accl_EXTI_1);
 /*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
 
-  enum message toggle = Using_Ascent_KF;
+  fc_msg toggle = Using_Ascent_KF;
 
-  if (load(&config, Acq) & option(Defer_Baro_Fallback))
+  if (load(&g_conf, Acq) & option(Defer_Baro_Fallback))
   {
     toggle |= Defer_Baro_Fallback;
-    fetch_or(&config, option(Monitor_Altitude | Validate_Measms), Rlx);
+    fetch_or(&g_conf, option(Monitor_Altitude | Validate_Measms), Rlx);
 
-    enum message cmd = fc_mask(Reinit_Barometer);
+    fc_msg cmd = fc_mask(Reinit_Barometer);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
 
   timer_update(DescentKF);
-  fetch_and(&config, ~option(toggle), Rel);
+  fetch_and(&g_conf, ~option(toggle), Rel);
 }
 
 /*
  * Predict step of the Descent filter.
- * Required sensor readings: None.
+ * Prerequisites: None.
  */
 void descent_predict(const float dt)
 {
-  matrix state = {DESC_STAT, 1, (float *)&sv[sh.idx]};
-  matrix measm = {DESC_MEAS, 1, (float *)&meas.d};
+  matrix state = {DESC_STAT, 1, (float *)&svec(0)};
+  matrix measm = {DESC_MEAS, 1, (float *)&meas.mode.gps};
 
 	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
 
@@ -160,7 +174,7 @@ void descent_predict(const float dt)
 
 /*
  * Update step of the Descent filter.
- * Required sensor readings: Barometer or GPS.
+ * Prerequisites: Barometer or GPS.
  */
 void descent_update(const float dt)
 {
@@ -171,19 +185,12 @@ void descent_update(const float dt)
   sweetbench_catch(4);
 }
 
-/* ------ Descent Kalman filter ------ */
-
-
-/* ------ Ascent Kalman filter ------ */
 
 /*
  * Sets ascent filter values in shared buffers.
- * Called during boot by Evaluation task.
  */
 void ascent_initialize(void) 
 {
-  sv_size_bytes = ASC_STAT * sizeof(float);
-
   memset(P, 0, sizeof P);
   memset(Q, 0, sizeof Q);
   memset(A, 0, sizeof A);
@@ -222,123 +229,81 @@ void ascent_initialize(void)
   measm_cov.numCols = measm_cov.numRows = ASC_MEAS;
   obsrvance.numRows = obsrvance.numCols = ASC_MEAS;
 
-  /* This deduction is due Using_Ascent_KF being in DEFAULT_OPTIONS
-   */
-  if (!(load(&config, Acq) & option(Using_Ascent_KF)))
+  if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
     /* If it somehow happened that we initialize Ascent KF mid-flight,
      * ask non-preemtive recovery to reinitialize IMU with interrupts.
      */
-    enum message cmd = fc_mask(Reinit_IMU);
+    fc_msg cmd = fc_mask(Reinit_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
 
   timer_update(AscentKF);
-  fetch_or(&config, option(Using_Ascent_KF), Rel);
+  fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
 
 /*
  * Predict step of the Ascent filter.
- * Required sensor readings: IMU.
+ * Prerequisites: IMU.
  */
 void ascent_predict(const float dt)
 {
-  static fu8 iteration = 0;
+  /*
+  // static fu8 iteration = 0;
 
-  const float fact = 0.5f * dt;
-  const float dvx = dt * sv[sh.idx].a.x;
-  const float dvy = dt * sv[sh.idx].a.y;
-  const float dvz = dt * sv[sh.idx].a.z;
-  const float vtx = dt * sv[sh.idx].v.x;
-  const float vty = dt * sv[sh.idx].v.y;
-  const float vtz = dt * sv[sh.idx].v.z;
+  // const float fact = 0.5f * dt;
+  // const float dvx = dt * sv[sh.idx].a.x;
+  // const float dvy = dt * sv[sh.idx].a.y;
+  // const float dvz = dt * sv[sh.idx].a.z;
+  // const float vtx = dt * sv[sh.idx].v.x;
+  // const float vty = dt * sv[sh.idx].v.y;
+  // const float vtz = dt * sv[sh.idx].v.z;
 
-  const struct quaternion old = sv[sh.idx].qv;
+  // const struct quaternion old = sv[sh.idx].qv;
 
-  sv[sh.idx].v.x += dvx;
-  sv[sh.idx].v.y += dvy;
-  sv[sh.idx].v.z += dvz;
+  // sv[sh.idx].v.x += dvx;
+  // sv[sh.idx].v.y += dvy;
+  // sv[sh.idx].v.z += dvz;
   
-  sv[sh.idx].p.x += vtx + (fact * dvx);
-  sv[sh.idx].p.y += vty + (fact * dvy);
-  sv[sh.idx].p.z += vtz + (fact * dvz);
+  // sv[sh.idx].p.x += vtx + (fact * dvx);
+  // sv[sh.idx].p.y += vty + (fact * dvy);
+  // sv[sh.idx].p.z += vtz + (fact * dvz);
 
-  sv[sh.idx].qv.q1 -= fact * (sv[sh.idx].w.x * old.q2 + \
-                              sv[sh.idx].w.y * old.q3 + \
-                              sv[sh.idx].w.z * old.q4);
-  sv[sh.idx].qv.q2 += fact * (sv[sh.idx].w.x * old.q1 + \
-                              sv[sh.idx].w.z * old.q3 - \
-                              sv[sh.idx].w.y * old.q4);
-  sv[sh.idx].qv.q3 += fact * (sv[sh.idx].w.y * old.q1 - \
-                              sv[sh.idx].w.z * old.q2 + \
-                              sv[sh.idx].w.x * old.q4);
-  sv[sh.idx].qv.q4 += fact * (sv[sh.idx].w.z * old.q1 + \
-                              sv[sh.idx].w.y * old.q2 - \
-                              sv[sh.idx].w.x * old.q3);
+  // sv[sh.idx].qv.q1 -= fact * (sv[sh.idx].w.x * old.q2 + \
+  //                             sv[sh.idx].w.y * old.q3 + \
+  //                             sv[sh.idx].w.z * old.q4);
+  // sv[sh.idx].qv.q2 += fact * (sv[sh.idx].w.x * old.q1 + \
+  //                             sv[sh.idx].w.z * old.q3 - \
+  //                             sv[sh.idx].w.y * old.q4);
+  // sv[sh.idx].qv.q3 += fact * (sv[sh.idx].w.y * old.q1 - \
+  //                             sv[sh.idx].w.z * old.q2 + \
+  //                             sv[sh.idx].w.x * old.q4);
+  // sv[sh.idx].qv.q4 += fact * (sv[sh.idx].w.z * old.q1 + \
+  //                             sv[sh.idx].w.y * old.q2 - \
+  //                             sv[sh.idx].w.x * old.q3);
 
-  if (!(iteration & renorm_step_mask))
-  {
-    const float expr = sv[sh.idx].qv.q1 * sv[sh.idx].qv.q1 + \
-                       sv[sh.idx].qv.q2 * sv[sh.idx].qv.q2 + \
-                       sv[sh.idx].qv.q3 * sv[sh.idx].qv.q3 + \
-                       sv[sh.idx].qv.q4 * sv[sh.idx].qv.q4;
+  // if (!(iteration & renorm_step_mask))
+  // {
+  //   const float expr = sv[sh.idx].qv.q1 * sv[sh.idx].qv.q1 + \
+  //                      sv[sh.idx].qv.q2 * sv[sh.idx].qv.q2 + \
+  //                      sv[sh.idx].qv.q3 * sv[sh.idx].qv.q3 + \
+  //                      sv[sh.idx].qv.q4 * sv[sh.idx].qv.q4;
     
-    if (expr < sigma_low(1) || expr > sigma_high(1)) {
-      const float norm = invsqrtf(expr);
-      sv[sh.idx].qv.q1 *= norm;
-      sv[sh.idx].qv.q2 *= norm;
-      sv[sh.idx].qv.q3 *= norm;
-      sv[sh.idx].qv.q4 *= norm;
-    }
-  }
+  //   if (expr < sigma_low(1) || expr > sigma_high(1)) {
+  //     const float norm = invsqrtf(expr);
+  //     sv[sh.idx].qv.q1 *= norm;
+  //     sv[sh.idx].qv.q2 *= norm;
+  //     sv[sh.idx].qv.q3 *= norm;
+  //     sv[sh.idx].qv.q4 *= norm;
+  //   }
+  // }
 
-  ++iteration;
-}
-
-/*
- * Transforms state vector into sensor measurement.
- */
-static inline void
-ascent_measurement(const struct state_vec *restrict vec,
-                   struct measm_z *restrict out)
-{
-  const float ag = vec->a.z + GRAVITY_SI;
-  const float qq2 = vec->qv.q2 * vec->qv.q2;
-  const float qq3 = vec->qv.q3 * vec->qv.q3;
-  const float qq4 = vec->qv.q4 * vec->qv.q4;
-
-  const float q12 = vec->qv.q1 * vec->qv.q2;
-  const float q13 = vec->qv.q1 * vec->qv.q3;
-  const float q14 = vec->qv.q1 * vec->qv.q4;
-  const float q23 = vec->qv.q2 * vec->qv.q3;
-  const float q24 = vec->qv.q2 * vec->qv.q4;
-  const float q34 = vec->qv.q3 * vec->qv.q4;
-  /* 
-   * DCM body->nav from quaternion (scalar-first w,x,y,z)
-   * Manually transposed (as used). Each value used once
-   * => array is not used to allow for compile-time folding
-   */
-  const float r11 = 1.0f - (2.0f * (qq3 + qq4));
-  const float r12 = 2.0f * (q23 + q14);
-  const float r13 = 2.0f * (q24 - q13);
-  const float r21 = 2.0f * (q23 - q14);
-  const float r22 = 1.0f - (2.0f * (qq2 + qq4));
-  const float r23 = 2.0f * (q34 + q12);
-  const float r31 = 2.0f * (q24 + q13);
-  const float r32 = 2.0f * (q34 - q12);
-  const float r33 = 1.0f - (2.0f * (qq2 + qq3));
-
-  out->d.axis.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
-  out->d.axis.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
-  out->d.axis.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
-
-  out->gyro = vec->w;
-  out->d.alt = vec->p.z;
+  // ++iteration; */
 }
 
 /*
  * Update step of the Ascent filter.
- * Required sensor readings: Barometer.
+ * Prerequisites: Barometer.
  */
 void ascent_update(const float dt)
 {
@@ -348,5 +313,3 @@ void ascent_update(const float dt)
 
   sweetbench_catch(3);
 }
-
-/* ------ Ascent Kalman filter ------ */

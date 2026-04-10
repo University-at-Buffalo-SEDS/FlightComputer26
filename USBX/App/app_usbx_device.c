@@ -22,7 +22,9 @@
 #include "app_usbx_device.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 #include "main.h"
+#include "fctypes.h"
 
 /* USER CODE END Includes */
 
@@ -57,7 +59,9 @@ extern PCD_HandleTypeDef           hpcd_USB_DRD_FS;
 static VOID app_ux_device_thread_entry(ULONG thread_input);
 static UINT USBD_ChangeFunction(ULONG Device_State);
 /* USER CODE BEGIN PFP */
-static void usb_diag_set(uint8_t green_on, uint8_t blue_on);
+
+void IREC26_unused
+usb_diag_set(uint8_t green_on, uint8_t blue_on);
 
 /* USER CODE END PFP */
 

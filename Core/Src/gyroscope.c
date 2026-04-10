@@ -3,6 +3,7 @@
  */
 
 #include "platform.h"
+#include "fcstructs.h"
 #include "gyroscope.h"
 
 

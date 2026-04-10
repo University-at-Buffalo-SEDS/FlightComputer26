@@ -26,9 +26,12 @@
 
 #include "main.h"
 #include "platform.h"
-/* Provide telemetry_set_byte_pool so rust hooks use the app memory pool */
+#include "fctasks.h"
+
+/* For Rust hooks */
 extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
 extern void telemetry_init_lock(void);
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,20 +75,21 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   UINT ret = TX_SUCCESS;
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
-    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-      busy_delay(50000); // adjust until visible
-    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
 
-    TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
+  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+  busy_delay(50000); // adjust until visible
+  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
+
+  TX_BYTE_POOL *byte_pool = (TX_BYTE_POOL*)memory_ptr;
 
 #ifdef TELEMETRY_ENABLED
+
   telemetry_set_byte_pool(byte_pool);
-  /* Initialize telemetry lock used by Rust (telemetry_lock/telemetry_unlock). */
+  /* Initialize telemetry lock used by Rust
+   * (telemetry_lock/telemetry_unlock). */
   telemetry_init_lock();
 
 #endif
-
-  /* Log after router is initialized, before threads start */
 
   /* USER CODE END App_ThreadX_MEM_POOL */
 
@@ -108,8 +112,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   create_dma_task(byte_pool);
   create_evaluation_task(byte_pool);
   create_distribution_task(byte_pool);
-
-
 
   /* USER CODE END App_ThreadX_Init */
 

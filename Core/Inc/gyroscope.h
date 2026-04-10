@@ -6,6 +6,7 @@
 #define GYROSCOPE_H
 
 #include "main.h"
+#include "fcstructs.h"
 
 
 /* ------ Register map ------ */
@@ -92,8 +93,6 @@ struct gyro_raw {
 
 
 /* ------ Public API ------ */
-
-struct coords;
 
 extern enum gyro_range init_rng;
 extern const float inv_sens[];

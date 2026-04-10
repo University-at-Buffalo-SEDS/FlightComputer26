@@ -1,60 +1,27 @@
 /*
  * Evaluation Task
- *
- * This task is responsible for the finite state machine
- * and data evaluation. This task suspends on a queue and
- * when woken, evaluates data according to global run time
- * configuration. Depending on the config, this task may or
- * may not be interrupted while doing so. In the case of
- * Ascent filter, this task also runs an update stage and
- * then proceeds to data evaluation.
- *
- * This task also handles the side effects of state
- * transitions, such as deploying parachute and, if GPS
- * module is enabled and available (those are different),
- * reporting coordinates the rocket landed at.
- *
- * States advance forward from 'Suspended' to 'Landed',
- * with both mentioned being passive states that require
- * interaction, and everything in between being active
- * conditions during which the FC board is autonomous.
- *
- * This task's header file, evalution.h, together with
- * the global configuration found in recovery.h, list a
- * number of options to tune data evaluation. Defined
- * options configure scheduling, confirmation count,
- * consecutiveness, and vigilance of state examination.
- *
- * This task operates in always-suspend mode, and is
- * resumed by Distribution task when it deems that
- * there is enough raw data to pass.
  */
 
-#include "evaluation.h"
 #include "platform.h"
-#include "recovery.h"
-#include "kalman.h"
-#include "dma.h"
-
-TX_SEMAPHORE eval_focus_mode;
-TX_THREAD evaluation_task;
-
-/* ------ Global storage ------ */
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fctasks.h"
+#include "fccommon.h"
+#include "fcapi.h"
+#include "fcconfig.h"
+#include "sweetbench.h"
 
 #define id "EV "
+#define id_vigilant "VM "
 
-/* History of 4 state vectors and ring index used
- * by Evaluation task and Kalman filter. */
-struct state_vec sv[SV_HIST_SIZE] = {0};
 
-struct sv_helper sh = {0};
+TX_THREAD evaluation_task;
+TX_SEMAPHORE eval_focus_mode;
 
-static fu8 sampl = 0;
+kf_svec sv[STATE_HISTORY] = {0};
+sv_meta sm = {0};
 
-/* Length of state vector to log, in bytes. Varies per KF. */
-fu32 sv_size_bytes = ASC_STAT * sizeof(float);
-
-volatile enum state flight = Suspended;
+volatile state flight = Suspended;
 
 const char *trans[Flight_States] = {
     [Suspended] = " interval in pilot mode:",
@@ -68,33 +35,25 @@ const char *trans[Flight_States] = {
     [Landed]    = "Landed. Coordinates will follow.",
 };
 
-/* ------ Global storage ------ */
-
-
-/* ------ Data evaluation ------ */
-
-#define id_vigilant "VM "
 
 /*
- * Cautiously examine altitude changes. Act in place.
- * Must call if 'barometer fallback' (aka vigilant) mode is enabled.
+ * Vigilant mode routine. Can perform urgent deployments
+ * and skip states.
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || sv[sh.idx].p.z > sv[prev(1)].p.z)
+  if (flight < Ascent || svec(0).alt > svec(1).alt)
   {
-    /* Confirms must be consecutive */
-
     if (mode & option(Consecutive_Samples) &&
         mode & option(Confirm_Altitude))
     {
-      fetch_and(&config, ~option(Confirm_Altitude), Rlx);
+      fetch_and(&g_conf, ~option(Confirm_Altitude), Rlx);
     }
 
     return;
   }
 
-  if (sv[sh.idx].p.z <= REEF_TARGET_ALT &&
+  if (svec(0).alt <= REEF_TARGET_ALT &&
       !(mode & option(Parachute_Expanded)))
   {
     /* We fell below reefing altitude. Depeding on
@@ -105,35 +64,34 @@ static inline void evaluate_altitude(fu32 mode)
       expand_parachute();
 
       flight = Reefing;
-      log_transition(id_vigilant, sv[sh.idx].p.z);
+      log_transition(id_vigilant, svec(0).alt);
     }
     else
     {
       release_parachute();
 
       flight = Descent;
-      log_transition(id_vigilant, sv[sh.idx].p.z);
+      log_transition(id_vigilant, svec(0).alt);
 
       descent_initialize();
 
-      tx_thread_sleep(URGENT_COUPLE_DELAY_MS);
+      tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
       expand_parachute();
 
       flight = Reefing;
-      log_transition(id_vigilant, sv[sh.idx].p.z);
+      log_transition(id_vigilant, svec(0).alt);
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
   {
-    /* Confirm we are falling before firing CO2. */
-    fetch_or(&config, option(Confirm_Altitude), Rlx);
+    fetch_or(&g_conf, option(Confirm_Altitude), Rlx);
   }
   else if (!(mode & option(Parachute_Deployed)))
   {
     release_parachute();
     
     flight = Descent;
-    log_transition(id_vigilant, sv[sh.idx].p.z);
+    log_transition(id_vigilant, svec(0).alt);
     
     descent_initialize();
   }
@@ -145,11 +103,11 @@ static inline void evaluate_altitude(fu32 mode)
  */
 static inline void detect_launch(void)
 {
-  if (sv[sh.idx].v.z >= LAUNCH_MIN_VEL &&
-      sv[sh.idx].a.z >= LAUNCH_MIN_VAX)
+  if (svec(0).vel >= LAUNCH_MIN_VEL &&
+      svec(0).tail.asc.acz >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
-    log_transition(id, sv[sh.idx].a.z);
+    log_transition(id, svec(0).tail.asc.acz);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -159,20 +117,22 @@ static inline void detect_launch(void)
  */
 static inline void detect_ascent(fu32 mode)
 {
-  if (sv[sh.idx].v.z > sv[prev(1)].v.z &&
-      sv[sh.idx].p.z > sv[prev(1)].p.z)
+  if (svec(0).vel > svec(1).vel &&
+      svec(1).vel > svec(2).vel &&
+      svec(0).alt > svec(1).alt &&
+      svec(1).alt > svec(2).alt)
   {
-    if (++sampl >= MIN_SAMP_ASCENT)
+    if (++sm.samp >= MIN_SAMP_ASCENT)
     {
       flight = Ascent;
-      sampl = 0;
-      log_transition(id, sv[sh.idx].v.z);
+      sm.samp = 0;
+      log_transition(id, svec(0).vel);
     }
   }
-  else if (mode & option(Consecutive_Samples) && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
   {
-    sampl = 0;
-    enum message cmd = Not_Launch;
+    sm.samp = 0;
+    fc_msg cmd = Not_Launch;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -185,22 +145,22 @@ static inline void detect_ascent(fu32 mode)
  */
 static inline void detect_burnout(fu32 mode)
 {
-  if (sv[sh.idx].v.z >= BURNOUT_MIN_VEL &&
-      sv[sh.idx].a.z <= BURNOUT_MAX_VAX &&
-      sv[sh.idx].p.z > sv[sh.idx].p.z &&
-      sv[sh.idx].v.z < sv[prev(1)].v.z)
+  if (svec(0).vel >= BURNOUT_MIN_VEL &&
+      svec(0).tail.asc.acz <= BURNOUT_MAX_VAX &&
+      svec(0).alt > svec(1).alt &&
+      svec(0).vel < svec(1).vel)
   {
-    if (++sampl >= MIN_SAMP_BURNOUT)
+    if (++sm.samp >= MIN_SAMP_BURNOUT)
     {
       flight = Burnout;
-      sampl = 0;
-      log_transition(id, sv[sh.idx].p.z);
+      sm.samp = 0;
+      log_transition(id, svec(0).alt);
     }
   }
-  else if (mode & option(Consecutive_Samples) && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
   {
-    sampl = 0;
-    enum message cmd = Not_Burnout;
+    sm.samp = 0;
+    fc_msg cmd = Not_Burnout;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -211,13 +171,13 @@ static inline void detect_burnout(fu32 mode)
  */
 static inline void detect_apogee(void)
 {
-  if (sv[sh.idx].v.z <= APOGEE_MAX_VEL &&
-      sv[sh.idx].v.z < sv[prev(1)].v.z &&
-      sv[prev(1)].v.z < sv[prev(2)].v.z &&
-      sv[prev(2)].v.z < sv[prev(3)].v.z)
+  if (svec(0).vel <= APOGEE_MAX_VEL &&
+      svec(0).vel < svec(1).vel &&
+      svec(1).vel < svec(2).vel &&
+      svec(2).vel < svec(3).vel)
   {
     flight = Apogee;
-    log_transition(id, sv[sh.idx].p.z);
+    log_transition(id, svec(0).alt);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -227,25 +187,25 @@ static inline void detect_apogee(void)
  */
 static inline void detect_descent(fu32 mode)
 {
-  if (sv[sh.idx].p.z < sv[prev(1)].p.z &&
-      sv[prev(1)].p.z < sv[prev(2)].p.z &&
-      sv[sh.idx].v.z > sv[prev(1)].v.z &&
-      sv[prev(1)].v.z > sv[prev(2)].v.z)
+  if (svec(0).alt < svec(1).alt &&
+      svec(1).alt < svec(2).alt &&
+      svec(0).vel > svec(1).vel &&
+      svec(1).vel > svec(2).vel)
   {
-    if (++sampl >= MIN_SAMP_DESCENT)
+    if (++sm.samp >= MIN_SAMP_DESCENT)
     {
       flight = Descent;
-      sampl = 0;
+      sm.samp = 0;
       release_parachute();
-      log_transition(id, sv[sh.idx].p.z);
+      log_transition(id, svec(0).alt);
 
       descent_initialize();
     }
   }
-  else if (mode & option(Consecutive_Samples) && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
   {
-    sampl = 0;
-    enum message cmd = Not_Descent;
+    sm.samp = 0;
+    fc_msg cmd = Not_Descent;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -256,21 +216,21 @@ static inline void detect_descent(fu32 mode)
  */
 static inline void detect_reef(fu32 mode)
 {
-  if (sv[sh.idx].p.z <= REEF_TARGET_ALT &&
-      sv[sh.idx].p.z < sv[prev(1)].p.z)
+  if (svec(0).alt <= REEF_TARGET_ALT &&
+      svec(0).alt < svec(1).alt)
   {
-    if (++sampl >= MIN_SAMP_REEF)
+    if (++sm.samp >= MIN_SAMP_REEF)
     {
       flight = Reefing;
-      sampl = 0;
+      sm.samp = 0;
       expand_parachute();
-      log_transition(id, sv[sh.idx].p.z);
+      log_transition(id, svec(0).alt);
     }
   }
-  else if (mode & option(Consecutive_Samples) && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
   {
-    sampl = 0;
-    enum message cmd = Not_Reefing;
+    sm.samp = 0;
+    fc_msg cmd = Not_Reefing;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
@@ -281,37 +241,30 @@ static inline void detect_reef(fu32 mode)
  */
 static inline void detect_landed(fu32 mode)
 {
-  float dh = sv[sh.idx].p.z - sv[prev(1)].p.z;
-  float dv = sv[sh.idx].v.z - sv[prev(1)].v.z;
-  float da = sv[sh.idx].a.z - sv[prev(1)].a.z;
+  float dh = svec(0).alt - svec(1).alt;
+  float dv = svec(0).vel - svec(1).vel;
 
-  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER &&
-      fabsf(da) <= VAX_TOLER)
+  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER)
   {
-    if (++sampl >= MIN_SAMP_LANDED)
+    if (++sm.samp >= MIN_SAMP_LANDED)
     {
       flight = Landed;
       log_msg(trans[Landed]);
 
-      /* Needed to avoid locks on landing coordinates reporting. */
-      enum message cmd = fc_mask(Evaluation_Focus);
+      fc_msg cmd = fc_mask(Evaluation_Focus);
       tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
   }
-  else if (mode & option(Consecutive_Samples) && sampl > 0)
+  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
   {
-    sampl = 0;
-    enum message cmd = Not_Landed;
+    sm.samp = 0;
+    fc_msg cmd = Not_Landed;
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 }
 
-/* ------ Data evaluation ------ */
 
-/* ------ Logging ------ */
-
-static inline void
-crew_send_coords(fu32 mode)
+static inline void crew_send_coords(fu32 mode)
 {
 #ifdef GPS_AVAILABLE
   if (!(mode & option(GPS_Available)))
@@ -319,23 +272,18 @@ crew_send_coords(fu32 mode)
     return;
   }
 
-  #ifdef TELEMETRY_ENABLED
-  log_measm(SEDS_DT_GPS_DATA, &meas.d.gps);
-  #endif
+  log_measm(SEDS_DT_GPS_DATA, &meas.mode.gps);
+
   tx_thread_sleep(LANDED_GPS_INTERVAL);
 
 #else
   return;
 
-#endif // GPS_AVAILABLE
+#endif /* GPS_AVAILABLE */
 }
 
-/* ------ Logging ------ */
-
-/* ------ Evaluation Task ------ */
-
 /*
- * Simple finite-state machine for state transition.
+ * Finite-state machine for state transition.
  * Before leaving, logs state vector just used.
  */
 void evaluate_rocket_state(fu32 conf)
@@ -375,24 +323,24 @@ void evaluate_rocket_state(fu32 conf)
     break;
   }
 
-  log_filter_data(&sv[sh.idx], sv_size_bytes);
+  fu32 size = conf & option(Using_Ascent_KF) ? ASC_STAT
+                                             : DESC_STAT;
 
-  /* Increment index for the next state vector */
-  sh.idx = (sh.idx + 1) & SV_HIST_MASK;
+  log_filter_data(&svec(0), size);
+
+  sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
 /*
- * Initializes Ascent filter and signal Distribution
+ * Initializes Ascent filter and signals Distribution
  * task to start performing data logistics. Idempotent.
- * If there is a re-entrancy, discards dirty KF buffers.
+ * If there is a re-entrancy, discards dirty KF buffer.
  */
-static inline void
-enter_flight_state(fu32 conf)
+static inline void enter_flight_state(fu32 conf)
 {
   if (conf & option(Launch_Triggered))
   {
-    /* Discard unfinished (interrupted) state vector. */
-    sh.idx = prev(1);
+    sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
   }
   else
   {
@@ -401,9 +349,7 @@ enter_flight_state(fu32 conf)
 
     flight = Idle;
     
-    /* Signal distribution task to enter main cycle.
-     */
-    fetch_or(&config, option(Launch_Triggered), Rel);
+    fetch_or(&g_conf, option(Launch_Triggered), Rel);
   }
 }
 
@@ -419,13 +365,12 @@ void evaluation_entry(ULONG input)
 
   UINT st;
 
-  fu32 conf = load(&config, Acq);
+  fu32 conf = load(&g_conf, Acq);
 
   enter_flight_state(conf);
 
-  task_loop(conf & option(Eval_Abort_Flag))
+  task_loop (conf & option(Eval_Abort_Flag))
   {
-    /* Task suspension */
     st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
 
     if (st != TX_SUCCESS)
@@ -433,9 +378,9 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
-    ascent_update(sh.dt);
+    ascent_update(sm.dt);
 
-    conf = load(&config, Acq);
+    conf = load(&g_conf, Acq);
 
     evaluate_rocket_state(conf);
   }
@@ -443,14 +388,13 @@ void evaluation_entry(ULONG input)
 
 /*
  * Creates a configurably-preemptive, cooperative Evaluation task
- * with defined parameters. This task started by the Recovery task.
+ * with defined parameters. Started by the Recovery task.
  */
 UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 {
   UINT st;
   CHAR *pointer;
 
-  /* Allocate the stack for test  */
   if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
                        EVAL_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
   {
@@ -484,5 +428,3 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 
   return TX_SUCCESS;
 }
-
-/* ------ Evaluation Task ------ */

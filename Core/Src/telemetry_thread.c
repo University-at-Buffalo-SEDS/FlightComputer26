@@ -1,8 +1,8 @@
 // telemetry_thread.c
 
 #include "platform.h"
+#include "fctasks.h"
 #include "can_bus.h"
-#include "main.h"
 
 TX_THREAD telemetry_thread;
 

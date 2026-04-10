@@ -1,77 +1,30 @@
 /*
  * Recovery Task
- *
- * This task suspends on a blocking message queue
- * and when resumed, drains the message queue. The
- * messages are then interpreted depending on the
- * MSB designating the endpoint - FC or GND. When
- * a message appears in the queue, this thread is
- * _immediately_ woken by ThreadX and processing begins.
- *
- * This task provides for various recovery and abortion
- * scenarios, and also logs all important actions. This
- * task as a sole command and decision center of the
- * flight computer, and therefore cannot be preempted
- * while in execution. As such, utlizing the fact that
- * the target MCU is single core and thus has only one
- * data cache unit, this task can perform non-atomic
- * reads and writes across its allotted RAM region.
- *
- * This task also includes a timer callback that
- * checks for timeout of FC, RF and GND. If timeout
- * occurs (i.e., this task did not receive a signal)
- * for 4 seconds, a handler is invoked that changes
- * global runtime configuration, which other tasks
- * read and locally update on every iteration. The
- * ThreadX timer is set to expire every second.
- *
- * To change default configuration applied during boot,
- * refer to recovery.h -> DEFAULT_OPTIONS.
- *
- * This task defines the local timer, which informs its
- * users of time elapsed since last call for each user.
- * This timer is independent of the ThreadX timer (above),
- * and relies on HAL tick that is incremented every 1 ms.
  */
 
 #include "platform.h"
-#include "evaluation.h"
-#include "recovery.h"
-#include "kalman.h"
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fctasks.h"
+#include "fccommon.h"
+#include "fcapi.h"
+#include "fcconfig.h"
 #include "sweetbench.h"
-
-TX_QUEUE shared;
-TX_THREAD recovery_task;
-
-
-/* ------ Global and static storage ------ */
 
 #define id "RE "
 
-/* Last recorded time for each timer user. */
+
+TX_THREAD recovery_task;
+TX_QUEUE shared;
+TX_TIMER monotonic_checks;
+
 volatile fu32 local_time[Time_Users] = {0};
 
-/* Run time configuration mask. */
-atomic_uint_fast32_t config = DEFAULT_OPTIONS;
+static tx_align fc_msg recvq[FC_MSG_Q_SIZE] = {0};
 
-/* Recovery queue pool */
-#define RECVQ_SIZE 64
-static tx_align enum message recvq[RECVQ_SIZE] = {0};
+atomic_uint_fast32_t g_conf = FC_DEFAULTS | USER_OPTIONS;
 
-/* Monitors timeouts and deployment events */
-static TX_TIMER monotonic_checks;
-
-/* Static raw data status counters */
-static volatile fu16 failures = 0;
-
-static fu16 to_abort = TO_ABORT;
-static fu16 to_reinit = TO_REINIT;
-
-static fu16 gps_delay_count = 0;
-static fu16 gps_malform_count = 0;
-
-/* Sensor configurations,
- * modified and passed to init at runtime */
+static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
@@ -90,7 +43,7 @@ static struct accl_config accl_conf = {
     .rng = Accl_Range_24g,
 };
 
-static const struct description confmap[] = {
+static const conf_dict confmap[] = {
   { Monitor_Altitude,    "vigilant-mode" },
   { Consecutive_Samples, "consectuive-samples" },
   { Eval_Focus_Flag,     "eval-focus" },
@@ -99,46 +52,40 @@ static const struct description confmap[] = {
   { Validate_Measms,     "validate-measms" },
 };
 
-/* ------ Global and static storage ------ */
-
-
-/* ------ Recovery logic ------ */
 
 /*
- * (Re)initializes indicated sensor(s). Disables
- * DMA interrupt for the duration of reinitialization
- * of concerned sensor. This is the place to perform
- * sensitive initializations, because Recovery cannot
- * be preempted by other tasks. As the driver init
- * functions are idempotent, so is this function.
+ * Tries to (re)initialize or shut given sensors.
+ * Should never be preemtped by other task.
  */
-static inline void
-initialize_sensors(enum sensor_mask sensor)
+static inline void initialize_sensors(sens_init sn)
 {
-  enum sensor_mask fails = 0;
+  sens_init fails = 0;
 
   sweetbench_start(5, 1);
 
   clear_spi1_irq();
 
-  if (sensor & Init_Baro)
+  if (sn & Init_Baro)
   {
-    reinit(baro_init(&hspi1, &baro_conf), fails, Init_Baro);
+    try_init_sensor(baro_init(&hspi1, &baro_conf),
+                                fails, Init_Baro);
   }
 
-  if (sensor & Init_Gyro)
+  if (sn & Init_Gyro)
   {
-    reinit(gyro_init(&hspi1, &gyro_conf), fails, Init_Gyro);
+    try_init_sensor(gyro_init(&hspi1, &gyro_conf),
+                                fails, Init_Gyro);
   }
 
-  if (sensor & Init_Accl)
+  if (sn & Init_Accl)
   {
-    reinit(accl_init(&hspi1, &accl_conf), fails, Init_Accl);
+    try_init_sensor(accl_init(&hspi1, &accl_conf),
+                                fails, Init_Accl);
   }
 
   restore_spi1_irq();
 
-  if (sensor & Shut_Baro)
+  if (sn & Shut_Baro)
   {
     irq_off(Baro_EXTI);
   }
@@ -147,7 +94,7 @@ initialize_sensors(enum sensor_mask sensor)
     irq_on(Baro_EXTI);
   }
 
-  if (sensor & Shut_Gyro)
+  if (sn & Shut_Gyro)
   {
     irq_off(Gyro_EXTI_1);
 /*  irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
@@ -158,7 +105,7 @@ initialize_sensors(enum sensor_mask sensor)
 /*  irq_on(Gyro_EXTI_2);   not used for IREC 2026 */
   }
 
-  if (sensor & Shut_Accl)
+  if (sn & Shut_Accl)
   {
     irq_off(Accl_EXTI_1);
 /*  irq_off(Accl_EXTI_2);   not used for IREC 2026 */
@@ -171,74 +118,69 @@ initialize_sensors(enum sensor_mask sensor)
   
   if (fails != 0)
   {
-    config |= option(Init_Failure_Record);
-    log_err(id "some of requested reinit failed: %u", fails);
+    g_conf |= option(Init_Failure_Record);
+    log_err(id "observed init failures: %u", fails);
   }
 
   sweetbench_catch(5);
 }
 
 /*
- * Reset Distribution and Evaluation tasks. Grants Telemetry
- * task full scheduling time. If launch signal is sent after
- * abortion, the FC will attempt to resume normal opertaion.
+ * Resets Distribution and Evaluation tasks.
+ * If GroundStation is lost, restarts them.
  */
 static inline void auto_abort(void)
 {
   tx_thread_reset(&evaluation_task);
   tx_thread_reset(&distribution_task);
 
-  gps_delay_count = 0;
-  gps_malform_count = 0;
-  config &= ~option(Defer_Baro_Fallback);
+  smon.gps_delay = 0;
+  smon.gps_malform = 0;
+  g_conf &= ~option(Defer_Baro_Fallback);
 
-  if (config & option(Lost_GroundStation))
+  if (g_conf & option(Lost_GroundStation))
   {
-    /* Nowhere to expect commands from! Reinitialize. */
-    to_abort = TO_ABORT * 10;
+    smon.to_abort = TO_ABORT * 10;
 
-    enum message cmd = fc_mask(Launch_Signal);
+    fc_msg cmd = fc_mask(Launch_Signal);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
   else
   {
-    log_msg(id "aborted! Expecting commands or launch signal.");
+    log_msg(id "Aborted! Expecting commands.");
 
-    config |= option(In_Aborted_State);
+    g_conf |= option(In_Aborted_State);
   }
 }
 
 /*
- * Signals other tasks to not fetch or use GPS data.
- * Reinitializes barometer with larger oversampling rates.
+ * Signals other tasks to not fetch or use GPS.
+ * Reinitializes barometer with larger OSR.
  */
 static inline void barometer_fallback(void)
 {
-  config &= ~option(GPS_Available);
+  g_conf &= ~option(GPS_Available);
 
   baro_conf.osr_p = Baro_OSR_x8;
   baro_conf.iir_coef = Baro_IIR_Coef_15;
 
-  if (config & option(Using_Ascent_KF))
+  if (g_conf & option(Using_Ascent_KF))
   {
-    /* The second part of this function will be
-     * executed during Descent KF initialization.
-     */
-    config |= option(Defer_Baro_Fallback);
+    g_conf |= option(Defer_Baro_Fallback);
     return;
   }
 
   initialize_sensors(Init_Baro);
 
-  config |= option(Monitor_Altitude);
-  config |= option(Validate_Measms);
+  g_conf |= option(Monitor_Altitude);
+  g_conf |= option(Validate_Measms);
   log_msg(id "Entered vigilant mode");
 }
 
 /*
  * Process general command from either endpoint.
  */
-static inline void process_action(enum message cmd)
+static inline void process_action(fc_msg cmd)
 {
   UINT eval_old_pt;
 
@@ -247,11 +189,11 @@ static inline void process_action(enum message cmd)
       flight = Descent;
 
       release_parachute();
-      log_transition(id, sv[sh.idx].p.z);
+      log_transition(id, sv[sm.idx].alt);
 
-      if (config & option(Using_Ascent_KF))
+      if (g_conf & option(Using_Ascent_KF))
       {
-        config &= ~option(Using_Ascent_KF);
+        g_conf &= ~option(Using_Ascent_KF);
         descent_initialize();
       }
       return;
@@ -260,7 +202,7 @@ static inline void process_action(enum message cmd)
     if (expand_parachute())
     {
       flight = Reefing;
-      log_transition(id, sv[sh.idx].p.z);
+      log_transition(id, sv[sm.idx].alt);
     }
     return;
 
@@ -269,44 +211,41 @@ static inline void process_action(enum message cmd)
     return;
 
   case Launch_Signal:
-    if (config & option(In_Aborted_State))
+    if (g_conf & option(In_Aborted_State))
     {
-      config &= ~option(In_Aborted_State);
+      g_conf &= ~option(In_Aborted_State);
       tx_thread_resume(&distribution_task);
     }
-    else if (gps_delay_count || gps_malform_count)
+    else if (smon.gps_delay || smon.gps_malform)
     {
       log_err(id "GPS: %u delayed and %u malformed "
                  "during pre-launch. Counters are reset.",
-              gps_delay_count, gps_malform_count);
+              smon.gps_delay, smon.gps_malform);
 
-      gps_delay_count = 0;
-      gps_malform_count = 0;
+      smon.gps_delay = 0;
+      smon.gps_malform = 0;
     }
 
-    /* Start Evaluation and begin rocket launch chain. */
-    config &= ~option(Eval_Abort_Flag);
+    g_conf &= ~option(Eval_Abort_Flag);
     tx_thread_resume(&evaluation_task);
     return;
 
   case Evaluation_Relax:
-    /* Allow preemption of Evaluation task inside KF. */
-    config &= ~option(Eval_Focus_Flag);
+    g_conf &= ~option(Eval_Focus_Flag);
     tx_thread_preemption_change(&evaluation_task,
                                 EVAL_PRIORITY,
                                 &eval_old_pt);
     return;
 
   case Evaluation_Focus:
-    /* Restrict preemption of Evaluation task inside KF. */
-    config |= option(Eval_Focus_Flag);
+    g_conf |= option(Eval_Focus_Flag);
     tx_thread_preemption_change(&evaluation_task,
                                 EVAL_PREEMPT_THRESHOLD,
                                 &eval_old_pt);
     return;
 
   case Evaluation_Abort:
-    config |= option(Eval_Abort_Flag);
+    g_conf |= option(Eval_Abort_Flag);
     tx_thread_reset(&evaluation_task);
     return;
 
@@ -345,9 +284,9 @@ static inline void process_action(enum message cmd)
  * Constant-folded mask of all possible user options.
  * Allows to extend enum message without modifying code.
  */
-static inline constexpr enum message user_options()
+static inline constexpr fc_msg user_options()
 {
-  enum message options = 0;
+  fc_msg options = 0;
 
   for (fu32 k = 1; k < option(User_Option_Bound); k *= 2)
   {
@@ -361,9 +300,9 @@ static inline constexpr enum message user_options()
  * Updates global configuration and lists all currently
  * set options.
  */
-static inline void update_config(enum message incoming)
+static inline void update_config(fc_msg incoming)
 {
-  const enum message valid = user_options();
+  const fc_msg valid = user_options();
   fu32 raw = incoming & ~Revoke_Option;
 
   if ((raw & valid) == 0 || (raw & ~valid) != 0 ||
@@ -375,11 +314,11 @@ static inline void update_config(enum message incoming)
 
   if (incoming & Revoke_Option)
   {
-    config &= ~raw;
+    g_conf &= ~raw;
   }
   else
   {
-    config |= raw;
+    g_conf |= raw;
   }
 
   int cursor = sizeof(id) + 9 - 1;
@@ -387,7 +326,7 @@ static inline void update_config(enum message incoming)
 
   for (fu16 k = 0; k < namecount(confmap); ++k)
   {
-    if ((config & confmap[k].val) == option(confmap[k].val))
+    if ((g_conf & confmap[k].val) == option(confmap[k].val))
     {
       cursor += snprintf(buf + cursor,
                          sizeof confmap[k].name,
@@ -402,15 +341,15 @@ static inline void update_config(enum message incoming)
 /*
  * Applies or revokes passed runtime configuration option.
  */
-static inline void process_config(enum message code)
+static inline void process_config(fc_msg code)
 {
   if (code & Abortion_Thresholds)
   {
-    to_abort = threshold(code & ~Abortion_Thresholds);
+    smon.to_abort = threshold(code & ~Abortion_Thresholds);
   }
   else if (code & Reinit_Thresholds)
   {
-    to_reinit = threshold(code & ~Reinit_Thresholds);
+    smon.to_reinit = threshold(code & ~Reinit_Thresholds);
   }
   else
   {
@@ -421,71 +360,71 @@ static inline void process_config(enum message code)
 /*
  * Checks whether raw data report is OK.
  */
-static inline void process_report(enum message code)
+static inline void process_report(fc_msg code)
 {
   if (code != Sensor_Measm_Code)
   {
     bool bad_baro = (code & Bad_Altitude) || (code & Bad_Pressure);
 
-    bool maybe_gps = (config & option(GPS_Available)) &&
-                      gps_delay_count < GPS_SUS_DELAYS &&
-                      gps_malform_count < GPS_SUS_MALFORMED;
+    bool maybe_gps = (g_conf & option(GPS_Available)) &&
+                      smon.gps_delay < GPS_SUS_DELAYS &&
+                      smon.gps_malform < GPS_SUS_MALFORM;
 
     log_err(id "dirty data report: %u", (unsigned)code);
 
     if (flight <= Apogee || (bad_baro && !maybe_gps))
     {
-      ++failures;
+      ++smon.failures;
 
-      if (failures >= to_abort)
+      if (smon.failures >= smon.to_abort)
       {
         auto_abort();
       }
-      else if (failures >= to_reinit)
+      else if (smon.failures >= smon.to_reinit)
       {
-        /* Broad heuristic because Baro takes a while to init
+        /* Broad heuristic because Baro takes a while to init.
          */
         bad_baro ? initialize_sensors(Init_All)
                  : initialize_sensors(Init_Gyro | Init_Accl);
       }
     }
   }
-  else if (config & option(Reset_Failures))
+  else if (g_conf & option(Reset_Failures))
   {
-    failures = 0;
+    smon.failures = 0;
   }
 }
 
 /*
  * Handles delayed or malformed GPS data report.
  */
-static inline void process_gps_code(enum message code)
+static inline void process_gps_code(fc_msg code)
 {
   switch (code)
   {
   case GPS_Delayed:
-    ++gps_delay_count;
+    ++smon.gps_delay;
 
-    if (config & option(Launch_Triggered))
+    if (g_conf & option(Launch_Triggered))
     {
-      log_err(id "delayed GPS packets: %u", gps_delay_count);
+      log_err(id "delayed GPS packets: %u", smon.gps_delay);
     }
     break;
 
   case GPS_Malformed:
-    ++gps_malform_count;
+    ++smon.gps_malform;
 
-    if (config & option(Launch_Triggered))
+    if (g_conf & option(Launch_Triggered))
     {
-      log_err(id "malformed GPS packets: %u", gps_malform_count);
+      log_err(id "malformed GPS packets: %u", smon.gps_malform);
     }
     break;
 
   default: return;
   }
 
-  if (gps_delay_count >= GPS_MAX_DELAYS ||
-      gps_malform_count >= GPS_MAX_MALFORMED)
+  if (smon.gps_delay >= GPS_MAX_DELAYS ||
+      smon.gps_malform >= GPS_MAX_MALFORM)
   {
     barometer_fallback();
   }
@@ -494,7 +433,7 @@ static inline void process_gps_code(enum message code)
 /*
  * Decodes universal FC message from an endpoint {FC, RF, GND}.
  */
-static inline void decode_message(enum message msg)
+static inline void decode_message(fc_msg msg)
 {
   if (msg & FlightComputer_Mask)
   {
@@ -530,28 +469,16 @@ static inline void decode_message(enum message msg)
   {
     process_config(msg);
   }
-  else /* Didn't match anything */
+  else
   {
     log_err(id "slap yourself %u times", (unsigned)msg);
   }
 }
 
-/* ------ Recovery logic ------ */
-
-
-/* ------ Timer routine ------ */
 
 /*
- * This routine is called from ThreadX interrupt
- * every 0.5 seconds. It monitors timeout for the
- * endpoints flight computer depends on {FC, RF, GND},
- * and if timeout has occured, signals tasks to not
- * depend on the endpoint which has timed out. In case
- * of the FC itself, it tries to reinitialize vital
- * tasks 3 times and them aborts.
- *
- * This timer is also responsible for pulling CO2 and
- * REEF pins back low after either has been asserted.
+ * Monotonic routine. Monitors for endpoint timeouts
+ * and deactivates open deployment channels.
  */
 static void fc_timer_routine(ULONG timer_id)
 {
@@ -559,39 +486,37 @@ static void fc_timer_routine(ULONG timer_id)
 
   sweetbench_catch(6);
 
-  if (config & option(CO2_Asserted) &&
+  if (g_conf & option(CO2_Asserted) &&
       timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
   {
     co2_low();
-    config &= ~option(CO2_Asserted);
+    g_conf &= ~option(CO2_Asserted);
   }
 
-  if (config & option(REEF_Asserted) &&
+  if (g_conf & option(REEF_Asserted) &&
       timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL)
   {
     reef_low();
-    config &= ~option(REEF_Asserted);
+    g_conf &= ~option(REEF_Asserted);
   }
 
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT)
   {
 #ifdef TELEMETRY_ENABLED
-    /* Vigilant mode */
-    config |= option(Lost_GroundStation);
-    config |= option(Monitor_Altitude);
-    config |= option(Reset_Failures);
-    failures = 0;
+    g_conf |= option(Lost_GroundStation);
+    g_conf |= option(Monitor_Altitude);
+    g_conf |= option(Reset_Failures);
+    smon.failures = 0;
 
-    if (config & option(In_Aborted_State))
+    if (g_conf & option(In_Aborted_State))
     {
-      to_abort = TO_ABORT * 10;
+      smon.to_abort = smon.to_abort * 10;
 
-      enum message cmd = fc_mask(Launch_Signal);
+      fc_msg cmd = fc_mask(Launch_Signal);
       tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
     }
 
-#else /* FOR TESTS ONLY */
-    /* Auto "launch" on first timeout */
+#else
     static fu8 test_launched = 0;
 
     if (!test_launched)
@@ -601,14 +526,14 @@ static void fc_timer_routine(ULONG timer_id)
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
-#endif // TELEMETRY_ENABLED
+#endif /* TELEMETRY_ENABLED */
   }
 
-  if (config & option(GPS_Available))
+  if (g_conf & option(GPS_Available))
   {
     if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
     {
-      enum message cmd = fc_mask(GPS_Delayed);
+      fc_msg cmd = fc_mask(GPS_Delayed);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
   }
@@ -616,24 +541,17 @@ static void fc_timer_routine(ULONG timer_id)
   {
     if (timer_fetch(HeartbeatRF) < TX_TIMER_TICKS)
     {
-      /* GPS became alive, announce */
-      config |= option(GPS_Available);
+      g_conf |= option(GPS_Available);
     }
   }
 
   sweetbench_start(6, 10);
 }
 
-/* ------ Timer routine ------ */
-
-
-/* ------ Recovery task ------ */
 
 /*
- * Upon entry, finishes Flight Computer boot sequence.
- * Suspends on blocking queue until a new message arrives.
- * Not idempotent. This task must be start first and never
- * reset until the device is powered off or rebooted.
+ * This task is responsible for global configuration
+ * and starting other dependent tasks.
  */
 void recovery_entry(ULONG input)
 {
@@ -645,7 +563,7 @@ void recovery_entry(ULONG input)
 
   initialize_sensors(Init_All);
 
-  for (enum fc_timer k = 0; k < Time_Users; ++k)
+  for (timer k = 0; k < Time_Users; ++k)
   {
     timer_update(k);
   }
@@ -654,7 +572,7 @@ void recovery_entry(ULONG input)
 
   task_loop(DO_NOT_EXIT)
   {
-    enum message msg;
+    fc_msg msg;
 
     /* Thread suspension */
     st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
@@ -721,5 +639,3 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 
   return TX_SUCCESS;
 }
-
-/* ------ Recovery task ------ */

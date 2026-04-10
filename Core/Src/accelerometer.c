@@ -4,6 +4,7 @@
 
 #include "platform.h"
 #include "accelerometer.h"
+#include "fcstructs.h"
 
 /* This factor depends on data range. Set during init.
  */
