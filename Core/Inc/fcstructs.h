@@ -53,6 +53,10 @@ typedef union newton_raphson_bithack {
   uint32_t d;
 } f32u;
 
+typedef struct serial euler_angles {
+  float phi, theta, psi;
+} eul;
+
 
 /* DMA */
 
@@ -86,7 +90,8 @@ typedef struct dma_flags {
 
 typedef enum flight_state : fu8 {
   Suspended,
-  Idle,
+  Postinit,
+  Awaiting,
   Launch,
   Ascent,
   Burnout,
@@ -112,10 +117,10 @@ typedef enum relative_timer : fu8 {
   DescentKF,
   HeartbeatRF,
   HeartbeatGND,
-  IntervalGPS,
-  IntervalBaro,
   AssertCO2,
   AssertREEF,
+  FillSequence,
+  Auxiliary,
 
   Time_Users
 } timer;
@@ -144,18 +149,19 @@ typedef enum flight_message : fu32 {
   
   Actionable_Decrees = (1u << 17),
 
-  Deploy_Parachute = Actionable_Decrees + 1,
-  Expand_Parachute = Actionable_Decrees + 2,
-  Reinit_Sensors   = Actionable_Decrees + 3, 
-  Launch_Signal    = Actionable_Decrees + 4,
-  Evaluation_Relax = Actionable_Decrees + 5,
-  Evaluation_Focus = Actionable_Decrees + 6,
-  Evaluation_Abort = Actionable_Decrees + 7,
-  Reinit_Barometer = Actionable_Decrees + 8,
-  Reinit_IMU       = Actionable_Decrees + 9,
-  Disable_IMU      = Actionable_Decrees + 10,
-  Advance_State    = Actionable_Decrees + 11,
-  Rewind_State     = Actionable_Decrees + 12,
+  Postinit_Signal  = Actionable_Decrees + 1,
+  Launch_Signal    = Actionable_Decrees + 2,
+  Deploy_Parachute = Actionable_Decrees + 3,
+  Expand_Parachute = Actionable_Decrees + 4,
+  Reinit_Sensors   = Actionable_Decrees + 5,
+  Evaluation_Relax = Actionable_Decrees + 6,
+  Evaluation_Focus = Actionable_Decrees + 7,
+  Evaluation_Abort = Actionable_Decrees + 8,
+  Reinit_Barometer = Actionable_Decrees + 9,
+  Reinit_IMU       = Actionable_Decrees + 10,
+  Disable_IMU      = Actionable_Decrees + 11,
+  Advance_State    = Actionable_Decrees + 12,
+  Rewind_State     = Actionable_Decrees + 13,
 
   GPS_Data_Code = (1u << 18),
 
@@ -169,6 +175,8 @@ typedef enum flight_message : fu32 {
    * in global config. Other types are consumed immediately. */
   Runtime_Configuration = (1u << 29),
 
+  Revoke_Option = Runtime_Configuration | (1u << 28),
+
   /* User flags */
   Monitor_Altitude    = Runtime_Configuration | 1u,
   Consecutive_Samples = Runtime_Configuration | (1u << 1),
@@ -180,34 +188,35 @@ typedef enum flight_message : fu32 {
   User_Option_Bound   = Runtime_Configuration | (1u << 6), 
 
   /* Internal flags */
-  Launch_Triggered    = Runtime_Configuration | (1u << 7),
-  Parachute_Deployed  = Runtime_Configuration | (1u << 8),
-  Parachute_Expanded  = Runtime_Configuration | (1u << 9),
-  CO2_Asserted        = Runtime_Configuration | (1u << 10),
-  REEF_Asserted       = Runtime_Configuration | (1u << 11),
-  GPS_Available       = Runtime_Configuration | (1u << 12),
-  Lost_GroundStation  = Runtime_Configuration | (1u << 13),
-  Init_Failure_Record = Runtime_Configuration | (1u << 14),
-  In_Aborted_State    = Runtime_Configuration | (1u << 15),
-  Confirm_Altitude    = Runtime_Configuration | (1u << 16),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 17),
-  Defer_Baro_Fallback = Runtime_Configuration | (1u << 18),
+  Postinit_Triggered  = Runtime_Configuration | (1u << 7),
+  Confirm_Postinit    = Runtime_Configuration | (1u << 8),
+  Launch_Triggered    = Runtime_Configuration | (1u << 9),
+  Confirm_Launch      = Runtime_Configuration | (1u << 10),
+  Parachute_Deployed  = Runtime_Configuration | (1u << 11),
+  Parachute_Expanded  = Runtime_Configuration | (1u << 12),
+  CO2_Asserted        = Runtime_Configuration | (1u << 13),
+  REEF_Asserted       = Runtime_Configuration | (1u << 14),
+  GPS_Available       = Runtime_Configuration | (1u << 15),
+  Lost_GroundStation  = Runtime_Configuration | (1u << 16),
+  Init_Failure_Record = Runtime_Configuration | (1u << 17),
+  In_Aborted_State    = Runtime_Configuration | (1u << 18),
+  Confirm_Altitude    = Runtime_Configuration | (1u << 19),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 20),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 21),
 
-  Abortion_Thresholds = Runtime_Configuration | (1u << 20),
+  Abortion_Thresholds = Runtime_Configuration | (1u << 22),
 
   Abort_After_40  = Abortion_Thresholds + 40,
   Abort_After_100 = Abortion_Thresholds + 100,
   Abort_After_250 = Abortion_Thresholds + 250,
 
-  Reinit_Thresholds = Runtime_Configuration | (1u << 21),
+  Reinit_Thresholds = Runtime_Configuration | (1u << 23),
 
   Reinit_After_15 = Reinit_Thresholds + 15,
   Reinit_After_30 = Reinit_Thresholds + 30,
   Reinit_After_50 = Reinit_Thresholds + 50,
 
-  Revoke_Option = Runtime_Configuration | (1u << 28),
-
-  /* ... */
+  /* More options go here */
 
   GroundStation_Heartbeat = (1u << 30),
   FlightComputer_Mask = (1u << 31),

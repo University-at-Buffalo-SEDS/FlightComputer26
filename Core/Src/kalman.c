@@ -66,6 +66,22 @@ static inline constexpr float invsqrtf(float x)
 }
 
 /*
+ * Converts euler angles to quaternions.
+ */
+static inline void euler_to_quat(const eul *ang)
+{
+
+}
+
+/*
+ * Converts sensor averages to euler angles.
+ */
+void accel_to_quaternion(const f_xyz *accl)
+{
+  
+}
+
+/*
  * Transforms state vector into sensor measurement. (??)
  */
 static inline void

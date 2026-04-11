@@ -28,6 +28,8 @@ void ascent_predict(const float);
 void ascent_update(const float);
 void ascent_initialize(void);
 
+void accel_to_quaternion(const f_xyz *);
+
 
 /* Evaluation */
 

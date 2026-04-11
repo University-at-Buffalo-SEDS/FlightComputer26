@@ -320,7 +320,8 @@ handle_gnd_command(const uint8_t *data, size_t len)
 /*
  * Invokes an appropriate handler based on sender id.
  */
-SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
+SedsResult
+on_fc_packet(const SedsPacketView *pkt, void *user)
 {
   (void)user;
 
@@ -343,10 +344,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
   }
 #endif
 
-  else
-  {
-    return SEDS_HANDLER_ERROR;
-  }
+  else return SEDS_HANDLER_ERROR;
 }
 
 #endif /* TELEMETRY_ENABLED */
@@ -442,19 +440,42 @@ validate_all(const measm *buf, fu32 conf)
 
 
 /*
- * Distribution loop that executes before the Flight
- * Computer receives command to launch. After exiting
- * the loop, this function performs final sanity checks
- * and sends ignition signal to the Valve board.
+ * Monitors and reports GPS throughout fill sequence.
  */
-static inline void pre_launch(void)
+static inline void monitor_gps(fu32 conf, float *acc)
+{
+#ifdef GPS_AVAILABLE
+
+  if (conf & option(GPS_Available) &&
+      fetch_gps_data(&meas.mode.gps))
+  {
+    *acc += fsec(timer_exchange(FillSequence));
+
+    rail = meas.mode.gps;
+
+    if (!within(rail.x - meas.mode.gps.x, GPS_RAIL_TOLER) ||
+        !within(rail.y - meas.mode.gps.y, GPS_RAIL_TOLER))
+    {
+      log_err(id "new GPS reference "
+                  "LAT: %f, LON: %f", rail.x, rail.y);
+    }
+  }
+
+#endif /* GPS_AVAILABLE */
+}
+
+/*
+ * Stage 0 of fill sequence: FC streams data
+ * for human inspection and accepts runtime config options.
+ */
+static inline void data_streaming_mode(void)
 {
   fu32 ctr = 0, conf = 0;
 
-  float acc_baro = 0, acc_gps = 0;
+  float acc_baro = 0.0f, acc_gps = 0.0f;
   fu32 ctr_baro = 0, ctr_gps = 0;
 
-  task_loop (conf & option(Launch_Triggered))
+  task_loop (conf & option(Postinit_Triggered))
   {
     fu32 st = fc_mask(Sensor_Measm_Code);
 
@@ -472,7 +493,7 @@ static inline void pre_launch(void)
 
     if (fetch_baro(&meas.baro))
     {
-      acc_baro += fsec(timer_exchange(IntervalBaro));
+      acc_baro += fsec(timer_exchange(Auxiliary));
       ++ctr_baro;
 
       st |= validate_baro(&meas.baro, conf);
@@ -484,24 +505,7 @@ static inline void pre_launch(void)
       log_err(pilot "malformed measm: %u", fc_unmask(st));
     }
 
-#ifdef GPS_AVAILABLE
-
-    if (conf & option(GPS_Available) &&
-        fetch_gps_data(&meas.mode.gps))
-    {
-      acc_gps += fsec(timer_exchange(IntervalGPS));
-
-      rail = meas.mode.gps;
-
-      if (!within(rail.x - meas.mode.gps.x, GPS_RAIL_TOLER) ||
-          !within(rail.y - meas.mode.gps.y, GPS_RAIL_TOLER))
-      {
-        log_err(id "new GPS reference "
-                   "LAT: %f, LON: %f", rail.x, rail.y);
-      }
-    }
-
-#endif /* GPS_AVAILABLE */
+    monitor_gps(conf, &acc_gps);
 
     if (!(++ctr & 255))
     {
@@ -519,11 +523,54 @@ static inline void pre_launch(void)
 
     conf = load(&g_conf, Acq);
   }
+}
 
-  task_loop(request_ignition() == SEDS_OK)
-    ;
+/*
+ * Stage 1 of fill sequence: euler angles -> quaternions.
+ */
+static inline void post_initialization(void)
+{
+  f_xyz accl_acc = {0};
+  float acc_gps = 0.0f;
+  fu32 ctr_gps = 0, ctr_accl = 0;
 
-  log_msg(id "ignition requested, in flight mode");
+  fu32 st, conf = load(&g_conf, Acq);
+
+  timer_update(Auxiliary);
+
+  task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
+  {
+    if (fetch_accl(&meas.mode.accl))
+    {
+      st = validate_accl(&meas.mode.accl, conf);
+      log_measm(SEDS_DT_ACCEL_DATA, &meas.mode.accl);
+
+      if (st == fc_mask(Sensor_Measm_Code))
+      {
+        accl_acc.x += meas.mode.accl.x;
+        accl_acc.y += meas.mode.accl.y;
+        accl_acc.z += meas.mode.accl.z;
+        ++ctr_accl;
+      }
+    }
+
+    monitor_gps(conf, &acc_gps);
+
+    tx_thread_relinquish();
+
+    conf = load(&g_conf, Acq);
+  }
+
+  if (ctr_gps > 0)
+  {
+    log_transition(pi_gps, acc_gps / ctr_gps);
+  }
+
+  accl_acc.x /= ctr_accl;
+  accl_acc.y /= ctr_accl;
+  accl_acc.z /= ctr_accl;
+
+  accel_to_quaternion(&accl_acc);
 }
 
 /*
@@ -580,10 +627,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
       meas.gyro = suspect;
       *imu |= Sensor_Gyro;
     }
-    else
-    {
-      tx_queue_send(&shared, &st, TX_NO_WAIT);
-    }
+    else tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
 
   if (fetch_accl(&suspect))
@@ -595,10 +639,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
       meas.mode.accl = suspect;
       *imu |= Sensor_Accl;
     }
-    else
-    {
-      tx_queue_send(&shared, &st, TX_NO_WAIT);
-    }
+    else tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
 
   if ((*imu & IMU_ID) != IMU_ID)
@@ -607,10 +648,8 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
     {
       ascent_cycle_update(conf, imu);
     }
-    else
-    {
-      tx_thread_relinquish();
-    }
+    else tx_thread_relinquish();
+
     return;
   }
 
@@ -649,10 +688,7 @@ static inline void descent_cycle(fu32 conf)
       descent_update(sm.dt);
       st = CAN_EVALUATE;
     }
-    else
-    {
-      tx_queue_send(&shared, &st, TX_NO_WAIT);
-    }
+    else tx_queue_send(&shared, &st, TX_NO_WAIT);
 
     log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
   }
@@ -678,10 +714,7 @@ static inline void descent_cycle(fu32 conf)
     evaluate_rocket_state(conf);
     sweetbench_catch(9);
   }
-  else
-  {
-    tx_thread_relinquish();
-  }
+  else tx_thread_relinquish();
 }
 
 
@@ -693,18 +726,29 @@ void distribution_entry(ULONG input)
 {
   (void)input;
 
-  log_msg(id "started");
-
+  fu8 imu = 0;
   fu32 conf = load(&g_conf, Acq);
 
-  fu8 imu = 0;
-
+  /* Fill sequence is here
+   */
   if (!(conf & option(Launch_Triggered)))
   {
-    pre_launch();
+    data_streaming_mode();
+    post_initialization();
+
+    log_msg(id "postinit done, awaiting launch signal");
+
+    task_loop (conf & option(Launch_Triggered))
+    {
+      tx_thread_sleep(POSTINIT_INTERVAL);
+      conf = load(&g_conf, Acq);
+    }
+    task_loop (request_ignition() == SEDS_OK)
+      ;
+    log_msg(id "ignition requested, in flight mode");
   }
 
-  task_loop(DO_NOT_EXIT)
+  task_loop (DO_NOT_EXIT)
   {
     conf = load(&g_conf, Acq);
 

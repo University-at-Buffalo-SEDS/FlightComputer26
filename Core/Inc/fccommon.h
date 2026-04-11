@@ -130,6 +130,22 @@
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 
+#define satur_add(_n, _i, _th)            \
+  do {                                    \
+    if ((_n) + (_i) <= (_th))             \
+    {                                     \
+      (_n) += (_i);                       \
+    }                                     \
+  } while (0)
+
+#define satur_sub(_n, _i, _th)            \
+  do {                                    \
+    if ((_n) - (_i) >= (_th))             \
+    {                                     \
+      (_n) -= (_i);                       \
+    }                                     \
+  } while (0)
+
 #define try_init_sensor(_fn, _ctr, _sn)   \
   do {                                    \
     fu8 k = 0;                            \

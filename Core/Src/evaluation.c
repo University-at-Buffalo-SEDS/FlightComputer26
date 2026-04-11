@@ -24,8 +24,9 @@ sv_meta sm = {0};
 volatile state flight = Suspended;
 
 const char *trans[Flight_States] = {
-    [Suspended] = " interval in pilot mode:",
-    [Idle]      = "",
+    [Suspended] = " interval in streaming mode:",
+    [Postinit]  = " interval in postinit mode:",
+    [Awaiting]  = "",
     [Launch]    = "Launch detected. Acceleration in Z:",
     [Ascent]    = "Ascending. Velocity in Z:",
     [Burnout]   = "Decelerating. Altitude:",
@@ -295,7 +296,7 @@ void evaluate_rocket_state(fu32 conf)
 
   switch (flight)
   {
-  case Idle:
+  case Awaiting:
     detect_launch();
     break;
   case Launch:
@@ -347,7 +348,11 @@ static inline void enter_flight_state(fu32 conf)
     ascent_initialize();
     log_msg(id "received launch signal");
 
-    flight = Idle;
+    if (++flight != Awaiting)
+    {
+      flight = Awaiting;
+      log_err(id "unusual startup sequence");
+    }
     
     fetch_or(&g_conf, option(Launch_Triggered), Rel);
   }
@@ -360,8 +365,6 @@ static inline void enter_flight_state(fu32 conf)
 void evaluation_entry(ULONG input)
 {
   (void)input;
-
-  log_msg(id "started");
 
   UINT st;
 

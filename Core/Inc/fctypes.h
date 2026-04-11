@@ -30,14 +30,14 @@ typedef int_fast64_t fi64;
 #define blind_inline  __attribute__((always_inline))
 
 
-enum seds_atomic_mo {
+typedef enum seds_atomic_mo {
   Rlx    = memory_order_relaxed,
   Con    = memory_order_consume,
   Acq    = memory_order_acquire,
   Rel    = memory_order_release,
   AcqRel = memory_order_acq_rel,
   SeqCst = memory_order_seq_cst
-};
+} mo;
 
 #define load        atomic_load_explicit
 #define store       atomic_store_explicit

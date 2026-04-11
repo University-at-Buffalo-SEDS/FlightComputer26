@@ -178,105 +178,163 @@ static inline void barometer_fallback(void)
 }
 
 /*
+ * Turns on and off Evaluation task focus mode.
+ */
+static inline void eval_configure(bool focus)
+{
+  UINT eval_old_pt, eval_new_pt;
+
+  if (focus)
+  {
+    eval_new_pt = EVAL_PREEMPT_THRESHOLD;
+    g_conf |= option(Eval_Focus_Flag);
+  }
+  else
+  {
+    eval_new_pt = EVAL_PRIORITY;
+    g_conf &= ~option(Eval_Focus_Flag);
+  }
+
+  tx_thread_preemption_change(&evaluation_task,
+                              eval_new_pt,
+                              &eval_old_pt);
+}
+
+/*
+ * Bundles deployment and KF initialization.
+ */
+static inline void manual_deployment(bool apogee)
+{
+  if (apogee)
+  {
+    flight = Descent;
+    release_parachute();
+  }
+  else if (expand_parachute())
+  {
+    flight = Reefing;
+  }
+  else return;
+
+  log_transition(id, svec(0).alt);
+
+  if (g_conf & option(Using_Ascent_KF))
+  {
+    g_conf &= ~option(Using_Ascent_KF);
+    descent_initialize();
+  }
+}
+
+/*
+ * Enters post-init stage.
+ */
+static inline void enter_postinit(void)
+{
+  if (flight > Launch)
+  {
+    log_err(id "rejected postinit mid-flight");
+    return;
+  }
+
+  if (!(g_conf & option(Confirm_Postinit)))
+  {
+    g_conf |= option(Confirm_Postinit);
+    log_msg(id "please confirm postinit");
+    return;
+  }
+
+  if (++flight != Postinit)
+  {
+    flight = Postinit;
+    log_err(id "unusual sequence at postinit");
+  }
+
+  g_conf |= option(Postinit_Triggered);
+}
+
+/*
+ * Triggers launch procedures.
+ */
+static inline void enter_launch(void)
+{
+  if (!(g_conf & option(Confirm_Launch)))
+  {
+    g_conf |= option(Confirm_Launch);
+    log_msg(id "please confirm launch");
+    return;
+  }
+
+  if (g_conf & option(In_Aborted_State))
+  {
+    g_conf &= ~option(In_Aborted_State);
+    tx_thread_resume(&distribution_task);
+  }
+  else if (smon.gps_delay || smon.gps_malform)
+  {
+    log_err(id "GPS: %u delayed and %u malformed "
+               "during pre-launch, now reset.",
+            smon.gps_delay, smon.gps_malform);
+
+    smon.gps_delay = 0;
+    smon.gps_malform = 0;
+  }
+
+  g_conf &= ~option(Confirm_Launch);
+  g_conf &= ~option(Eval_Abort_Flag);
+
+  tx_thread_resume(&evaluation_task);
+}
+
+/*
  * Process general command from either endpoint.
  */
 static inline void process_action(fc_msg cmd)
 {
-  UINT eval_old_pt;
-
   switch (cmd) {
+    case Postinit_Signal:
+      return enter_postinit();
+
+    case Launch_Signal:
+      return enter_launch();
+
     case Deploy_Parachute:
-      flight = Descent;
+      return manual_deployment(true);
 
-      release_parachute();
-      log_transition(id, sv[sm.idx].alt);
+    case Expand_Parachute:
+      return manual_deployment(false);
 
-      if (g_conf & option(Using_Ascent_KF))
-      {
-        g_conf &= ~option(Using_Ascent_KF);
-        descent_initialize();
-      }
+    case Reinit_Sensors:
+      return initialize_sensors(Init_All);
+
+    case Evaluation_Relax:  
+      return eval_configure(false);
+
+    case Evaluation_Focus:
+      return eval_configure(true);
+
+    case Evaluation_Abort:
+      g_conf |= option(Eval_Abort_Flag);
+      tx_thread_reset(&evaluation_task);
       return;
 
-  case Expand_Parachute:
-    if (expand_parachute())
-    {
-      flight = Reefing;
-      log_transition(id, sv[sm.idx].alt);
-    }
-    return;
+    case Reinit_Barometer:
+      return initialize_sensors(Init_Baro);
 
-  case Reinit_Sensors:
-    initialize_sensors(Init_All);
-    return;
+    case Reinit_IMU:
+      return initialize_sensors(Init_Gyro | Init_Accl);
 
-  case Launch_Signal:
-    if (g_conf & option(In_Aborted_State))
-    {
-      g_conf &= ~option(In_Aborted_State);
-      tx_thread_resume(&distribution_task);
-    }
-    else if (smon.gps_delay || smon.gps_malform)
-    {
-      log_err(id "GPS: %u delayed and %u malformed "
-                 "during pre-launch. Counters are reset.",
-              smon.gps_delay, smon.gps_malform);
+    case Disable_IMU:
+      return initialize_sensors(Shut_Gyro | Shut_Accl);
 
-      smon.gps_delay = 0;
-      smon.gps_malform = 0;
-    }
+    case Advance_State:
+      satur_add(flight, 1, Landed);
+      break;
 
-    g_conf &= ~option(Eval_Abort_Flag);
-    tx_thread_resume(&evaluation_task);
-    return;
+    case Rewind_State:
+      satur_sub(flight, 1, Suspended);
+      break;
 
-  case Evaluation_Relax:
-    g_conf &= ~option(Eval_Focus_Flag);
-    tx_thread_preemption_change(&evaluation_task,
-                                EVAL_PRIORITY,
-                                &eval_old_pt);
-    return;
-
-  case Evaluation_Focus:
-    g_conf |= option(Eval_Focus_Flag);
-    tx_thread_preemption_change(&evaluation_task,
-                                EVAL_PREEMPT_THRESHOLD,
-                                &eval_old_pt);
-    return;
-
-  case Evaluation_Abort:
-    g_conf |= option(Eval_Abort_Flag);
-    tx_thread_reset(&evaluation_task);
-    return;
-
-  case Reinit_Barometer:
-    initialize_sensors(Init_Baro);
-    return;
-
-  case Reinit_IMU:
-    initialize_sensors(Init_Gyro | Init_Accl);
-    return;
-
-  case Disable_IMU:
-    initialize_sensors(Shut_Gyro | Shut_Accl);
-    return;
-
-  case Advance_State:
-    if (flight + 1 < Flight_States)
-    {
-      ++flight;
-    }
-    break;
-
-  case Rewind_State:
-    if (flight - 1 >= Suspended)
-    {
-      --flight;
-    }
-    break;
-
-  default:
-    break;
+    default: break;
   }
 }
 
@@ -287,8 +345,9 @@ static inline void process_action(fc_msg cmd)
 static inline constexpr fc_msg user_options()
 {
   fc_msg options = 0;
+  fu32 k = 1;
 
-  for (fu32 k = 1; k < option(User_Option_Bound); k *= 2)
+  for (; k < option(User_Option_Bound); k *= 2)
   {
     options |= k;
   }
@@ -321,7 +380,7 @@ static inline void update_config(fc_msg incoming)
     g_conf |= raw;
   }
 
-  int cursor = sizeof(id) + 9 - 1;
+  int cursor = sizeof(id) + 8;
   char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
 
   for (fu16 k = 0; k < namecount(confmap); ++k)
@@ -557,8 +616,6 @@ void recovery_entry(ULONG input)
 {
   (void)input;
 
-  log_msg(id "started");
-
   UINT st;
 
   initialize_sensors(Init_All);
@@ -620,7 +677,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_queue_create(&shared, "RECVQ", 1, &recvq,
+  st = tx_queue_create(&shared, id "Q", 1, &recvq,
                        sizeof recvq);
 
   if (st != TX_SUCCESS)
@@ -628,7 +685,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
     log_die(id "queue %s %u", critical, st);
   }
 
-  st = tx_timer_create(&monotonic_checks, "RECVT",
+  st = tx_timer_create(&monotonic_checks, id "T",
                        fc_timer_routine, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_NO_ACTIVATE);
 
