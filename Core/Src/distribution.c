@@ -225,7 +225,7 @@ validate_gps_serial(const uint8_t *data, size_t len)
 
     if (conf & option(Validate_Measms))
     {
-      rep |= conf & option(Launch_Triggered)
+      rep |= conf & option(Launch_Requested)
                  ? validate_gps_absolute((const f_xyz *)data)
                  : validate_gps_relative((const f_xyz *)data);
     }
@@ -474,7 +474,8 @@ static inline void data_streaming_mode(void)
   float acc_baro = 0.0f, acc_gps = 0.0f;
   fu32 ctr_baro = 0, ctr_gps = 0;
 
-  task_loop (conf & option(Postinit_Triggered))
+  task_loop (conf & option(Postinit_Requested) ||
+             conf & option(Rollback_Requested))
   {
     fu32 st = fc_mask(Sensor_Measm_Code);
 
@@ -730,18 +731,27 @@ void distribution_entry(ULONG input)
 
   /* Fill sequence is here
    */
-  if (!(conf & option(Launch_Triggered)))
+  if (!(conf & option(Launch_Requested)))
   {
     data_streaming_mode();
+
+    conf = load(&g_conf, Acq);
+    check_rollback_request(conf);
+
     post_initialization();
+
+    conf = load(&g_conf, Acq);
+    check_rollback_request(conf);
 
     log_msg(id "postinit done, awaiting launch signal");
 
-    task_loop (conf & option(Launch_Triggered))
+    task_loop (conf & option(Launch_Requested))
     {
       tx_thread_sleep(POSTINIT_INTERVAL);
       conf = load(&g_conf, Acq);
+      check_rollback_request(conf);
     }
+
     task_loop (request_ignition() == SEDS_OK)
       ;
     log_msg(id "ignition requested, in flight mode");
@@ -750,6 +760,7 @@ void distribution_entry(ULONG input)
   task_loop (DO_NOT_EXIT)
   {
     conf = load(&g_conf, Acq);
+    check_rollback_request(conf);
 
     conf & option(Using_Ascent_KF) ? ascent_cycle(conf, &imu)
                                    : descent_cycle(conf);

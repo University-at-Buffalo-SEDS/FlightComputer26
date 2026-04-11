@@ -339,7 +339,7 @@ void evaluate_rocket_state(fu32 conf)
  */
 static inline void enter_flight_state(fu32 conf)
 {
-  if (conf & option(Launch_Triggered))
+  if (conf & option(Launch_Requested))
   {
     sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
   }
@@ -354,7 +354,7 @@ static inline void enter_flight_state(fu32 conf)
       log_err(id "unusual startup sequence");
     }
     
-    fetch_or(&g_conf, option(Launch_Triggered), Rel);
+    fetch_or(&g_conf, option(Launch_Requested), Rel);
   }
 }
 

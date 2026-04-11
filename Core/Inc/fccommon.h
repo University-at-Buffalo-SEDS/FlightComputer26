@@ -130,6 +130,14 @@
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 
+#define check_rollback_request(k)         \
+  do {                                    \
+    if ((k) & option(Rollback_Requested)) \
+    {                                     \
+      return;                             \
+    }                                     \
+  } while (0)
+
 #define satur_add(_n, _i, _th)            \
   do {                                    \
     if ((_n) + (_i) <= (_th))             \

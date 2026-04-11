@@ -126,13 +126,42 @@ static inline void initialize_sensors(sens_init sn)
 }
 
 /*
+ * Resets Distribution task after it completes.
+ */
+static void dist_callback(TX_THREAD *ptr, UINT cond)
+{
+  if (ptr != &distribution_task ||
+      (g_conf & option(Graceful_Reset)) == 0)
+  {
+     return;
+  }
+
+  if (cond == TX_THREAD_EXIT)
+  {
+    tx_thread_reset(&distribution_task);
+
+    if (g_conf & option(Rollback_Requested))
+    {
+      g_conf &= ~option(Rollback_Requested);
+      initialize_sensors(Init_All);
+      timer_update(FillSequence);
+      tx_thread_resume(&distribution_task);
+    }
+  }
+  else log_msg(id "(re)started distribution");
+}
+
+/*
  * Resets Distribution and Evaluation tasks.
  * If GroundStation is lost, restarts them.
  */
 static inline void auto_abort(void)
 {
+  tx_thread_terminate(&evaluation_task);
   tx_thread_reset(&evaluation_task);
-  tx_thread_reset(&distribution_task);
+
+  /* Distribution may hold locks */
+  g_conf |= option(Graceful_Reset);
 
   smon.gps_delay = 0;
   smon.gps_malform = 0;
@@ -147,9 +176,8 @@ static inline void auto_abort(void)
   }
   else
   {
-    log_msg(id "Aborted! Expecting commands.");
-
     g_conf |= option(In_Aborted_State);
+    log_msg(id "aborted, expecting commands");
   }
 }
 
@@ -183,6 +211,13 @@ static inline void barometer_fallback(void)
 static inline void eval_configure(bool focus)
 {
   UINT eval_old_pt, eval_new_pt;
+
+  if (g_conf & option(Eval_Abort_Flag))
+  {
+    g_conf &= ~option(Eval_Abort_Flag);
+    tx_thread_resume(&evaluation_task);
+    log_msg(id "restored Evaluation");
+  }
 
   if (focus)
   {
@@ -249,7 +284,7 @@ static inline void enter_postinit(void)
     log_err(id "unusual sequence at postinit");
   }
 
-  g_conf |= option(Postinit_Triggered);
+  g_conf |= option(Postinit_Requested);
 }
 
 /*
@@ -286,6 +321,34 @@ static inline void enter_launch(void)
 }
 
 /*
+ * Rolls back to pre-initialization. Use it ONLY if
+ * you want to reinitiate quaternion calulation -> BEFORE LAUNCH <-,
+ * otherwise - UB (not school), curse, malice, apocalypse, end of time!!!!
+ */
+static inline void rollback(void)
+{
+  if (!(g_conf & option(Confirm_Rollback)))
+  {
+    if (g_conf & option(Launch_Requested))
+    {
+      log_err(id "looks like we're flying. ARE YOU SURE?");
+    }
+
+    g_conf |= option(Confirm_Rollback);
+    log_msg(id "please confirm rollback");
+    return;
+  }
+
+  g_conf |= option(Rollback_Requested);
+  g_conf &= ~option(Postinit_Requested);
+  g_conf &= ~option(Launch_Requested);
+
+  flight = Suspended;
+
+  log_msg(id "rolled back to pre-init");
+}
+
+/*
  * Process general command from either endpoint.
  */
 static inline void process_action(fc_msg cmd)
@@ -297,6 +360,9 @@ static inline void process_action(fc_msg cmd)
     case Launch_Signal:
       return enter_launch();
 
+    case Rollback_Signal:
+      return rollback();
+
     case Deploy_Parachute:
       return manual_deployment(true);
 
@@ -306,17 +372,6 @@ static inline void process_action(fc_msg cmd)
     case Reinit_Sensors:
       return initialize_sensors(Init_All);
 
-    case Evaluation_Relax:  
-      return eval_configure(false);
-
-    case Evaluation_Focus:
-      return eval_configure(true);
-
-    case Evaluation_Abort:
-      g_conf |= option(Eval_Abort_Flag);
-      tx_thread_reset(&evaluation_task);
-      return;
-
     case Reinit_Barometer:
       return initialize_sensors(Init_Baro);
 
@@ -325,6 +380,18 @@ static inline void process_action(fc_msg cmd)
 
     case Disable_IMU:
       return initialize_sensors(Shut_Gyro | Shut_Accl);
+
+    case Evaluation_Relax:  
+      return eval_configure(false);
+
+    case Evaluation_Focus:
+      return eval_configure(true);
+
+    case Evaluation_Abort:
+      g_conf |= option(Eval_Abort_Flag);
+      tx_thread_terminate(&evaluation_task);
+      tx_thread_reset(&evaluation_task);
+      return;
 
     case Advance_State:
       satur_add(flight, 1, Landed);
@@ -464,7 +531,7 @@ static inline void process_gps_code(fc_msg code)
   case GPS_Delayed:
     ++smon.gps_delay;
 
-    if (g_conf & option(Launch_Triggered))
+    if (g_conf & option(Launch_Requested))
     {
       log_err(id "delayed GPS packets: %u", smon.gps_delay);
     }
@@ -473,7 +540,7 @@ static inline void process_gps_code(fc_msg code)
   case GPS_Malformed:
     ++smon.gps_malform;
 
-    if (g_conf & option(Launch_Triggered))
+    if (g_conf & option(Launch_Requested))
     {
       log_err(id "malformed GPS packets: %u", smon.gps_malform);
     }
@@ -692,6 +759,14 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_die(id "timer %s %u", critical, st);
+  }
+
+  st = tx_thread_entry_exit_notify(&distribution_task,
+                                   dist_callback);
+
+  if (st != TX_SUCCESS)
+  {
+    log_die(id "notify %s %u", critical, st);
   }
 
   return TX_SUCCESS;
