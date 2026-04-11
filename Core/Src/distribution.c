@@ -25,8 +25,8 @@ measm meas = {0};
 #ifdef GPS_AVAILABLE
 
 static f_xyz rail = {0};
+static f_xyz gps_ring[GPS_RING_SIZE] = {0};
 static atomic_uint_fast16_t gps_mask = 0xFF00u;
-static struct coords gps_ring[GPS_RING_SIZE] = {0};
 
 #endif /* GPS_AVAILABLE */
 
@@ -34,7 +34,7 @@ static struct coords gps_ring[GPS_RING_SIZE] = {0};
 #ifdef TELEMETRY_ENABLED
 #ifdef TELEMETRY_CMD_COMPAT
 
-enum remote_cmd_compat : uint8_t
+typedef enum remote_cmd_compat : uint8_t
 {
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,
@@ -64,7 +64,7 @@ enum remote_cmd_compat : uint8_t
   Compat_Reinit_After_50,
 
   Compat_Messages
-};
+} compat;
 
 static const fc_msg extmap[Compat_Messages] = {
     Deploy_Parachute,
@@ -108,9 +108,9 @@ static inline fc_msg decode_cmd(const uint8_t *raw)
 
 #define MIN_CMD_SIZE 4
 
-static inline enum message decode_cmd(const uint8_t *raw)
+static inline fc_msg decode_cmd(const uint8_t *raw)
 {
-  return (enum message)U32(raw[0], raw[1], raw[2], raw[3]);
+  return (fc_msg)U32(raw[0], raw[1], raw[2], raw[3]);
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
@@ -127,7 +127,7 @@ enqueue_gps_data(const uint8_t *buf)
   static fu8 idx = 0;
 
   fu8 i = idx;
-  memcpy(&gps_ring[i], buf, sizeof(struct coords));
+  memcpy(&gps_ring[i], buf, sizeof(f_xyz));
 
   i = (i + 1) & GPS_RING_SIZE_MASK;
   fu8 cons = load(&gps_mask, Acq) >> 8;
@@ -140,7 +140,7 @@ enqueue_gps_data(const uint8_t *buf)
 }
 
 static inline fu8
-fetch_gps_data(struct coords *buf)
+fetch_gps_data(f_xyz *buf)
 {
   static fu8 idx = UINT_FAST8_MAX;
 
@@ -166,7 +166,7 @@ fetch_gps_data(struct coords *buf)
  * GPS sanity check against NEO-M9N data range.
  */
 static inline fc_msg
-validate_gps_absolute(const struct coords *gps)
+validate_gps_absolute(const f_xyz *gps)
 {
   fc_msg st = 0;
 
@@ -191,7 +191,7 @@ validate_gps_absolute(const struct coords *gps)
  * Tolerance should be relatively high (> 1 deg).
  */
 static inline fc_msg
-validate_gps_relative(const struct coords *gps)
+validate_gps_relative(const f_xyz *gps)
 {
   if (!proxim_lat(gps->x) || !proxim_lon(gps->y))
   {
@@ -215,7 +215,7 @@ validate_gps_serial(const uint8_t *data, size_t len)
 {
   fc_msg rep = fc_mask(GPS_Data_Code);
 
-  if (len != sizeof(struct coords))
+  if (len != sizeof(f_xyz))
   {
     rep |= GPS_Malformed;
   }
@@ -226,8 +226,8 @@ validate_gps_serial(const uint8_t *data, size_t len)
     if (conf & option(Validate_Measms))
     {
       rep |= conf & option(Launch_Triggered)
-                 ? validate_gps_absolute((const struct coords *)data)
-                 : validate_gps_relative((const struct coords *)data);
+                 ? validate_gps_absolute((const f_xyz *)data)
+                 : validate_gps_relative((const f_xyz *)data);
     }
   }
 
@@ -266,11 +266,10 @@ handle_gps_data(const uint8_t *data, size_t len)
  * Converts GPS coordinates into distance from
  * launch rail. This is how Descent KF expects GPS.
  */
-static inline void
-distance_from_rail(struct coords *gps)
+static inline void distance_from_rail(f_xyz *gps)
 {
   gps->x = fabsf(gps->x - rail.x);
-  gps->x = fabsf(gps->y - rail.y);
+  gps->y = fabsf(gps->y - rail.y);
 }
 
 #endif /* GPS_AVAILABLE */
@@ -354,7 +353,7 @@ on_fc_packet(const SedsPacketView *pkt, void *user)
  * Gyroscope sanity check against its data range.
  */
 static inline fc_msg
-validate_gyro(const struct coords *gyro, fu32 conf)
+validate_gyro(const f_xyz *gyro, fu32 conf)
 {
   fc_msg st = fc_mask(Sensor_Measm_Code);
 
@@ -381,7 +380,7 @@ validate_gyro(const struct coords *gyro, fu32 conf)
  * Accelerometer sanity check against its data range.
  */
 static inline fc_msg
-validate_accl(const struct coords *accl, fu32 conf)
+validate_accl(const f_xyz *accl, fu32 conf)
 {
   fc_msg st = fc_mask(Sensor_Measm_Code);
 
@@ -614,7 +613,7 @@ static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
 static inline void ascent_cycle(fu32 conf, fu8 *imu)
 {
   fu32 st;
-  struct coords suspect;
+  f_xyz suspect;
 
   sweetbench_start(8);
 

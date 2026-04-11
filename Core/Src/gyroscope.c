@@ -65,7 +65,7 @@ gyro_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t val)
  * Read XYZ (LSB first then MSB) — datasheet §5.5.2.
  */
 HAL_StatusTypeDef
-gyro_read(SPI_HandleTypeDef *hspi, struct coords *buf)
+gyro_read(SPI_HandleTypeDef *hspi, f_xyz *buf)
 {
   HAL_StatusTypeDef st;
   uint8_t tx[7] = {[0] = gyro_cmd_read(GYRO_RATE_X_LSB),

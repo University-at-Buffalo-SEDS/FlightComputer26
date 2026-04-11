@@ -104,8 +104,8 @@ struct accl_config {
 extern float lsb_to_g;
 
 HAL_StatusTypeDef accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf);
-HAL_StatusTypeDef accl_read(SPI_HandleTypeDef *hspi, struct coords *buf);
-HAL_StatusTypeDef accl_test(SPI_HandleTypeDef *hspi, struct coords *buf, const struct accl_config *conf);
+HAL_StatusTypeDef accl_read(SPI_HandleTypeDef *hspi, f_xyz *buf);
+HAL_StatusTypeDef accl_test(SPI_HandleTypeDef *hspi, f_xyz *buf, const struct accl_config *conf);
 
 
 #endif // ACCELEROMETER_H

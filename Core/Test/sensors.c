@@ -40,7 +40,7 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 
 	HAL_StatusTypeDef st;
 	/* x - temp, y - pres, z - alt */
-	struct coords q = {0};
+	f_xyz q = {0};
 
 	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
 	{
@@ -68,7 +68,7 @@ void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 	assert(gyro_init(&hspi1, &gyro_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
-	struct coords q = {0};
+	f_xyz q = {0};
 
 	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
 	{
@@ -96,7 +96,7 @@ void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
 	assert(accl_init(&hspi1, &accl_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
-	struct coords q = {0};
+	f_xyz q = {0};
 
 	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
 	{

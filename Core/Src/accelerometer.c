@@ -59,7 +59,7 @@ accl_write_reg(SPI_HandleTypeDef *hspi, uint8_t reg, uint8_t data)
  * Read the accelerometer axes data (datasheet sections 5.3.4 & 6.1.2).
  */
 HAL_StatusTypeDef
-accl_read(SPI_HandleTypeDef *hspi, struct coords *data)
+accl_read(SPI_HandleTypeDef *hspi, f_xyz *data)
 {
   HAL_StatusTypeDef st;
   uint8_t tx[ACCL_DMA_BUF_SIZE] = {[0] = accl_cmd_read(ACCL_X_LSB),
@@ -192,12 +192,12 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
  * Do not call from interrupts or callbacks. Idempotent.
  */
 HAL_StatusTypeDef
-accl_test(SPI_HandleTypeDef *hspi, struct coords *buf,
+accl_test(SPI_HandleTypeDef *hspi, f_xyz *buf,
           const struct accl_config *conf)
 {
   HAL_StatusTypeDef st;
-  struct coords data_p;
-  struct coords data_n;
+  f_xyz data_p;
+  f_xyz data_n;
 
   st = accl_write_reg(hspi, ACCL_CONF, ACCL_TEST_CONF);
   if (st != HAL_OK) {
