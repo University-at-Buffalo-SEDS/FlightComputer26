@@ -18,6 +18,8 @@
 TX_THREAD evaluation_task;
 TX_SEMAPHORE eval_focus_mode;
 
+tx_align char kfpool_buf[KF_POOL_SIZE];
+
 kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {0};
 
@@ -43,7 +45,8 @@ const char *trans[Flight_States] = {
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || svec(0).alt > svec(1).alt)
+  if (flight < Ascent || svec(0).alt > svec(1).alt
+                      || svec(1).alt > svec(2).alt)
   {
     if (mode & option(Consecutive_Samples) &&
         mode & option(Confirm_Altitude))
@@ -105,10 +108,10 @@ static inline void evaluate_altitude(fu32 mode)
 static inline void detect_launch(void)
 {
   if (svec(0).vel >= LAUNCH_MIN_VEL &&
-      svec(0).tail.asc.acz >= LAUNCH_MIN_VAX)
+      meas.accl.z >= LAUNCH_MIN_VAX)
   {
     flight = Launch;
-    log_transition(id, svec(0).tail.asc.acz);
+    log_transition(id, meas.accl.z);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -147,7 +150,7 @@ static inline void detect_ascent(fu32 mode)
 static inline void detect_burnout(fu32 mode)
 {
   if (svec(0).vel >= BURNOUT_MIN_VEL &&
-      svec(0).tail.asc.acz <= BURNOUT_MAX_VAX &&
+      meas.accl.z <= BURNOUT_MAX_VAX &&
       svec(0).alt > svec(1).alt &&
       svec(0).vel < svec(1).vel)
   {
@@ -273,7 +276,7 @@ static inline void crew_send_coords(fu32 mode)
     return;
   }
 
-  log_measm(SEDS_DT_GPS_DATA, &meas.mode.gps);
+  log_measm(SEDS_DT_GPS_DATA, &meas.gps);
 
   tx_thread_sleep(LANDED_GPS_INTERVAL);
 
@@ -324,8 +327,8 @@ void evaluate_rocket_state(fu32 conf)
     break;
   }
 
-  fu32 size = conf & option(Using_Ascent_KF) ? ASC_STAT
-                                             : DESC_STAT;
+  fu32 size = conf & option(Using_Ascent_KF) ? EKF_STATE
+                                             : DKF_STATE;
 
   log_filter_data(&svec(0), size);
 
@@ -383,7 +386,7 @@ void evaluation_entry(ULONG input)
 
     ascent_update(sm.dt);
 
-    conf = load(&g_conf, Acq);
+    conf = fetch_or(&g_conf, option(Ascent_Finished), AcqRel);
 
     evaluate_rocket_state(conf);
   }
@@ -422,11 +425,18 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_semaphore_create(&eval_focus_mode, "EVALS", 0);
+  st = tx_semaphore_create(&eval_focus_mode, id "S", 0);
 
   if (st != TX_SUCCESS)
   {
     log_die(id "sema %s %u", critical, st);
+  }
+
+  st = tx_byte_pool_create(&kfpool, id "P", &kfpool_buf, KF_POOL_SIZE);
+
+  if (st != TX_SUCCESS)
+  {
+    log_die(id "pool %s %u", critical, st);
   }
 
   return TX_SUCCESS;

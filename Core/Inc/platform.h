@@ -22,6 +22,7 @@
 
 #include <stdio.h>                      // IWYU pragma: export
 #include <string.h>                     // IWYU pragma: export
+#include <assert.h>                     // IWYU pragma: export
 #include <math.h>                       // IWYU pragma: export
 
 #include "dsp/fast_math_functions.h"    // IWYU pragma: export
@@ -56,7 +57,7 @@
 
 #define CM_PTR 0xFFFFFFFFUL
 
-_Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
+static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 
 #ifndef STM32H523xx
   #error "STM32H523xx series MCU required."
@@ -68,9 +69,9 @@ _Static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 typedef arm_matrix_instance_f32 matrix;
 
 #define vsqrt         arm_sqrt_f32;
-#define chol_lo_tri		arm_mat_cholesky_f32
-#define transpose     arm_mat_trans_f32
-#define matrix_mult   arm_mat_mult_f32
+#define chol_lotri		arm_mat_cholesky_f32
+#define mtranspose    arm_mat_trans_f32
+#define matrix_mul    arm_mat_mult_f32
 #define matrix_add		arm_mat_add_f32
 #define matrix_sub    arm_mat_sub_f32
 #define matrix_inv    arm_mat_inverse_f32

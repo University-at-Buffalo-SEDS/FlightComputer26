@@ -43,51 +43,48 @@
 /* Kalman filter constants */
 
 #define TOLERANCE 1e-3f
+#define DKF_TOLER 1e-2f
 
 #define NR_ITERATIONS 2
 
-#define ASC_STAT 16
-#define ASC_MEAS 7
-#define DESC_STAT 6
-#define DESC_MEAS 4
+#define EKF_STATE 9
+#define EKF_MEASM 7
+#define DKF_STATE 4
+#define DKF_MEASM 3
 
-# if ASC_STAT > DESC_STAT 
-#   define L ASC_STAT
-# else
-#   define L DESC_STAT
-# endif
+#define DKF_STATE_SQ (DKF_STATE * DKF_STATE)
+#define DKF_MEASM_SQ (DKF_MEASM * DKF_MEASM)
+#define EKF_STATE_SQ (EKF_STATE * EKF_STATE)
+#define EKF_MEASM_SQ (EKF_MEASM * EKF_MEASM)
 
-# if ASC_MEAS > DESC_MEAS 
-#   define M ASC_MEAS
-# else
-#   define M DESC_MEAS
-# endif
+#define DKF_ST_ME (DKF_STATE * DKF_MEASM)
+#define EKF_ST_ME (EKF_STATE * EKF_STATE)
 
-#define DESC_MASK (DESC_STAT - 1)
-#define APEX_A    (DESC_MASK - 2)
+#define DKF_PREDICT_BYTES fbyte(DKF_STATE_SQ * 3)
+#define DKF_UPDATE_BYTES  fbyte(DKF_MEASM_SQ * 2                \
+                                 + DKF_ST_ME * 3)
 
-#define SIGMA_GYRO  	0.1f
-#define SIGMA_GYRO_Z	1e-6f
-#define SIGMA_ACC   	0.1f
-#define SIGMA_ALT   	10.0f
+#define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 000000000)
+#define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 000000000)
 
-#define ALPHA         1.0f
-#define BETA          2.0f
-#define KAPPA         (1.5f * L)
+#define L maxd(EKF_STATE, DKF_STATE)
+#define M maxd(EKF_MEASM, DKF_MEASM)
 
-#define W_DIM         (int)(2*L + 1)
-#define W_l           (W_DIM - 1)
+/* TX reserves 2 pointers per block for metadata.
+ * A KF function allocates 1 block and releases it.
+ * No fragmentation, 4-alignment => ~ O(1) allocation.
+ */
+#define KFP_OVERHEAD (2 * sizeof(size_t))
 
-#define W_0_a         (float)((ALPHA*ALPHA*KAPPA - L) \
-                          		 / (ALPHA*ALPHA*KAPPA))
-#define W_l_a         (float)(1.0f / (2.0f*ALPHA*ALPHA*KAPPA))
-#define W_0_c         (float)(W_0_a + 1.0f - ALPHA*ALPHA + BETA)
-#define W_l_c         W_l_a
+#define KF_POOL_USED maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES, \
+                          EKF_PREDICT_BYTES, EKF_UPDATE_BYTES)
+
+#define KF_POOL_SIZE (KF_POOL_USED + KFP_OVERHEAD)
 
 
-/* Recovery constants  */
+/* Recovery constants */
 
-#define MAX_THRESHOLD 0xFFu
+#define MAX_THRESHOLD 0x3FFu
 #define FC_MSG_Q_SIZE 8
 
 #define MAX_CONFIG_REPORT_SIZE 128
@@ -112,10 +109,17 @@
 
 #define namecount(arr) (sizeof(arr) / sizeof(conf_dict))
 
+#define maxd(a, b) ((a) > (b) ? (a) : (b))
+#define maxq(a, b, c, d) maxd(maxd(a, b), maxd(c, d))
+
 #define sigma_low(k)  ((float)k - TOLERANCE)
 #define sigma_high(k) ((float)k + TOLERANCE)
 
 #define fsec(ms) ((float)(ms) * 0.001f)
+#define fbyte(f) ((f) * sizeof(float))
+
+#define ekf_view(vec) (float *)((void *)(vec) + sizeof(kf_gps))
+#define dkf_view(vec) (float *)((void *)(vec) + sizeof(float))
 
 #define within(expr, bound)                               \
   (fabsf((float)(expr)) <= (bound))
@@ -126,7 +130,7 @@
 #define proxim_lon(k)                                     \
   within((k) - LAUNCH_SITE_LON, GPS_TOLER)
 
-/* Go 'k' state vectors back, 0 to get the current vector
+/* Go 'k' state vectors back, 0 to get the current vector.
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 

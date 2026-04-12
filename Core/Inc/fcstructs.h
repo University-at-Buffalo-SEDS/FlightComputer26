@@ -22,30 +22,25 @@ typedef struct serial barometer {
 	float alt, prs, tmp;
 } baro;
 
+typedef struct serial gps_reversed {
+  float sea, lon, lat;
+} kf_gps;
+
 typedef struct serial measurement {
-	f_xyz gyro;
-	union {
-		f_xyz accl, gps;
-	} mode;
+  kf_gps gps;
 	baro baro;
+  f_xyz accl;
+  f_xyz gyro;
 } measm;
 
-typedef struct serial ascent_tail {
-  f_xyz theta;
-	float acz;
-	f_xyz att;
-} ekf_sv;
-
-typedef struct serial descent_tail {
-	float lat, lon;
-} dkf_sv;
+typedef struct serial ascent_bias {
+  float az, gx, gy, gz;
+} ekf_bias;
 
 typedef struct serial state_vector {
+  kf_gps gps;
 	float alt, vel;
-  union {
-    ekf_sv asc;
-    dkf_sv dsc;
-  } tail;
+  ekf_bias bias;
 } kf_svec;
 
 typedef union newton_raphson_bithack {
@@ -56,6 +51,8 @@ typedef union newton_raphson_bithack {
 typedef struct serial euler_angles {
   float phi, theta, psi;
 } eul;
+
+static_assert(sizeof(f_xyz) == sizeof(kf_gps), "SV views");
 
 
 /* DMA */
@@ -205,22 +202,21 @@ typedef enum flight_message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 20),
   Graceful_Reset      = Runtime_Configuration | (1u << 21),
   Confirm_Altitude    = Runtime_Configuration | (1u << 22),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 23),
-  Defer_Baro_Fallback = Runtime_Configuration | (1u << 24),
+  Ascent_Finished     = Runtime_Configuration | (1u << 23),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 24),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 25),
 
-  Abortion_Thresholds = Runtime_Configuration | (1u << 25),
+  Abortion_Thresholds = Runtime_Configuration | (1u << 26),
 
   Abort_After_40  = Abortion_Thresholds + 40,
   Abort_After_100 = Abortion_Thresholds + 100,
   Abort_After_250 = Abortion_Thresholds + 250,
 
-  Reinit_Thresholds = Runtime_Configuration | (1u << 26),
+  Reinit_Thresholds = Runtime_Configuration | (1u << 27),
 
   Reinit_After_15 = Reinit_Thresholds + 15,
   Reinit_After_30 = Reinit_Thresholds + 30,
   Reinit_After_50 = Reinit_Thresholds + 50,
-
-  /* More options go here */
 
   GroundStation_Heartbeat = (1u << 30),
   FlightComputer_Mask = (1u << 31),

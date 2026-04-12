@@ -20,6 +20,9 @@ bool fetch_accl(f_xyz *);
 
 /* Kalman filter */
 
+extern TX_BYTE_POOL kfpool;
+extern char kfpool_buf[];
+
 void descent_predict(const float);
 void descent_update(const float);
 void descent_initialize(void);

@@ -29,27 +29,57 @@
 #include "sweetbench.h"
 
 
+TX_BYTE_POOL kfpool;
+
 static float P[L][L] = {0};
 static float Q[L][L] = {0};
 static float A[L][L] = {0};
 static float R[M][M] = {0};
-static float H[M][M] = {0};
+static float H[M][L] = {0};
 
-static matrix state_cov = {0, 0, &P[0][0]};
-static matrix prc_noise = {0, 0, &Q[0][0]};
-static matrix mx_bucket = {0, 0, &A[0][0]};
-static matrix measm_cov = {0, 0, &R[0][0]};
-static matrix obsrvance = {0, 0, &H[0][0]};
-
-static const float W_a[W_DIM] = {[0] = W_0_a, [1 ... W_l] = W_l_a};
-static const float W_c[W_DIM] = {[0] = W_0_c, [1 ... W_l] = W_l_c};
-
-static matrix vec_w_a = {W_DIM, 1, (float *)(&W_a[0])};
-static matrix vec_w_c = {W_DIM, 1, (float *)(&W_c[0])};
+static matrix mxp = {0, 0, &P[0][0]};
+static matrix mxq = {0, 0, &Q[0][0]};
+static matrix mxa = {0, 0, &A[0][0]};
+static matrix mxr = {0, 0, &R[0][0]};
+static matrix mxh = {0, 0, &H[0][0]};
 
 
 /*
- * Inverse square root. Brought right from Quake 3 Arena!
+ * KF-specific wrapper around TX heap manager.
+ */
+static float *_kfalloc(size_t size, bool user)
+{
+  assert(size != 0 && (size & (sizeof(float) - 1)) == 0);
+
+  UINT st;
+  void *ptr;
+
+  st = tx_byte_allocate(&kfpool, &ptr, size, TX_NO_WAIT);
+
+  if (st == TX_NO_MEMORY && user)
+  {
+    tx_byte_pool_delete(&kfpool);
+    tx_byte_pool_create(&kfpool, "EX P", kfpool_buf, KF_POOL_SIZE);
+    
+    _kfalloc(size, false);
+  }
+
+  return st == TX_SUCCESS ? ptr : kfpool_buf;
+}
+
+static inline float *kfalloc(size_t size)
+{
+  return _kfalloc(size, true);
+}
+
+static inline void kffree(float *ptr)
+{
+  tx_byte_release((void *)ptr);
+}
+
+
+/*
+ * Inverse square root from Quake 3 Arena.
  */
 static inline constexpr float invsqrtf(float x)
 {
@@ -87,38 +117,7 @@ void accel_to_quaternion(const f_xyz *accl)
 static inline void
 kf_measm(kf_svec *restrict vec, measm *restrict out)
 {
-  // const float ag = vec->a.z + GRAVITY_SI;
-  // const float qq2 = vec->qv.q2 * vec->qv.q2;
-  // const float qq3 = vec->qv.q3 * vec->qv.q3;
-  // const float qq4 = vec->qv.q4 * vec->qv.q4;
 
-  // const float q12 = vec->qv.q1 * vec->qv.q2;
-  // const float q13 = vec->qv.q1 * vec->qv.q3;
-  // const float q14 = vec->qv.q1 * vec->qv.q4;
-  // const float q23 = vec->qv.q2 * vec->qv.q3;
-  // const float q24 = vec->qv.q2 * vec->qv.q4;
-  // const float q34 = vec->qv.q3 * vec->qv.q4;
-  // /* 
-  //  * DCM body->nav from quaternion (scalar-first w,x,y,z)
-  //  * Manually transposed (as used). Each value used once
-  //  * => array is not used to allow for compile-time folding
-  //  */
-  // const float r11 = 1.0f - (2.0f * (qq3 + qq4));
-  // const float r12 = 2.0f * (q23 + q14);
-  // const float r13 = 2.0f * (q24 - q13);
-  // const float r21 = 2.0f * (q23 - q14);
-  // const float r22 = 1.0f - (2.0f * (qq2 + qq4));
-  // const float r23 = 2.0f * (q34 + q12);
-  // const float r31 = 2.0f * (q24 + q13);
-  // const float r32 = 2.0f * (q34 - q12);
-  // const float r33 = 1.0f - (2.0f * (qq2 + qq3));
-
-  // out->d.axis.accl.x = (r11 * vec->a.x) + (r12 * vec->a.y) + (r13 * ag);
-  // out->d.axis.accl.y = (r21 * vec->a.x) + (r22 * vec->a.y) + (r23 * ag);
-  // out->d.axis.accl.z = (r31 * vec->a.x) + (r32 * vec->a.y) + (r33 * ag);
-
-  // out->gyro = vec->w;
-  // out->d.alt = vec->p.z;
 }
 
 
@@ -133,26 +132,23 @@ void descent_initialize(void)
   memset(R, 0, sizeof R);
   memset(H, 0, sizeof H);
 
-  for (fu8 i = 0; i < DESC_STAT; ++i)
+  for (fu8 i = 0; i < DKF_MEASM; ++i)
   {
-    Q[i][i] = TOLERANCE;
-    A[i][i] = 1.0f;
+    A[i][i] = H[i][i] = 1.0f;
   }
 
-  for (fu8 i = 0; i < DESC_MEAS - 1; ++i)
-  {
-    H[i][i] = 1.0f;
-    R[i][i] = 10.0f;
-  }
+  A[DKF_STATE - 1][DKF_STATE - 1] = 1.0f;
+  Q[0][0] = Q[1][1] = TOLERANCE;
+  Q[2][2] = Q[3][3] = DKF_TOLER;
+  R[0][0] = R[1][1] = DKF_GPS_TRUST;
+  R[2][2] = DKF_BARO_TRUST;
 
-  H[DESC_MEAS - 1][DESC_MEAS - 2] = 1.0f;
-  R[DESC_MEAS - 1][DESC_MEAS - 1] = 100.0f;
-
-  state_cov.numRows = state_cov.numCols = DESC_STAT;
-  prc_noise.numRows = prc_noise.numCols = DESC_STAT;
-  mx_bucket.numCols = mx_bucket.numRows = DESC_STAT;
-  measm_cov.numCols = measm_cov.numRows = DESC_MEAS;
-  obsrvance.numRows = obsrvance.numCols = DESC_MEAS;
+  mxp.numRows = mxp.numCols = DKF_STATE;
+  mxq.numRows = mxq.numCols = DKF_STATE;
+  mxa.numCols = mxa.numRows = DKF_STATE;
+  mxr.numCols = mxr.numRows = DKF_MEASM;
+  mxh.numRows = DKF_MEASM;
+  mxh.numCols = DKF_STATE;
 
   irq_off(Gyro_EXTI_1);
 /*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
@@ -175,28 +171,89 @@ void descent_initialize(void)
 }
 
 /*
- * Predict step of the Descent filter.
+ * Note: overwrites previous state vector in place.
  * Prerequisites: None.
  */
 void descent_predict(const float dt)
 {
-  matrix state = {DESC_STAT, 1, (float *)&svec(0)};
-  matrix measm = {DESC_MEAS, 1, (float *)&meas.mode.gps};
+  matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
 
-	A[0][APEX_A] = A[1][APEX_A + 1] = A[2][APEX_A + 2] = dt;
+  float *mk = kfalloc(DKF_PREDICT_BYTES);
 
-	// TODO
+  memcpy(mk, dkf_view(&svec(1)), DKF_STATE);
+
+  matrix mxat = {DKF_STATE, 1, mk};
+  matrix mxap = {DKF_STATE, DKF_STATE, mxat.pData + DKF_STATE_SQ};
+  matrix mxfi = {DKF_STATE, DKF_STATE, mxap.pData + DKF_STATE_SQ};
+
+	matrix_mul(&mxa, &mxat, &presv);
+  
+  mxat.numCols = DKF_STATE;
+  mtranspose(&mxa, &mxat);
+
+  matrix_mul(&mxa, &presv, &mxap);
+  matrix_mul(&mxap, &mxat, &mxfi);
+  matrix_add(&mxfi, &mxq, &mxp);
+
+  kffree(mk);
 }
 
 /*
- * Update step of the Descent filter.
+ * This function partitions allocated buffer into blocks,
+ * then reuses them, merging when recessary. If names and
+ * transitions (->) don't make sense, refer to MATLAB code.
  * Prerequisites: Barometer or GPS.
  */
 void descent_update(const float dt)
 {
   sweetbench_start(4, 50, true);
 
-  // TODO
+  matrix cursv = {DKF_STATE, 1, dkf_view(&svec(0))};
+  matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
+  matrix measm = {DKF_MEASM, 1, (float *)&meas.gps};
+
+  float *mk = kfalloc(DKF_UPDATE_BYTES);
+
+  matrix mxht   = {DKF_STATE, DKF_MEASM, mk};
+  matrix mxhp   = {DKF_MEASM, DKF_STATE, mk + DKF_ST_ME};
+  matrix mxhpht = {DKF_MEASM, DKF_MEASM, mxhp.pData + DKF_ST_ME};
+  matrix mxs    = {DKF_MEASM, DKF_MEASM, mxhpht.pData + DKF_MEASM_SQ};
+  matrix mxpht  = {DKF_MEASM, DKF_STATE, mxs.pData + DKF_MEASM_SQ};
+
+  mtranspose(&mxh, &mxht);
+  matrix_mul(&mxh, &mxp, &mxhp);
+  matrix_mul(&mxhp, &mxht, &mxhpht);
+  matrix_add(&mxhpht, &mxr, &mxs);
+  matrix_inv(&mxs, &mxhpht);
+  matrix_mul(&mxp, &mxht, &mxpht);
+  matrix_mul(&mxpht, &mxhpht, &mxht);
+
+  /* mxht -> "mxk"; mxs -> "mxhx"; mxhpht -> "mxzhx";
+   * mxhp -> "mxkzhx"
+   */
+
+  mxs.numCols = mxhp.numCols = 1;
+  mxhp.numRows = DKF_STATE;
+
+  matrix_mul(&mxh, &presv, &mxs);
+  matrix_sub(&measm, &mxs, &mxhpht);
+  matrix_mul(&mxht, &mxhpht, &mxhp);
+  matrix_add(&presv, &mxhp, &cursv);
+
+  /* Merge mxhp + mxhpht; mxs + mxpht.
+   * mxhp -> "mxkh" -> "mxp_f"; mxs -> "mxkhp"
+   */
+
+  mxhp.numRows = mxhp.numCols = DKF_STATE;
+  mxs.numRows = mxs.numCols = DKF_STATE;
+
+  matrix_mul(&mxht, &mxh, &mxhp);
+  matrix_mul(&mxhp, &mxp, &mxs);
+  matrix_sub(&mxp, &mxs, &mxhp);
+
+  memcpy(P, mxhp.pData, DKF_STATE_SQ);
+
+  kffree(mk);
 
   sweetbench_catch(4);
 }
@@ -213,42 +270,18 @@ void ascent_initialize(void)
   memset(R, 0, sizeof R);
   memset(H, 0, sizeof H);
 
-  for (fu8 k = 0; k < 3; ++k)
-  {
-    Q[k][k] = 1e-4f;
-    Q[k + 3][k + 3] = 1e-2f;
-    Q[k + 6][k + 6] = 1e-2f;
+  // TODO
 
-    P[k][k] = 100.0f;
-    P[k + 3][k + 3] = 25.0f;
-    P[k + 6][k + 6] = 1.0f;
-    P[k + 13][k + 13] = 1e-2f;
-  }
-
-  for (fu8 k = 9; k < 9 + 4; ++k)
-  {
-    Q[k][k] = TOLERANCE * TOLERANCE;
-    P[k][k] = TOLERANCE;
-  }
-
-  Q[13][13] = Q[14][14] = 1e-4f;
-  Q[15][15] = 1e-10f;
-
-  R[0][0] = R[1][1] = SIGMA_GYRO * SIGMA_GYRO;
-  R[2][2] = SIGMA_GYRO_Z * SIGMA_GYRO_Z;
-  R[3][3] = R[4][4] = R[5][5] = SIGMA_ACC * SIGMA_ACC;
-  R[6][6] = SIGMA_ALT * SIGMA_ALT;
-
-  state_cov.numRows = state_cov.numCols = ASC_STAT;
-  prc_noise.numRows = prc_noise.numCols = ASC_STAT;
-  mx_bucket.numCols = mx_bucket.numRows = ASC_STAT;
-  measm_cov.numCols = measm_cov.numRows = ASC_MEAS;
-  obsrvance.numRows = obsrvance.numCols = ASC_MEAS;
+  mxp.numRows = mxp.numCols = EKF_STATE;
+  mxq.numRows = mxq.numCols = EKF_STATE;
+  mxa.numCols = mxa.numRows = EKF_STATE;
+  mxr.numCols = mxr.numRows = EKF_MEASM;
+  mxh.numRows = EKF_MEASM;
+  mxh.numCols = EKF_STATE;
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
-    /* If it somehow happened that we initialize Ascent KF mid-flight,
-     * ask non-preemtive recovery to reinitialize IMU with interrupts.
+    /* Switched to Ascent mid-flight, for some reason, but OK.
      */
     fc_msg cmd = fc_mask(Reinit_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
@@ -264,57 +297,7 @@ void ascent_initialize(void)
  */
 void ascent_predict(const float dt)
 {
-  /*
-  // static fu8 iteration = 0;
 
-  // const float fact = 0.5f * dt;
-  // const float dvx = dt * sv[sh.idx].a.x;
-  // const float dvy = dt * sv[sh.idx].a.y;
-  // const float dvz = dt * sv[sh.idx].a.z;
-  // const float vtx = dt * sv[sh.idx].v.x;
-  // const float vty = dt * sv[sh.idx].v.y;
-  // const float vtz = dt * sv[sh.idx].v.z;
-
-  // const struct quaternion old = sv[sh.idx].qv;
-
-  // sv[sh.idx].v.x += dvx;
-  // sv[sh.idx].v.y += dvy;
-  // sv[sh.idx].v.z += dvz;
-  
-  // sv[sh.idx].p.x += vtx + (fact * dvx);
-  // sv[sh.idx].p.y += vty + (fact * dvy);
-  // sv[sh.idx].p.z += vtz + (fact * dvz);
-
-  // sv[sh.idx].qv.q1 -= fact * (sv[sh.idx].w.x * old.q2 + \
-  //                             sv[sh.idx].w.y * old.q3 + \
-  //                             sv[sh.idx].w.z * old.q4);
-  // sv[sh.idx].qv.q2 += fact * (sv[sh.idx].w.x * old.q1 + \
-  //                             sv[sh.idx].w.z * old.q3 - \
-  //                             sv[sh.idx].w.y * old.q4);
-  // sv[sh.idx].qv.q3 += fact * (sv[sh.idx].w.y * old.q1 - \
-  //                             sv[sh.idx].w.z * old.q2 + \
-  //                             sv[sh.idx].w.x * old.q4);
-  // sv[sh.idx].qv.q4 += fact * (sv[sh.idx].w.z * old.q1 + \
-  //                             sv[sh.idx].w.y * old.q2 - \
-  //                             sv[sh.idx].w.x * old.q3);
-
-  // if (!(iteration & renorm_step_mask))
-  // {
-  //   const float expr = sv[sh.idx].qv.q1 * sv[sh.idx].qv.q1 + \
-  //                      sv[sh.idx].qv.q2 * sv[sh.idx].qv.q2 + \
-  //                      sv[sh.idx].qv.q3 * sv[sh.idx].qv.q3 + \
-  //                      sv[sh.idx].qv.q4 * sv[sh.idx].qv.q4;
-    
-  //   if (expr < sigma_low(1) || expr > sigma_high(1)) {
-  //     const float norm = invsqrtf(expr);
-  //     sv[sh.idx].qv.q1 *= norm;
-  //     sv[sh.idx].qv.q2 *= norm;
-  //     sv[sh.idx].qv.q3 *= norm;
-  //     sv[sh.idx].qv.q4 *= norm;
-  //   }
-  // }
-
-  // ++iteration; */
 }
 
 /*
@@ -324,8 +307,6 @@ void ascent_predict(const float dt)
 void ascent_update(const float dt)
 {
   sweetbench_start(3, 50, true);
-
-  // TODO
 
   sweetbench_catch(3);
 }

@@ -89,6 +89,10 @@
 #define LAUNCH_SITE_LAT 32.000507f
 #define LAUNCH_SITE_LON -102.077408f
 
+/* Lower is more trust */
+#define DKF_GPS_TRUST	1.2f
+#define DKF_BARO_TRUST 0.05f
+
 
 /* Recovery */
 

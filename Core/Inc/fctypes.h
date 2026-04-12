@@ -10,6 +10,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+#include <assert.h> 
 
 
 typedef uint_fast8_t  fu8;

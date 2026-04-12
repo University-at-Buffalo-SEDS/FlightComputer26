@@ -24,7 +24,7 @@ measm meas = {0};
 
 #ifdef GPS_AVAILABLE
 
-static f_xyz rail = {0};
+static kf_gps rail = {0};
 static f_xyz gps_ring[GPS_RING_SIZE] = {0};
 static atomic_uint_fast16_t gps_mask = 0xFF00u;
 
@@ -139,8 +139,10 @@ enqueue_gps_data(const uint8_t *buf)
   }
 }
 
-static inline fu8
-fetch_gps_data(f_xyz *buf)
+/*
+ * Transforms GPS data from ring into sub-KF struct.
+ */
+static inline fu8 fetch_gps_data(kf_gps *buf)
 {
   static fu8 idx = UINT_FAST8_MAX;
 
@@ -156,7 +158,10 @@ fetch_gps_data(f_xyz *buf)
   i = (i + n) & GPS_RING_SIZE_MASK;
   idx = i;
 
-  *buf = gps_ring[i];
+  /* Reordering: RF streams XYZ, KF expects [Z]YX */
+  buf->sea = gps_ring[i].z;
+  buf->lon = gps_ring[i].y;
+  buf->lat = gps_ring[i].x;
 
   fetch_or(&gps_mask, CLEAR_IDX, Rlx);
   return n;
@@ -266,10 +271,10 @@ handle_gps_data(const uint8_t *data, size_t len)
  * Converts GPS coordinates into distance from
  * launch rail. This is how Descent KF expects GPS.
  */
-static inline void distance_from_rail(f_xyz *gps)
+static inline void distance_from_rail(kf_gps *buf)
 {
-  gps->x = fabsf(gps->x - rail.x);
-  gps->y = fabsf(gps->y - rail.y);
+  buf->lon = fabsf(buf->lon - rail.lon);
+  buf->lat = fabsf(buf->lat - rail.lat);
 }
 
 #endif /* GPS_AVAILABLE */
@@ -434,7 +439,7 @@ validate_all(const measm *buf, fu32 conf)
 {
   return validate_baro(&buf->baro, conf) |
          validate_gyro(&buf->gyro, conf) |
-         validate_accl(&buf->mode.accl, conf);
+         validate_accl(&buf->accl, conf);
 }
 
 
@@ -446,17 +451,17 @@ static inline void monitor_gps(fu32 conf, float *acc)
 #ifdef GPS_AVAILABLE
 
   if (conf & option(GPS_Available) &&
-      fetch_gps_data(&meas.mode.gps))
+      fetch_gps_data(&meas.gps))
   {
     *acc += fsec(timer_exchange(FillSequence));
 
-    rail = meas.mode.gps;
+    rail = meas.gps;
 
-    if (!within(rail.x - meas.mode.gps.x, GPS_RAIL_TOLER) ||
-        !within(rail.y - meas.mode.gps.y, GPS_RAIL_TOLER))
+    if (!within(rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
+        !within(rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
     {
       log_err(id "new GPS reference "
-                  "LAT: %f, LON: %f", rail.x, rail.y);
+                 "LAT: %f, LON: %f", rail.lat, rail.lon);
     }
   }
 
@@ -485,10 +490,10 @@ static inline void data_streaming_mode(void)
       log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
     }
 
-    if (fetch_accl(&meas.mode.accl))
+    if (fetch_accl(&meas.accl))
     {
-      st |= validate_accl(&meas.mode.accl, conf);
-      log_measm(SEDS_DT_ACCEL_DATA, &meas.mode.accl);
+      st |= validate_accl(&meas.accl, conf);
+      log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
     }
 
     if (fetch_baro(&meas.baro))
@@ -540,16 +545,16 @@ static inline void post_initialization(void)
 
   task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
-    if (fetch_accl(&meas.mode.accl))
+    if (fetch_accl(&meas.accl))
     {
-      st = validate_accl(&meas.mode.accl, conf);
-      log_measm(SEDS_DT_ACCEL_DATA, &meas.mode.accl);
+      st = validate_accl(&meas.accl, conf);
+      log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
 
       if (st == fc_mask(Sensor_Measm_Code))
       {
-        accl_acc.x += meas.mode.accl.x;
-        accl_acc.y += meas.mode.accl.y;
-        accl_acc.z += meas.mode.accl.z;
+        accl_acc.x += meas.accl.x;
+        accl_acc.y += meas.accl.y;
+        accl_acc.z += meas.accl.z;
         ++ctr_accl;
       }
     }
@@ -600,6 +605,8 @@ static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
 
   sweetbench_catch(8);
 
+  conf = fetch_and(&g_conf, ~option(Ascent_Finished), Rel);
+
   if (conf & Eval_Focus_Flag)
   {
     sweetbench_start(7, 10);
@@ -636,7 +643,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      meas.mode.accl = suspect;
+      meas.accl = suspect;
       *imu |= Sensor_Accl;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -652,6 +659,10 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
 
     return;
   }
+  else if (!(conf & option(Ascent_Finished)))
+  {
+    return;
+  }
 
   *imu &= ~IMU_ID;
 
@@ -661,7 +672,7 @@ static inline void ascent_cycle(fu32 conf, fu8 *imu)
   *imu |= ASCENT_PREDICT_DONE;
 
   log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
-  log_measm(SEDS_DT_ACCEL_DATA, &meas.mode.accl);
+  log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
 
   ascent_cycle_update(conf, imu);
 }
@@ -696,9 +707,9 @@ static inline void descent_cycle(fu32 conf)
 #ifdef GPS_AVAILABLE
 
   if ((conf & option(GPS_Available)) &&
-      fetch_gps_data(&meas.mode.gps))
+      fetch_gps_data(&meas.gps))
   {
-    distance_from_rail(&meas.mode.gps);
+    distance_from_rail(&meas.gps);
     descent_update(sm.dt);
 
     if (!(conf & option(Monitor_Altitude)))
