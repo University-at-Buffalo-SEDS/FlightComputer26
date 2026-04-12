@@ -68,14 +68,17 @@ static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 
 typedef arm_matrix_instance_f32 matrix;
 
-#define vsqrt         arm_sqrt_f32;
+#define fvsqrt        arm_sqrt_f32
+#define fatan2        arm_atan2_f32
+#define fcos          arm_cos_f32
+#define fsin          arm_sin_f32
+
 #define chol_lotri		arm_mat_cholesky_f32
 #define mtranspose    arm_mat_trans_f32
 #define matrix_mul    arm_mat_mult_f32
 #define matrix_add		arm_mat_add_f32
 #define matrix_sub    arm_mat_sub_f32
 #define matrix_inv    arm_mat_inverse_f32
-#define matrix_init   arm_mat_init_f32
 
 
 /* Misc utilities */

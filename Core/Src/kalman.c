@@ -31,6 +31,8 @@
 
 TX_BYTE_POOL kfpool;
 
+static quat qv = {0};
+
 static float P[L][L] = {0};
 static float Q[L][L] = {0};
 static float A[L][L] = {0};
@@ -96,19 +98,56 @@ static inline constexpr float invsqrtf(float x)
 }
 
 /*
- * Converts euler angles to quaternions.
+ * Converts euler angles to quaternions, stored globally.
  */
-static inline void euler_to_quat(const eul *ang)
+static inline void euler_to_quat(eul *ang)
 {
+  ang->phi *= 0.5f;
+  ang->theta *= 0.5f;
+  ang->psi *= 0.5f;
 
+  float cosphi = fcos(ang->phi);
+  float sinphi = fsin(ang->phi);
+  float costhe = fcos(ang->theta);
+  float sinthe = fsin(ang->theta);
+  float cospsi = fcos(ang->psi);
+  float sinpsi = fsin(ang->psi);
+
+  float costhepsi = costhe * cospsi;
+  float sinthepsi = sinthe * sinpsi;
+  float sinthecospsi = sinthe * cospsi;
+  float costhesinpsi = costhe * sinpsi;
+
+  qv.q0 = cosphi * costhepsi + sinphi * sinthepsi;
+  qv.rho1 = sinphi * costhepsi - cosphi * sinthepsi;
+  qv.rho2 = cosphi * sinthecospsi + sinphi * costhesinpsi;
+  qv.rho3 = cosphi + costhesinpsi - sinphi * sinthecospsi;
+
+  float norm = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
+
+  qv.q0 *= norm;
+  qv.rho1 *= norm;
+  qv.rho2 *= norm;
+  qv.rho3 *= norm;
+
+  // TODO log
 }
 
 /*
- * Converts sensor averages to euler angles.
+ * ang.psi used to temporarily hold the norm.
  */
 void accel_to_quaternion(const f_xyz *accl)
 {
-  
+  eul ang;
+
+  fatan2(accl->y, accl->z, &ang.phi);
+  vnorm2(accl->y, accl->z, &ang.psi);
+  fatan2(-accl->x, ang.psi, &ang.theta);
+  ang.psi = 0;
+
+  // TODO log in deg
+
+  euler_to_quat(&ang);
 }
 
 /*
