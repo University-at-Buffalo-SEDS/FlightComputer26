@@ -648,7 +648,7 @@ static void fc_timer_routine(ULONG timer_id)
     if (!test_launched)
     {
       test_launched = 1;
-      enum message cmd = fc_mask(Launch_Signal);
+      fc_msg cmd = fc_mask(Launch_Signal);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 

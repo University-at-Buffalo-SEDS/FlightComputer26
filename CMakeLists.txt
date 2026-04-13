@@ -76,10 +76,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
 
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_atan2_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_cos_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_sin_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/CommonTables/arm_common_tables.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_cholesky_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_trans_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_mult_f32.c
@@ -91,6 +93,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
+    ${CMAKE_SOURCE_DIR}/sedsprintf_rs/C-Headers
     ${CMAKE_SOURCE_DIR}/Core/Test
 )
 
@@ -135,7 +138,6 @@ if (ENABLE_TELEMETRY)
     set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
 
     target_sources(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
     )

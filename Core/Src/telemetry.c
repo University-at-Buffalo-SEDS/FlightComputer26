@@ -496,6 +496,7 @@ SedsResult process_all_queues_timeout(uint32_t timeout_ms) {
 #endif
 }
 
+#ifdef TELEMETRY_ENABLED
 static SedsResult log_error_impl(uint8_t queue, const char *fmt, va_list args) {
   va_list args_copy;
   int len = 0;
@@ -532,6 +533,7 @@ static SedsResult log_error_impl(uint8_t queue, const char *fmt, va_list args) {
   return seds_router_log_string_ex(g_router.r, SEDS_DT_TELEMETRY_ERROR, buf, (size_t)written,
                                    NULL, queue);
 }
+#endif
 
 SedsResult log_error_asynchronous(const char *fmt, ...) {
 #ifndef TELEMETRY_ENABLED

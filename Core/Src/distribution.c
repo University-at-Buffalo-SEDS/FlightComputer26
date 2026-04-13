@@ -115,6 +115,7 @@ static inline fc_msg decode_cmd(const uint8_t *raw)
 
 #endif /* TELEMETRY_CMD_COMPAT */
 
+#endif /* TELEMETRY_ENABLED */
 
 #ifdef GPS_AVAILABLE
 
@@ -279,6 +280,8 @@ static inline void distance_from_rail(kf_gps *buf)
 
 #endif /* GPS_AVAILABLE */
 
+
+#ifdef TELEMETRY_ENABLED
 
 /*
  * Deposits one or multiple messages into the recovery queue.

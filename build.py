@@ -21,6 +21,10 @@ PRESET:
 If none specified, defaults to Debug.
 
 OPTIONS:
+        telemetry       - enable full telemetry stack;
+                        - defaults ON for release and
+                        - OFF for debug
+
 	flash-dfu       - download executable to eabi
 	                - target (requires dfu-utils)
 
@@ -97,6 +101,7 @@ ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {     "flash-dfu",
                         "flash-st",
                         "stlink",
+                        "telemetry",
                         "notelemetry", 
                         "clean",
                         "fullcmd",
@@ -174,8 +179,11 @@ def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
         # Defaults for IREC 2026 (except compilation flags)
+        # Debug uses the lightweight telemetry stubs by default to stay
+        # within flash. Release keeps the full telemetry stack enabled.
         batch           = "-DMESSAGE_BATCHING=OFF"
-        telem           = "-DENABLE_TELEMETRY=ON"
+        telem           = "-DENABLE_TELEMETRY=OFF" \
+                          if preset == "Debug" else "-DENABLE_TELEMETRY=ON"
         compat          = "-DTELEMETRY_COMPAT=ON"
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
@@ -183,6 +191,9 @@ def configure(buildir: Path, preset: str, options: dict):
         flags           = "-DCUSTOM_FLAGS=OFF"
         sensortest      = "-DSENSOR_TESTS=OFF"
         usb             = "-DUSB_ENUM=ON"
+
+        if options["telemetry"]:
+                telem = "-DENABLE_TELEMETRY=ON"
 
         if options["notelemetry"]:
                 telem = "-DENABLE_TELEMETRY=OFF"
