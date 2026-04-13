@@ -21,60 +21,49 @@ PRESET:
 If none specified, defaults to Debug.
 
 OPTIONS:
-        telemetry       - enable full telemetry stack;
-                        - defaults ON for release and
-                        - OFF for debug
+	flash-dfu       - download executable to eabi target
+                        - prerequisite: dfu-utils
 
-	flash-dfu       - download executable to eabi
-	                - target (requires dfu-utils)
+        flash-st        - alternative to flash-dfu, but over STLink
+                        - prerequisite: STM32_Programmer_CLI over SWD
 
-        flash-st        - alternative to flash-dfu, but
-                        - uses STM32_Programmer_CLI over SWD
+        stlink          - open STLink connection for debugger and exit
+                        - prerequisite: Debug 
 
-        stlink          - open STLink connection for
-                        - debugger and exit 
+	notelemetry     - disable telemetry and message handling 
+                        - output to stdout (unless nousb enabled)
+                        - default option for Debug preset
 
-	notelemetry     - disable telemetry, redirect 
-                        - output to terminal emulator;
-                        - disables message handling
+        clean           - cleans build folder for the specified preset
+                        - this option has highest precedence
 
-        clean           - cleans build folder for the
-                        - specified preset (or default);
-                        - option has highest precedence
+        fullcmd         - expect full FC commands in handler and not byte
+                        - codes
 
-        fullcmd         - expect full FC commands in
-                        - handler and not byte codes;
-                        - prerequisite: telemetry
+        batching        - handle potentially several batched messages in
+                        - handler (note to self: reimplement if used)
 
-        batching        - handle potentially several
-                        - batched messages in handler;
-                        - prerequisite: telemetry
+        configure       - configure specified preset with given options,
+                        - but do not build the project
 
-        configure       - configure specified preset
-                        - with given options, but do
-                        - not build the project
+        nogps           - no external GPS device, rely on Barometer for
+                        - descent. True if notelemetry enabled
 
-        nogps           - absence of external GPS device;
-                        - always use Ascent Kalman filter;
-                        - True if telemetry is disabled
+        nosd            - no on-board SD card. True if notelemetry enabled
 
-        nosd            - absence of on-board SD card;
-                        - True if telemetry is disabled
+        asm             - generate assembly code for the preset and options
+                        - chosen
 
-        asm             - generate assembly code for the
-                        - preset and options chosen
+        bench           - compile with benchmarks. omit this options intead
+                        - of removing benchmarks from code.
 
-        bench           - compile with benchmarks, even
-                        - otherwise you can leave them in code
+        userflags       - compile with flags in top-level CMakeLists; use
+                        - this for the final release build (will enable LTO)
 
-        userflags       - compile with flags in top-level
-                        - CMakeLists; use this for the final
-                        - release build (will enable LTO)
-
-        sensortest      - run synchronous sensor tests
+        sensortest      - run synchronous (polling) sensor tests
                         - prerequisite: notelemetry
 
-        nousb           - do not assume enumerated USB
+        nousb           - do not assume correctly enumerating USB
                         - prerequisute: notelemetry
 			
 If an option is not specified, then either it is not in effect
@@ -101,7 +90,6 @@ ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {     "flash-dfu",
                         "flash-st",
                         "stlink",
-                        "telemetry",
                         "notelemetry", 
                         "clean",
                         "fullcmd",
@@ -179,11 +167,10 @@ def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
         # Defaults for IREC 2026 (except compilation flags)
-        # Debug uses the lightweight telemetry stubs by default to stay
-        # within flash. Release keeps the full telemetry stack enabled.
+        # Debug preset will forcefully disable telemetry, and
+        # things that depend on it.
         batch           = "-DMESSAGE_BATCHING=OFF"
-        telem           = "-DENABLE_TELEMETRY=OFF" \
-                          if preset == "Debug" else "-DENABLE_TELEMETRY=ON"
+        telem           = "-DENABLE_TELEMETRY=OFF"
         compat          = "-DTELEMETRY_COMPAT=ON"
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
@@ -192,10 +179,7 @@ def configure(buildir: Path, preset: str, options: dict):
         sensortest      = "-DSENSOR_TESTS=OFF"
         usb             = "-DUSB_ENUM=ON"
 
-        if options["telemetry"]:
-                telem = "-DENABLE_TELEMETRY=ON"
-
-        if options["notelemetry"]:
+        if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
                 gps = "-DEXTERNAL_GPS=OFF"
                 sd = "-DONBOARD_SD=OFF"
@@ -204,14 +188,16 @@ def configure(buildir: Path, preset: str, options: dict):
                 if options["nousb"]:
                         usb = "-DUSB_ENUM=OFF"
         else:
-                if options["fullcmd"]:
-                        compat = "-DTELEMETRY_COMPAT=OFF"
-                if options["batching"]:
-                        batch  = "-DMESSAGE_BATCHING=ON"
                 if options["nogps"]:
                         gps = "-DEXTERNAL_GPS=OFF"
                 if options["nosd"]:
                         sd = "-DONBOARD_SD=OFF"
+
+        if options["fullcmd"]:
+                compat = "-DTELEMETRY_COMPAT=OFF"
+
+        if options["batching"]:
+                batch  = "-DMESSAGE_BATCHING=ON"
 
         if options["bench"]:
                 bench = "-DFC_BENCH=ON"
