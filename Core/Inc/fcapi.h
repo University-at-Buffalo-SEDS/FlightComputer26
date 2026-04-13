@@ -24,7 +24,7 @@ extern TX_BYTE_POOL kfpool;
 extern char kfpool_buf[];
 
 void descent_predict(const float);
-void descent_update(const float);
+void descent_update(void);
 void descent_initialize(void);
 
 void ascent_predict(const float);

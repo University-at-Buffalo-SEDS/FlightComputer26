@@ -215,6 +215,8 @@ void descent_initialize(void)
  */
 void descent_predict(const float dt)
 {
+  A[DKF_STATE -  1][DKF_MEASM - 1] = dt;
+
   matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
 
   float *mk = kfalloc(DKF_PREDICT_BYTES);
@@ -243,7 +245,7 @@ void descent_predict(const float dt)
  * transitions (->) don't make sense, refer to MATLAB code.
  * Prerequisites: Barometer or GPS.
  */
-void descent_update(const float dt)
+void descent_update(void)
 {
   sweetbench_start(4, 50, true);
 
@@ -320,7 +322,7 @@ void ascent_initialize(void)
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
-    /* Switched to Ascent mid-flight, for some reason, but OK.
+    /* Switched to Ascent mid-flight or user messed with FC_DEFAULTS.
      */
     fc_msg cmd = fc_mask(Reinit_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
