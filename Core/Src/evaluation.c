@@ -45,7 +45,14 @@ const char *trans[Flight_States] = {
  */
 static inline void evaluate_altitude(fu32 mode)
 {
-  if (flight < Ascent || svec(0).alt > svec(1).alt
+  float last = svec(0).alt;
+
+  if (last > VIGILANT_MAX_ALT || last < VIGILANT_MIN_ALT)
+  {
+    last = meas.baro.alt;
+  }
+
+  if (flight < Ascent || last > svec(1).alt
                       || svec(1).alt > svec(2).alt)
   {
     if (mode & option(Consecutive_Samples) &&
@@ -57,7 +64,7 @@ static inline void evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (svec(0).alt <= REEF_TARGET_ALT &&
+  if (last <= REEF_TARGET_ALT &&
       !(mode & option(Parachute_Expanded)))
   {
     /* We fell below reefing altitude. Depeding on
@@ -68,14 +75,14 @@ static inline void evaluate_altitude(fu32 mode)
       expand_parachute();
 
       flight = Reefing;
-      log_transition(id_vigilant, svec(0).alt);
+      log_transition(id_vigilant, last);
     }
     else
     {
       release_parachute();
 
       flight = Descent;
-      log_transition(id_vigilant, svec(0).alt);
+      log_transition(id_vigilant, last);
 
       descent_initialize();
 
@@ -83,7 +90,7 @@ static inline void evaluate_altitude(fu32 mode)
       expand_parachute();
 
       flight = Reefing;
-      log_transition(id_vigilant, svec(0).alt);
+      log_transition(id_vigilant, last);
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
@@ -95,7 +102,7 @@ static inline void evaluate_altitude(fu32 mode)
     release_parachute();
     
     flight = Descent;
-    log_transition(id_vigilant, svec(0).alt);
+    log_transition(id_vigilant, last);
     
     descent_initialize();
   }

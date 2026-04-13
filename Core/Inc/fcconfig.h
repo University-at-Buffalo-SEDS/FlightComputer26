@@ -93,11 +93,14 @@
 #define DKF_GPS_TRUST	1.2f
 #define DKF_BARO_TRUST 0.05f
 
+#define VIGILANT_MAX_ALT 3657.6f
+#define VIGILANT_MIN_ALT 3.0f
+
 
 /* Recovery */
 
-#define TO_REINIT 20
-#define TO_ABORT  40
+#define TO_REINIT 40
+#define TO_ABORT  80
 
 #define SENSOR_REINIT_ATTEMPTS 3
 

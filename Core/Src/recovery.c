@@ -202,7 +202,7 @@ static inline void barometer_fallback(void)
 
   g_conf |= option(Monitor_Altitude);
   g_conf |= option(Validate_Measms);
-  log_msg(id "Entered vigilant mode");
+  log_msg(id "entered vigilant mode");
 }
 
 /*
@@ -216,7 +216,7 @@ static inline void eval_configure(bool focus)
   {
     g_conf &= ~option(Eval_Abort_Flag);
     tx_thread_resume(&evaluation_task);
-    log_msg(id "restored Evaluation");
+    log_msg(id "restored evaluation");
   }
 
   if (focus)

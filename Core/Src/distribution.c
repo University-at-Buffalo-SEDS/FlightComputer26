@@ -696,7 +696,7 @@ static inline void descent_cycle(fu32 conf)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      descent_update(sm.dt);
+      descent_update();
       st = CAN_EVALUATE;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -710,7 +710,7 @@ static inline void descent_cycle(fu32 conf)
       fetch_gps_data(&meas.gps))
   {
     distance_from_rail(&meas.gps);
-    descent_update(sm.dt);
+    descent_update();
 
     if (!(conf & option(Monitor_Altitude)))
     {
