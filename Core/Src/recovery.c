@@ -65,22 +65,22 @@ static inline void initialize_sensors(sens_init sn)
 
   clear_spi1_irq();
 
-  if (sn & Init_Baro)
+  if (sn & Baro_Mask)
   {
     try_init_sensor(baro_init(&hspi1, &baro_conf),
-                                fails, Init_Baro);
+                                fails, Baro_Mask);
   }
 
-  if (sn & Init_Gyro)
+  if (sn & Gyro_Mask)
   {
     try_init_sensor(gyro_init(&hspi1, &gyro_conf),
-                                fails, Init_Gyro);
+                                fails, Gyro_Mask);
   }
 
-  if (sn & Init_Accl)
+  if (sn & Accl_Mask)
   {
     try_init_sensor(accl_init(&hspi1, &accl_conf),
-                                fails, Init_Accl);
+                                fails, Accl_Mask);
   }
 
   restore_spi1_irq();
@@ -198,7 +198,7 @@ static inline void barometer_fallback(void)
     return;
   }
 
-  initialize_sensors(Init_Baro);
+  initialize_sensors(Baro_Mask);
 
   g_conf |= option(Monitor_Altitude);
   g_conf |= option(Validate_Measms);
@@ -242,12 +242,12 @@ static inline void manual_deployment(bool apogee)
 {
   if (apogee)
   {
-    flight = Descent;
+    sm.flight = Descent;
     release_parachute();
   }
   else if (expand_parachute())
   {
-    flight = Reefing;
+    sm.flight = Reefing;
   }
   else return;
 
@@ -265,7 +265,7 @@ static inline void manual_deployment(bool apogee)
  */
 static inline void enter_postinit(void)
 {
-  if (flight > Launch)
+  if (sm.flight > Launch)
   {
     log_err(id "rejected postinit mid-flight");
     return;
@@ -278,9 +278,9 @@ static inline void enter_postinit(void)
     return;
   }
 
-  if (++flight != Postinit)
+  if (++sm.flight != Postinit)
   {
-    flight = Postinit;
+    sm.flight = Postinit;
     log_err(id "unusual sequence at postinit");
   }
 
@@ -343,7 +343,7 @@ static inline void rollback(void)
   g_conf &= ~option(Postinit_Requested);
   g_conf &= ~option(Launch_Requested);
 
-  flight = Suspended;
+  sm.flight = Suspended;
 
   log_msg(id "rolled back to pre-init");
 }
@@ -373,10 +373,10 @@ static inline void process_action(fc_msg cmd)
       return initialize_sensors(Init_All);
 
     case Reinit_Barometer:
-      return initialize_sensors(Init_Baro);
+      return initialize_sensors(Baro_Mask);
 
     case Reinit_IMU:
-      return initialize_sensors(Init_Gyro | Init_Accl);
+      return initialize_sensors(Gyro_Mask | Accl_Mask);
 
     case Disable_IMU:
       return initialize_sensors(Shut_Gyro | Shut_Accl);
@@ -394,11 +394,11 @@ static inline void process_action(fc_msg cmd)
       return;
 
     case Advance_State:
-      satur_add(flight, 1, Landed);
+      satur_add(sm.flight, 1, Landed);
       break;
 
     case Rewind_State:
-      satur_sub(flight, 1, Suspended);
+      satur_sub(sm.flight, 1, Suspended);
       break;
 
     default: break;
@@ -498,7 +498,7 @@ static inline void process_report(fc_msg code)
 
     log_err(id "dirty data report: %u", (unsigned)code);
 
-    if (flight <= Apogee || (bad_baro && !maybe_gps))
+    if (sm.flight <= Apogee || (bad_baro && !maybe_gps))
     {
       ++smon.failures;
 
@@ -511,7 +511,7 @@ static inline void process_report(fc_msg code)
         /* Broad heuristic because Baro takes a while to init.
          */
         bad_baro ? initialize_sensors(Init_All)
-                 : initialize_sensors(Init_Gyro | Init_Accl);
+                 : initialize_sensors(Gyro_Mask | Accl_Mask);
       }
     }
   }

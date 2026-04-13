@@ -36,8 +36,7 @@
 
 #define CAN_EVALUATE UINT_FAST32_MAX
 
-#define IMU_ID (Sensor_Gyro | Sensor_Accl)
-#define ASCENT_PREDICT_DONE (fu8)(1u << 7)
+#define IMU_ID (Gyro_Mask | Accl_Mask)
 
 
 /* Kalman filter constants */
@@ -92,6 +91,7 @@
 
 #define FC_DEFAULTS ( (fc_msg) (0                   	  \
                     | option(Using_Ascent_KF)           \
+                    | option(Ascent_PrePred)            \
                     ) )
 
 

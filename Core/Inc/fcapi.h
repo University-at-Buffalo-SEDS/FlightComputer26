@@ -27,8 +27,8 @@ void descent_predict(const float);
 void descent_update(void);
 void descent_initialize(void);
 
-void ascent_predict(const float);
-void ascent_update(const float);
+void ascent_predict(const float, fu32 conf);
+void ascent_update(void);
 void ascent_initialize(void);
 
 void accel_to_quaternion(const f_xyz *);
@@ -36,14 +36,13 @@ void accel_to_quaternion(const f_xyz *);
 
 /* Evaluation */
 
-extern TX_SEMAPHORE eval_focus_mode;
+extern TX_EVENT_FLAGS_GROUP eval_stage;
 
 extern kf_svec sv[];
 extern sv_meta sm;
 extern measm meas;
 
 extern const char *trans[];
-extern volatile state flight;
 
 SedsResult on_fc_packet(const SedsPacketView *, void *);
 
@@ -55,9 +54,9 @@ log_transition(const char *task, float metric)
   char buf[MAX_REPORT_SIZE];
   
   snprintf(buf,
-           8 + sizeof(trans[flight]) + FLOAT_LOG_PRECISION,
+           8 + sizeof(trans[sm.flight]) + FLOAT_LOG_PRECISION,
            "%s%s %.*g\n",
-           task, trans[flight],
+           task, trans[sm.flight],
            FLOAT_LOG_PRECISION,
            metric);
 
@@ -121,9 +120,9 @@ static inline fu32 timer_fetch(timer u)
 
 static inline bool release_parachute(void)
 {
-  if (flight < Ascent)
+  if (sm.flight < Ascent)
   {
-    log_err("SE blocked deployment, state %u", flight);
+    log_err("SE blocked deployment, state %u", sm.flight);
     return false;
   }
 
@@ -137,9 +136,9 @@ static inline bool release_parachute(void)
 
 static inline bool expand_parachute(void)
 {
-  if (flight < Ascent)
+  if (sm.flight < Ascent)
   {
-    log_err("ND blocked expansion, state %u", flight);
+    log_err("ND blocked expansion, state %u", sm.flight);
     return false;
   }
   

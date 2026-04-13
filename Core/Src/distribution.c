@@ -584,100 +584,88 @@ static inline void post_initialization(void)
 /*
  * Data cycle for the Ascent filter: Update stage.
  */
-static inline void ascent_cycle_update(fu32 conf, fu8 *imu)
+static inline void ascupd(fu32 conf)
 {
   fu32 st;
+  baro baro_suspect;
 
-  if (!fetch_baro(&meas.baro))
+  if (!fetch_baro(&baro_suspect))
   {
     return;
   }
 
-  st = validate_baro(&meas.baro, conf);
+  st = validate_baro(&baro_suspect, conf);
 
   if (st != fc_mask(Sensor_Measm_Code))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
   }
+  else meas.baro = baro_suspect;
 
-  *imu &= ~ASCENT_PREDICT_DONE;
-  tx_semaphore_put(&eval_focus_mode);
-
-  log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
-
-  sweetbench_catch(8);
-
-  conf = fetch_and(&g_conf, ~option(Ascent_Finished), Rel);
+  tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
 
   if (conf & Eval_Focus_Flag)
   {
-    sweetbench_start(7, 10);
     tx_thread_relinquish();
-    sweetbench_catch(7);
   }
+
+  log_measm(SEDS_DT_BAROMETER_DATA, &baro_suspect);
+
+  sweetbench_catch(8);
 }
 
 /*
  * Data cycle for the Ascent filter: Predict stage.
  */
-static inline void ascent_cycle(fu32 conf, fu8 *imu)
+static inline void ascpred(fu32 conf, fu8 *imu)
 {
   fu32 st;
-  f_xyz suspect;
+  f_xyz suspect_gyro, suspect_accl;
 
   sweetbench_start(8);
 
-  if (fetch_gyro(&suspect))
+  if (fetch_gyro(&suspect_gyro))
   {
-    st = validate_gyro(&suspect, conf);
+    st = validate_gyro(&suspect_gyro, conf);
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      meas.gyro = suspect;
-      *imu |= Sensor_Gyro;
+      meas.gyro = suspect_gyro;
+      *imu |= Gyro_Mask;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
 
-  if (fetch_accl(&suspect))
+  if (fetch_accl(&suspect_accl))
   {
-    st = validate_accl(&suspect, conf);
+    st = validate_accl(&suspect_accl, conf);
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      meas.accl = suspect;
-      *imu |= Sensor_Accl;
+      meas.accl = suspect_gyro;
+      *imu |= Accl_Mask;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
 
-  if ((*imu & IMU_ID) != IMU_ID)
+  if (*imu != IMU_ID)
   {
-    if (*imu & ASCENT_PREDICT_DONE)
-    {
-      ascent_cycle_update(conf, imu);
-    }
-    else tx_thread_relinquish();
-
+    tx_thread_relinquish();
     return;
   }
-  else if (!(conf & option(Ascent_Finished)))
+
+  tx_event_flags_set(&eval_stage, Gyro_Mask | Accl_Mask, TX_OR);
+
+  if (conf & Eval_Focus_Flag)
   {
-    return;
+    tx_thread_relinquish();
   }
 
   *imu &= ~IMU_ID;
 
-  sm.dt = fsec(timer_exchange(AscentKF));
-
-  ascent_predict(sm.dt);
-  *imu |= ASCENT_PREDICT_DONE;
-
-  log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
-  log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
-
-  ascent_cycle_update(conf, imu);
+  log_measm(SEDS_DT_GYRO_DATA, &suspect_gyro);
+  log_measm(SEDS_DT_ACCEL_DATA, &suspect_accl);
 }
 
 /*
@@ -689,9 +677,9 @@ static inline void descent_cycle(fu32 conf)
 
   sweetbench_start(9);
 
-  sm.dt = fsec(timer_exchange(DescentKF));
+  const float dt = fsec(timer_exchange(DescentKF));
 
-  descent_predict(sm.dt);
+  descent_predict(dt);
 
   if (fetch_baro(&meas.baro))
   {
@@ -776,8 +764,12 @@ void distribution_entry(ULONG input)
     conf = load(&g_conf, Acq);
     check_rollback_request(conf);
 
-    conf & option(Using_Ascent_KF) ? ascent_cycle(conf, &imu)
-                                   : descent_cycle(conf);
+    if (conf & option(Using_Ascent_KF))
+    {
+      conf & option(Ascent_PrePred) ? ascpred(conf, &imu)
+                                    : ascupd(conf);
+    }
+    else descent_cycle(conf);
   }
 }
 

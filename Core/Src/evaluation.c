@@ -16,14 +16,12 @@
 
 
 TX_THREAD evaluation_task;
-TX_SEMAPHORE eval_focus_mode;
+TX_EVENT_FLAGS_GROUP eval_stage;
 
 tx_align char kfpool_buf[KF_POOL_SIZE];
 
 kf_svec sv[STATE_HISTORY] = {0};
-sv_meta sm = {0};
-
-volatile state flight = Suspended;
+sv_meta sm = {0, 0, Suspended};
 
 const char *trans[Flight_States] = {
     [Suspended] = " interval in streaming mode:",
@@ -52,8 +50,8 @@ static inline void evaluate_altitude(fu32 mode)
     last = meas.baro.alt;
   }
 
-  if (flight < Ascent || last > svec(1).alt
-                      || svec(1).alt > svec(2).alt)
+  if (sm.flight < Ascent || last > svec(1).alt
+                         || svec(1).alt > svec(2).alt)
   {
     if (mode & option(Consecutive_Samples) &&
         mode & option(Confirm_Altitude))
@@ -74,14 +72,14 @@ static inline void evaluate_altitude(fu32 mode)
     {
       expand_parachute();
 
-      flight = Reefing;
+      sm.flight = Reefing;
       log_transition(id_vigilant, last);
     }
     else
     {
       release_parachute();
 
-      flight = Descent;
+      sm.flight = Descent;
       log_transition(id_vigilant, last);
 
       descent_initialize();
@@ -89,7 +87,7 @@ static inline void evaluate_altitude(fu32 mode)
       tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
       expand_parachute();
 
-      flight = Reefing;
+      sm.flight = Reefing;
       log_transition(id_vigilant, last);
     }
   }
@@ -101,7 +99,7 @@ static inline void evaluate_altitude(fu32 mode)
   {
     release_parachute();
     
-    flight = Descent;
+    sm.flight = Descent;
     log_transition(id_vigilant, last);
     
     descent_initialize();
@@ -117,7 +115,7 @@ static inline void detect_launch(void)
   if (svec(0).vel >= LAUNCH_MIN_VEL &&
       meas.accl.z >= LAUNCH_MIN_VAX)
   {
-    flight = Launch;
+    sm.flight = Launch;
     log_transition(id, meas.accl.z);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
@@ -135,7 +133,7 @@ static inline void detect_ascent(fu32 mode)
   {
     if (++sm.samp >= MIN_SAMP_ASCENT)
     {
-      flight = Ascent;
+      sm.flight = Ascent;
       sm.samp = 0;
       log_transition(id, svec(0).vel);
     }
@@ -163,7 +161,7 @@ static inline void detect_burnout(fu32 mode)
   {
     if (++sm.samp >= MIN_SAMP_BURNOUT)
     {
-      flight = Burnout;
+      sm.flight = Burnout;
       sm.samp = 0;
       log_transition(id, svec(0).alt);
     }
@@ -187,7 +185,7 @@ static inline void detect_apogee(void)
       svec(1).vel < svec(2).vel &&
       svec(2).vel < svec(3).vel)
   {
-    flight = Apogee;
+    sm.flight = Apogee;
     log_transition(id, svec(0).alt);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -205,7 +203,7 @@ static inline void detect_descent(fu32 mode)
   {
     if (++sm.samp >= MIN_SAMP_DESCENT)
     {
-      flight = Descent;
+      sm.flight = Descent;
       sm.samp = 0;
       release_parachute();
       log_transition(id, svec(0).alt);
@@ -232,7 +230,7 @@ static inline void detect_reef(fu32 mode)
   {
     if (++sm.samp >= MIN_SAMP_REEF)
     {
-      flight = Reefing;
+      sm.flight = Reefing;
       sm.samp = 0;
       expand_parachute();
       log_transition(id, svec(0).alt);
@@ -259,7 +257,7 @@ static inline void detect_landed(fu32 mode)
   {
     if (++sm.samp >= MIN_SAMP_LANDED)
     {
-      flight = Landed;
+      sm.flight = Landed;
       log_msg(trans[Landed]);
 
       fc_msg cmd = fc_mask(Evaluation_Focus);
@@ -304,7 +302,7 @@ void evaluate_rocket_state(fu32 conf)
     evaluate_altitude(conf);
   }
 
-  switch (flight)
+  switch (sm.flight)
   {
   case Awaiting:
     detect_launch();
@@ -358,9 +356,9 @@ static inline void enter_flight_state(fu32 conf)
     ascent_initialize();
     log_msg(id "received launch signal");
 
-    if (++flight != Awaiting)
+    if (++sm.flight != Awaiting)
     {
-      flight = Awaiting;
+      sm.flight = Awaiting;
       log_err(id "unusual startup sequence");
     }
     
@@ -377,6 +375,7 @@ void evaluation_entry(ULONG input)
   (void)input;
 
   UINT st;
+  ULONG done;
 
   fu32 conf = load(&g_conf, Acq);
 
@@ -384,16 +383,31 @@ void evaluation_entry(ULONG input)
 
   task_loop (conf & option(Eval_Abort_Flag))
   {
-    st = tx_semaphore_get(&eval_focus_mode, TX_WAIT_FOREVER);
+    st = tx_event_flags_get(&eval_stage, Gyro_Mask | Accl_Mask,
+                            TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
 
     if (st != TX_SUCCESS)
     {
       continue;
     }
 
-    ascent_update(sm.dt);
+    const float dt = fsec(timer_exchange(AscentKF));
 
-    conf = fetch_or(&g_conf, option(Ascent_Finished), AcqRel);
+    conf = fetch_and(&g_conf, ~option(Ascent_PrePred), AcqRel);
+
+    ascent_predict(dt, conf);
+
+    getbaro: st = tx_event_flags_get(&eval_stage, Baro_Mask,
+                            TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
+
+    if (st != TX_SUCCESS)
+    {
+      goto getbaro;
+    }
+
+    ascent_update();
+
+    conf = fetch_or(&g_conf, option(Ascent_PrePred), AcqRel);
 
     evaluate_rocket_state(conf);
   }
@@ -432,11 +446,11 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_semaphore_create(&eval_focus_mode, id "S", 0);
+  st = tx_event_flags_create(&eval_stage, id "E");
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "sema %s %u", critical, st);
+    log_die(id "evflags %s %u", critical, st);
   }
 
   st = tx_byte_pool_create(&kfpool, id "P", &kfpool_buf, KF_POOL_SIZE);

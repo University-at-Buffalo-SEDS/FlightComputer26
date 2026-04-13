@@ -101,9 +101,9 @@ typedef enum flight_state : fu8 {
 } state;
 
 typedef struct state_metadata {
-  float dt;
   fu32 idx;
   fu16 samp;
+  volatile fu8 flight;
 } sv_meta;
 
 
@@ -202,7 +202,7 @@ typedef enum flight_message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 20),
   Graceful_Reset      = Runtime_Configuration | (1u << 21),
   Confirm_Altitude    = Runtime_Configuration | (1u << 22),
-  Ascent_Finished     = Runtime_Configuration | (1u << 23),
+  Ascent_PrePred      = Runtime_Configuration | (1u << 23),
   Using_Ascent_KF     = Runtime_Configuration | (1u << 24),
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 25),
 
@@ -236,15 +236,15 @@ typedef struct system_monitor {
 } sysmon;
 
 typedef enum sensor_init_mask : fu8 {
-  Init_Baro = (1u << 0),
-  Init_Gyro = (1u << 1),
-  Init_Accl = (1u << 2),
+  Baro_Mask = (1u << 0),
+  Gyro_Mask = (1u << 1),
+  Accl_Mask = (1u << 2),
 
   Shut_Baro = (1u << 4),
   Shut_Gyro = (1u << 5),
   Shut_Accl = (1u << 6),
 
-  Init_All = (Init_Baro | Init_Gyro | Init_Accl),
+  Init_All = (Baro_Mask | Gyro_Mask | Accl_Mask),
   Shut_All = (Shut_Baro | Shut_Gyro | Shut_Accl)
 } sens_init;
 

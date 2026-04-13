@@ -150,15 +150,6 @@ void accel_to_quaternion(const f_xyz *accl)
   euler_to_quat(&ang);
 }
 
-/*
- * Transforms state vector into sensor measurement. (??)
- */
-static inline void
-kf_measm(kf_svec *restrict vec, measm *restrict out)
-{
-
-}
-
 
 /*
  * Sets descent filter values in shared buffers.
@@ -336,7 +327,7 @@ void ascent_initialize(void)
  * Predict step of the Ascent filter.
  * Prerequisites: IMU.
  */
-void ascent_predict(const float dt)
+void ascent_predict(const float dt, fu32 conf)
 {
 
 }
@@ -345,7 +336,7 @@ void ascent_predict(const float dt)
  * Update step of the Ascent filter.
  * Prerequisites: Barometer.
  */
-void ascent_update(const float dt)
+void ascent_update(void)
 {
   sweetbench_start(3, 50, true);
 
