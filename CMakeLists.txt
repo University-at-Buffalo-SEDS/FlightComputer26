@@ -151,6 +151,7 @@ endif()
 
 option(MESSAGE_BATCHING "Handle batched messages"       OFF)
 option(TELEMETRY_COMPAT "Byte payload compatibility"    ON)
+option(PARALLEL_KF      "Predict does not wait Update"  OFF)
 option(EXTERNAL_GPS     "GPS board availability"        OFF)
 option(ONBOARD_SD       "On-board logger storage"       ON)
 option(FC_BENCH         "Project-wide benchmark"        OFF)
@@ -160,6 +161,7 @@ option(USB_ENUM         "Assume USB for IO functions"   OFF)
 
 message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
+message(STATUS "Parallel Kalman:        ${PARALLEL_KF}")
 message(STATUS "External GPS:           ${EXTERNAL_GPS}")
 message(STATUS "SD card:                ${ONBOARD_SD}")
 message(STATUS "Benchmarks:             ${FC_BENCH}")
@@ -173,6 +175,10 @@ endif()
 
 if (TELEMETRY_COMPAT)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_CMD_COMPAT)
+endif()
+
+if (PARALLEL_KF)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PARALLEL_PREDICT_UPDATE)
 endif()
 
 if (EXTERNAL_GPS)

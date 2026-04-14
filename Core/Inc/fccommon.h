@@ -6,6 +6,7 @@
 #define FC_COMMON
 
 #include "platform.h"
+#include "fctypes.h"
 #include "fcstructs.h"
 #include "fcconfig.h"
 
@@ -46,15 +47,19 @@
 
 #define NR_ITERATIONS 2
 
-#define EKF_STATE 9
-#define EKF_MEASM 7
 #define DKF_STATE 4
 #define DKF_MEASM 3
 
+#define EKF_STATE 6
+#define EKF_MEASM 6
+#define EKF_OMEGA 4
+
 #define DKF_STATE_SQ (DKF_STATE * DKF_STATE)
 #define DKF_MEASM_SQ (DKF_MEASM * DKF_MEASM)
+
 #define EKF_STATE_SQ (EKF_STATE * EKF_STATE)
 #define EKF_MEASM_SQ (EKF_MEASM * EKF_MEASM)
+#define EKF_OMEGA_SQ (EKF_OMEGA * EKF_OMEGA)
 
 #define DKF_ST_ME (DKF_STATE * DKF_MEASM)
 #define EKF_ST_ME (EKF_STATE * EKF_STATE)
@@ -66,17 +71,25 @@
 #define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 000000000)
 #define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 000000000)
 
-#define L maxd(EKF_STATE, DKF_STATE)
-#define M maxd(EKF_MEASM, DKF_MEASM)
+#define MAX_STATE maxd(EKF_STATE, DKF_STATE)
+#define MAX_MEASM maxd(EKF_MEASM, DKF_MEASM)
 
-/* TX reserves 2 pointers per block for metadata.
- * A KF function allocates 1 block and releases it.
- * No fragmentation, 4-alignment => ~ O(1) allocation.
- */
-#define KFP_OVERHEAD (2 * sizeof(size_t))
-
-#define KF_POOL_USED maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES, \
+#define LARGEST_POOL maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES, \
                           EKF_PREDICT_BYTES, EKF_UPDATE_BYTES)
+
+#ifdef PARALLEL_PREDICT_UPDATE
+
+#define KFP_OVERHEAD (4 * sizeof(size_t))
+
+#define KF_POOL_USED maxd(DKF_PREDICT_BYTES + DKF_UPDATE_BYTES, \
+                          EKF_PREDICT_BYTES + EKF_UPDATE_BYTES)
+
+#else
+
+#define KFP_OVERHEAD 0
+#define KF_POOL_USED LARGEST_POOL
+
+#endif /* PARALLEL_PREDICT_UPDATE */
 
 #define KF_POOL_SIZE (KF_POOL_USED + KFP_OVERHEAD)
 
@@ -176,6 +189,13 @@
     }                                     \
   } while (0)
 
-
+#define kf_clear_shared_buffers()            \
+  do {                                    \
+    memset(P_stacov, 0, sizeof P_stacov); \
+    memset(Q_procno, 0, sizeof Q_procno); \
+    memset(A_genpur, 0, sizeof A_genpur); \
+    memset(R_measno, 0, sizeof R_measno); \
+    memset(H_measjc, 0, sizeof H_measjc); \
+  } while (0)
 
 #endif /* FC_COMMON */

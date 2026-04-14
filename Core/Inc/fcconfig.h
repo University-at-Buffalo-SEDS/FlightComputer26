@@ -93,6 +93,8 @@
 #define DKF_GPS_TRUST	1.2f
 #define DKF_BARO_TRUST 0.05f
 
+#define EKF_BARO_VARIANCE 2.0f
+
 #define VIGILANT_MAX_ALT 3657.6f
 #define VIGILANT_MIN_ALT 3.0f
 

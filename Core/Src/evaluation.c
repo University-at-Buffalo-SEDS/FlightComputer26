@@ -453,12 +453,16 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     log_die(id "evflags %s %u", critical, st);
   }
 
+#ifdef PARALLEL_PREDICT_UPDATE
+
   st = tx_byte_pool_create(&kfpool, id "P", &kfpool_buf, KF_POOL_SIZE);
 
   if (st != TX_SUCCESS)
   {
     log_die(id "pool %s %u", critical, st);
   }
+
+#endif /* PARALLEL_PREDICT_UPDATE */
 
   return TX_SUCCESS;
 }

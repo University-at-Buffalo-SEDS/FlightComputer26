@@ -1,11 +1,10 @@
 /*
  * Kalman Filters
  *
- * This file includes implementations of:
- *   - Extended (ascent) Kalman filter,
- *	 - Regular (descent) Kalman filter,
- *   - Covariance initialization functions,
- *	 - Domain-specifc math functions.
+ * Regular (descent) KF
+ * Extended error state (ascent) KF
+ * Initialization functions
+ * Domain-specifc math helpers
  *
  * The entirety of logic in this file is executed within
  * the context of either Distribution or Evaluation task,
@@ -29,54 +28,78 @@
 #include "sweetbench.h"
 
 
+#ifdef PARALLEL_PREDICT_UPDATE
 TX_BYTE_POOL kfpool;
+#endif
 
 static quat qv = {0};
 
-static float P[L][L] = {0};
-static float Q[L][L] = {0};
-static float A[L][L] = {0};
-static float R[M][M] = {0};
-static float H[M][L] = {0};
+static float P_stacov[MAX_STATE][MAX_STATE] = {0};
+static float Q_procno[MAX_STATE][MAX_STATE] = {0};
+static float A_genpur[MAX_STATE][MAX_STATE] = {0};
+static float R_measno[MAX_MEASM][MAX_MEASM] = {0};
+static float H_measjc[MAX_MEASM][MAX_STATE] = {0};
 
-static matrix mxp = {0, 0, &P[0][0]};
-static matrix mxq = {0, 0, &Q[0][0]};
-static matrix mxa = {0, 0, &A[0][0]};
-static matrix mxr = {0, 0, &R[0][0]};
-static matrix mxh = {0, 0, &H[0][0]};
+static matrix g_mxp = {0, 0, &P_stacov[0][0]};
+static matrix g_mxq = {0, 0, &Q_procno[0][0]};
+static matrix g_mxa = {0, 0, &A_genpur[0][0]};
+static matrix g_mxr = {0, 0, &R_measno[0][0]};
+static matrix g_mxh = {0, 0, &H_measjc[0][0]};
 
 
 /*
- * KF-specific wrapper around TX heap manager.
+ * Fault-tolerant (fault-friendly) KF-specific wrapper
+ * around TX heap manager.
  */
-static float *_kfalloc(size_t size, bool user)
-{
-  assert(size != 0 && (size & (sizeof(float) - 1)) == 0);
-
-  UINT st;
-  void *ptr;
-
-  st = tx_byte_allocate(&kfpool, &ptr, size, TX_NO_WAIT);
-
-  if (st == TX_NO_MEMORY && user)
-  {
-    tx_byte_pool_delete(&kfpool);
-    tx_byte_pool_create(&kfpool, "EX P", kfpool_buf, KF_POOL_SIZE);
-    
-    _kfalloc(size, false);
-  }
-
-  return st == TX_SUCCESS ? ptr : kfpool_buf;
-}
-
 static inline float *kfalloc(size_t size)
 {
-  return _kfalloc(size, true);
+#ifdef PARALLEL_PREDICT_UPDATE
+  if (size == 0 || size > LARGEST_POOL)
+  {
+    size = LARGEST_POOL;
+  }
+
+  UINT st, old_pt;
+  void *ptr;
+
+  request: do
+  {
+    st = tx_byte_allocate(&kfpool, &ptr, size, TX_WAIT_FOREVER);
+  }
+  while (st == TX_WAIT_ABORTED);
+
+  if (st != TX_SUCCESS)
+  {
+    TX_THREAD *curr = tx_thread_identify();
+
+    if (!curr)
+    {
+      return NULL; /* Friendliness has its limits */
+    }
+
+    tx_thread_preemption_change(curr, 1, &old_pt);
+    tx_thread_relinquish();
+
+    goto request;
+  }
+
+  return (float *)ptr;
+
+#else
+  return (float *)kfpool_buf;
+
+#endif /* PARALLEL_PREDICT_UPDATE */
 }
 
 static inline void kffree(float *ptr)
 {
+#ifdef PARALLEL_PREDICT_UPDATE
   tx_byte_release((void *)ptr);
+
+#else
+  return;
+
+#endif /* PARALLEL_PREDICT_UPDATE */
 }
 
 
@@ -152,51 +175,54 @@ void accel_to_quaternion(const f_xyz *accl)
 
 
 /*
- * Sets descent filter values in shared buffers.
+ * In DKF, "A_genpur" will serve A (state transition).
  */
 void descent_initialize(void)
 {
-  memset(P, 0, sizeof P);
-  memset(Q, 0, sizeof Q);
-  memset(A, 0, sizeof A);
-  memset(R, 0, sizeof R);
-  memset(H, 0, sizeof H);
+  kf_clear_shared_buffers();
 
   for (fu8 i = 0; i < DKF_MEASM; ++i)
   {
-    A[i][i] = H[i][i] = 1.0f;
+    H_measjc[i][i] = 1.0f;
+  }
+  for (fu8 i = 0; i < DKF_STATE; ++i)
+  {
+    A_genpur[i][i] = 1.0f;
   }
 
-  A[DKF_STATE - 1][DKF_STATE - 1] = 1.0f;
-  Q[0][0] = Q[1][1] = TOLERANCE;
-  Q[2][2] = Q[3][3] = DKF_TOLER;
-  R[0][0] = R[1][1] = DKF_GPS_TRUST;
-  R[2][2] = DKF_BARO_TRUST;
+  Q_procno[0][0] = Q_procno[1][1] = TOLERANCE;
+  Q_procno[2][2] = Q_procno[3][3] = DKF_TOLER;
+  R_measno[0][0] = R_measno[1][1] = DKF_GPS_TRUST;
+  R_measno[2][2] = DKF_BARO_TRUST;
 
-  mxp.numRows = mxp.numCols = DKF_STATE;
-  mxq.numRows = mxq.numCols = DKF_STATE;
-  mxa.numCols = mxa.numRows = DKF_STATE;
-  mxr.numCols = mxr.numRows = DKF_MEASM;
-  mxh.numRows = DKF_MEASM;
-  mxh.numCols = DKF_STATE;
+  g_mxp.numRows = g_mxp.numCols = DKF_STATE;
+  g_mxq.numRows = g_mxq.numCols = DKF_STATE;
+  g_mxa.numCols = g_mxa.numRows = DKF_STATE;
+  g_mxr.numCols = g_mxr.numRows = DKF_MEASM;
+  g_mxh.numRows = DKF_MEASM;
+  g_mxh.numCols = DKF_STATE;
 
   irq_off(Gyro_EXTI_1);
 /*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
   irq_off(Accl_EXTI_1);
 /*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
 
+  fu32 conf = load(&g_conf, Acq);
   fc_msg toggle = Using_Ascent_KF;
 
-  if (load(&g_conf, Acq) & option(Defer_Baro_Fallback))
+  if (conf & option(Defer_Baro_Fallback))
   {
     toggle |= Defer_Baro_Fallback;
-    fetch_or(&g_conf, option(Monitor_Altitude | Validate_Measms), Rlx);
+    conf = Monitor_Altitude | Validate_Measms;
+
+    fetch_or(&g_conf, option(conf), Rlx);
 
     fc_msg cmd = fc_mask(Reinit_Barometer);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
 
   timer_update(DescentKF);
+
   fetch_and(&g_conf, ~option(toggle), Rel);
 }
 
@@ -206,7 +232,7 @@ void descent_initialize(void)
  */
 void descent_predict(const float dt)
 {
-  A[DKF_STATE -  1][DKF_MEASM - 1] = dt;
+  A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
 
   matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
 
@@ -218,22 +244,21 @@ void descent_predict(const float dt)
   matrix mxap = {DKF_STATE, DKF_STATE, mxat.pData + DKF_STATE_SQ};
   matrix mxfi = {DKF_STATE, DKF_STATE, mxap.pData + DKF_STATE_SQ};
 
-	matrix_mul(&mxa, &mxat, &presv);
+	matrix_mul(&g_mxa, &mxat, &presv);
   
   mxat.numCols = DKF_STATE;
-  mtranspose(&mxa, &mxat);
+  mtranspose(&g_mxa, &mxat);
 
-  matrix_mul(&mxa, &presv, &mxap);
+  matrix_mul(&g_mxa, &presv, &mxap);
   matrix_mul(&mxap, &mxat, &mxfi);
-  matrix_add(&mxfi, &mxq, &mxp);
+  matrix_add(&mxfi, &g_mxq, &g_mxp);
 
   kffree(mk);
 }
 
 /*
- * This function partitions allocated buffer into blocks,
- * then reuses them, merging when recessary. If names and
- * transitions (->) don't make sense, refer to MATLAB code.
+ * Note: allocated buffer is partitioned into blocks,
+ * which are coalesced when necessary to hold bigger data.
  * Prerequisites: Barometer or GPS.
  */
 void descent_update(void)
@@ -247,17 +272,17 @@ void descent_update(void)
   float *mk = kfalloc(DKF_UPDATE_BYTES);
 
   matrix mxht   = {DKF_STATE, DKF_MEASM, mk};
-  matrix mxhp   = {DKF_MEASM, DKF_STATE, mk + DKF_ST_ME};
+  matrix mxhp   = {DKF_MEASM, DKF_STATE, mxht.pData + DKF_ST_ME};
   matrix mxhpht = {DKF_MEASM, DKF_MEASM, mxhp.pData + DKF_ST_ME};
   matrix mxs    = {DKF_MEASM, DKF_MEASM, mxhpht.pData + DKF_MEASM_SQ};
   matrix mxpht  = {DKF_MEASM, DKF_STATE, mxs.pData + DKF_MEASM_SQ};
 
-  mtranspose(&mxh, &mxht);
-  matrix_mul(&mxh, &mxp, &mxhp);
+  mtranspose(&g_mxh, &mxht);
+  matrix_mul(&g_mxh, &g_mxp, &mxhp);
   matrix_mul(&mxhp, &mxht, &mxhpht);
-  matrix_add(&mxhpht, &mxr, &mxs);
+  matrix_add(&mxhpht, &g_mxr, &mxs);
   matrix_inv(&mxs, &mxhpht);
-  matrix_mul(&mxp, &mxht, &mxpht);
+  matrix_mul(&g_mxp, &mxht, &mxpht);
   matrix_mul(&mxpht, &mxhpht, &mxht);
 
   /* mxht -> "mxk"; mxs -> "mxhx"; mxhpht -> "mxzhx";
@@ -267,7 +292,7 @@ void descent_update(void)
   mxs.numCols = mxhp.numCols = 1;
   mxhp.numRows = DKF_STATE;
 
-  matrix_mul(&mxh, &presv, &mxs);
+  matrix_mul(&g_mxh, &presv, &mxs);
   matrix_sub(&measm, &mxs, &mxhpht);
   matrix_mul(&mxht, &mxhpht, &mxhp);
   matrix_add(&presv, &mxhp, &cursv);
@@ -279,11 +304,11 @@ void descent_update(void)
   mxhp.numRows = mxhp.numCols = DKF_STATE;
   mxs.numRows = mxs.numCols = DKF_STATE;
 
-  matrix_mul(&mxht, &mxh, &mxhp);
-  matrix_mul(&mxhp, &mxp, &mxs);
-  matrix_sub(&mxp, &mxs, &mxhp);
+  matrix_mul(&mxht, &g_mxh, &mxhp);
+  matrix_mul(&mxhp, &g_mxp, &mxs);
+  matrix_sub(&g_mxp, &mxs, &mxhp);
 
-  memcpy(P, mxhp.pData, DKF_STATE_SQ);
+  memcpy(P_stacov, mxhp.pData, DKF_STATE_SQ);
 
   kffree(mk);
 
@@ -291,35 +316,44 @@ void descent_update(void)
 }
 
 
-/*
- * Sets ascent filter values in shared buffers.
+/* 
+ * In EKF, "R_measno" will serve F (transition Jacobian),
+ * "A_genpur" will serve Omega (quaternion propagation).
  */
 void ascent_initialize(void) 
 {
-  memset(P, 0, sizeof P);
-  memset(Q, 0, sizeof Q);
-  memset(A, 0, sizeof A);
-  memset(R, 0, sizeof R);
-  memset(H, 0, sizeof H);
+  kf_clear_shared_buffers();
 
-  // TODO
+  for (fu8 i = 0; i < EKF_STATE; ++i)
+  {
+    R_measno[i][i] = 1.0f;
+  }
 
-  mxp.numRows = mxp.numCols = EKF_STATE;
-  mxq.numRows = mxq.numCols = EKF_STATE;
-  mxa.numCols = mxa.numRows = EKF_STATE;
-  mxr.numCols = mxr.numRows = EKF_MEASM;
-  mxh.numRows = EKF_MEASM;
-  mxh.numCols = EKF_STATE;
+  H_measjc[0][0] = 1.0f;
+
+  Q_procno[0][0] = 1e-5f;
+  Q_procno[1][1] = 1e-4f;
+  Q_procno[2][2] = 1e-7f;
+  Q_procno[3][3] = Q_procno[4][4] = Q_procno[5][5] = 1e-10f;
+
+  g_mxp.numRows = g_mxp.numCols = EKF_STATE;
+  g_mxq.numRows = g_mxq.numCols = EKF_STATE;
+  g_mxa.numCols = g_mxa.numRows = EKF_OMEGA;
+  g_mxr.numCols = g_mxr.numRows = EKF_STATE;
+  g_mxh.numRows = EKF_STATE;
+  g_mxh.numCols = 1;
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
-    /* Switched to Ascent mid-flight or user messed with FC_DEFAULTS.
-     */
+    /* Switched to Ascent mid-flight or user messed with
+     * FC_DEFAULTS. */
+
     fc_msg cmd = fc_mask(Reinit_IMU);
     tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
 
   timer_update(AscentKF);
+
   fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
 
@@ -329,7 +363,9 @@ void ascent_initialize(void)
  */
 void ascent_predict(const float dt, fu32 conf)
 {
+  sweetbench_start(3, 50, true);
 
+  sweetbench_catch(3);
 }
 
 /*
@@ -338,7 +374,5 @@ void ascent_predict(const float dt, fu32 conf)
  */
 void ascent_update(void)
 {
-  sweetbench_start(3, 50, true);
 
-  sweetbench_catch(3);
 }

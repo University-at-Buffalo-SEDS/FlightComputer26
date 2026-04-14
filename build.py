@@ -43,6 +43,10 @@ OPTIONS:
         batching        - handle potentially several batched messages in
                         - handler (note to self: reimplement if used)
 
+        parallelkf      - enables parallel predict/update support inside
+                        - the allocator wrapper. this is not yet implemented
+                        - in distribution/evaluation chains (planned 2027)
+
         configure       - configure specified preset with given options,
                         - but do not build the project
 
@@ -101,7 +105,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "bench",
                         "userflags",
                         "sensortest",
-                        "nousb"
+                        "nousb",
+                        "parallelkf"
                 }
 
 # Repo constants
@@ -167,8 +172,8 @@ def configure(buildir: Path, preset: str, options: dict):
         buildir.mkdir(parents=True, exist_ok=True)
 
         # Defaults for IREC 2026 (except compilation flags)
-        # Debug preset will forcefully disable telemetry, and
-        # things that depend on it.
+        # Debug preset will forcefully disable telemetry
+        # and things that depend on it.
         batch           = "-DMESSAGE_BATCHING=OFF"
         telem           = "-DENABLE_TELEMETRY=OFF"
         compat          = "-DTELEMETRY_COMPAT=ON"
@@ -178,6 +183,7 @@ def configure(buildir: Path, preset: str, options: dict):
         flags           = "-DCUSTOM_FLAGS=OFF"
         sensortest      = "-DSENSOR_TESTS=OFF"
         usb             = "-DUSB_ENUM=ON"
+        parkf           = "-DPARALLEL_KF=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -199,6 +205,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["batching"]:
                 batch  = "-DMESSAGE_BATCHING=ON"
 
+        if options["parallelkf"]:
+                parkf = "-DPARALLEL_KF=ON"
+
         if options["bench"]:
                 bench = "-DFC_BENCH=ON"
 
@@ -219,6 +228,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 flags,
                 sensortest,
                 usb,
+                parkf,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",
