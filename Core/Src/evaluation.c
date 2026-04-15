@@ -391,19 +391,18 @@ void evaluation_entry(ULONG input)
       continue;
     }
 
-    const float dt = fsec(timer_exchange(AscentKF));
-
     conf = fetch_and(&g_conf, ~option(Ascent_PrePred), AcqRel);
+
+    const float dt = fsec(timer_exchange(AscentKF));
 
     ascent_predict(dt, conf);
 
-    getbaro: st = tx_event_flags_get(&eval_stage, Baro_Mask,
-                            TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
-
-    if (st != TX_SUCCESS)
+    do
     {
-      goto getbaro;
+      st = tx_event_flags_get(&eval_stage, Baro_Mask,
+                              TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
     }
+    while (st != TX_SUCCESS);
 
     ascent_update();
 

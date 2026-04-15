@@ -47,7 +47,6 @@ static const conf_dict confmap[] = {
   { Monitor_Altitude,    "vigilant-mode" },
   { Consecutive_Samples, "consectuive-samples" },
   { Eval_Focus_Flag,     "eval-focus" },
-  { Eval_Abort_Flag,     "eval-abort" },
   { Reset_Failures,      "reset-failures" },
   { Validate_Measms,     "validate-measms" },
 };
@@ -271,9 +270,8 @@ static inline void enter_postinit(void)
     return;
   }
 
-  if (!(g_conf & option(Confirm_Postinit)))
+  if (timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
   {
-    g_conf |= option(Confirm_Postinit);
     log_msg(id "please confirm postinit");
     return;
   }
@@ -292,9 +290,8 @@ static inline void enter_postinit(void)
  */
 static inline void enter_launch(void)
 {
-  if (!(g_conf & option(Confirm_Launch)))
+  if (timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
   {
-    g_conf |= option(Confirm_Launch);
     log_msg(id "please confirm launch");
     return;
   }
@@ -314,7 +311,6 @@ static inline void enter_launch(void)
     smon.gps_malform = 0;
   }
 
-  g_conf &= ~option(Confirm_Launch);
   g_conf &= ~option(Eval_Abort_Flag);
 
   tx_thread_resume(&evaluation_task);
@@ -327,14 +323,13 @@ static inline void enter_launch(void)
  */
 static inline void rollback(void)
 {
-  if (!(g_conf & option(Confirm_Rollback)))
+  if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
   {
     if (g_conf & option(Launch_Requested))
     {
       log_err(id "looks like we're flying. ARE YOU SURE?");
     }
 
-    g_conf |= option(Confirm_Rollback);
     log_msg(id "please confirm rollback");
     return;
   }

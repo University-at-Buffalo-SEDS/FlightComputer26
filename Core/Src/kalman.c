@@ -339,7 +339,7 @@ void ascent_initialize(void)
   g_mxp.numRows = g_mxp.numCols = EKF_STATE;
   g_mxq.numRows = g_mxq.numCols = EKF_STATE;
   g_mxa.numCols = g_mxa.numRows = EKF_OMEGA;
-  g_mxr.numCols = g_mxr.numRows = EKF_STATE;
+  g_mxr.numCols = g_mxr.numRows = EKF_MEASM;
   g_mxh.numRows = EKF_STATE;
   g_mxh.numCols = 1;
 
@@ -364,6 +364,32 @@ void ascent_initialize(void)
 void ascent_predict(const float dt, fu32 conf)
 {
   sweetbench_start(3, 50, true);
+
+  f_xyz w = meas.gyro;
+
+  w.x -= svec(1).bias.gx;
+  w.y -= svec(1).bias.gy;
+  w.z -= svec(1).bias.gz;
+
+  A_genpur[0][1] = A_genpur[3][2] = -w.x;
+  A_genpur[1][0] = A_genpur[2][3] = w.x;
+  A_genpur[0][2] = A_genpur[1][3] = -w.y;
+  A_genpur[2][0] = A_genpur[3][1] = w.y;
+  A_genpur[2][1] = A_genpur[0][3] = -w.z;
+  A_genpur[1][2] = A_genpur[3][0] = w.z;
+
+  float *mk = kfalloc(EKF_PREDICT_BYTES);
+
+
+
+  svec(0).alt = svec(1).alt + dt * svec(1).vel;
+
+  if (conf & option(Launch_Requested))
+  {
+    // ???
+  }
+
+  kffree(mk);
 
   sweetbench_catch(3);
 }
