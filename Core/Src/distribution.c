@@ -22,6 +22,8 @@ TX_THREAD distribution_task;
 
 measm meas = {0};
 
+atomic_uint_fast8_t meas_locks[Sensors - 1] = {0};
+
 #ifdef GPS_AVAILABLE
 
 static kf_gps rail = {0};
@@ -542,6 +544,9 @@ static inline void post_initialization(void)
   float acc_gps = 0.0f;
   fu32 ctr_gps = 0, ctr_accl = 0;
 
+  fc_msg cmd = option(Reinit_IMU);
+  tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+
   fu32 st, conf = load(&g_conf, Acq);
 
   timer_update(Auxiliary);
@@ -620,6 +625,8 @@ static inline void ascupd(fu32 conf)
  */
 static inline void ascpred(fu32 conf, fu8 *imu)
 {
+  static f_xyz accum_gyro, accum_accl;
+
   fu32 st;
   f_xyz suspect_gyro, suspect_accl;
 
@@ -631,7 +638,7 @@ static inline void ascpred(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      meas.gyro = suspect_gyro;
+      accum_gyro = suspect_gyro;
       *imu |= Gyro_Mask;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -643,7 +650,7 @@ static inline void ascpred(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      meas.accl = suspect_gyro;
+      accum_accl = suspect_gyro;
       *imu |= Accl_Mask;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
@@ -655,9 +662,24 @@ static inline void ascpred(fu32 conf, fu8 *imu)
     return;
   }
 
+  if (!(conf & option(Eval_Focus_Flag)))
+  {
+    fc_lock(&meas_locks[0]);
+
+    meas.gyro = accum_gyro;
+    meas.accl = accum_accl;
+
+    fc_unlock(&meas_locks[0]);
+  }
+  else
+  {
+    meas.gyro = accum_gyro;
+    meas.accl = accum_accl;
+  }
+
   tx_event_flags_set(&eval_stage, Gyro_Mask | Accl_Mask, TX_OR);
 
-  if (conf & Eval_Focus_Flag)
+  if (conf & option(Eval_Focus_Flag))
   {
     tx_thread_relinquish();
   }

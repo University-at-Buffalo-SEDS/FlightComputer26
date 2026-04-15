@@ -79,6 +79,8 @@ typedef arm_matrix_instance_f32 matrix;
 #define matrix_add		arm_mat_add_f32
 #define matrix_sub    arm_mat_sub_f32
 #define matrix_inv    arm_mat_inverse_f32
+#define matrix_scl    arm_mat_scale_f32
+#define matvec_mul    arm_mat_vec_mult_f32
 
 
 /* Misc utilities */

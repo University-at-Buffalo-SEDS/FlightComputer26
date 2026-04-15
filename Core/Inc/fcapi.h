@@ -24,7 +24,9 @@ bool fetch_accl(f_xyz *);
 extern TX_BYTE_POOL kfpool;
 #endif
 
-extern char kfpool_buf[];
+extern void *kfpool_buf;
+
+extern atomic_uint_fast8_t meas_locks[];
 
 void descent_predict(const float);
 void descent_update(void);
@@ -157,6 +159,30 @@ static inline bool expand_parachute(void)
   fetch_or(&g_conf, option(Parachute_Expanded | REEF_Asserted), Rel);
 
   return true;
+}
+
+
+/* Spinlock */
+
+static inline void fc_lock(atomic_uint_fast8_t *object)
+{
+  fu8 unlocked = 0;
+
+  /* Spinlock with immediate context switch? What the fuck?
+   * In our case this makes sense because critical sections
+   * are too tiny to use blocking primitives and regular spinlock
+   * wouldn't concede the only physical core to a contender thread.
+   */
+  while (!cas_strong(object, &unlocked, 1, Acq, Rlx))
+  {
+    unlocked = 0;
+    tx_thread_relinquish();
+  }
+}
+
+static inline void fc_unlock(atomic_uint_fast8_t *object)
+{
+  store(object, 0, Rel);
 }
 
 

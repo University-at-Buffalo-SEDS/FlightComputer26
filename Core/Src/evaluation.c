@@ -18,7 +18,7 @@
 TX_THREAD evaluation_task;
 TX_EVENT_FLAGS_GROUP eval_stage;
 
-tx_align char kfpool_buf[KF_POOL_SIZE];
+void tx_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {0, 0, Suspended};
@@ -452,9 +452,16 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     log_die(id "evflags %s %u", critical, st);
   }
 
+  kfpool_buf = _sbrk(KF_POOL_SIZE);
+
+  if (kfpool_buf == (void *)-1)
+  {
+    log_die(id "poolbuf %s %u", critical, st);
+  }
+
 #ifdef PARALLEL_PREDICT_UPDATE
 
-  st = tx_byte_pool_create(&kfpool, id "P", &kfpool_buf, KF_POOL_SIZE);
+  st = tx_byte_pool_create(&kfpool, id "P", kfpool_buf, KF_POOL_SIZE);
 
   if (st != TX_SUCCESS)
   {

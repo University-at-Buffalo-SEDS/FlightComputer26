@@ -44,33 +44,11 @@ static volatile uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
 
 static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
-static atomic_uint_fast8_t locks[Sensors] = {0};
+static atomic_uint_fast8_t dma_locks[Sensors] = {0};
 
 static dmasel select = {Sensors, 0};
 
 static fdma flags = {0, 0};
-
-
-static inline void lock(sens k)
-{
-  fu8 unlocked = 0;
-
-  /* Spinlock with immediate context switch? What the fuck?
-   * In our case this makes sense because critical sections
-   * are too tiny to use blocking primitives and regular spinlock
-   * wouldn't concede the only physical core to a contender thread.
-   */
-  while (!cas_strong(&locks[k], &unlocked, 1, Acq, Rlx))
-  {
-    unlocked = 0;
-    tx_thread_relinquish();
-  }
-}
-
-static inline void unlock(sens k)
-{
-  store(&locks[k], 0, Rel);
-}
 
 
 /*
@@ -88,7 +66,7 @@ bool fetch_baro(baro *buf)
 
   sweetbench_catch(0);
 
-  lock(Sensor_Baro);
+  fc_lock(&dma_locks[Sensor_Baro]);
 
   pres = U24(taskrx[Sensor_Baro][0],
              taskrx[Sensor_Baro][1],
@@ -98,7 +76,7 @@ bool fetch_baro(baro *buf)
              taskrx[Sensor_Baro][4],
              taskrx[Sensor_Baro][5]);
 
-  unlock(Sensor_Baro);
+  fc_unlock(&dma_locks[Sensor_Baro]);
 
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
@@ -124,13 +102,13 @@ bool fetch_gyro(f_xyz *buf)
 
   sweetbench_catch(1);
 
-  lock(Sensor_Gyro);
+  fc_lock(&dma_locks[Sensor_Gyro]);
 
   gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
   gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
   gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
   
-  unlock(Sensor_Gyro);
+  fc_unlock(&dma_locks[Sensor_Gyro]);
 
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
@@ -156,13 +134,13 @@ bool fetch_accl(f_xyz *buf)
 
   sweetbench_catch(2);
 
-  lock(Sensor_Accl);
+  fc_lock(&dma_locks[Sensor_Accl]);
 
   ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
   ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
   az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
   
-  unlock(Sensor_Accl);
+  fc_unlock(&dma_locks[Sensor_Accl]);
 
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
@@ -211,13 +189,13 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
  */
 static inline void propagate_rx(void)
 {
-  lock(select.next);
+  fc_lock(&dma_locks[select.next]);
 
   memcpy(taskrx[select.next],
          (uint8_t *)(dmarx + gpio.offset[select.next]),
          sizeof taskrx / 3);
 
-  unlock(select.next);
+  fc_unlock(&dma_locks[select.next]);
 
   /* Relevance flags use the same EXTI pin masks. */
   (void) fetch_or(&flags.relv, gpio.drdy[select.next], Rel);

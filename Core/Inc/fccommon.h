@@ -5,9 +5,7 @@
 #ifndef FC_COMMON
 #define FC_COMMON
 
-#include "platform.h"
 #include "fctypes.h"
-#include "fcstructs.h"
 #include "fcconfig.h"
 
 
@@ -153,49 +151,49 @@
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 
-#define check_rollback_request(k)         \
-  do {                                    \
-    if ((k) & option(Rollback_Requested)) \
-    {                                     \
-      return;                             \
-    }                                     \
+#define check_rollback_request(k)             \
+  do {                                        \
+    if ((k) & option(Rollback_Requested))     \
+    {                                         \
+      return;                                 \
+    }                                         \
   } while (0)
 
-#define satur_add(_n, _i, _th)            \
-  do {                                    \
-    if ((_n) + (_i) <= (_th))             \
-    {                                     \
-      (_n) += (_i);                       \
-    }                                     \
+#define satur_add(_n, _i, _th)                \
+  do {                                        \
+    if ((_n) + (_i) <= (_th))                 \
+    {                                         \
+      (_n) += (_i);                           \
+    }                                         \
   } while (0)
 
-#define satur_sub(_n, _i, _th)            \
-  do {                                    \
-    if ((_n) - (_i) >= (_th))             \
-    {                                     \
-      (_n) -= (_i);                       \
-    }                                     \
+#define satur_sub(_n, _i, _th)                \
+  do {                                        \
+    if ((_n) - (_i) >= (_th))                 \
+    {                                         \
+      (_n) -= (_i);                           \
+    }                                         \
   } while (0)
 
-#define try_init_sensor(_fn, _ctr, _sn)   \
-  do {                                    \
-    fu8 k = 0;                            \
-    for (; k < SENSOR_REINIT_ATTEMPTS &&  \
-           (_fn) != HAL_OK; ++k)          \
-           ;                              \
-    if (k >= SENSOR_REINIT_ATTEMPTS)      \
-    {                                     \
-      (_ctr) += (_sn);                    \
-    }                                     \
+#define try_init_sensor(_fn, _ctr, _sn)       \
+  do {                                        \
+    fu8 k = 0;                                \
+    for (; k < SENSOR_REINIT_ATTEMPTS &&      \
+           (_fn) != HAL_OK; ++k)              \
+           ;                                  \
+    if (k >= SENSOR_REINIT_ATTEMPTS)          \
+    {                                         \
+      (_ctr) += (_sn);                        \
+    }                                         \
   } while (0)
 
-#define kf_clear_shared_buffers()            \
-  do {                                    \
-    memset(P_stacov, 0, sizeof P_stacov); \
-    memset(Q_procno, 0, sizeof Q_procno); \
-    memset(A_genpur, 0, sizeof A_genpur); \
-    memset(R_measno, 0, sizeof R_measno); \
-    memset(H_measjc, 0, sizeof H_measjc); \
+#define kf_clear_shared_buffers()                   \
+  do {                                              \
+    memset(kf.P_stacov, 0, sizeof kf.P_stacov);     \
+    memset(kf.Q_procno, 0, sizeof kf.Q_procno);     \
+    memset(kf.A_genpur, 0, sizeof kf.A_genpur);     \
+    memset(kf.R_measno, 0, sizeof kf.R_measno);     \
+    memset(kf.H_measjc, 0, sizeof kf.H_measjc);     \
   } while (0)
 
 #endif /* FC_COMMON */

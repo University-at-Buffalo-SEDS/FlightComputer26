@@ -6,6 +6,7 @@
 #define FC_DATA_STRUCTURES
 
 #include "fctypes.h"
+#include "fccommon.h"
 
 
 /* Kalman filter */
@@ -51,6 +52,19 @@ typedef union newton_raphson_bithack {
 typedef struct serial euler_angles {
   float phi, theta, psi;
 } eul;
+
+typedef struct kf_shared_buf_locality {
+  matrix mxp;
+  float P_stacov[MAX_STATE][MAX_STATE];
+  matrix mxq;
+  float Q_procno[MAX_STATE][MAX_STATE];
+  matrix mxa;
+  float A_genpur[MAX_STATE][MAX_STATE];
+  matrix mxr;
+  float R_measno[MAX_MEASM][MAX_MEASM];
+  matrix mxh;
+  float H_measjc[MAX_MEASM][MAX_STATE];
+} kf_buf;
 
 static_assert(sizeof(f_xyz) == sizeof(kf_gps), "SV views");
 

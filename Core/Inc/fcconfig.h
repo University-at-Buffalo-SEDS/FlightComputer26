@@ -68,6 +68,8 @@
 #define LAUNCH_MIN_VEL  8.0f
 #define LAUNCH_MIN_VAX  10.0f
 
+#define AZ_DIV_THRES (GRAVITY_SI * 3.0f)
+
 #define BURNOUT_MIN_VEL 12.0f
 #define BURNOUT_MAX_VAX -3.0f
 

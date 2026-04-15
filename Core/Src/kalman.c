@@ -34,17 +34,13 @@ TX_BYTE_POOL kfpool;
 
 static quat qv = {0};
 
-static float P_stacov[MAX_STATE][MAX_STATE] = {0};
-static float Q_procno[MAX_STATE][MAX_STATE] = {0};
-static float A_genpur[MAX_STATE][MAX_STATE] = {0};
-static float R_measno[MAX_MEASM][MAX_MEASM] = {0};
-static float H_measjc[MAX_MEASM][MAX_STATE] = {0};
-
-static matrix g_mxp = {0, 0, &P_stacov[0][0]};
-static matrix g_mxq = {0, 0, &Q_procno[0][0]};
-static matrix g_mxa = {0, 0, &A_genpur[0][0]};
-static matrix g_mxr = {0, 0, &R_measno[0][0]};
-static matrix g_mxh = {0, 0, &H_measjc[0][0]};
+static kf_buf kf = {
+  {0, 0, &kf.P_stacov[0][0]}, {0},
+  {0, 0, &kf.Q_procno[0][0]}, {0},
+  {0, 0, &kf.A_genpur[0][0]}, {0},
+  {0, 0, &kf.R_measno[0][0]}, {0},
+  {0, 0, &kf.H_measjc[0][0]}, {0}
+};
 
 
 /*
@@ -173,6 +169,14 @@ void accel_to_quaternion(const f_xyz *accl)
   euler_to_quat(&ang);
 }
 
+/*
+ * Calculate offset from previous heap-allocated matrix.
+ */
+static inline constexpr float *mxoff(const matrix *prev)
+{
+  return prev->pData + prev->numRows * prev->numCols;
+}
+
 
 /*
  * In DKF, "A_genpur" will serve A (state transition).
@@ -183,24 +187,24 @@ void descent_initialize(void)
 
   for (fu8 i = 0; i < DKF_MEASM; ++i)
   {
-    H_measjc[i][i] = 1.0f;
+    kf.H_measjc[i][i] = 1.0f;
   }
   for (fu8 i = 0; i < DKF_STATE; ++i)
   {
-    A_genpur[i][i] = 1.0f;
+    kf.A_genpur[i][i] = 1.0f;
   }
 
-  Q_procno[0][0] = Q_procno[1][1] = TOLERANCE;
-  Q_procno[2][2] = Q_procno[3][3] = DKF_TOLER;
-  R_measno[0][0] = R_measno[1][1] = DKF_GPS_TRUST;
-  R_measno[2][2] = DKF_BARO_TRUST;
+  kf.Q_procno[0][0] = kf.Q_procno[1][1] = TOLERANCE;
+  kf.Q_procno[2][2] = kf.Q_procno[3][3] = DKF_TOLER;
+  kf.R_measno[0][0] = kf.R_measno[1][1] = DKF_GPS_TRUST;
+  kf.R_measno[2][2] = DKF_BARO_TRUST;
 
-  g_mxp.numRows = g_mxp.numCols = DKF_STATE;
-  g_mxq.numRows = g_mxq.numCols = DKF_STATE;
-  g_mxa.numCols = g_mxa.numRows = DKF_STATE;
-  g_mxr.numCols = g_mxr.numRows = DKF_MEASM;
-  g_mxh.numRows = DKF_MEASM;
-  g_mxh.numCols = DKF_STATE;
+  kf.mxp.numRows = kf.mxp.numCols = DKF_STATE;
+  kf.mxq.numRows = kf.mxq.numCols = DKF_STATE;
+  kf.mxa.numCols = kf.mxa.numRows = DKF_STATE;
+  kf.mxr.numCols = kf.mxr.numRows = DKF_MEASM;
+  kf.mxh.numRows = DKF_MEASM;
+  kf.mxh.numCols = DKF_STATE;
 
   irq_off(Gyro_EXTI_1);
 /*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
@@ -232,7 +236,7 @@ void descent_initialize(void)
  */
 void descent_predict(const float dt)
 {
-  A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
+  kf.A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
 
   matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
 
@@ -241,17 +245,17 @@ void descent_predict(const float dt)
   memcpy(mk, dkf_view(&svec(1)), DKF_STATE);
 
   matrix mxat = {DKF_STATE, 1, mk};
-  matrix mxap = {DKF_STATE, DKF_STATE, mxat.pData + DKF_STATE_SQ};
-  matrix mxfi = {DKF_STATE, DKF_STATE, mxap.pData + DKF_STATE_SQ};
+  matrix mxap = {DKF_STATE, DKF_STATE, mxoff(&mxat)};
+  matrix mxfi = {DKF_STATE, DKF_STATE, mxoff(&mxap)};
 
-	matrix_mul(&g_mxa, &mxat, &presv);
+	matrix_mul(&kf.mxa, &mxat, &presv);
   
   mxat.numCols = DKF_STATE;
-  mtranspose(&g_mxa, &mxat);
+  mtranspose(&kf.mxa, &mxat);
 
-  matrix_mul(&g_mxa, &presv, &mxap);
+  matrix_mul(&kf.mxa, &presv, &mxap);
   matrix_mul(&mxap, &mxat, &mxfi);
-  matrix_add(&mxfi, &g_mxq, &g_mxp);
+  matrix_add(&mxfi, &kf.mxq, &kf.mxp);
 
   kffree(mk);
 }
@@ -272,17 +276,17 @@ void descent_update(void)
   float *mk = kfalloc(DKF_UPDATE_BYTES);
 
   matrix mxht   = {DKF_STATE, DKF_MEASM, mk};
-  matrix mxhp   = {DKF_MEASM, DKF_STATE, mxht.pData + DKF_ST_ME};
-  matrix mxhpht = {DKF_MEASM, DKF_MEASM, mxhp.pData + DKF_ST_ME};
-  matrix mxs    = {DKF_MEASM, DKF_MEASM, mxhpht.pData + DKF_MEASM_SQ};
-  matrix mxpht  = {DKF_MEASM, DKF_STATE, mxs.pData + DKF_MEASM_SQ};
+  matrix mxhp   = {DKF_MEASM, DKF_STATE, mxoff(&mxht)};
+  matrix mxhpht = {DKF_MEASM, DKF_MEASM, mxoff(&mxhp)};
+  matrix mxs    = {DKF_MEASM, DKF_MEASM, mxoff(&mxhpht)};
+  matrix mxpht  = {DKF_MEASM, DKF_STATE, mxoff(&mxs)};
 
-  mtranspose(&g_mxh, &mxht);
-  matrix_mul(&g_mxh, &g_mxp, &mxhp);
+  mtranspose(&kf.mxh, &mxht);
+  matrix_mul(&kf.mxh, &kf.mxp, &mxhp);
   matrix_mul(&mxhp, &mxht, &mxhpht);
-  matrix_add(&mxhpht, &g_mxr, &mxs);
+  matrix_add(&mxhpht, &kf.mxr, &mxs);
   matrix_inv(&mxs, &mxhpht);
-  matrix_mul(&g_mxp, &mxht, &mxpht);
+  matrix_mul(&kf.mxp, &mxht, &mxpht);
   matrix_mul(&mxpht, &mxhpht, &mxht);
 
   /* mxht -> "mxk"; mxs -> "mxhx"; mxhpht -> "mxzhx";
@@ -292,7 +296,7 @@ void descent_update(void)
   mxs.numCols = mxhp.numCols = 1;
   mxhp.numRows = DKF_STATE;
 
-  matrix_mul(&g_mxh, &presv, &mxs);
+  matrix_mul(&kf.mxh, &presv, &mxs);
   matrix_sub(&measm, &mxs, &mxhpht);
   matrix_mul(&mxht, &mxhpht, &mxhp);
   matrix_add(&presv, &mxhp, &cursv);
@@ -304,11 +308,11 @@ void descent_update(void)
   mxhp.numRows = mxhp.numCols = DKF_STATE;
   mxs.numRows = mxs.numCols = DKF_STATE;
 
-  matrix_mul(&mxht, &g_mxh, &mxhp);
-  matrix_mul(&mxhp, &g_mxp, &mxs);
-  matrix_sub(&g_mxp, &mxs, &mxhp);
+  matrix_mul(&mxht, &kf.mxh, &mxhp);
+  matrix_mul(&mxhp, &kf.mxp, &mxs);
+  matrix_sub(&kf.mxp, &mxs, &mxhp);
 
-  memcpy(P_stacov, mxhp.pData, DKF_STATE_SQ);
+  memcpy(kf.P_stacov, mxhp.pData, DKF_STATE_SQ);
 
   kffree(mk);
 
@@ -326,22 +330,22 @@ void ascent_initialize(void)
 
   for (fu8 i = 0; i < EKF_STATE; ++i)
   {
-    R_measno[i][i] = 1.0f;
+    kf.R_measno[i][i] = 1.0f;
   }
 
-  H_measjc[0][0] = 1.0f;
+  kf.H_measjc[0][0] = 1.0f;
 
-  Q_procno[0][0] = 1e-5f;
-  Q_procno[1][1] = 1e-4f;
-  Q_procno[2][2] = 1e-7f;
-  Q_procno[3][3] = Q_procno[4][4] = Q_procno[5][5] = 1e-10f;
+  kf.Q_procno[0][0] = 1e-5f;
+  kf.Q_procno[1][1] = 1e-4f;
+  kf.Q_procno[2][2] = 1e-7f;
+  kf.Q_procno[3][3] = kf.Q_procno[4][4] = kf.Q_procno[5][5] = 1e-10f;
 
-  g_mxp.numRows = g_mxp.numCols = EKF_STATE;
-  g_mxq.numRows = g_mxq.numCols = EKF_STATE;
-  g_mxa.numCols = g_mxa.numRows = EKF_OMEGA;
-  g_mxr.numCols = g_mxr.numRows = EKF_MEASM;
-  g_mxh.numRows = EKF_STATE;
-  g_mxh.numCols = 1;
+  kf.mxp.numRows = kf.mxp.numCols = EKF_STATE;
+  kf.mxq.numRows = kf.mxq.numCols = EKF_STATE;
+  kf.mxa.numCols = kf.mxa.numRows = EKF_OMEGA;
+  kf.mxr.numCols = kf.mxr.numRows = EKF_MEASM;
+  kf.mxh.numRows = EKF_STATE;
+  kf.mxh.numCols = 1;
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
@@ -365,29 +369,76 @@ void ascent_predict(const float dt, fu32 conf)
 {
   sweetbench_start(3, 50, true);
 
-  f_xyz w = meas.gyro;
+  f_xyz w, a;
+
+  if (!(conf & option(Eval_Focus_Flag)))
+  {
+    fc_lock(&meas_locks[0]);
+
+    w = meas.gyro;
+    a = meas.accl;
+
+    fc_unlock(&meas_locks[0]);
+  }
+  else
+  {
+    w = meas.gyro;
+    a = meas.accl;
+  }
 
   w.x -= svec(1).bias.gx;
   w.y -= svec(1).bias.gy;
   w.z -= svec(1).bias.gz;
 
-  A_genpur[0][1] = A_genpur[3][2] = -w.x;
-  A_genpur[1][0] = A_genpur[2][3] = w.x;
-  A_genpur[0][2] = A_genpur[1][3] = -w.y;
-  A_genpur[2][0] = A_genpur[3][1] = w.y;
-  A_genpur[2][1] = A_genpur[0][3] = -w.z;
-  A_genpur[1][2] = A_genpur[3][0] = w.z;
+  kf.A_genpur[0][1] = kf.A_genpur[3][2] = -w.x;
+  kf.A_genpur[1][0] = kf.A_genpur[2][3] = w.x;
+  kf.A_genpur[0][2] = kf.A_genpur[1][3] = -w.y;
+  kf.A_genpur[2][0] = kf.A_genpur[3][1] = w.y;
+  kf.A_genpur[2][1] = kf.A_genpur[0][3] = -w.z;
+  kf.A_genpur[1][2] = kf.A_genpur[3][0] = w.z;
 
   float *mk = kfalloc(EKF_PREDICT_BYTES);
 
+  matrix veqv = {EKF_OMEGA, 1, &qv.q0};
+  matrix veqm = {EKF_OMEGA, 1, mk};
+  matrix veqk = {EKF_OMEGA, 1, mxoff(&veqm)};
 
+  matvec_mul(&kf.mxa, &qv.q0, veqm.pData);
+
+  for (fu8 i = 0; i < EKF_OMEGA; ++i)
+  {
+    veqm.pData[i] *= 0.25f * dt;
+  }
+
+  matrix_add(&veqm, &veqv, &veqm);
+  matvec_mul(&kf.mxa, veqm.pData, veqk.pData);
+
+  for (fu8 i = 0; i < EKF_OMEGA; ++i)
+  {
+    veqv.pData[i] *= 0.5f * dt;
+  }
+  matrix_add(&veqv, &veqk, &veqv);
+
+  float inormq = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
+  qv.q0 *= inormq;
+  qv.rho1 *= inormq;
+  qv.rho2 *= inormq;
+  qv.rho3 *= inormq;
+
+  float r13 = 2.0f * (qv.rho1*qv.rho3 - qv.q0*qv.rho2);
+  float r23 = 2.0f * (qv.rho2*qv.rho3 + qv.q0*qv.rho1);
+  float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
+
+  float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
 
   svec(0).alt = svec(1).alt + dt * svec(1).vel;
 
-  if (conf & option(Launch_Requested))
+  if (sm.flight < Launch || a.z < AZ_DIV_THRES)
   {
-    // ???
+    svec(0).vel = svec(1).vel + dt * (a_vert - GRAVITY_SI
+                                             - svec(1).bias.az);
   }
+  else svec(0).vel = svec(1).vel + dt * (a_vert - svec(1).bias.az);
 
   kffree(mk);
 
