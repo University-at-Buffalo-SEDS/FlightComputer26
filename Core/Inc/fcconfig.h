@@ -7,13 +7,15 @@
 #define FC_USER_CONFIG
 
 
-/* Constants */
+/* Desert */
 
 #define GRAVITY_SI 9.80665f
 
+#define LAUNCH_SITE_LAT 32.000507f
+#define LAUNCH_SITE_LON -102.077408f
 
-/* Deployment GPIO 
- * (sensors' GPIO is in main.h) */
+
+/* Deployment GPIO (sensors' GPIO is in main.h) */
 
 #define PYRO_PORT GPIOB
 #define CO2_PIN   GPIO_PIN_5
@@ -31,7 +33,7 @@
 #define MIN_SAMP_ASCENT   3
 #define MIN_SAMP_BURNOUT  3
 #define MIN_SAMP_DESCENT  2
-#define MIN_SAMP_REEF     1
+#define MIN_SAMP_REEF     2
 #define MIN_SAMP_LANDED   6
 
 #define LAUNCH_CONFIRM_DELAY 30
@@ -40,8 +42,7 @@
 
 #define URGENT_DEPLOYMENT_DELAY 500
 
-/* Measurement thresholds:
- * Altitude         ALT     meters  
+/* Altitude         ALT     meters  
  * Pressure         PRS     pascals
  * Attitude         DPS     deg/sec
  * Acceleration     ACC     m/s^2
@@ -68,8 +69,6 @@
 #define LAUNCH_MIN_VEL  8.0f
 #define LAUNCH_MIN_VAX  10.0f
 
-#define AZ_DIV_THRES (GRAVITY_SI * 3.0f)
-
 #define BURNOUT_MIN_VEL 12.0f
 #define BURNOUT_MAX_VAX -3.0f
 
@@ -84,24 +83,22 @@
 
 #define GPS_RAIL_TOLER 0.05f
 
-#define POSTINIT_DURATION 5000
-#define POSTINIT_INTERVAL 150
-#define IGNITER_SEQ_TIMER 1200
+#define VIGILANT_MAX_ALT 3657.6f
+#define VIGILANT_MIN_ALT 3.0f
 
-#define CONFIRMATION_TIMEOUT 5000
 
-/* Midland, TX */
-#define LAUNCH_SITE_LAT 32.000507f
-#define LAUNCH_SITE_LON -102.077408f
+/* Kalman */
 
-/* Lower is more trust */
 #define DKF_GPS_TRUST	1.2f
 #define DKF_BARO_TRUST 0.05f
 
 #define EKF_BARO_VARIANCE 2.0f
+#define EKF_ACCL_RAIL_DIV (GRAVITY_SI * 2.0f)
 
-#define VIGILANT_MAX_ALT 3657.6f
-#define VIGILANT_MIN_ALT 3.0f
+#define EKF_BIAS_GYRO_X 0
+#define EKF_BIAS_GYRO_Y 0
+#define EKF_BIAS_GYRO_Z 0
+#define EKF_BIAS_ACCL_Z 0
 
 
 /* Recovery */
@@ -122,7 +119,12 @@
 #define FC_TIMEOUT	3000
 #define GND_TIMEOUT 3000
 
-/* Expiration of timer that invokes timeout checks  */
+#define POSTINIT_DURATION 5000
+#define POSTINIT_INTERVAL 150
+#define IGNITER_SEQ_TIMER 1200
+
+#define CONFIRMATION_TIMEOUT 5000
+
 #define TX_TIMER_TICKS   500
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 

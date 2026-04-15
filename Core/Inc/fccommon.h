@@ -37,6 +37,8 @@
 
 #define IMU_ID (Gyro_Mask | Accl_Mask)
 
+#define AZ_RAIL_THRES (GRAVITY_SI + EKF_ACCL_RAIL_DIV)
+
 
 /* Kalman filter constants */
 
@@ -66,7 +68,7 @@
 #define DKF_UPDATE_BYTES  fbyte(DKF_MEASM_SQ * 2                \
                                  + DKF_ST_ME * 3)
 
-#define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 000000000)
+#define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 3)
 #define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 000000000)
 
 #define MAX_STATE maxd(EKF_STATE, DKF_STATE)

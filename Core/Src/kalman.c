@@ -238,8 +238,6 @@ void descent_predict(const float dt)
 {
   kf.A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
 
-  matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
-
   float *mk = kfalloc(DKF_PREDICT_BYTES);
 
   memcpy(mk, dkf_view(&svec(1)), DKF_STATE);
@@ -248,12 +246,12 @@ void descent_predict(const float dt)
   matrix mxap = {DKF_STATE, DKF_STATE, mxoff(&mxat)};
   matrix mxfi = {DKF_STATE, DKF_STATE, mxoff(&mxap)};
 
-	matrix_mul(&kf.mxa, &mxat, &presv);
+	matvec_mul(&kf.mxa, mxat.pData, dkf_view(&svec(1)));
   
   mxat.numCols = DKF_STATE;
   mtranspose(&kf.mxa, &mxat);
 
-  matrix_mul(&kf.mxa, &presv, &mxap);
+  matrix_mul(&kf.mxa, &kf.mxp, &mxap);
   matrix_mul(&mxap, &mxat, &mxfi);
   matrix_add(&mxfi, &kf.mxq, &kf.mxp);
 
@@ -261,8 +259,8 @@ void descent_predict(const float dt)
 }
 
 /*
- * Note: allocated buffer is partitioned into blocks,
- * which are coalesced when necessary to hold bigger data.
+ * Allocated buffer is partitioned into blocks,
+ * coalesced when necessary to hold bigger matrices.
  * Prerequisites: Barometer or GPS.
  */
 void descent_update(void)
@@ -296,12 +294,12 @@ void descent_update(void)
   mxs.numCols = mxhp.numCols = 1;
   mxhp.numRows = DKF_STATE;
 
-  matrix_mul(&kf.mxh, &presv, &mxs);
+  matvec_mul(&kf.mxh, presv.pData, mxs.pData);
   matrix_sub(&measm, &mxs, &mxhpht);
-  matrix_mul(&mxht, &mxhpht, &mxhp);
+  matvec_mul(&mxht, mxhpht.pData, mxhp.pData);
   matrix_add(&presv, &mxhp, &cursv);
 
-  /* Merge mxhp + mxhpht; mxs + mxpht.
+  /* Coalesce mxhp + mxhpht; mxs + mxpht.
    * mxhp -> "mxkh" -> "mxp_f"; mxs -> "mxkhp"
    */
 
@@ -310,9 +308,7 @@ void descent_update(void)
 
   matrix_mul(&mxht, &kf.mxh, &mxhp);
   matrix_mul(&mxhp, &kf.mxp, &mxs);
-  matrix_sub(&kf.mxp, &mxs, &mxhp);
-
-  memcpy(kf.P_stacov, mxhp.pData, DKF_STATE_SQ);
+  matrix_sub(&kf.mxp, &mxs, &kf.mxp);
 
   kffree(mk);
 
@@ -343,9 +339,17 @@ void ascent_initialize(void)
   kf.mxp.numRows = kf.mxp.numCols = EKF_STATE;
   kf.mxq.numRows = kf.mxq.numCols = EKF_STATE;
   kf.mxa.numCols = kf.mxa.numRows = EKF_OMEGA;
-  kf.mxr.numCols = kf.mxr.numRows = EKF_MEASM;
-  kf.mxh.numRows = EKF_STATE;
-  kf.mxh.numCols = 1;
+  kf.mxr.numCols = kf.mxr.numRows = EKF_STATE;
+  kf.mxh.numRows = 1;
+  kf.mxh.numCols = EKF_MEASM;
+
+  for (fu8 k = 0; k < STATE_HISTORY; ++k)
+  {
+    svec(k).bias.gx = EKF_BIAS_GYRO_X;
+    svec(k).bias.gy = EKF_BIAS_GYRO_Y;
+    svec(k).bias.gz = EKF_BIAS_GYRO_Z;
+    svec(k).bias.az = EKF_BIAS_ACCL_Z;
+  }
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
@@ -362,29 +366,19 @@ void ascent_initialize(void)
 }
 
 /*
- * Predict step of the Ascent filter.
+ * Bias is compile-time, set during initialization.
  * Prerequisites: IMU.
  */
 void ascent_predict(const float dt, fu32 conf)
 {
   sweetbench_start(3, 50, true);
 
-  f_xyz w, a;
+  fc_lock(&meas_locks[0]);
 
-  if (!(conf & option(Eval_Focus_Flag)))
-  {
-    fc_lock(&meas_locks[0]);
+  f_xyz w = meas.gyro;
+  f_xyz a = meas.accl;
 
-    w = meas.gyro;
-    a = meas.accl;
-
-    fc_unlock(&meas_locks[0]);
-  }
-  else
-  {
-    w = meas.gyro;
-    a = meas.accl;
-  }
+  fc_unlock(&meas_locks[0]);
 
   w.x -= svec(1).bias.gx;
   w.y -= svec(1).bias.gy;
@@ -398,29 +392,27 @@ void ascent_predict(const float dt, fu32 conf)
   kf.A_genpur[1][2] = kf.A_genpur[3][0] = w.z;
 
   float *mk = kfalloc(EKF_PREDICT_BYTES);
+  const float qv_scale = 0.5f + dt;
+
+  kf.R_measno[0][1] = dt;
 
   matrix veqv = {EKF_OMEGA, 1, &qv.q0};
   matrix veqm = {EKF_OMEGA, 1, mk};
   matrix veqk = {EKF_OMEGA, 1, mxoff(&veqm)};
+  matrix mxpq = {EKF_STATE, EKF_STATE, NULL};
 
   matvec_mul(&kf.mxa, &qv.q0, veqm.pData);
-
-  for (fu8 i = 0; i < EKF_OMEGA; ++i)
-  {
-    veqm.pData[i] *= 0.25f * dt;
-  }
+  matrix_scl(&veqm, qv_scale, &veqm);
 
   matrix_add(&veqm, &veqv, &veqm);
   matvec_mul(&kf.mxa, veqm.pData, veqk.pData);
 
-  for (fu8 i = 0; i < EKF_OMEGA; ++i)
-  {
-    veqv.pData[i] *= 0.5f * dt;
-  }
+  matrix_scl(&veqv, 0.5f * qv_scale, &veqv);
   matrix_add(&veqv, &veqk, &veqv);
 
   float inormq = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
-  qv.q0 *= inormq;
+
+  qv.q0   *= inormq;
   qv.rho1 *= inormq;
   qv.rho2 *= inormq;
   qv.rho3 *= inormq;
@@ -432,13 +424,25 @@ void ascent_predict(const float dt, fu32 conf)
   float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
 
   svec(0).alt = svec(1).alt + dt * svec(1).vel;
+  svec(0).vel = svec(1).vel + dt * (
+    sm.flight >= Launch || a.z < AZ_RAIL_THRES
+        ? a_vert - svec(1).bias.az
+        : a_vert - svec(1).bias.az - GRAVITY_SI
+  );
 
-  if (sm.flight < Launch || a.z < AZ_DIV_THRES)
-  {
-    svec(0).vel = svec(1).vel + dt * (a_vert - GRAVITY_SI
-                                             - svec(1).bias.az);
-  }
-  else svec(0).vel = svec(1).vel + dt * (a_vert - svec(1).bias.az);
+  /* Coalesce veqm, veqk; veqm -> mxfp, veqk -> mxft
+   */
+
+  veqm.numRows = veqm.numCols = EKF_STATE;
+  veqk.numRows = veqk.numCols = EKF_STATE;
+  veqm.pData = mk;
+  veqk.pData = mxoff(&veqm);
+  mxpq.pData = mxoff(&veqk);
+  
+  mtranspose(&kf.mxr, &veqk);
+  matrix_mul(&kf.mxr, &kf.mxp, &veqm);
+  matrix_mul(&veqm, &veqk, &mxpq);
+  matrix_add(&mxpq, &kf.mxq, &kf.mxp);
 
   kffree(mk);
 
@@ -451,5 +455,11 @@ void ascent_predict(const float dt, fu32 conf)
  */
 void ascent_update(void)
 {
+  fc_lock(&meas_locks[1]);
 
+  const float baroz_innv = meas.baro.alt - svec(1).alt;
+
+  fc_unlock(&meas_locks[1]);
+
+  
 }

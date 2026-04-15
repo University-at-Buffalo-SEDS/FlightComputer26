@@ -20,8 +20,8 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 
 void tx_align *kfpool_buf = NULL;
 
-kf_svec sv[STATE_HISTORY] = {0};
-sv_meta sm = {0, 0, Suspended};
+kf_svec sv[STATE_HISTORY] = {};
+sv_meta sm = {1, 0, Suspended};
 
 const char *trans[Flight_States] = {
     [Suspended] = " interval in streaming mode:",

@@ -114,8 +114,8 @@ static inline void _sb_catch(fu16 idx)
 
 #else
 
-#define sweetbench_start(...) ((void)0)
-#define sweetbench_catch(idx) ((void)0)
+#define sweetbench_start(...)
+#define sweetbench_catch(idx)
 
 #endif // FC_BENCHMARK
 
