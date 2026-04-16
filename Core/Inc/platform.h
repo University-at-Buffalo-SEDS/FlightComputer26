@@ -206,10 +206,10 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 /* Telemetry */
 
+#ifdef TELEMETRY_ENABLED
+
 #include <sedsprintf.h> // IWYU pragma: export
 #include "telemetry.h"  // IWYU pragma: export
-
-#ifdef TELEMETRY_ENABLED
 
 extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
 extern void telemetry_init_lock(void);

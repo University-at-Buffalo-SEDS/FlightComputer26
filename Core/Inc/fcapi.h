@@ -49,7 +49,9 @@ extern measm meas;
 
 extern const char *trans[];
 
+#ifdef TELEMETRY_ENABLED
 SedsResult on_fc_packet(const SedsPacketView *, void *);
+#endif
 
 void evaluate_rocket_state(fu32);
 

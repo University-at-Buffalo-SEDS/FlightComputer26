@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifdef TELEMETRY_ENABLED
+#include "fcapi.h"
 
 #ifndef TELEMETRY_ENABLED
 static void print_data_no_telem(void *data, size_t len) {
@@ -56,6 +56,10 @@ static uint8_t g_local_unix_valid = 0U;
 static uint64_t g_local_unix_ms = 0ULL;
 
 RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
+
+static const SedsLocalEndpointDesc locals[] = {
+  { .endpoint = SEDS_EP_SD_CARD, .packet_handler = on_fc_packet, .user = NULL },
+};
 
 static uint64_t tx_raw_now_ms_locked(void) {
   const uint32_t ticks32 = (uint32_t)tx_time_get();
@@ -328,7 +332,8 @@ SedsResult init_telemetry_router(void) {
     }
   }
 
-  r = seds_router_new(Seds_RM_Relay, node_now_since_ms, NULL, NULL, 0U);
+  r = seds_router_new(Seds_RM_Relay, node_now_since_ms, NULL, locals,
+                                              sizeof(locals) / sizeof(locals[0]));
   if (!r) {
     printf("Error: failed to create router\r\n");
     g_router.r = NULL;
@@ -632,5 +637,3 @@ void die(const char *fmt, ...) {
     HAL_Delay(1000);
   }
 }
-
-#endif
