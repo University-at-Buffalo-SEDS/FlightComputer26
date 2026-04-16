@@ -198,4 +198,43 @@
     memset(kf.H_measjc, 0, sizeof kf.H_measjc);     \
   } while (0)
 
+#ifdef MATH_FN_DEBUG
+
+#define cmsis_math_debug(code)                      \
+  do {                                              \
+    if (code != ARM_MATH_SUCCESS)                   \
+    {                                               \
+      log_err("%s:%d: math error: %d",              \
+                      __FILE__, __LINE__, code);    \
+    }                                               \
+  } while (0)
+
+#define math_call(fn, ...)                          \
+  do {                                              \
+    math_status st = (fn)(__VA_ARGS__);             \
+    cmsis_math_debug(st);                           \
+  } while (0)
+
+#else
+
+#define math_call(fn, ...) (fn)(__VA_ARGS__)
+
+#endif /* MATH_FN_DEBUG */
+
+#define mx_scale(src, scl, dst)                     \
+  math_call(matrix_scl, src, scl, dst)
+#define mx_chol_l(src, dst)                         \
+  math_call(chol_lotri, src, dst)
+#define mx_inverse(src, dst)                        \
+  math_call(matrix_inv, src, dst)
+#define mx_transpose(src, dst)                      \
+  math_call(mtranspose, src, dst)
+#define mx_mul(srca, srcb, dst)                     \
+  math_call(matrix_mul, srca, srcb, dst)
+#define mx_add(srca, srcb, dst)                     \
+  math_call(matrix_add, srca, srcb, dst)
+#define mx_sub(srca, srcb, dst)                     \
+  math_call(matrix_sub, srca, srcb, dst)
+
+
 #endif /* FC_COMMON */

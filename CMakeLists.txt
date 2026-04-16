@@ -88,6 +88,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_add_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_sub_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_inverse_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_scale_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_vec_mult_f32.c
 )
 
 # Add include paths
@@ -158,6 +160,7 @@ option(FC_BENCH         "Project-wide benchmark"        OFF)
 option(CUSTOM_FLAGS     "User-defined flags"            ON)
 option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
+option(DEBUG_MATH       "Report failures of math fns"   OFF)
 
 message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
@@ -168,6 +171,7 @@ message(STATUS "Benchmarks:             ${FC_BENCH}")
 message(STATUS "Custom flags:           ${CUSTOM_FLAGS}")
 message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
 message(STATUS "USB enumeration:        ${USB_ENUM}")
+message(STATUS "Math debugging:         ${DEBUG_MATH}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
@@ -202,6 +206,10 @@ endif()
 
 if (USB_ENUM)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
+endif()
+
+if (DEBUG_MATH)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MATH_FN_DEBUG)
 endif()
 
 if (CUSTOM_FLAGS)

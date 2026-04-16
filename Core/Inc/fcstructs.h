@@ -5,6 +5,7 @@
 #ifndef FC_DATA_STRUCTURES
 #define FC_DATA_STRUCTURES
 
+#include "platform.h"
 #include "fctypes.h"
 #include "fccommon.h"
 

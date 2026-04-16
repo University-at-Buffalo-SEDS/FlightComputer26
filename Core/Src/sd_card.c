@@ -3,6 +3,7 @@
  */
 
 #include "platform.h"
+#include "fctypes.h"
 #include "sd_card.h"
 
 

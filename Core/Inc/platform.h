@@ -66,6 +66,7 @@ static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
 
 /* CMSIS math */
 
+typedef arm_status math_status;
 typedef arm_matrix_instance_f32 matrix;
 
 #define fvsqrt        arm_sqrt_f32

@@ -35,11 +35,16 @@ TX_BYTE_POOL kfpool;
 static quat qv = {0};
 
 static kf_buf kf = {
-  {0, 0, &kf.P_stacov[0][0]}, {0},
-  {0, 0, &kf.Q_procno[0][0]}, {0},
-  {0, 0, &kf.A_genpur[0][0]}, {0},
-  {0, 0, &kf.R_measno[0][0]}, {0},
-  {0, 0, &kf.H_measjc[0][0]}, {0}
+  .mxp = {.numRows = 0, .numCols = 0, .pData = &kf.P_stacov[0][0]},
+  .P_stacov = {{0}},
+  .mxq = {.numRows = 0, .numCols = 0, .pData = &kf.Q_procno[0][0]},
+  .Q_procno = {{0}},
+  .mxa = {.numRows = 0, .numCols = 0, .pData = &kf.A_genpur[0][0]},
+  .A_genpur = {{0}},
+  .mxr = {.numRows = 0, .numCols = 0, .pData = &kf.R_measno[0][0]},
+  .R_measno = {{0}},
+  .mxh = {.numRows = 0, .numCols = 0, .pData = &kf.H_measjc[0][0]},
+  .H_measjc = {{0}}
 };
 
 
@@ -249,11 +254,11 @@ void descent_predict(const float dt)
 	matvec_mul(&kf.mxa, mxat.pData, dkf_view(&svec(1)));
   
   mxat.numCols = DKF_STATE;
-  mtranspose(&kf.mxa, &mxat);
+  mx_transpose(&kf.mxa, &mxat);
 
-  matrix_mul(&kf.mxa, &kf.mxp, &mxap);
-  matrix_mul(&mxap, &mxat, &mxfi);
-  matrix_add(&mxfi, &kf.mxq, &kf.mxp);
+  mx_mul(&kf.mxa, &kf.mxp, &mxap);
+  mx_mul(&mxap, &mxat, &mxfi);
+  mx_add(&mxfi, &kf.mxq, &kf.mxp);
 
   kffree(mk);
 }
@@ -279,13 +284,13 @@ void descent_update(void)
   matrix mxs    = {DKF_MEASM, DKF_MEASM, mxoff(&mxhpht)};
   matrix mxpht  = {DKF_MEASM, DKF_STATE, mxoff(&mxs)};
 
-  mtranspose(&kf.mxh, &mxht);
-  matrix_mul(&kf.mxh, &kf.mxp, &mxhp);
-  matrix_mul(&mxhp, &mxht, &mxhpht);
-  matrix_add(&mxhpht, &kf.mxr, &mxs);
-  matrix_inv(&mxs, &mxhpht);
-  matrix_mul(&kf.mxp, &mxht, &mxpht);
-  matrix_mul(&mxpht, &mxhpht, &mxht);
+  mx_transpose(&kf.mxh, &mxht);
+  mx_mul(&kf.mxh, &kf.mxp, &mxhp);
+  mx_mul(&mxhp, &mxht, &mxhpht);
+  mx_add(&mxhpht, &kf.mxr, &mxs);
+  mx_inverse(&mxs, &mxhpht);
+  mx_mul(&kf.mxp, &mxht, &mxpht);
+  mx_mul(&mxpht, &mxhpht, &mxht);
 
   /* mxht -> "mxk"; mxs -> "mxhx"; mxhpht -> "mxzhx";
    * mxhp -> "mxkzhx"
@@ -295,9 +300,9 @@ void descent_update(void)
   mxhp.numRows = DKF_STATE;
 
   matvec_mul(&kf.mxh, presv.pData, mxs.pData);
-  matrix_sub(&measm, &mxs, &mxhpht);
+  mx_sub(&measm, &mxs, &mxhpht);
   matvec_mul(&mxht, mxhpht.pData, mxhp.pData);
-  matrix_add(&presv, &mxhp, &cursv);
+  mx_add(&presv, &mxhp, &cursv);
 
   /* Coalesce mxhp + mxhpht; mxs + mxpht.
    * mxhp -> "mxkh" -> "mxp_f"; mxs -> "mxkhp"
@@ -306,9 +311,9 @@ void descent_update(void)
   mxhp.numRows = mxhp.numCols = DKF_STATE;
   mxs.numRows = mxs.numCols = DKF_STATE;
 
-  matrix_mul(&mxht, &kf.mxh, &mxhp);
-  matrix_mul(&mxhp, &kf.mxp, &mxs);
-  matrix_sub(&kf.mxp, &mxs, &kf.mxp);
+  mx_mul(&mxht, &kf.mxh, &mxhp);
+  mx_mul(&mxhp, &kf.mxp, &mxs);
+  mx_sub(&kf.mxp, &mxs, &kf.mxp);
 
   kffree(mk);
 
@@ -402,13 +407,13 @@ void ascent_predict(const float dt, fu32 conf)
   matrix mxpq = {EKF_STATE, EKF_STATE, NULL};
 
   matvec_mul(&kf.mxa, &qv.q0, veqm.pData);
-  matrix_scl(&veqm, qv_scale, &veqm);
+  mx_scale(&veqm, qv_scale, &veqm);
 
-  matrix_add(&veqm, &veqv, &veqm);
+  mx_add(&veqm, &veqv, &veqm);
   matvec_mul(&kf.mxa, veqm.pData, veqk.pData);
 
-  matrix_scl(&veqv, 0.5f * qv_scale, &veqv);
-  matrix_add(&veqv, &veqk, &veqv);
+  mx_scale(&veqv, 0.5f * qv_scale, &veqv);
+  mx_add(&veqv, &veqk, &veqv);
 
   float inormq = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
 
@@ -439,10 +444,10 @@ void ascent_predict(const float dt, fu32 conf)
   veqk.pData = mxoff(&veqm);
   mxpq.pData = mxoff(&veqk);
   
-  mtranspose(&kf.mxr, &veqk);
-  matrix_mul(&kf.mxr, &kf.mxp, &veqm);
-  matrix_mul(&veqm, &veqk, &mxpq);
-  matrix_add(&mxpq, &kf.mxq, &kf.mxp);
+  mx_transpose(&kf.mxr, &veqk);
+  mx_mul(&kf.mxr, &kf.mxp, &veqm);
+  mx_mul(&veqm, &veqk, &mxpq);
+  mx_add(&mxpq, &kf.mxq, &kf.mxp);
 
   kffree(mk);
 
@@ -461,5 +466,10 @@ void ascent_update(void)
 
   fc_unlock(&meas_locks[1]);
 
-  
+  float *mk = kfalloc(EKF_UPDATE_BYTES);
+
+  matrix rohp = {1, EKF_STATE, mk};
+  matrix veht = {EKF_MEASM, 1, mxoff(&rohp)};
+
+  mx_transpose(&kf.mxh, &veht);
 }

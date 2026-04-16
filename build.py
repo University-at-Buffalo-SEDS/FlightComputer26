@@ -69,6 +69,9 @@ OPTIONS:
 
         nousb           - do not assume correctly enumerating USB
                         - prerequisute: notelemetry
+
+        gmath           - report file and line for failures of math
+                        - functions using underlying API's status code
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -106,7 +109,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "userflags",
                         "sensortest",
                         "nousb",
-                        "parallelkf"
+                        "parallelkf",
+                        "gmath"
                 }
 
 # Repo constants
@@ -175,7 +179,7 @@ def configure(buildir: Path, preset: str, options: dict):
         # Debug preset will forcefully disable telemetry
         # and things that depend on it.
         batch           = "-DMESSAGE_BATCHING=OFF"
-        telem           = "-DENABLE_TELEMETRY=OFF"
+        telem           = "-DENABLE_TELEMETRY=ON"
         compat          = "-DTELEMETRY_COMPAT=ON"
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
@@ -184,6 +188,7 @@ def configure(buildir: Path, preset: str, options: dict):
         sensortest      = "-DSENSOR_TESTS=OFF"
         usb             = "-DUSB_ENUM=ON"
         parkf           = "-DPARALLEL_KF=OFF"
+        mathdbg         = "-DDEBUG_MATH=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -211,6 +216,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["bench"]:
                 bench = "-DFC_BENCH=ON"
 
+        if options["gmath"]:
+                mathdbg = "-DDEBUG_MATH=ON"
+
         if options["userflags"]:
                 flags = "-DCUSTOM_FLAGS=ON"
 
@@ -229,6 +237,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 sensortest,
                 usb,
                 parkf,
+                mathdbg,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

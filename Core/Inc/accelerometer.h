@@ -6,7 +6,6 @@
 #define ACCELEROMETER_H
 
 #include "main.h"
-#include "fcstructs.h"
 
 
 /* ------ Register maps ------ */
@@ -100,6 +99,8 @@ struct accl_config {
 
 
 /* ------ Public API ------ */
+
+typedef struct coords f_xyz;
 
 extern float lsb_to_g;
 
