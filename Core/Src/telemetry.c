@@ -58,7 +58,7 @@ static uint64_t g_local_unix_ms = 0ULL;
 RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 
 static const SedsLocalEndpointDesc locals[] = {
-  { .endpoint = SEDS_EP_SD_CARD, .packet_handler = on_fc_packet, .user = NULL },
+  { .endpoint = SEDS_EP_FLIGHT_CONTROLLER, .packet_handler = on_fc_packet, .user = NULL },
 };
 
 static uint64_t tx_raw_now_ms_locked(void) {
