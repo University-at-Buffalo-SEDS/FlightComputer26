@@ -112,31 +112,31 @@ extern DCACHE_HandleTypeDef hdcache1;
 
 #define now_ms() HAL_GetTick()
 
-#define irq_off(irq) HAL_NVIC_DisableIRQ((irq))
-#define irq_on(irq)  HAL_NVIC_EnableIRQ((irq))
+#define irq_off(irq) HAL_NVIC_DisableIRQ(irq)
+#define irq_on(irq)  HAL_NVIC_EnableIRQ(irq)
 
 #define invalidate_dcache() HAL_DCACHE_Invalidate(&hdcache1)
 
-#define invalidate_dcache_addr_int(buf, size)         \
-  (HAL_DCACHE_InvalidateByAddr_IT((&hdcache1),        \
-                                  (uint32_t *)(buf),  \
+#define invalidate_dcache_addr_int(buf, size)           \
+  (HAL_DCACHE_InvalidateByAddr_IT((&hdcache1),          \
+                                  (uint32_t *)(buf),    \
                                   (size)))
 
-#define clean_dcache_addr_int(buf, size)              \
-  (HAL_DCACHE_CleanByAddr_IT((&hdcache1),             \
-                             (uint32_t *)(buf),       \
+#define clean_dcache_addr_int(buf, size)                \
+  (HAL_DCACHE_CleanByAddr_IT((&hdcache1),               \
+                             (uint32_t *)(buf),         \
                              (size)))
 
-#define dma_spi_txrx(txbuf, rxbuf, size)              \
-  (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),     \
+#define dma_spi_txrx(txbuf, rxbuf, size)                \
+  (HAL_SPI_TransmitReceive_DMA((&hspi1), (txbuf),       \
                                (rxbuf), (size)))
 
 #define gpio_cs_low(sens)                               \
-  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],    \
                     gpio.pin[sens], GPIO_PIN_RESET)
 
 #define gpio_cs_high(sens)                              \
-  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],   \
+  HAL_GPIO_WritePin((GPIO_TypeDef *)gpio.port[sens],    \
                     gpio.pin[sens], GPIO_PIN_SET)
 
 

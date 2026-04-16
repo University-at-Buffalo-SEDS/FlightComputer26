@@ -69,12 +69,13 @@
                                  + DKF_ST_ME * 3)
 
 #define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 3)
-#define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 000000000)
+#define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 2                \
+                                 + EKF_STATE * 3)
 
 #define MAX_STATE maxd(EKF_STATE, DKF_STATE)
 #define MAX_MEASM maxd(EKF_MEASM, DKF_MEASM)
 
-#define LARGEST_POOL maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES, \
+#define LARGEST_POOL maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES,  \
                           EKF_PREDICT_BYTES, EKF_UPDATE_BYTES)
 
 #ifdef PARALLEL_PREDICT_UPDATE

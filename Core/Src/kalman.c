@@ -176,6 +176,7 @@ void accel_to_quaternion(const f_xyz *accl)
 
 /*
  * Calculate offset from previous heap-allocated matrix.
+ * Calling this helper with the same argument twice is UB.
  */
 static inline constexpr float *mxoff(const matrix *prev)
 {
@@ -272,9 +273,9 @@ void descent_update(void)
 {
   sweetbench_start(4, 50, true);
 
-  matrix cursv = {DKF_STATE, 1, dkf_view(&svec(0))};
-  matrix presv = {DKF_STATE, 1, dkf_view(&svec(1))};
-  matrix measm = {DKF_MEASM, 1, (float *)&meas.gps};
+  matrix vesv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
+  matrix vesv1 = {DKF_STATE, 1, dkf_view(&svec(1))};
+  matrix vemsm = {DKF_MEASM, 1, (float *)&meas.gps};
 
   float *mk = kfalloc(DKF_UPDATE_BYTES);
 
@@ -299,10 +300,10 @@ void descent_update(void)
   mxs.numCols = mxhp.numCols = 1;
   mxhp.numRows = DKF_STATE;
 
-  matvec_mul(&kf.mxh, presv.pData, mxs.pData);
-  mx_sub(&measm, &mxs, &mxhpht);
+  matvec_mul(&kf.mxh, vesv1.pData, mxs.pData);
+  mx_sub(&vemsm, &mxs, &mxhpht);
   matvec_mul(&mxht, mxhpht.pData, mxhp.pData);
-  mx_add(&presv, &mxhp, &cursv);
+  mx_add(&vesv1, &mxhp, &vesv0);
 
   /* Coalesce mxhp + mxhpht; mxs + mxpht.
    * mxhp -> "mxkh" -> "mxp_f"; mxs -> "mxkhp"
@@ -441,8 +442,8 @@ void ascent_predict(const float dt, fu32 conf)
   veqm.numRows = veqm.numCols = EKF_STATE;
   veqk.numRows = veqk.numCols = EKF_STATE;
   veqm.pData = mk;
-  veqk.pData = mxoff(&veqm);
-  mxpq.pData = mxoff(&veqk);
+  veqk.pData = veqm.pData + EKF_STATE_SQ;
+  mxpq.pData = veqk.pData + EKF_STATE_SQ;
   
   mx_transpose(&kf.mxr, &veqk);
   mx_mul(&kf.mxr, &kf.mxp, &veqm);
@@ -455,7 +456,7 @@ void ascent_predict(const float dt, fu32 conf)
 }
 
 /*
- * Update step of the Ascent filter.
+ * DT is cleared in F (R_measno) to use as identity.
  * Prerequisites: Barometer.
  */
 void ascent_update(void)
@@ -467,9 +468,45 @@ void ascent_update(void)
   fc_unlock(&meas_locks[1]);
 
   float *mk = kfalloc(EKF_UPDATE_BYTES);
+  
+  matrix rohp  = {1, EKF_STATE, mk};
+  matrix veht  = {EKF_STATE, 1, mxoff(&rohp)};
+  matrix vepht = {EKF_STATE, 1, mxoff(&veht)};
 
-  matrix rohp = {1, EKF_STATE, mk};
-  matrix veht = {EKF_MEASM, 1, mxoff(&rohp)};
+  float k_denom;
 
+  mx_mul(&kf.mxh, &kf.mxp, &rohp);
   mx_transpose(&kf.mxh, &veht);
+  matvec_mul(&rohp, veht.pData, &k_denom);
+
+  k_denom += EKF_BARO_VARIANCE;
+
+  matvec_mul(&kf.mxp, veht.pData, vepht.pData);
+  mx_scale(&vepht, 1.0f / k_denom, &vepht);
+
+  /* vepht -> "vek"; rohp -> "veky"
+   */
+
+  matrix vesv1 = {EKF_STATE, 1, ekf_view(&svec(1))};
+  matrix vesv0 = {EKF_STATE, 1, ekf_view(&svec(0))};
+
+  rohp.numRows = EKF_STATE;
+  rohp.numCols = 1;
+  mx_scale(&vepht, baroz_innv, &rohp);
+  mx_add(&vesv1, &rohp, &vesv0);
+
+  /* vesv1 -> "mxkh" -> "mxp_"; vesv0 -> "mxi-kh"
+   */
+
+  vesv1.numCols = vesv0.numCols = EKF_STATE;
+  vesv1.pData = mxoff(&vepht);
+  vesv0.pData = mxoff(&vesv1);
+  kf.R_measno[0][1] = 0;
+  
+  mx_mul(&vepht, &kf.mxh, &vesv1);
+  mx_sub(&kf.mxr, &vesv1, &vesv0);
+
+  memcpy(vesv1.pData, &kf.P_stacov, EKF_STATE_SQ);
+
+  mx_mul(&vesv0, &vesv1, &kf.mxp);
 }
