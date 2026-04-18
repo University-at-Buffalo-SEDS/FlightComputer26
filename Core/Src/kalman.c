@@ -145,7 +145,7 @@ static inline void euler_to_quat(eul *ang)
   qv.q0 = cosphi * costhepsi + sinphi * sinthepsi;
   qv.rho1 = sinphi * costhepsi - cosphi * sinthepsi;
   qv.rho2 = cosphi * sinthecospsi + sinphi * costhesinpsi;
-  qv.rho3 = cosphi + costhesinpsi - sinphi * sinthecospsi;
+  qv.rho3 = cosphi * costhesinpsi - sinphi * sinthecospsi;
 
   float norm = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
 
@@ -246,7 +246,7 @@ void descent_predict(const float dt)
 
   float *mk = kfalloc(DKF_PREDICT_BYTES);
 
-  memcpy(mk, dkf_view(&svec(1)), DKF_STATE);
+  memcpy(mk, dkf_view(&svec(1)), DKF_STATE * sizeof(float));
 
   matrix mxat = {DKF_STATE, 1, mk};
   matrix mxap = {DKF_STATE, DKF_STATE, mxoff(&mxat)};
@@ -386,9 +386,9 @@ void ascent_predict(const float dt, fu32 conf)
 
   fc_unlock(&meas_locks[0]);
 
-  w.x -= svec(1).bias.gx;
-  w.y -= svec(1).bias.gy;
-  w.z -= svec(1).bias.gz;
+  w.x = rad(w.x) - svec(1).bias.gx;
+  w.y = rad(w.y) - svec(1).bias.gy;
+  w.z = rad(w.z) - svec(1).bias.gz;
 
   kf.A_genpur[0][1] = kf.A_genpur[3][2] = -w.x;
   kf.A_genpur[1][0] = kf.A_genpur[2][3] = w.x;
@@ -398,7 +398,7 @@ void ascent_predict(const float dt, fu32 conf)
   kf.A_genpur[1][2] = kf.A_genpur[3][0] = w.z;
 
   float *mk = kfalloc(EKF_PREDICT_BYTES);
-  const float qv_scale = 0.5f + dt;
+  const float qv_scale = 0.5f * dt;
 
   kf.R_measno[0][1] = dt;
 
@@ -408,13 +408,13 @@ void ascent_predict(const float dt, fu32 conf)
   matrix mxpq = {EKF_STATE, EKF_STATE, NULL};
 
   matvec_mul(&kf.mxa, &qv.q0, veqm.pData);
-  mx_scale(&veqm, qv_scale, &veqm);
+  mx_scale(&veqm, /* 0.5f * */ qv_scale, &veqm);
 
-  mx_add(&veqm, &veqv, &veqm);
-  matvec_mul(&kf.mxa, veqm.pData, veqk.pData);
+  // mx_add(&veqm, &veqv, &veqm);
+  // matvec_mul(&kf.mxa, veqm.pData, veqk.pData);
 
-  mx_scale(&veqv, 0.5f * qv_scale, &veqv);
-  mx_add(&veqv, &veqk, &veqv);
+  // mx_scale(&veqv, qv_scale, &veqv);
+  mx_add(&veqv, &veqm, &veqv);
 
   float inormq = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
 
@@ -506,7 +506,7 @@ void ascent_update(void)
   mx_mul(&vepht, &kf.mxh, &vesv1);
   mx_sub(&kf.mxr, &vesv1, &vesv0);
 
-  memcpy(vesv1.pData, &kf.P_stacov, EKF_STATE_SQ);
+  memcpy(vesv1.pData, &kf.P_stacov, EKF_STATE_SQ * sizeof(float));
 
   mx_mul(&vesv0, &vesv1, &kf.mxp);
 }

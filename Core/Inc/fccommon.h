@@ -138,7 +138,8 @@
 #define ekf_view(vec) (float *)((void *)(vec) + sizeof(kf_gps))
 #define dkf_view(vec) (float *)((void *)(vec) + sizeof(float))
 
-#define deg(rad) ((deg) * 180.0f / PI)
+#define deg(rad) ((rad) * 180.0f / PI)
+#define rad(deg) ((deg) * PI / 180.0f)
 
 #define vnorm2(x, y, res) fvsqrt((x)*(x) + (y)*(y), (res))
 #define inorm4(w, x, y, z) invsqrtf((w)*(w) + (x)*(x) + \

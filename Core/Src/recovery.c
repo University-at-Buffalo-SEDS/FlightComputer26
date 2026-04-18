@@ -30,7 +30,7 @@ static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
     .osr_p = Baro_OSR_x2,
     .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = Baro_IIR_Coef_0,
+    .iir_coef = Baro_IIR_Coef_3,
 };
 
 static struct gyro_config gyro_conf = {
