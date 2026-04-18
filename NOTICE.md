@@ -1,4 +1,4 @@
-This repository distributes with itself several third-party components and their licenses, which can be found in the repository.
+This repository distributes with itself several third-party components and their licenses, locations found below.
 
 | Component	| License | Path |
 | ----------| ------- | ---- |

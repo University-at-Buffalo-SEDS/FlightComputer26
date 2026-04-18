@@ -30,7 +30,7 @@ OPTIONS:
         stlink          - open STLink connection for debugger and exit
                         - prerequisite: Debug 
 
-	notelemetry     - disable telemetry and message handling 
+        notelemetry     - disable telemetry and message handling 
                         - output to stdout (unless nousb enabled)
                         - default option for Debug preset
 
