@@ -217,7 +217,7 @@ typedef enum flight_message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 17),
   Graceful_Reset      = Runtime_Configuration | (1u << 18),
   Confirm_Altitude    = Runtime_Configuration | (1u << 19),
-  Ascent_PrePred      = Runtime_Configuration | (1u << 20),
+  Ascent_Staged       = Runtime_Configuration | (1u << 20),
   Using_Ascent_KF     = Runtime_Configuration | (1u << 22),
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
 
@@ -260,8 +260,8 @@ typedef enum sensor_init_mask : fu8 {
   Shut_Gyro = (1u << 5),
   Shut_Accl = (1u << 6),
 
-  Init_All = (Baro_Mask | Gyro_Mask | Accl_Mask),
-  Shut_All = (Shut_Baro | Shut_Gyro | Shut_Accl)
+  Wild_Mask = (Baro_Mask | Gyro_Mask | Accl_Mask),
+  Shut_Mask = (Shut_Baro | Shut_Gyro | Shut_Accl)
 } sens_init;
 
 

@@ -37,6 +37,8 @@
 
 #define IMU_ID (Gyro_Mask | Accl_Mask)
 
+#define EKF_STAGED (1u << 7)
+
 #define AZ_RAIL_THRES (GRAVITY_SI + EKF_ACCL_RAIL_DIV)
 
 

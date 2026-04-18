@@ -142,7 +142,7 @@ static void dist_callback(TX_THREAD *ptr, UINT cond)
     if (g_conf & option(Rollback_Requested))
     {
       g_conf &= ~option(Rollback_Requested);
-      initialize_sensors(Init_All);
+      initialize_sensors(Wild_Mask);
       timer_update(FillSequence);
       tx_thread_resume(&distribution_task);
     }
@@ -365,7 +365,7 @@ static inline void process_action(fc_msg cmd)
       return manual_deployment(false);
 
     case Reinit_Sensors:
-      return initialize_sensors(Init_All);
+      return initialize_sensors(Wild_Mask);
 
     case Reinit_Barometer:
       return initialize_sensors(Baro_Mask);
@@ -505,7 +505,7 @@ static inline void process_report(fc_msg code)
       {
         /* Broad heuristic because Baro takes a while to init.
          */
-        bad_baro ? initialize_sensors(Init_All)
+        bad_baro ? initialize_sensors(Wild_Mask)
                  : initialize_sensors(Gyro_Mask | Accl_Mask);
       }
     }
@@ -703,7 +703,7 @@ void recovery_entry(ULONG input)
     log_die(id "get off me: %u", st);
   }
 
-  initialize_sensors(Init_All);
+  initialize_sensors(Wild_Mask);
 
   for (timer k = 0; k < Time_Users; ++k)
   {

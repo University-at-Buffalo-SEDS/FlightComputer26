@@ -100,6 +100,8 @@
 #define EKF_BIAS_GYRO_Z 0
 #define EKF_BIAS_ACCL_Z 0
 
+#define EKF_MAX_BLOCK
+
 
 /* Recovery */
 

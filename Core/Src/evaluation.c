@@ -375,40 +375,40 @@ void evaluation_entry(ULONG input)
   (void)input;
 
   UINT st;
-  ULONG done;
-
+  fu8 accum = EKF_STAGED;
   fu32 conf = load(&g_conf, Acq);
 
   enter_flight_state(conf);
 
   task_loop (conf & option(Eval_Abort_Flag))
   {
-    st = tx_event_flags_get(&eval_stage, Gyro_Mask | Accl_Mask,
-                            TX_AND_CLEAR, &done, TX_WAIT_FOREVER);
+    ULONG done;
 
-    if (st != TX_SUCCESS)
+    if ((st = tx_event_flags_get(&eval_stage, Wild_Mask,
+                                 TX_AND_CLEAR, &done,
+                                 TX_WAIT_FOREVER)) != TX_SUCCESS)
+    { continue; }
+
+    accum |= done;
+
+    if ((accum & EKF_STAGED) && (accum & IMU_ID))
     {
-      continue;
+      conf = fetch_and(&g_conf, ~option(Ascent_Staged), AcqRel);
+      
+      ascent_predict(fsec(timer_exchange(AscentKF)), conf);
+
+      accum &= ~(IMU_ID | EKF_STAGED);
     }
-
-    conf = fetch_and(&g_conf, ~option(Ascent_PrePred), AcqRel);
-
-    const float dt = fsec(timer_exchange(AscentKF));
-
-    ascent_predict(dt, conf);
-
-    do
+    else if (!(accum & EKF_STAGED) && (accum & Baro_Mask))
     {
-      st = tx_event_flags_get(&eval_stage, Baro_Mask,
-                              TX_AND_CLEAR, &done, TX_WAIT_FOREVER);
-    }
-    while (st != TX_SUCCESS);
+      ascent_update();
+      accum &= ~Baro_Mask;
+      accum |= EKF_STAGED;
 
-    ascent_update();
+      conf = fetch_or(&g_conf, option(Ascent_Staged), AcqRel);
 
-    conf = fetch_or(&g_conf, option(Ascent_PrePred), AcqRel);
-
-    evaluate_rocket_state(conf);
+      evaluate_rocket_state(conf);
+    }    
   }
 }
 

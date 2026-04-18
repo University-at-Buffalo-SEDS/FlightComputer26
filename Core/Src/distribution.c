@@ -788,7 +788,7 @@ void distribution_entry(ULONG input)
 
     if (conf & option(Using_Ascent_KF))
     {
-      conf & option(Ascent_PrePred) ? ascpred(conf, &imu)
+      conf & option(Ascent_Staged) ? ascpred(conf, &imu)
                                     : ascupd(conf);
     }
     else descent_cycle(conf);
