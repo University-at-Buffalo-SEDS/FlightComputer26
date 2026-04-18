@@ -110,7 +110,7 @@
 
 #define FC_DEFAULTS ( (fc_msg) (0                   	  \
                     | option(Using_Ascent_KF)           \
-                    | option(Ascent_PrePred)            \
+                    | option(Ascent_Staged)             \
                     ) )
 
 
@@ -130,9 +130,6 @@
 
 #define maxd(a, b) ((a) > (b) ? (a) : (b))
 #define maxq(a, b, c, d) maxd(maxd(a, b), maxd(c, d))
-
-#define sigma_low(k)  ((float)k - TOLERANCE)
-#define sigma_high(k) ((float)k + TOLERANCE)
 
 #define fsec(ms) ((float)(ms) * 0.001f)
 #define fbyte(f) ((f) * sizeof(float))
