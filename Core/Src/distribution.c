@@ -650,7 +650,7 @@ static inline void ascpred(fu32 conf, fu8 *imu)
 
     if (st == fc_mask(Sensor_Measm_Code))
     {
-      accum_accl = suspect_gyro;
+      accum_accl = suspect_accl;
       *imu |= Accl_Mask;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);

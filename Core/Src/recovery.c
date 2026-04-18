@@ -638,12 +638,27 @@ static void fc_timer_routine(ULONG timer_id)
     }
 
 #else
-    static fu8 test_launched = 0;
+    static fu8 test_stage = 0;
 
-    if (!test_launched)
+    if (test_stage < 2)
     {
-      test_launched = 1;
+      ++test_stage;
+    } 
+    else if (test_stage == 2)
+    {
+      ++test_stage;
+      fc_msg cmd = fc_mask(Postinit_Signal);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    }
+    else if (test_stage < 3)
+    {
+      ++test_stage;
+    }
+    else if (test_stage == 3)
+    {
+      ++test_stage;
       fc_msg cmd = fc_mask(Launch_Signal);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
@@ -679,6 +694,14 @@ void recovery_entry(ULONG input)
   (void)input;
 
   UINT st;
+  
+  st = tx_thread_entry_exit_notify(&distribution_task,
+                                   dist_callback);
+
+  if (st != TX_SUCCESS)
+  {
+    log_die(id "get off me: %u", st);
+  }
 
   initialize_sensors(Init_All);
 
@@ -754,14 +777,6 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_die(id "timer %s %u", critical, st);
-  }
-
-  st = tx_thread_entry_exit_notify(&distribution_task,
-                                   dist_callback);
-
-  if (st != TX_SUCCESS)
-  {
-    log_die(id "notify %s %u", critical, st);
   }
 
   return TX_SUCCESS;

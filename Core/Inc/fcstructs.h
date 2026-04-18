@@ -248,6 +248,7 @@ typedef struct system_monitor {
   fu16 to_abort, to_reinit;
   fu16 gps_delay, gps_malform;
   volatile fu16 failures;
+  volatile fu8 triggers;
 } sysmon;
 
 typedef enum sensor_init_mask : fu8 {

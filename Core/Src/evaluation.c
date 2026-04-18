@@ -384,7 +384,7 @@ void evaluation_entry(ULONG input)
   task_loop (conf & option(Eval_Abort_Flag))
   {
     st = tx_event_flags_get(&eval_stage, Gyro_Mask | Accl_Mask,
-                            TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
+                            TX_AND_CLEAR, &done, TX_WAIT_FOREVER);
 
     if (st != TX_SUCCESS)
     {
@@ -400,7 +400,7 @@ void evaluation_entry(ULONG input)
     do
     {
       st = tx_event_flags_get(&eval_stage, Baro_Mask,
-                              TX_WAIT_FOREVER, &done, TX_AND_CLEAR);
+                              TX_AND_CLEAR, &done, TX_WAIT_FOREVER);
     }
     while (st != TX_SUCCESS);
 

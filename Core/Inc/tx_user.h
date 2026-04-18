@@ -181,7 +181,7 @@
    enabled. If the application does not use notify callbacks, they may be disabled to reduce
    code size and improve performance.  */
 
-#define TX_DISABLE_NOTIFY_CALLBACKS
+/*#define TX_DISABLE_NOTIFY_CALLBACKS*/
 
 /* Defined, the basic parameter error checking is disabled. */
 
