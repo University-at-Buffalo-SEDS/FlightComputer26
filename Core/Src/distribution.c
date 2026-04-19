@@ -40,6 +40,7 @@ typedef enum remote_cmd_compat : uint8_t
 {
   Compat_Postinit_Signal,
   Compat_Launch_Signal,
+  Compat_Rollback_Signal,
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,
   Compat_Consecutive_Samples,
@@ -72,6 +73,7 @@ typedef enum remote_cmd_compat : uint8_t
 static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
     Launch_Signal,
+    Rollback_Signal,
 
     Monitor_Altitude,
     revoke(Monitor_Altitude),
