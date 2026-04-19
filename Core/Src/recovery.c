@@ -710,6 +710,9 @@ void recovery_entry(ULONG input)
     timer_update(k);
   }
 
+  local_time[PostinitCmd] = UINT_FAST32_MAX;
+  local_time[LaunchCmd] = UINT_FAST32_MAX;
+
   tx_timer_activate(&monotonic_checks);
 
   task_loop(DO_NOT_EXIT)
