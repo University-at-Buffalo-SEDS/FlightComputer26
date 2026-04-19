@@ -611,7 +611,12 @@ static inline void ascupd(fu32 conf)
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return;
   }
-  else meas.baro = baro_suspect;
+  else
+  {
+    fc_lock(&meas_locks[1]);
+    meas.baro = baro_suspect;
+    fc_unlock(&meas_locks[1]);
+  }
 
   tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
 

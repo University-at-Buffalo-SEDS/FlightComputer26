@@ -9,6 +9,7 @@
 #include "platform.h"
 #include "fcstructs.h"
 #include "fccommon.h"
+#include "sweetbench.h"
 
 
 /* DMA */
@@ -134,6 +135,7 @@ static inline bool release_parachute(void)
   }
 
   co2_high();
+  sweetbench_start(4, 1);
 
   timer_update(AssertCO2);
   fetch_or(&g_conf, option(Parachute_Deployed | CO2_Asserted), Rel);
@@ -156,6 +158,7 @@ static inline bool expand_parachute(void)
   }
 
   reef_high();
+  sweetbench_start(4, 1);
 
   timer_update(AssertREEF);
   fetch_or(&g_conf, option(Parachute_Expanded | REEF_Asserted), Rel);

@@ -14,6 +14,7 @@
 #ifdef FC_BENCHMARK
 
 #include "platform.h"
+#include "fctypes.h"
 
 #define _SB_ID		"SB "
 #define _SB_MAX		32
@@ -37,7 +38,7 @@ static void __attribute__((constructor)) _sb_init(void)
 static inline void _sb_log(fu16 idx)
 {
 	char buf[_SB_BUF];
-	const char *str = _SB_ID "task %u min: %u\n";
+	const char *str = _SB_ID "task %2u min: %u\n";
 
 	/* Buffer is sufficiently large.
 	 */
@@ -117,7 +118,7 @@ static inline void _sb_catch(fu16 idx)
 #define sweetbench_start(...)
 #define sweetbench_catch(idx)
 
-#endif // FC_BENCHMARK
+#endif /* FC_BENCHMARK */
 
 
-#endif // _SWEETBENCH_H
+#endif /* _SWEETBENCH_H */

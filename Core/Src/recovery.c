@@ -262,7 +262,7 @@ static inline void manual_deployment(bool apogee)
 /*
  * Enters post-init stage.
  */
-static inline void enter_postinit(void)
+static inline void enter_postinit(bool noconfirm)
 {
   if (sm.flight > Launch)
   {
@@ -270,7 +270,8 @@ static inline void enter_postinit(void)
     return;
   }
 
-  if (timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
+  if (!noconfirm &&
+      timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
   {
     log_msg(id "please confirm postinit");
     return;
@@ -286,11 +287,12 @@ static inline void enter_postinit(void)
 }
 
 /*
- * Triggers launch procedures.
+ * Triggers launch procedures. No confirm if sent internally.
  */
-static inline void enter_launch(void)
+static inline void enter_launch(bool noconfirm)
 {
-  if (timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
+  if (!noconfirm &&
+      timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
   {
     log_msg(id "please confirm launch");
     return;
@@ -317,11 +319,9 @@ static inline void enter_launch(void)
 }
 
 /*
- * Rolls back to pre-initialization. Use it ONLY if
- * you want to reinitiate quaternion calulation -> BEFORE LAUNCH <-,
- * otherwise - UB (not school), curse, malice, apocalypse, end of time!!!!
+ * Rolls back to pre-initialization. Use ONLY before launch.
  */
-static inline void rollback(void)
+static inline void rollback_to_idle(void)
 {
   if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
   {
@@ -346,17 +346,17 @@ static inline void rollback(void)
 /*
  * Process general command from either endpoint.
  */
-static inline void process_action(fc_msg cmd)
+static inline void process_action(fc_msg cmd, bool internal)
 {
   switch (cmd) {
     case Postinit_Signal:
-      return enter_postinit();
+      return enter_postinit(internal);
 
     case Launch_Signal:
-      return enter_launch();
+      return enter_launch(internal);
 
     case Rollback_Signal:
-      return rollback();
+      return rollback_to_idle();
 
     case Deploy_Parachute:
       return manual_deployment(true);
@@ -437,10 +437,7 @@ static inline void update_config(fc_msg incoming)
   {
     g_conf &= ~raw;
   }
-  else
-  {
-    g_conf |= raw;
-  }
+  else g_conf |= raw;
 
   int cursor = sizeof(id) + 8;
   char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
@@ -472,10 +469,7 @@ static inline void process_config(fc_msg code)
   {
     smon.to_reinit = threshold(code & ~Reinit_Thresholds);
   }
-  else
-  {
-    update_config(option(code));
-  }
+  else update_config(option(code));
 }
 
 /*
@@ -552,11 +546,13 @@ static inline void process_gps_code(fc_msg code)
 }
 
 /*
- * Decodes universal FC message from an endpoint {FC, RF, GND}.
+ * Decodes an FC message from an endpoint {FC, GND}.
  */
 static inline void decode_message(fc_msg msg)
 {
-  if (msg & FlightComputer_Mask)
+  bool internal = msg == fc_unmask(msg);
+
+  if (internal)
   {
     msg = fc_unmask(msg);
 
@@ -584,16 +580,13 @@ static inline void decode_message(fc_msg msg)
   }
   else if (msg & Actionable_Decrees)
   {
-    process_action(msg);
+    process_action(msg, internal);
   }
   else if (msg & Runtime_Configuration)
   {
     process_config(msg);
   }
-  else
-  {
-    log_err(id "slap yourself %u times", (unsigned)msg);
-  }
+  else log_err(id "unrecognized option: %u", (unsigned)msg);
 }
 
 
@@ -611,6 +604,7 @@ static void fc_timer_routine(ULONG timer_id)
       timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
   {
     co2_low();
+    sweetbench_catch(4);
     g_conf &= ~option(CO2_Asserted);
   }
 
@@ -618,6 +612,7 @@ static void fc_timer_routine(ULONG timer_id)
       timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL)
   {
     reef_low();
+    sweetbench_catch(4);
     g_conf &= ~option(REEF_Asserted);
   }
 
@@ -634,7 +629,7 @@ static void fc_timer_routine(ULONG timer_id)
       smon.to_abort = smon.to_abort * 10;
 
       fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
 #else
@@ -650,15 +645,14 @@ static void fc_timer_routine(ULONG timer_id)
       fc_msg cmd = fc_mask(Postinit_Signal);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
-    else if (test_stage < 3)
+    else if (test_stage < 4)
     {
       ++test_stage;
     }
-    else if (test_stage == 3)
+    else if (test_stage == 4)
     {
       ++test_stage;
       fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
 
@@ -673,12 +667,9 @@ static void fc_timer_routine(ULONG timer_id)
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
   }
-  else
+  else if (timer_fetch(HeartbeatRF) < TX_TIMER_TICKS)
   {
-    if (timer_fetch(HeartbeatRF) < TX_TIMER_TICKS)
-    {
-      g_conf |= option(GPS_Available);
-    }
+    g_conf |= option(GPS_Available);
   }
 
   sweetbench_start(6, 10);

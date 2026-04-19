@@ -399,7 +399,9 @@ void evaluation_entry(ULONG input)
       conf = fetch_and(&g_conf,
                        ~option(Ascent_KF_Staged), AcqRel);
 
+      sweetbench_catch(3);
       evaluate_rocket_state(conf);
+      sweetbench_start(3, 50, true);
     }
     else if (accum & (Gyro_Mask | Accl_Mask))
     {

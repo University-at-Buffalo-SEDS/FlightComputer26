@@ -276,8 +276,6 @@ void descent_predict(const float dt)
  */
 void descent_update(void)
 {
-  sweetbench_start(4, 50, true);
-
   matrix v_sv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
   matrix v_sv1 = {DKF_STATE, 1, dkf_view(&svec(1))};
   matrix v_msm = {DKF_MEASM, 1, (float *)&meas.gps};
@@ -322,8 +320,6 @@ void descent_update(void)
   mx_sub(&kf.mxp, &m_s, &kf.mxp);
 
   kffree(start);
-
-  sweetbench_catch(4);
 }
 
 
@@ -382,8 +378,6 @@ void ascent_initialize(void)
  */
 void ascent_predict(const float dt, fu32 conf)
 {
-  sweetbench_start(3, 50, true);
-
   fc_lock(&meas_locks[0]);
 
   f_xyz w = meas.gyro;
@@ -458,8 +452,6 @@ void ascent_predict(const float dt, fu32 conf)
   mx_add(&m_pq, &kf.mxq, &kf.mxp);
 
   kffree(start);
-
-  sweetbench_catch(3);
 }
 
 /*
