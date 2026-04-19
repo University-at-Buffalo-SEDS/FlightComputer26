@@ -30,8 +30,8 @@ TX_THREAD dma_task;
 static const gpio_map gpio = {
   .port   = {BARO_CS_PORT, GYRO_CS_PORT, ACCL_CS_PORT},
   .pin    = {BARO_CS_PIN, GYRO_CS_PIN, ACCL_CS_PIN},
-  .drdy   = {BARO_MASK, GYRO_MASK, ACCL_MASK},
-  .offset = {0x2u, 0x1u, 0x2u}
+  .drdy   = {DMA_BARO_MASK, DMA_GYRO_MASK, DMA_ACCL_MASK},
+  .offset = {DMA_BARO_OFFSET, DMA_GYRO_OFFSET, DMA_BARO_OFFSET}
 };
 
 static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
@@ -57,7 +57,9 @@ static fdma flags = {0, 0};
  */
 bool fetch_baro(baro *buf)
 {
-  if (!(fetch_and(&flags.relv, ~BARO_MASK, Acq) & BARO_MASK))
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_BARO_MASK, Acq);
+
+  if (!(rxdone & DMA_BARO_MASK))
   {
     return false;
   }
@@ -93,7 +95,9 @@ bool fetch_baro(baro *buf)
  */
 bool fetch_gyro(f_xyz *buf)
 {
-  if (!(fetch_and(&flags.relv, ~GYRO_MASK, Acq) & GYRO_MASK))
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_GYRO_MASK, Acq);
+
+  if (!(rxdone & DMA_GYRO_MASK))
   {
     return false;
   }
@@ -125,7 +129,9 @@ bool fetch_gyro(f_xyz *buf)
  */
 bool fetch_accl(f_xyz *buf)
 {
-  if (!(fetch_and(&flags.relv, ~ACCL_MASK, Acq) & ACCL_MASK))
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_ACCL_MASK, Acq);
+
+  if (!(rxdone & DMA_ACCL_MASK))
   {
     return false;
   }
@@ -261,45 +267,39 @@ void dma_entry(ULONG input)
         continue;
       }
 
-      bool dr_b = drdy_snapshot & BARO_MASK;
-      bool dr_g = drdy_snapshot & GYRO_MASK;
-      bool dr_a = drdy_snapshot & ACCL_MASK;
+      bool dr_b = drdy_snapshot & DMA_BARO_MASK;
+      bool dr_g = drdy_snapshot & DMA_GYRO_MASK;
+      bool dr_a = drdy_snapshot & DMA_ACCL_MASK;
 
       relv_snapshot = load(&flags.relv, Acq);
 
-      bool re_b = relv_snapshot & BARO_MASK;
-      bool re_g = relv_snapshot & GYRO_MASK;
-      bool re_a = relv_snapshot & ACCL_MASK;
+      bool re_b = relv_snapshot & DMA_BARO_MASK;
+      bool re_g = relv_snapshot & DMA_GYRO_MASK;
+      bool re_a = relv_snapshot & DMA_ACCL_MASK;
 
       /* The selector is defined as a simplified boolean expression
        * of 6 inputs (and 2^6 - 6 possible outcomes).
        */
-      if (dr_g && ((!dr_b && (re_g || !dr_a)) || (!re_g && (!dr_a ||
-                                                    re_a || re_b))))
+      if (dr_g && ((!dr_b && (re_g || !dr_a)) ||
+                   (!re_g && (!dr_a || re_a || re_b))))
       {
         select.next = Sensor_Gyro;
       }
-      else if (dr_a && (((!dr_g || re_g) && (!dr_b || !re_a)) ||
-                                            (dr_g && re_b && re_g)))
+      else if (dr_a && (((!dr_g || re_g) && (!dr_b || !re_a))
+                                  || (dr_g && re_b && re_g)))
       {
         select.next = Sensor_Accl;
       }
-      else
-      {
-        select.next = Sensor_Baro;
-      }
+      else select.next = Sensor_Baro;
     }
     else
     {
-      if (drdy_snapshot & BARO_MASK)
-      {
-        select.next = Sensor_Baro;
-      }
-      else
+      if (!(drdy_snapshot & DMA_BARO_MASK))
       {
         tx_thread_relinquish();
         continue;
       }
+      else select.next = Sensor_Baro;
     }
     
     start_dma_transfer();

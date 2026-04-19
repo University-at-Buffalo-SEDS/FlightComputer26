@@ -15,9 +15,13 @@
 
 #define DMA_TIMEOUT_MS 50
 
-#define BARO_MASK BARO_EXTI_Pin
-#define GYRO_MASK (GYRO_EXTI_1_Pin | GYRO_EXTI_2_Pin)
-#define ACCL_MASK (ACCL_EXTI_1_Pin | ACCL_EXTI_2_Pin)
+#define DMA_BARO_MASK BARO_EXTI_Pin
+#define DMA_GYRO_MASK (GYRO_EXTI_1_Pin | GYRO_EXTI_2_Pin)
+#define DMA_ACCL_MASK (ACCL_EXTI_1_Pin | ACCL_EXTI_2_Pin)
+
+#define DMA_BARO_OFFSET 0x2u
+#define DMA_GYRO_OFFSET 0x1u
+#define DMA_ACCL_OFFSET 0x2u
 
 
 /* Evaluation constants */
