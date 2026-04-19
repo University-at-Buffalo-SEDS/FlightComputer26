@@ -712,6 +712,7 @@ void recovery_entry(ULONG input)
 
   local_time[PostinitCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
+  local_time[RollbackCmd] = UINT_FAST32_MAX;
 
   tx_timer_activate(&monotonic_checks);
 
