@@ -222,16 +222,7 @@ typedef enum flight_message : fu32 {
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
-
-  Abort_After_40  = Abortion_Thresholds + 40,
-  Abort_After_100 = Abortion_Thresholds + 100,
-  Abort_After_250 = Abortion_Thresholds + 250,
-
-  Reinit_Thresholds = Runtime_Configuration | (1u << 27),
-
-  Reinit_After_15 = Reinit_Thresholds + 15,
-  Reinit_After_30 = Reinit_Thresholds + 30,
-  Reinit_After_50 = Reinit_Thresholds + 50,
+  Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
 
   GroundStation_Heartbeat = (1u << 30),
   FlightComputer_Mask = (1u << 31),

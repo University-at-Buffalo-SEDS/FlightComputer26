@@ -96,12 +96,12 @@ static const fc_msg extmap[Compat_Messages] = {
     Advance_State,
     Rewind_State,
 
-    Abort_After_40,
-    Abort_After_100,
-    Abort_After_250,
-    Reinit_After_15,
-    Reinit_After_30,
-    Reinit_After_50,
+    Abortion_Thresholds + 40,
+    Abortion_Thresholds + 100,
+    Abortion_Thresholds + 250,
+    Reinit_Thresholds + 15,
+    Reinit_Thresholds + 30,
+    Reinit_Thresholds + 50,
 };
 
 #define MIN_CMD_SIZE 1
