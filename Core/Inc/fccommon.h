@@ -33,11 +33,7 @@
 
 #define CLEAR_IDX ((fu16)UINT_FAST8_MAX << 8)
 
-#define CAN_EVALUATE UINT_FAST32_MAX
-
-#define IMU_ID (Gyro_Mask | Accl_Mask)
-
-#define EKF_STAGED (1u << 7)
+#define EVALUATION_STAGED (fu8)(1u << 7)
 
 #define AZ_RAIL_THRES (GRAVITY_SI + EKF_ACCL_RAIL_DIV)
 
@@ -110,7 +106,6 @@
 
 #define FC_DEFAULTS ( (fc_msg) (0                   	  \
                     | option(Using_Ascent_KF)           \
-                    | option(Ascent_Staged)             \
                     ) )
 
 

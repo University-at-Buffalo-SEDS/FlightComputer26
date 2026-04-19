@@ -217,7 +217,7 @@ typedef enum flight_message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 17),
   Graceful_Reset      = Runtime_Configuration | (1u << 18),
   Confirm_Altitude    = Runtime_Configuration | (1u << 19),
-  Ascent_Staged       = Runtime_Configuration | (1u << 20),
+  Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
   Using_Ascent_KF     = Runtime_Configuration | (1u << 22),
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
 

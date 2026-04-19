@@ -656,7 +656,7 @@ static inline void ascpred(fu32 conf, fu8 *imu)
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
 
-  if (*imu != IMU_ID)
+  if (*imu != (Gyro_Mask | Accl_Mask))
   {
     tx_thread_relinquish();
     return;
@@ -684,7 +684,7 @@ static inline void ascpred(fu32 conf, fu8 *imu)
     tx_thread_relinquish();
   }
 
-  *imu &= ~IMU_ID;
+  *imu &= ~(Gyro_Mask | Accl_Mask);
 
   log_measm(SEDS_DT_GYRO_DATA, &suspect_gyro);
   log_measm(SEDS_DT_ACCEL_DATA, &suspect_accl);
@@ -710,7 +710,7 @@ static inline void descent_cycle(fu32 conf)
     if (st == fc_mask(Sensor_Measm_Code))
     {
       descent_update();
-      st = CAN_EVALUATE;
+      st = EVALUATION_STAGED;
     }
     else tx_queue_send(&shared, &st, TX_NO_WAIT);
 
@@ -727,13 +727,13 @@ static inline void descent_cycle(fu32 conf)
 
     if (!(conf & option(Monitor_Altitude)))
     {
-      st = CAN_EVALUATE;
+      st = EVALUATION_STAGED;
     }
   }
 
 #endif /* GPS_AVAILABLE */
 
-  if (st == CAN_EVALUATE)
+  if (st == EVALUATION_STAGED)
   {
     evaluate_rocket_state(conf);
     sweetbench_catch(9);
@@ -788,7 +788,7 @@ void distribution_entry(ULONG input)
 
     if (conf & option(Using_Ascent_KF))
     {
-      conf & option(Ascent_Staged) ? ascpred(conf, &imu)
+      conf & option(Ascent_KF_Staged) ? ascpred(conf, &imu)
                                     : ascupd(conf);
     }
     else descent_cycle(conf);

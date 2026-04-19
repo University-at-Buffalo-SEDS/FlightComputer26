@@ -375,7 +375,7 @@ void evaluation_entry(ULONG input)
   (void)input;
 
   UINT st;
-  fu8 accum = EKF_STAGED;
+  fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
 
   enter_flight_state(conf);
@@ -391,24 +391,26 @@ void evaluation_entry(ULONG input)
 
     accum |= done;
 
-    if ((accum & EKF_STAGED) && (accum & IMU_ID))
+    if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
     {
-      conf = fetch_and(&g_conf, ~option(Ascent_Staged), AcqRel);
+      ascent_update();
+
+      accum &= ~(EVALUATION_STAGED | Baro_Mask);
+      conf = fetch_and(&g_conf,
+                       ~option(Ascent_KF_Staged), AcqRel);
+
+      evaluate_rocket_state(conf);
+    }
+    else if (accum & (Gyro_Mask | Accl_Mask))
+    {
+      conf = fetch_or(&g_conf,
+                      option(Ascent_KF_Staged), AcqRel);
       
       ascent_predict(fsec(timer_exchange(AscentKF)), conf);
 
-      accum &= ~(IMU_ID | EKF_STAGED);
+      accum |= EVALUATION_STAGED;
+      accum &= ~(Gyro_Mask | Accl_Mask);
     }
-    else if (!(accum & EKF_STAGED) && (accum & Baro_Mask))
-    {
-      ascent_update();
-      accum &= ~Baro_Mask;
-      accum |= EKF_STAGED;
-
-      conf = fetch_or(&g_conf, option(Ascent_Staged), AcqRel);
-
-      evaluate_rocket_state(conf);
-    }    
   }
 }
 
