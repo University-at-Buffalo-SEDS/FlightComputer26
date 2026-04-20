@@ -131,7 +131,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
   /* Configuration setup with default fallbacks */
   struct gyro_config valid = {
     .rng = Gyro_Range_2000Dps,
-    .bw  = Gyro_532Hz_ODR_2000Hz,
+    .bw  = Gyro_523Hz_ODR_2000Hz,
   };
 
   if (conf) {
@@ -140,7 +140,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
     {
       valid.rng = conf->rng;
     }
-    if (conf->bw >= Gyro_532Hz_ODR_2000Hz &&
+    if (conf->bw >= Gyro_523Hz_ODR_2000Hz &&
         conf->bw <= Gyro_32Hz_ODR_100Hz)
     {
       valid.bw = conf->bw;

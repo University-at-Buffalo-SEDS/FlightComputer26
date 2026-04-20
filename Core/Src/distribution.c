@@ -43,6 +43,8 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Launch_Signal,
   Compat_Rollback_Signal,
 
+  Compat_GroundStation_Heartbeat,
+
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,
   Compat_Consecutive_Samples,
@@ -78,6 +80,8 @@ static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
     Launch_Signal,
     Rollback_Signal,
+
+    GroundStation_Heartbeat,
 
     Monitor_Altitude,
     revoke(Monitor_Altitude),
@@ -121,7 +125,7 @@ static inline fc_msg decode_cmd(const uint8_t *raw)
 
 static inline fc_msg decode_cmd(const uint8_t *raw)
 {
-  return (fc_msg)U32(raw[0], raw[1], raw[2], raw[3]);
+  return (fc_msg) fc_unmask(U32(raw[0], raw[1], raw[2], raw[3]));
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */

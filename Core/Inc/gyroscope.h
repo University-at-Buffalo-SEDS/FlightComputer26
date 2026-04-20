@@ -71,7 +71,7 @@ enum gyro_range {
 };
 
 enum gyro_bandwidth {
-  Gyro_532Hz_ODR_2000Hz = 0x00,
+  Gyro_523Hz_ODR_2000Hz = 0x00,
   Gyro_230Hz_ODR_2000Hz = 0x01,
   Gyro_116Hz_ODR_1000Hz = 0x02,
   Gyro_47Hz_ODR_400Hz   = 0x03,
