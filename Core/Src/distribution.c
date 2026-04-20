@@ -2,7 +2,6 @@
  * Distribution Task
  */
 
-#include "accelerometer.h"
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
@@ -143,7 +142,7 @@ enqueue_gps_data(const uint8_t *buf)
   static fu8 idx = 0;
 
   fu8 i = idx;
-  memcpy(&gps_ring[i], buf, sizeof(f_xyz));
+  gps_ring[i] = *(f_xyz *)buf;
 
   i = (i + 1) & GPS_RING_SIZE_MASK;
   fu8 cons = load(&gps_mask, Acq) >> 8;

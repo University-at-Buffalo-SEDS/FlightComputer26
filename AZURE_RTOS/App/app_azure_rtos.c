@@ -171,16 +171,16 @@ VOID tx_application_define(VOID *first_unused_memory)
 
     /* USER CODE END UX_Byte_Pool_Success */
 
-    memory_ptr = (VOID *)&ux_app_byte_pool;
-    status = MX_USBX_Init(memory_ptr);
-    if (status != UX_SUCCESS)
-    {
-      /* USER CODE BEGIN  MX_USBX_Init_Error */
-      while(1)
-      {
-      }
-      /* USER CODE END  MX_USBX_Init_Error */
-    }
+    // memory_ptr = (VOID *)&ux_app_byte_pool;
+    // status = MX_USBX_Init(memory_ptr);
+    // if (status != UX_SUCCESS)
+    // {
+    //   /* USER CODE BEGIN  MX_USBX_Init_Error */
+    //   while(1)
+    //   {
+    //   }
+    //   /* USER CODE END  MX_USBX_Init_Error */
+    // }
     /* USER CODE BEGIN  MX_USBX_Init_Success */
     cdc_printf_init();
     /* USER CODE END  MX_USBX_Init_Success */

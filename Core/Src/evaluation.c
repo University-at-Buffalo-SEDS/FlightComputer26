@@ -382,9 +382,11 @@ void evaluation_entry(ULONG input)
 
   task_loop (conf & option(Eval_Abort_Flag))
   {
-    ULONG done;
+    ULONG done, request = accum & EVALUATION_STAGED
+                                ? Baro_Mask
+                                : Gyro_Mask | Accl_Mask;
 
-    if ((st = tx_event_flags_get(&eval_stage, Wild_Mask,
+    if ((st = tx_event_flags_get(&eval_stage, request,
                                  TX_AND_CLEAR, &done,
                                  TX_WAIT_FOREVER)) != TX_SUCCESS)
     { continue; }

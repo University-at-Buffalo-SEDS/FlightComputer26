@@ -27,7 +27,7 @@ struct _sb_context {
 	fu32 min_ms;
 };
 
-static struct _sb_context **_sb_meta = NULL;
+static struct _sb_context *_sb_meta = NULL;
 
 static void __attribute__((constructor)) _sb_init(void)
 {
@@ -42,7 +42,7 @@ static inline void _sb_log(fu16 idx)
 
 	/* Buffer is sufficiently large.
 	 */
-	sprintf(buf, str, idx, _sb_meta[idx]->min_ms);
+	sprintf(buf, str, idx, _sb_meta[idx].min_ms);
 	log_msg(buf);
 }
 
@@ -55,17 +55,17 @@ _sb_setoff(fu16 idx, size_t count, bool flush)
 		return;
 	}
 
-	if (_sb_meta[idx]->setoff != 0)
+	if (_sb_meta[idx].setoff != 0)
 	{
 		/* Multiple start is allowed for branching.
 		 */
 		return;
 	}
 
-	if (_sb_meta[idx]->count == 0)
+	if (_sb_meta[idx].count == 0)
 	{
-		_sb_meta[idx]->count = count;
-		_sb_meta[idx]->min_ms = UINT_FAST32_MAX;
+		_sb_meta[idx].count = count;
+		_sb_meta[idx].min_ms = UINT_FAST32_MAX;
 
 		if (flush)
 		{
@@ -73,27 +73,27 @@ _sb_setoff(fu16 idx, size_t count, bool flush)
 		}
 	}
 
-	_sb_meta[idx]->setoff = now_ms();
+	_sb_meta[idx].setoff = now_ms();
 }
 
 static inline void _sb_catch(fu16 idx)
 {
-	fu32 elapsed = now_ms() - _sb_meta[idx]->setoff;
+	fu32 elapsed = now_ms() - _sb_meta[idx].setoff;
 
-	if (_sb_meta[idx]->count == 0)
+	if (_sb_meta[idx].count == 0)
 	{
 		/* Catch before start is allowed for inverse benchmarking.
 		 */
 		return;
 	}
 
-	_sb_meta[idx]->min_ms = elapsed < _sb_meta[idx]->min_ms
+	_sb_meta[idx].min_ms = elapsed < _sb_meta[idx].min_ms
 															? elapsed
-															: _sb_meta[idx]->min_ms;
+															: _sb_meta[idx].min_ms;
 
-	if (--_sb_meta[idx]->count == 0)
+	if (--_sb_meta[idx].count == 0)
 	{
-		_sb_meta[idx]->setoff = 0;
+		_sb_meta[idx].setoff = 0;
 		_sb_log(idx);
 	}
 }
