@@ -203,7 +203,10 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define reef_high()                                           \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
+#define toggle_green_led()                                    \
+  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin)
 
+  
 /* Telemetry */
 
 #ifdef TELEMETRY_ENABLED

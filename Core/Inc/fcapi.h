@@ -72,6 +72,27 @@ log_transition(const char *task, float metric)
 }
 
 
+/* LED */
+
+const fu32 led_cycles = 80000000;
+
+static inline void blink(volatile fu32 count)
+{
+  volatile fu32 delays = led_cycles;
+
+  while (count--)
+  {
+    toggle_green_led();
+
+    while (delays--)
+    {
+      __NOP();
+    }
+    delays = led_cycles;
+  }
+}
+
+
 /* Recovery */
 
 extern TX_QUEUE shared;
