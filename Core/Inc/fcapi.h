@@ -74,7 +74,7 @@ log_transition(const char *task, float metric)
 
 /* LED */
 
-const fu32 led_cycles = 80000000;
+const static volatile fu32 led_cycles = 80000000;
 
 static inline void blink(volatile fu32 count)
 {
