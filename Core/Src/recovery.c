@@ -48,7 +48,7 @@ static const conf_dict confmap[] = {
   { Consecutive_Samples, "consectuive-samples" },
   { Eval_Focus_Flag,     "eval-focus" },
   { Reset_Failures,      "reset-failures" },
-  { Validate_Measms,     "validate-measms" },
+  { Report_Bad_Measms,   "report-bad-measms" },
 };
 
 
@@ -159,14 +159,14 @@ static inline void auto_abort(void)
   tx_thread_terminate(&evaluation_task);
   tx_thread_reset(&evaluation_task);
 
-  /* Distribution may hold locks */
   g_conf |= option(Graceful_Reset);
+  g_conf &= ~option(Defer_Baro_Fallback);
 
   smon.gps_delay = 0;
   smon.gps_malform = 0;
-  g_conf &= ~option(Defer_Baro_Fallback);
 
-  if (g_conf & option(Lost_GroundStation))
+  if (sm.flight >= Launch ||
+      g_conf & option(Lost_GroundStation))
   {
     smon.to_abort = TO_ABORT * 10;
 
@@ -200,7 +200,7 @@ static inline void barometer_fallback(void)
   initialize_sensors(Baro_Mask);
 
   g_conf |= option(Monitor_Altitude);
-  g_conf |= option(Validate_Measms);
+  g_conf |= option(Report_Bad_Measms);
   log_msg(id "entered vigilant mode");
 }
 
@@ -313,6 +313,7 @@ static inline void enter_launch(bool noconfirm)
     smon.gps_malform = 0;
   }
 
+  smon.failures = 0;
   g_conf &= ~option(Eval_Abort_Flag);
 
   tx_thread_resume(&evaluation_task);
@@ -337,6 +338,7 @@ static inline void rollback_to_idle(void)
   g_conf |= option(Rollback_Requested);
   g_conf &= ~option(Postinit_Requested);
   g_conf &= ~option(Launch_Requested);
+  g_conf &= ~option(Report_Bad_Measms);
 
   sm.flight = Suspended;
 
@@ -550,7 +552,7 @@ static inline void process_gps_code(fc_msg code)
  */
 static inline void decode_message(fc_msg msg)
 {
-  bool internal = msg == fc_unmask(msg);
+  bool internal = msg == fc_mask(msg);
 
   if (internal)
   {

@@ -199,7 +199,7 @@ typedef enum flight_message : fu32 {
   Eval_Focus_Flag     = Runtime_Configuration | (1u << 2),
   Eval_Abort_Flag     = Runtime_Configuration | (1u << 3),
   Reset_Failures      = Runtime_Configuration | (1u << 4),
-  Validate_Measms     = Runtime_Configuration | (1u << 5),
+  Report_Bad_Measms   = Runtime_Configuration | (1u << 5),
 
   User_Option_Bound   = Runtime_Configuration | (1u << 6), 
 

@@ -135,7 +135,7 @@
 											| option(Consecutive_Samples)       \
 											| option(Eval_Focus_Flag)           \
 											| option(Reset_Failures)            \
-											| option(Validate_Measms)           \
+											| option(Report_Bad_Measms)         \
                       ) )
 
 

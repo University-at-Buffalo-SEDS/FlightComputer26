@@ -2,6 +2,7 @@
  * Distribution Task
  */
 
+#include "accelerometer.h"
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
@@ -41,14 +42,16 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Postinit_Signal,
   Compat_Launch_Signal,
   Compat_Rollback_Signal,
+
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,
   Compat_Consecutive_Samples,
   Revoke_Consecutive_Samples,
   Compat_Reset_Failures,
   Revoke_Reset_Failures,
-  Compat_Validate_Measms,
-  Revoke_Validate_Measms,
+  Compat_Report_Bad_Measms,
+  Revoke_Report_Bad_Measms,
+
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,
   Compat_Evaluation_Relax,
@@ -60,6 +63,7 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Disable_IMU,
   Compat_Advance_State,
   Compat_Rewind_State,
+
   Compat_Abort_After_40,
   Compat_Abort_After_100,
   Compat_Abort_After_250,
@@ -81,8 +85,8 @@ static const fc_msg extmap[Compat_Messages] = {
     revoke(Consecutive_Samples),
     Reset_Failures,
     revoke(Reset_Failures),
-    Validate_Measms,
-    revoke(Validate_Measms),
+    Report_Bad_Measms,
+    revoke(Report_Bad_Measms),
 
     Deploy_Parachute,
     Expand_Parachute,
@@ -155,9 +159,9 @@ static inline fu8 fetch_gps_data(kf_gps *buf)
   static fu8 idx = UINT_FAST8_MAX;
 
   fu16 i = idx;
-  fu8 n = (fu8)swap(&gps_mask, i << 8, AcqRel);
+  fu8 n = (fu8) swap(&gps_mask, i << 8, AcqRel);
 
-  if (!n)
+  if (n == 0)
   {
     fetch_or(&gps_mask, CLEAR_IDX, Rlx);
     return 0;
@@ -176,18 +180,26 @@ static inline fu8 fetch_gps_data(kf_gps *buf)
 }
 
 /*
- * GPS sanity check against NEO-M9N data range.
+ * Checks received size and applicable sanity constraints.
  */
-static inline fc_msg
-validate_gps_absolute(const f_xyz *gps)
+static inline fu32
+validate_gps(const f_xyz *gps, size_t len, fu32 conf)
 {
-  fc_msg st = 0;
+  if (len != sizeof(f_xyz))
+  {
+    return fc_mask(GPS_Data_Code | GPS_Malformed);
+  }
 
-  if (gps->x > MAX_LAT || gps->x < MIN_LAT)
+  fc_msg st = fc_mask(GPS_Data_Code);
+  bool launch = conf & option(Launch_Requested);
+  
+  if (launch ? !proxim_lat(gps->x)
+             : gps->x > MAX_LAT || gps->x < MIN_LAT)
   {
     st |= Bad_Lattitude;
   }
-  if (gps->y > MAX_LON || gps->y < MIN_LON)
+  if (launch ? !proxim_lon(gps->y)
+             : gps->y > MAX_LON || gps->y < MIN_LON)
   {
     st |= Bad_Longtitude;
   }
@@ -200,65 +212,20 @@ validate_gps_absolute(const f_xyz *gps)
 }
 
 /*
- * GPS sanity check against approximate launch site.
- * Tolerance should be relatively high (> 1 deg).
- */
-static inline fc_msg
-validate_gps_relative(const f_xyz *gps)
-{
-  if (!proxim_lat(gps->x) || !proxim_lon(gps->y))
-  {
-    log_err(telid "GPS too far off site "
-                  "LAT: %f, LON: %f", gps->x, gps->y);
-  }
-
-  if (gps->z > MAX_SEA || gps->z < MIN_SEA)
-  {
-    return Bad_Sea_Level;
-  }
-
-  return 0;
-}
-
-/*
- * Checks received size and invokes appropriate validator.
- */
-static inline fu32
-validate_gps_serial(const uint8_t *data, size_t len)
-{
-  fc_msg rep = fc_mask(GPS_Data_Code);
-
-  if (len != sizeof(f_xyz))
-  {
-    rep |= GPS_Malformed;
-  }
-  else
-  {
-    fu32 conf = load(&g_conf, Acq);
-
-    if (conf & option(Validate_Measms))
-    {
-      rep |= conf & option(Launch_Requested)
-                 ? validate_gps_absolute((const f_xyz *)data)
-                 : validate_gps_relative((const f_xyz *)data);
-    }
-  }
-
-  return rep;
-}
-
-/*
  * Accumulates helpers refresh RF board heartbeat,
  * validate GPS data, and enqueue valid packet.
  */
 static inline SedsResult
 handle_gps_data(const uint8_t *data, size_t len)
 {
+#ifdef GPS_AVAILABLE
+
   sweetbench_catch(10);
 
   timer_update(HeartbeatRF);
 
-  fu32 rep = validate_gps_serial(data, len);
+  fu32 cfg = fetch_or(&g_conf, option(GPS_Available), Rlx);
+  fu32 rep = validate_gps((const f_xyz *)data, len, cfg);
 
   if (rep != fc_mask(GPS_Data_Code))
   {
@@ -266,18 +233,17 @@ handle_gps_data(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
-  fetch_or(&g_conf, option(GPS_Available), Rlx);
-
   enqueue_gps_data(data);
 
   sweetbench_start(10, 50);
+
+#endif /* GPS_AVAILABLE */
 
   return SEDS_OK;
 }
 
 /*
- * Converts GPS coordinates into distance from
- * launch rail. This is how Descent KF expects GPS.
+ * Converts GPS coordinates into distance from launch rail.
  */
 static inline void distance_from_rail(kf_gps *buf)
 {
@@ -310,7 +276,7 @@ handle_gnd_command(const uint8_t *data, size_t len)
   {
     msg = decode_cmd(data + k);
 
-    st += (msg != Invalid_Message)
+    st += msg != Invalid_Message
               ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
               : INVALID_MESSAGE_STATUS;
   }
@@ -322,7 +288,7 @@ handle_gnd_command(const uint8_t *data, size_t len)
 
   msg = decode_cmd(data);
 
-  st = (msg != Invalid_Message)
+  st = msg != Invalid_Message
             ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
             : INVALID_MESSAGE_STATUS;
 
@@ -350,14 +316,10 @@ on_fc_packet(const SedsPacketView *pkt, void *user)
   {
     return handle_gnd_command(pkt->payload, pkt->payload_len);
   }
-
-#ifdef GPS_AVAILABLE
   else if (pkt->sender[0] == 'R')
   {
     return handle_gps_data(pkt->payload, pkt->payload_len);
   }
-#endif
-
   else return SEDS_HANDLER_ERROR;
 }
 
@@ -367,88 +329,100 @@ on_fc_packet(const SedsPacketView *pkt, void *user)
 /*
  * Gyroscope sanity check against its data range.
  */
-static inline fc_msg
+static inline bool
 validate_gyro(const f_xyz *gyro, fu32 conf)
 {
   fc_msg st = fc_mask(Sensor_Measm_Code);
 
-  if (conf & option(Validate_Measms))
+  if (gyro->x > MAX_DPS || gyro->x < MIN_DPS)
   {
-    if (gyro->x > MAX_DPS || gyro->x < MIN_DPS)
-    {
-      st |= Bad_Attitude_X;
-    }
-    if (gyro->y > MAX_DPS || gyro->y < MIN_DPS)
-    {
-      st |= Bad_Attitude_Y;
-    }
-    if (gyro->z > MAX_DPS || gyro->z < MIN_DPS)
-    {
-      st |= Bad_Attitude_Z;
-    }
+    st |= Bad_Attitude_X;
+  }
+  if (gyro->y > MAX_DPS || gyro->y < MIN_DPS)
+  {
+    st |= Bad_Attitude_Y;
+  }
+  if (gyro->z > MAX_DPS || gyro->z < MIN_DPS)
+  {
+    st |= Bad_Attitude_Z;
   }
 
-  return st;
+  if (conf & option(Report_Bad_Measms) &&
+      st != fc_mask(Sensor_Measm_Code))
+  {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return false;
+  }
+
+  return true;
 }
 
 /*
  * Accelerometer sanity check against its data range.
  */
-static inline fc_msg
+static inline bool
 validate_accl(const f_xyz *accl, fu32 conf)
 {
   fc_msg st = fc_mask(Sensor_Measm_Code);
 
-  if (conf & option(Validate_Measms))
+  if (accl->x > MAX_ACC || accl->x < MIN_ACC)
   {
-    if (accl->x > MAX_ACC || accl->x < MIN_ACC)
-    {
-      st |= Bad_Accel_X;
-    }
-    if (accl->y > MAX_ACC || accl->y < MIN_ACC)
-    {
-      st |= Bad_Accel_Y;
-    }
-    if (accl->z > MAX_ACC || accl->z < MIN_ACC)
-    {
-      st |= Bad_Accel_Z;
-    }
+    st |= Bad_Accel_X;
+  }
+  if (accl->y > MAX_ACC || accl->y < MIN_ACC)
+  {
+    st |= Bad_Accel_Y;
+  }
+  if (accl->z > MAX_ACC || accl->z < MIN_ACC)
+  {
+    st |= Bad_Accel_Z;
   }
 
-  return st;
+  if (conf & option(Report_Bad_Measms) &&
+      st != fc_mask(Sensor_Measm_Code))
+  {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return false;
+  }
+
+  return true;
 }
 
 /*
  * Barometer sanity check against BMP390 data range.
  */
-static inline fc_msg
+static inline bool
 validate_baro(const baro *baro, fu32 conf)
 {
   fc_msg st = fc_mask(Sensor_Measm_Code);
 
-  if (conf & option(Validate_Measms))
+  if (baro->prs > MAX_PRS || baro->prs < MIN_PRS)
   {
-    if (baro->prs > MAX_PRS || baro->prs < MIN_PRS)
-    {
-      st |= Bad_Pressure;
-    }
-    if (baro->alt > MAX_ALT || baro->alt < MIN_ALT)
-    {
-      st |= Bad_Altitude;
-    }
+    st |= Bad_Pressure;
+  }
+  if (baro->alt > MAX_ALT || baro->alt < MIN_ALT)
+  {
+    st |= Bad_Altitude;
   }
 
-  return st;
+  if (conf & option(Report_Bad_Measms) &&
+      st != fc_mask(Sensor_Measm_Code))
+  {
+    tx_queue_send(&shared, &st, TX_NO_WAIT);
+    return false;
+  }
+
+  return true;
 }
 
 /*
  * Calls and aggregate statuses from all validators.
  */
-static inline fc_msg IREC26_unused
+static inline fu8 IREC26_unused
 validate_all(const measm *buf, fu32 conf)
 {
-  return validate_baro(&buf->baro, conf) |
-         validate_gyro(&buf->gyro, conf) |
+  return validate_baro(&buf->baro, conf) +
+         validate_gyro(&buf->gyro, conf) +
          validate_accl(&buf->accl, conf);
 }
 
@@ -456,7 +430,7 @@ validate_all(const measm *buf, fu32 conf)
 /*
  * Monitors and reports GPS throughout fill sequence.
  */
-static inline void monitor_gps(fu32 conf, float *acc)
+static inline fu32 monitor_gps(fu32 conf, float *acc, fu32 *ctr)
 {
 #ifdef GPS_AVAILABLE
 
@@ -475,6 +449,11 @@ static inline void monitor_gps(fu32 conf, float *acc)
     }
   }
 
+  return ++*ctr;
+
+#else
+  return 0;
+
 #endif /* GPS_AVAILABLE */
 }
 
@@ -484,54 +463,46 @@ static inline void monitor_gps(fu32 conf, float *acc)
  */
 static inline void data_streaming_mode(void)
 {
-  fu32 ctr = 0, conf = 0;
-
   float acc_baro = 0.0f, acc_gps = 0.0f;
-  fu32 ctr_baro = 0, ctr_gps = 0;
+  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0;
 
   task_loop (conf & option(Postinit_Requested) ||
              conf & option(Rollback_Requested))
   {
-    fu32 st = fc_mask(Sensor_Measm_Code);
+    fu32 code = 0;
 
     if (fetch_gyro(&meas.gyro))
     {
-      st |= validate_gyro(&meas.gyro, conf);
+      code |= validate_gyro(&meas.gyro, conf) ? 0
+                                              : Gyro_Mask;
       log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
     }
 
     if (fetch_accl(&meas.accl))
     {
-      st |= validate_accl(&meas.accl, conf);
+      code |= validate_accl(&meas.accl, conf) ? 0
+                                              : Accl_Mask;
       log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
     }
 
     if (fetch_baro(&meas.baro))
     {
       acc_baro += fsec(timer_exchange(Auxiliary));
-      ++ctr_baro;
+      log_transition(pi_bar, acc_baro / ++ctr_baro);
 
-      st |= validate_baro(&meas.baro, conf);
+      code |= validate_baro(&meas.baro, conf) ? 0
+                                              : Baro_Mask;
       log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
     }
 
-    if (st != fc_mask(Sensor_Measm_Code))
+    if (code != 0)
     {
-      log_err(pilot "malformed measm: %u", fc_unmask(st));
+      log_err(pilot "malformed measm: %u", code);
     }
 
-    monitor_gps(conf, &acc_gps);
-
-    if (!(++ctr & 255))
+    if (monitor_gps(conf, &acc_gps, &ctr_gps) > 0)
     {
-      if (ctr_baro > 0)
-      {
-        log_transition(pi_bar, acc_baro / ctr_baro);
-      }
-      if (ctr_gps > 0)
-      {
-        log_transition(pi_gps, acc_gps / ctr_gps);
-      }
+      log_transition(pi_gps, acc_gps / ctr_gps);
     }
 
     tx_thread_relinquish();
@@ -552,7 +523,7 @@ static inline void post_initialization(void)
   fc_msg cmd = option(Reinit_IMU);
   tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
 
-  fu32 st, conf = load(&g_conf, Acq);
+  fu32 conf = load(&g_conf, Acq);
 
   timer_update(Auxiliary);
 
@@ -560,10 +531,9 @@ static inline void post_initialization(void)
   {
     if (fetch_accl(&meas.accl))
     {
-      st = validate_accl(&meas.accl, conf);
       log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
 
-      if (st == fc_mask(Sensor_Measm_Code))
+      if (validate_accl(&meas.accl, conf))
       {
         accl_acc.x += meas.accl.x;
         accl_acc.y += meas.accl.y;
@@ -572,7 +542,7 @@ static inline void post_initialization(void)
       }
     }
 
-    monitor_gps(conf, &acc_gps);
+    (void) monitor_gps(conf, &acc_gps, &ctr_gps);
 
     tx_thread_relinquish();
 
@@ -594,76 +564,54 @@ static inline void post_initialization(void)
 /*
  * Data cycle for the Ascent filter: Update stage.
  */
-static inline void ascupd(fu32 conf)
+static inline void asc_upd(fu32 conf)
 {
-  fu32 st;
   baro baro_suspect;
 
-  if (!fetch_baro(&baro_suspect))
-  {
-    return;
-  }
-
-  st = validate_baro(&baro_suspect, conf);
-
-  if (st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return;
-  }
-  else
+  if (fetch_baro(&baro_suspect) &&
+      validate_baro(&baro_suspect, conf))
   {
     fc_lock(&meas_locks[1]);
     meas.baro = baro_suspect;
     fc_unlock(&meas_locks[1]);
   }
+  else return;
 
   tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
+
+  log_measm(SEDS_DT_BAROMETER_DATA, &baro_suspect);
+
+  sweetbench_catch(8);
 
   if (conf & Eval_Focus_Flag)
   {
     tx_thread_relinquish();
   }
-
-  log_measm(SEDS_DT_BAROMETER_DATA, &baro_suspect);
-
-  sweetbench_catch(8);
 }
 
 /*
  * Data cycle for the Ascent filter: Predict stage.
  */
-static inline void ascpred(fu32 conf, fu8 *imu)
+static inline void asc_pred(fu32 conf, fu8 *imu)
 {
   static f_xyz accum_gyro, accum_accl;
 
-  fu32 st;
   f_xyz suspect_gyro, suspect_accl;
 
   sweetbench_start(8);
 
-  if (fetch_gyro(&suspect_gyro))
+  if (fetch_gyro(&suspect_gyro) && 
+      validate_gyro(&suspect_gyro, conf))
   {
-    st = validate_gyro(&suspect_gyro, conf);
-
-    if (st == fc_mask(Sensor_Measm_Code))
-    {
-      accum_gyro = suspect_gyro;
-      *imu |= Gyro_Mask;
-    }
-    else tx_queue_send(&shared, &st, TX_NO_WAIT);
+    accum_gyro = suspect_gyro;
+    *imu |= Gyro_Mask;
   }
 
-  if (fetch_accl(&suspect_accl))
+  if (fetch_accl(&suspect_accl) &&
+      validate_accl(&suspect_accl, conf))
   {
-    st = validate_accl(&suspect_accl, conf);
-
-    if (st == fc_mask(Sensor_Measm_Code))
-    {
-      accum_accl = suspect_accl;
-      *imu |= Accl_Mask;
-    }
-    else tx_queue_send(&shared, &st, TX_NO_WAIT);
+    accum_accl = suspect_accl;
+    *imu |= Accl_Mask;
   }
 
   if (*imu != (Gyro_Mask | Accl_Mask))
@@ -672,40 +620,32 @@ static inline void ascpred(fu32 conf, fu8 *imu)
     return;
   }
 
-  if (!(conf & option(Eval_Focus_Flag)))
-  {
-    fc_lock(&meas_locks[0]);
+  fc_lock(&meas_locks[0]);
 
-    meas.gyro = accum_gyro;
-    meas.accl = accum_accl;
+  meas.gyro = accum_gyro;
+  meas.accl = accum_accl;
 
-    fc_unlock(&meas_locks[0]);
-  }
-  else
-  {
-    meas.gyro = accum_gyro;
-    meas.accl = accum_accl;
-  }
+  fc_unlock(&meas_locks[0]);
 
   tx_event_flags_set(&eval_stage, Gyro_Mask | Accl_Mask, TX_OR);
-
-  if (conf & option(Eval_Focus_Flag))
-  {
-    tx_thread_relinquish();
-  }
 
   *imu &= ~(Gyro_Mask | Accl_Mask);
 
   log_measm(SEDS_DT_GYRO_DATA, &suspect_gyro);
   log_measm(SEDS_DT_ACCEL_DATA, &suspect_accl);
+
+  if (conf & option(Eval_Focus_Flag))
+  {
+    tx_thread_relinquish();
+  }
 }
 
 /*
  * Data cycle for the Descent filter.
  */
-static inline void descent_cycle(fu32 conf)
+static inline void desc_full_cycle(fu32 conf)
 {
-  fu32 st = 0;
+  fu32 stage = 0;
 
   sweetbench_start(9);
 
@@ -713,17 +653,11 @@ static inline void descent_cycle(fu32 conf)
 
   descent_predict(dt);
 
-  if (fetch_baro(&meas.baro))
+  if (fetch_baro(&meas.baro) &&
+      validate_baro(&meas.baro, conf))
   {
-    st = validate_baro(&meas.baro, conf);
-
-    if (st == fc_mask(Sensor_Measm_Code))
-    {
-      descent_update();
-      st = EVALUATION_STAGED;
-    }
-    else tx_queue_send(&shared, &st, TX_NO_WAIT);
-
+    descent_update();
+    stage = EVALUATION_STAGED;
     log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
   }
 
@@ -737,13 +671,13 @@ static inline void descent_cycle(fu32 conf)
 
     if (!(conf & option(Monitor_Altitude)))
     {
-      st = EVALUATION_STAGED;
+      stage = EVALUATION_STAGED;
     }
   }
 
 #endif /* GPS_AVAILABLE */
 
-  if (st == EVALUATION_STAGED)
+  if (stage == EVALUATION_STAGED)
   {
     evaluate_rocket_state(conf);
     sweetbench_catch(9);
@@ -798,16 +732,16 @@ void distribution_entry(ULONG input)
 
     if (conf & option(Using_Ascent_KF))
     {
-      conf & option(Ascent_KF_Staged) ? ascpred(conf, &imu)
-                                    : ascupd(conf);
+      conf & option(Ascent_KF_Staged) ? asc_upd(conf)
+                                      : asc_pred(conf, &imu);
     }
-    else descent_cycle(conf);
+    else desc_full_cycle(conf);
   }
 }
 
 /*
- * Creates a preemptive, cooperative Distribution
- * task with defined parameters.
+ * Creates a preemptive, cooperative Distribution task
+ * with defined parameters.
  */
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 {
