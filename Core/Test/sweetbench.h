@@ -55,12 +55,7 @@ _sb_setoff(fu16 idx, size_t count, bool flush)
 		return;
 	}
 
-	if (_sb_meta[idx].setoff != 0)
-	{
-		/* Multiple start is allowed for branching.
-		 */
-		return;
-	}
+	/* TODO multiple start */
 
 	if (_sb_meta[idx].count == 0)
 	{

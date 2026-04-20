@@ -387,7 +387,7 @@ void evaluation_entry(ULONG input)
                                 : Gyro_Mask | Accl_Mask;
 
     if ((st = tx_event_flags_get(&eval_stage, request,
-                                 TX_AND_CLEAR, &done,
+                                 TX_OR_CLEAR, &done,
                                  TX_WAIT_FOREVER)) != TX_SUCCESS)
     { continue; }
 
