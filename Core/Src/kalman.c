@@ -437,7 +437,7 @@ void ascent_predict(const float dt, fu32 conf)
   float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
 
   float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
-  bool raising = sm.flight >= Launch || a.z < AZ_RAIL_THRES;
+  bool raising = sm.flight >= Launch || a.z > AZ_RAIL_THRES;
 
   imedsv.alt = svec(1).alt + dt * svec(1).vel;
   imedsv.vel = svec(1).vel + dt * (raising
@@ -486,7 +486,7 @@ void ascent_update(void)
   matrix v_pht = {EKF_STATE, 1, mxoff(&v_ht)};
 
   offok(&v_ht, &r_hp, "#1 o ht");
-  offok(&v_pht, &v_pht, "#1 o pht");
+  offok(&v_pht, &v_ht, "#1 o pht");
 
   float k_denom;
 
@@ -499,7 +499,7 @@ void ascent_update(void)
   matvec_mul(&kf.mxp, v_ht.pData, v_pht.pData);
   mx_scale(&v_pht, 1.0f / k_denom, &v_pht);
 
-  veok(&v_pht, (float *)&r_hp + EKF_STATE, "#1 v pht");
+  veok(&v_pht, v_ht.pData + EKF_STATE, "#1 v pht");
 
   /* v_pht -> "v_k"; r_hp -> "v_ky"
    */
@@ -510,8 +510,8 @@ void ascent_update(void)
   r_hp.numRows = EKF_STATE;
   r_hp.numCols = 1;
 
-  veok(&v_sv1, (float *)&imedsv + 3*4, "#2 v sv1");
-  veok(&v_sv0, (float *)&svec(0) + 3*4, "#2 v sv0");
+  veok(&v_sv1, (float *)&imedsv + 3, "#2 v sv1");
+  veok(&v_sv0, (float *)&svec(0) + 3, "#2 v sv0");
 
   mx_scale(&v_pht, baroz_innv, &r_hp);
   mx_add(&v_sv1, &r_hp, &v_sv0);

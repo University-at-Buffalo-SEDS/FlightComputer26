@@ -68,9 +68,9 @@ void offcheck(const matrix *c, const matrix *p, const char *name);
 
 #define math_call(fn, ...) (fn)(__VA_ARGS__)
 
-#define mxok
-#define veok
-#define offok
+#define mxok(...)
+#define veok(...)
+#define offok(...)
 
 #endif /* MATH_FN_DEBUG */
 
