@@ -32,8 +32,18 @@ void noreturn test_sensors_sync(void);
 
 #ifdef MATH_FN_DEBUG
 
-void drop_math_class(const char *msg, const char *file,
-										 int line, fu32 code);
+void drop_math_class(const char *msg, const char *file, int line, fu32 code);
+void mxcheck(const matrix *m, uint16_t rows, uint16_t cols, const char *name);
+void vecheck(const matrix *m, float *v, const char *name);
+void offcheck(const matrix *c, const matrix *p, const char *name);
+
+#define ok(pred, msg)																\
+	do { 																							\
+		if (!(pred))																		\
+		{																								\
+			drop_math_class(msg, __FILE__, __LINE__, 0);	\
+		}																								\
+	} while (0)
 
 #define cmsis_math_debug(code)                      \
   do {                                              \
@@ -50,12 +60,19 @@ void drop_math_class(const char *msg, const char *file,
     cmsis_math_debug(st);                           \
   } while (0)
 
+#define mxok mxcheck
+#define veok vecheck
+#define offok offcheck
+
 #else
 
 #define math_call(fn, ...) (fn)(__VA_ARGS__)
 
-#endif /* MATH_FN_DEBUG */
+#define mxok
+#define veok
+#define offok
 
+#endif /* MATH_FN_DEBUG */
 
 
 #endif /* TESTING_H */

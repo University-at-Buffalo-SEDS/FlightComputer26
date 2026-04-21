@@ -410,6 +410,8 @@ void ascent_predict(const float dt, fu32 conf)
   matrix v_k1k2 = {EKF_OMEGA, 1, mxoff(&v_qmid)};
   matrix m_pq = {EKF_STATE, EKF_STATE, NULL};
 
+  offok(&v_k1k2, &v_qmid, "o k1k2");
+
   matvec_mul(&kf.mxa, &qv.q0, v_qmid.pData);
   mx_scale(&v_qmid, qmid_scale, &v_qmid);
 
@@ -420,6 +422,8 @@ void ascent_predict(const float dt, fu32 conf)
   // mx_scale(&v_quat, qmid_scale, &v_quat);
 
   mx_add(&v_quat, &v_qmid, &v_quat);
+
+  veok(&v_quat, &qv.q0, "v quat");
 
   float inormq = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
 
@@ -449,6 +453,11 @@ void ascent_predict(const float dt, fu32 conf)
   v_qmid.pData = start;
   v_k1k2.pData = v_qmid.pData + EKF_STATE_SQ;
   m_pq.pData = v_k1k2.pData + EKF_STATE_SQ;
+
+  mxok(&v_qmid, EKF_STATE, EKF_STATE, "#2 m fp");
+  mxok(&v_k1k2, EKF_STATE, EKF_STATE, "#2 m ft");
+  offok(&v_k1k2, &v_qmid, "#2 o ft");
+  offok(&m_pq, &v_k1k2, "#2 o pq");
   
   mx_transpose(&kf.mxr, &v_k1k2);
   mx_mul(&kf.mxr, &kf.mxp, &v_qmid);
@@ -476,6 +485,9 @@ void ascent_update(void)
   matrix v_ht  = {EKF_STATE, 1, mxoff(&r_hp)};
   matrix v_pht = {EKF_STATE, 1, mxoff(&v_ht)};
 
+  offok(&v_ht, &r_hp, "#1 o ht");
+  offok(&v_pht, &v_pht, "#1 o pht");
+
   float k_denom;
 
   mx_mul(&kf.mxh, &kf.mxp, &r_hp);
@@ -487,6 +499,8 @@ void ascent_update(void)
   matvec_mul(&kf.mxp, v_ht.pData, v_pht.pData);
   mx_scale(&v_pht, 1.0f / k_denom, &v_pht);
 
+  veok(&v_pht, (float *)&r_hp + EKF_STATE, "#1 v pht");
+
   /* v_pht -> "v_k"; r_hp -> "v_ky"
    */
 
@@ -495,6 +509,10 @@ void ascent_update(void)
 
   r_hp.numRows = EKF_STATE;
   r_hp.numCols = 1;
+
+  veok(&v_sv1, (float *)&imedsv + 3*4, "#2 v sv1");
+  veok(&v_sv0, (float *)&svec(0) + 3*4, "#2 v sv0");
+
   mx_scale(&v_pht, baroz_innv, &r_hp);
   mx_add(&v_sv1, &r_hp, &v_sv0);
 
@@ -505,6 +523,11 @@ void ascent_update(void)
   v_sv1.pData = mxoff(&v_pht);
   v_sv0.pData = mxoff(&v_sv1);
   kf.R_measno[0][1] = 0;
+
+  mxok(&v_sv1, EKF_STATE, EKF_STATE, "#3 m kh");
+  mxok(&v_sv0, EKF_STATE, EKF_STATE, "#3 m i-kh");
+  offok(&v_sv1, &v_pht, "#3 o kh");
+  offok(&v_sv0, &v_sv1, "#3 o i-kh");
   
   mx_mul(&v_pht, &kf.mxh, &v_sv1);
   mx_sub(&kf.mxr, &v_sv1, &v_sv0);
