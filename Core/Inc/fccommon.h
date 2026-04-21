@@ -7,6 +7,7 @@
 
 #include "fctypes.h"
 #include "fcconfig.h"
+#include "testing.h"
 
 
 /* DMA constants */
@@ -71,7 +72,7 @@
                                  + DKF_ST_ME * 3)
 
 #define EKF_PREDICT_BYTES fbyte(EKF_STATE_SQ * 3)
-#define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 2                \
+#define EKF_UPDATE_BYTES  fbyte(EKF_STATE_SQ * 3                \
                                  + EKF_STATE * 3)
 
 #define MAX_STATE maxd(EKF_STATE, DKF_STATE)
@@ -194,35 +195,13 @@
 
 #define kf_clear_shared_buffers()                   \
   do {                                              \
+    memset(&imedsv, 0, sizeof imedsv);              \
     memset(kf.P_stacov, 0, sizeof kf.P_stacov);     \
     memset(kf.Q_procno, 0, sizeof kf.Q_procno);     \
     memset(kf.A_genpur, 0, sizeof kf.A_genpur);     \
     memset(kf.R_measno, 0, sizeof kf.R_measno);     \
     memset(kf.H_measjc, 0, sizeof kf.H_measjc);     \
   } while (0)
-
-#ifdef MATH_FN_DEBUG
-
-#define cmsis_math_debug(code)                      \
-  do {                                              \
-    if (code != ARM_MATH_SUCCESS)                   \
-    {                                               \
-      log_err("%s:%d: math error: %d",              \
-                      __FILE__, __LINE__, code);    \
-    }                                               \
-  } while (0)
-
-#define math_call(fn, ...)                          \
-  do {                                              \
-    math_status st = (fn)(__VA_ARGS__);             \
-    cmsis_math_debug(st);                           \
-  } while (0)
-
-#else
-
-#define math_call(fn, ...) (fn)(__VA_ARGS__)
-
-#endif /* MATH_FN_DEBUG */
 
 #define mx_scale(src, scl, dst)                     \
   math_call(matrix_scl, src, scl, dst)

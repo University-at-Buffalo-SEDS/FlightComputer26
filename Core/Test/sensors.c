@@ -5,6 +5,8 @@
 #include <assert.h>
 
 #include "platform.h"
+#include "fctypes.h"
+#include "fcstructs.h"
 #include "testing.h"
 
 extern SPI_HandleTypeDef hspi1;
@@ -19,7 +21,7 @@ static struct baro_config baro_conf = {
 
 static struct gyro_config gyro_conf = {
     .rng = Gyro_Range_2000Dps,
-    .bw = Gyro_532Hz_ODR_2000Hz,
+    .bw = Gyro_523Hz_ODR_2000Hz,
 };
 
 static struct accl_config accl_conf = {
@@ -39,12 +41,11 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 	assert(baro_init(&hspi1, &baro_conf) == HAL_OK);
 
 	HAL_StatusTypeDef st;
-	/* x - temp, y - pres, z - alt */
-	f_xyz q = {0};
+	baro q = {0};
 
 	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
 	{
-		st = baro_fetch_all(hspi, &q.x, &q.y, &q.z);
+		st = baro_fetch_all(hspi, &q.tmp, &q.prs, &q.alt);
 
 		if (st == HAL_OK)
 		{

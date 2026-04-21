@@ -138,5 +138,7 @@
 											| option(Report_Bad_Measms)         \
                       ) )
 
+#define LED_BLOCKING_CYCLES 80000000
+
 
 #endif /* FC_USER_CONFIG */

@@ -26,6 +26,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "testing.h"
 
 
 #ifdef PARALLEL_PREDICT_UPDATE
@@ -33,6 +34,8 @@ TX_BYTE_POOL kfpool;
 #endif
 
 static quat qv = {0};
+
+static kf_svec imedsv = {0};
 
 static kf_buf kf = {
   .mxp = {.numRows = 0, .numCols = 0, .pData = &kf.P_stacov[0][0]},
@@ -111,19 +114,19 @@ static inline constexpr float invsqrtf(float x)
 {
   if (within(x - 1, TOLERANCE))
   {
-    return x;
+    return 1.0f;
   }
 
-  f32u k = {.f = x};
+  f32u alias = {.f = x};
 
-  k.d = 0x5f3759df - (k.d >> 1);
+  alias.d = 0x5f3759df - (alias.d >> 1);
 
   for (fu8 i = 0; i < NR_ITERATIONS; ++i)
   {
-    k.f *= 1.5f - 0.5f * x * k.f * k.f;
+    alias.f *= 1.5f - 0.5f * x * alias.f * alias.f;
   }
 
-  return k.f;
+  return alias.f;
 }
 
 /*
@@ -181,9 +184,8 @@ void accel_to_quaternion(const f_xyz *accl)
 
 /*
  * Calculate offset from previous heap-allocated matrix.
- * Calling this helper with the same argument twice is UB.
  */
-static inline constexpr float *mxoff(const matrix *prev)
+static inline pure float *mxoff(const matrix *prev)
 {
   return prev->pData + prev->numRows * prev->numCols;
 }
@@ -242,7 +244,7 @@ void descent_initialize(void)
 }
 
 /*
- * Note: overwrites previous state vector in place.
+ * Note: uses intermediate buffer for resulting state vector.
  * Prerequisites: None.
  */
 void descent_predict(const float dt)
@@ -251,15 +253,12 @@ void descent_predict(const float dt)
 
   float *start = kfalloc(DKF_PREDICT_BYTES);
 
-  memcpy(start, dkf_view(&svec(1)), DKF_STATE * sizeof(float));
-
-  matrix m_at = {DKF_STATE, 1, start};
+  matrix m_at = {DKF_STATE, DKF_STATE, start};
   matrix m_ap = {DKF_STATE, DKF_STATE, mxoff(&m_at)};
   matrix m_fi = {DKF_STATE, DKF_STATE, mxoff(&m_ap)};
 
-	matvec_mul(&kf.mxa, m_at.pData, dkf_view(&svec(1)));
+	matvec_mul(&kf.mxa, dkf_view(&svec(1)), dkf_view(&imedsv));
   
-  m_at.numCols = DKF_STATE;
   mx_transpose(&kf.mxa, &m_at);
 
   mx_mul(&kf.mxa, &kf.mxp, &m_ap);
@@ -277,7 +276,7 @@ void descent_predict(const float dt)
 void descent_update(void)
 {
   matrix v_sv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
-  matrix v_sv1 = {DKF_STATE, 1, dkf_view(&svec(1))};
+  matrix v_sv1 = {DKF_STATE, 1, dkf_view(&imedsv)};
   matrix v_msm = {DKF_MEASM, 1, (float *)&meas.gps};
 
   float *start = kfalloc(DKF_UPDATE_BYTES);
@@ -357,6 +356,11 @@ void ascent_initialize(void)
     svec(k).bias.gz = EKF_BIAS_GYRO_Z;
     svec(k).bias.az = EKF_BIAS_ACCL_Z;
   }
+  
+  imedsv.bias.gx = EKF_BIAS_GYRO_X;
+  imedsv.bias.gy = EKF_BIAS_GYRO_Y;
+  imedsv.bias.gz = EKF_BIAS_GYRO_Z;
+  imedsv.bias.az = EKF_BIAS_ACCL_Z;
 
   if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
   {
@@ -429,10 +433,10 @@ void ascent_predict(const float dt, fu32 conf)
   float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
 
   float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
+  bool raising = sm.flight >= Launch || a.z < AZ_RAIL_THRES;
 
-  svec(0).alt = svec(1).alt + dt * svec(1).vel;
-  svec(0).vel = svec(1).vel + dt * (
-    sm.flight >= Launch || a.z < AZ_RAIL_THRES
+  imedsv.alt = svec(1).alt + dt * svec(1).vel;
+  imedsv.vel = svec(1).vel + dt * (raising
         ? a_vert - svec(1).bias.az
         : a_vert - svec(1).bias.az - GRAVITY_SI
   );
@@ -462,7 +466,7 @@ void ascent_update(void)
 {
   fc_lock(&meas_locks[1]);
 
-  const float baroz_innv = meas.baro.alt - svec(1).alt;
+  const float baroz_innv = meas.baro.alt - imedsv.alt;
 
   fc_unlock(&meas_locks[1]);
 
@@ -486,7 +490,7 @@ void ascent_update(void)
   /* v_pht -> "v_k"; r_hp -> "v_ky"
    */
 
-  matrix v_sv1 = {EKF_STATE, 1, ekf_view(&svec(1))};
+  matrix v_sv1 = {EKF_STATE, 1, ekf_view(&imedsv)};
   matrix v_sv0 = {EKF_STATE, 1, ekf_view(&svec(0))};
 
   r_hp.numRows = EKF_STATE;
@@ -505,7 +509,7 @@ void ascent_update(void)
   mx_mul(&v_pht, &kf.mxh, &v_sv1);
   mx_sub(&kf.mxr, &v_sv1, &v_sv0);
 
-  memcpy(v_sv1.pData, &kf.P_stacov, EKF_STATE_SQ * sizeof(float));
+  memcpy(v_sv1.pData, &kf.P_stacov, fbyte(EKF_STATE_SQ));
 
   mx_mul(&v_sv0, &v_sv1, &kf.mxp);
 }

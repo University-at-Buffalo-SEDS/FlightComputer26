@@ -210,6 +210,9 @@ endif()
 
 if (DEBUG_MATH)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MATH_FN_DEBUG)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/kalmanpill.c
+    )
 endif()
 
 if (CUSTOM_FLAGS)

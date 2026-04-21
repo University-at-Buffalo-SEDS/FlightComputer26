@@ -9,6 +9,7 @@
 #include "platform.h"
 #include "fcstructs.h"
 #include "fccommon.h"
+#include "fcconfig.h"
 #include "sweetbench.h"
 
 
@@ -74,22 +75,19 @@ log_transition(const char *task, float metric)
 
 /* LED */
 
-const static volatile fu32 led_cycles = 80000000;
-
 static inline void blink(volatile fu32 count)
 {
-  volatile fu32 delays = led_cycles;
+  volatile fu32 delay;
 
-  while (count--)
-  {
+  do {
     toggle_green_led();
+    delay = LED_BLOCKING_CYCLES;
 
-    while (delays--)
+    while (delay--)
     {
       __NOP();
     }
-    delays = led_cycles;
-  }
+  } while (--count);
 }
 
 
