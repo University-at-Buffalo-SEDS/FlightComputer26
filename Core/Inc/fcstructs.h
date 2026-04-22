@@ -10,6 +10,29 @@
 #include "fccommon.h"
 
 
+/* General */
+
+typedef enum relative_timer : fu8 {
+  AscentKF,
+  DescentKF,
+  HeartbeatRF,
+  HeartbeatGND,
+  AssertCO2,
+  AssertREEF,
+  FillSequence,
+  Auxiliary,
+  PostinitCmd,
+  LaunchCmd,
+  RollbackCmd,
+
+  Time_Users
+} timer;
+
+typedef struct wakeyield_spinlock {
+  atomic_uint_fast8_t lock, waiters;
+} spinlock;
+
+
 /* Kalman filter */
 
 typedef struct serial coords {
@@ -123,22 +146,6 @@ typedef struct state_metadata {
 
 
 /* Recovery */
-
-typedef enum relative_timer : fu8 {
-  AscentKF,
-  DescentKF,
-  HeartbeatRF,
-  HeartbeatGND,
-  AssertCO2,
-  AssertREEF,
-  FillSequence,
-  Auxiliary,
-  PostinitCmd,
-  LaunchCmd,
-  RollbackCmd,
-
-  Time_Users
-} timer;
 
 typedef enum flight_message : fu32 {
   Sensor_Measm_Code = 0,

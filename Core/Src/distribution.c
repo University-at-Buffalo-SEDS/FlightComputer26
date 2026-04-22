@@ -22,7 +22,7 @@ TX_THREAD distribution_task;
 
 measm meas = {0};
 
-atomic_uint_fast8_t meas_locks[Sensors - 1] = {0};
+spinlock meas_locks[Sensors - 1] = {0};
 
 #ifdef GPS_AVAILABLE
 

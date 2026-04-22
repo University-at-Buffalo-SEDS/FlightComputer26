@@ -44,7 +44,7 @@ static volatile uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
 
 static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
-static atomic_uint_fast8_t dma_locks[Sensors] = {0};
+static spinlock dma_locks[Sensors] = {0};
 
 static dmasel select = {Sensors, 0};
 

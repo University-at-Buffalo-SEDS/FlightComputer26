@@ -28,7 +28,7 @@ extern TX_BYTE_POOL kfpool;
 
 extern void *kfpool_buf;
 
-extern atomic_uint_fast8_t meas_locks[];
+extern spinlock meas_locks[];
 
 void descent_predict(const float);
 void descent_update(void);
@@ -200,25 +200,30 @@ static inline bool expand_parachute(void)
 
 /* Spinlock */
 
-static inline void fc_lock(atomic_uint_fast8_t *object)
+static inline void fc_lock(spinlock *object)
 {
   fu8 unlocked = 0;
 
-  /* Spinlock with immediate context switch? What the fuck?
-   * In our case this makes sense because critical sections
-   * are too tiny to use blocking primitives and regular spinlock
-   * wouldn't concede the only physical core to a contender thread.
-   */
-  while (!cas_strong(object, &unlocked, 1, Acq, Rlx))
+  while (!cas_strong(&object->lock, &unlocked, 1, Acq, Rlx))
   {
     unlocked = 0;
+    fetch_add(&object->waiters, 1, Rel);
     tx_thread_relinquish();
+    fetch_sub(&object->waiters, 1, Rlx);
   }
 }
 
-static inline void fc_unlock(atomic_uint_fast8_t *object)
+static inline void fc_unlock(spinlock *object)
 {
-  store(object, 0, Rel);
+  store(&object->lock, 0, Rel);
+
+  /* Wakeyield: for single-core, signle data cache,
+                scheduler threadpool is a FIFO queue */
+
+  if (load(&object->waiters, Acq) > 0)
+  {
+    tx_thread_relinquish();
+  }
 }
 
 
