@@ -72,6 +72,9 @@ OPTIONS:
 
         gmath           - report file and line for failures of math
                         - functions using underlying API's status code
+
+        lunatic         - do not check flight state when executing commands
+                        - sent over telemetry from the ground
 			
 If an option is not specified, then either it is not in effect
 or its complement (default per CMakeLists.txt) is in effect.
@@ -110,7 +113,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "sensortest",
                         "nousb",
                         "parallelkf",
-                        "gmath"
+                        "gmath",
+                        "lunatic"
                 }
 
 # Repo constants
@@ -189,6 +193,7 @@ def configure(buildir: Path, preset: str, options: dict):
         usb             = "-DUSB_ENUM=ON"
         parkf           = "-DPARALLEL_KF=OFF"
         mathdbg         = "-DDEBUG_MATH=OFF"
+        lunatic         = "-DIGNORE_STATES=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -222,6 +227,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["userflags"]:
                 flags = "-DCUSTOM_FLAGS=ON"
 
+        if options["lunatic"]:
+                lunatic = "-DIGNORE_STATES=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -238,6 +246,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 usb,
                 parkf,
                 mathdbg,
+                lunatic,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

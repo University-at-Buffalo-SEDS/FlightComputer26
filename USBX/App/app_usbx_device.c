@@ -60,7 +60,7 @@ static VOID app_ux_device_thread_entry(ULONG thread_input);
 static UINT USBD_ChangeFunction(ULONG Device_State);
 /* USER CODE BEGIN PFP */
 
-void IREC26_unused
+void conditional
 usb_diag_set(uint8_t green_on, uint8_t blue_on);
 
 /* USER CODE END PFP */

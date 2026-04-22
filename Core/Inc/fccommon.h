@@ -165,21 +165,11 @@
     }                                         \
   } while (0)
 
-#define satur_add(_n, _i, _th)                \
-  do {                                        \
-    if ((_n) + (_i) <= (_th))                 \
-    {                                         \
-      (_n) += (_i);                           \
-    }                                         \
-  } while (0)
+#define satur_incr(_n, _th)                   \
+  ((_n) + 1 <= (_th) ? ++(_n) : (_th))
 
-#define satur_sub(_n, _i, _th)                \
-  do {                                        \
-    if ((_n) - (_i) >= (_th))                 \
-    {                                         \
-      (_n) -= (_i);                           \
-    }                                         \
-  } while (0)
+#define satur_decr(_n, _th)                   \
+  ((_n) - 1 >= (_th) ? --(_n) : (_th))
 
 #define try_init_sensor(_fn, _ctr, _sn)       \
   do {                                        \

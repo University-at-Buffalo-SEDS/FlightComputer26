@@ -161,6 +161,7 @@ option(CUSTOM_FLAGS     "User-defined flags"            ON)
 option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
 option(DEBUG_MATH       "Report failures of math fns"   ON)
+option(IGNORE_STATES    "Disable recovery state checks" OFF)
 
 message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
@@ -172,6 +173,7 @@ message(STATUS "Custom flags:           ${CUSTOM_FLAGS}")
 message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
 message(STATUS "USB enumeration:        ${USB_ENUM}")
 message(STATUS "Math debugging:         ${DEBUG_MATH}")
+message(STATUS "Ignore states:          ${IGNORE_STATES}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
@@ -213,6 +215,10 @@ if (DEBUG_MATH)
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Test/kalmanpill.c
     )
+endif()
+
+if (IGNORE_STATES)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE LUNATIC_STATE)
 endif()
 
 if (CUSTOM_FLAGS)

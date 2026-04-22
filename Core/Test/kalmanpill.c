@@ -50,6 +50,6 @@ void offcheck(const matrix *c, const matrix *p, const char *name)
 	ok (p, "p null");
 	ok (c, "c null");
 
-	float *k = p->pData + p->numRows*p->numCols;
+	conditional float *k = p->pData + p->numRows*p->numCols;
 	ok (k == c->pData, "wrong offset");
 }

@@ -26,7 +26,7 @@ typedef int_fast64_t fi64;
 
 #define serial        __attribute__((packed, aligned(4)))
 #define tx_align      __attribute__((aligned(sizeof(ULONG))))
-#define IREC26_unused __attribute__((unused))
+#define conditional   __attribute__((unused))
 #define constexpr     __attribute__((const))
 #define pure          __attribute__((pure))
 #define blind_inline  __attribute__((always_inline))

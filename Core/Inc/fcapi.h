@@ -143,11 +143,23 @@ static inline fu32 timer_fetch(timer u)
 }
 
 
+/* Flight state checking */
+
+static inline bool beyond(state bound)
+{
+#ifdef LUNATIC_STATE
+  return true;
+#else
+  return sm.flight > bound;
+#endif /* LUNATIC_STATE */
+}
+
+
 /* Deployment routines */
 
 static inline bool release_parachute(void)
 {
-  if (sm.flight < Ascent)
+  if (!beyond(Launch))
   {
     log_err("SE blocked deployment, state %u", sm.flight);
     return false;
@@ -164,7 +176,7 @@ static inline bool release_parachute(void)
 
 static inline bool expand_parachute(void)
 {
-  if (sm.flight < Ascent)
+  if (!beyond(Launch))
   {
     log_err("ND blocked expansion, state %u", sm.flight);
     return false;

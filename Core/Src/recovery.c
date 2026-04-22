@@ -165,7 +165,7 @@ static inline void auto_abort(void)
   smon.gps_delay = 0;
   smon.gps_malform = 0;
 
-  if (sm.flight >= Launch ||
+  if (beyond(Postinit) ||
       g_conf & option(Lost_GroundStation))
   {
     smon.to_abort = TO_ABORT * 10;
@@ -266,7 +266,7 @@ static inline void manual_deployment(bool apogee)
  */
 static inline void enter_postinit(bool noconfirm)
 {
-  if (sm.flight > Launch)
+  if (beyond(Launch))
   {
     log_err(id "rejected postinit mid-flight");
     return;
@@ -279,7 +279,7 @@ static inline void enter_postinit(bool noconfirm)
     return;
   }
 
-  if (++sm.flight != Postinit)
+  if (satur_incr(sm.flight, Landed) != Postinit)
   {
     sm.flight = Postinit;
     log_err(id "unusual sequence at postinit");
@@ -393,11 +393,11 @@ static inline void process_action(fc_msg cmd, bool internal)
       return;
 
     case Advance_State:
-      satur_add(sm.flight, 1, Landed);
+      satur_incr(sm.flight, Landed);
       break;
 
     case Rewind_State:
-      satur_sub(sm.flight, 1, Suspended);
+      satur_decr(sm.flight, Suspended);
       break;
 
     default: break;
@@ -491,7 +491,7 @@ static inline void process_report(fc_msg code)
 
     log_err(id "dirty data report: %u", (unsigned)code);
 
-    if (sm.flight <= Apogee || (bad_baro && !maybe_gps))
+    if (!beyond(Apogee) || (bad_baro && !maybe_gps))
     {
       ++smon.failures;
 

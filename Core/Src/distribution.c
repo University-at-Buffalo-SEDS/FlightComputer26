@@ -417,7 +417,7 @@ validate_baro(const baro *baro, fu32 conf)
 /*
  * Calls and aggregate statuses from all validators.
  */
-static inline fu8 IREC26_unused
+static inline conditional fu8
 validate_all(const measm *buf, fu32 conf)
 {
   return validate_baro(&buf->baro, conf) +

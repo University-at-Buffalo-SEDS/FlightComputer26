@@ -50,8 +50,8 @@ static inline void evaluate_altitude(fu32 mode)
     last = meas.baro.alt;
   }
 
-  if (sm.flight < Ascent || last > svec(1).alt
-                         || svec(1).alt > svec(2).alt)
+  if (!beyond(Launch) || last > svec(1).alt
+                      || svec(1).alt > svec(2).alt)
   {
     if (mode & option(Consecutive_Samples) &&
         mode & option(Confirm_Altitude))
@@ -356,7 +356,7 @@ static inline void enter_flight_state(fu32 conf)
     ascent_initialize();
     log_msg(id "received launch signal");
 
-    if (++sm.flight != Awaiting)
+    if (satur_incr(sm.flight, Landed) != Awaiting)
     {
       sm.flight = Awaiting;
       log_err(id "unusual startup sequence");
