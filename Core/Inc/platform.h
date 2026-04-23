@@ -7,12 +7,12 @@
  * compilation and poisoning.
  *
  * This header provides the following components for the
- * DMA, Distribution, Evaluation, and Recovery modules:
+ * DMA, Kalman, Distribution, Evaluation, and Recovery modules:
  *
  * - GPIO and EXTI port mappings;
  * - ThreadX, HAL, sedsprintf_rs, and driver includes;
  * - Variadic aliases for select sedsprintf_rs functions;
- * - Variadic aliases for substitute stdio functions.
+ * - Variadic aliases for substitute stdio functions;
  * - Aliases for select HAL and driver functions;
  * - Misc aliases and includes as required by the modules.
  */
@@ -45,7 +45,7 @@
 #include "accelerometer.h"              // IWYU pragma: export
 
 
-/* Platform checks */
+/* Checks are applicable only to this non-generic header */
 
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L
   #error "C11 or later required for atomic and generics."
@@ -57,14 +57,14 @@
 
 #define CM_PTR 0xFFFFFFFFUL
 
-static_assert(UINTPTR_MAX == CM_PTR, "Invalid pointer size.");
+static_assert(UINTPTR_MAX == CM_PTR, "32-bit MCU required.");
 
 #ifndef STM32H523xx
   #error "STM32H523xx series MCU required."
 #endif
 
 
-/* CMSIS math */
+/* ARM CMSIS */
 
 typedef arm_status math_status;
 typedef arm_matrix_instance_f32 matrix;
@@ -100,12 +100,12 @@ extern void *_sbrk(ptrdiff_t);
 
 #else
 
-#define __DMB() atomic_thread_fence(AcqRel)
+#define __DMB() atomic_thread_fence(memory_order_acqrel)
 
 #endif
 
 
-/* General HAL aliases */
+/* HAL */
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
@@ -140,7 +140,7 @@ extern DCACHE_HandleTypeDef hdcache1;
                     gpio.pin[sens], GPIO_PIN_SET)
 
 
-/* Sensor-specific */
+/* Sensors */
 
 #define terminate_transfers() \
   do {                        \
@@ -189,21 +189,21 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define Accl_EXTI_2 EXTI5_IRQn
 
 
-/* Deployment-specific */
+/* Deployment */
 
-#define co2_low()                                             \
+#define co2_low()                                               \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_RESET)
 
-#define co2_high()                                            \
+#define co2_high()                                              \
   HAL_GPIO_WritePin(PYRO_PORT, CO2_PIN, GPIO_PIN_SET)
 
-#define reef_low()                                            \
+#define reef_low()                                              \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_RESET)
 
-#define reef_high()                                           \
+#define reef_high()                                             \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
-#define toggle_green_led()                                    \
+#define toggle_green_led()                                      \
   HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin)
 
   
@@ -217,59 +217,72 @@ extern DCACHE_HandleTypeDef hdcache1;
 extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
 extern void telemetry_init_lock(void);
 
-#define log_msg_sync(msg, size)                             \
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,           \
+#define log_msg_sync(msg, size)                               \
+  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,             \
                             (msg), (size), sizeof(char))
 
-#define log_msg(msg)                                        \
-  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,   \
+#define log_msg(msg)                                          \
+  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,     \
                                     (msg))
 
-#define log_measm(type, buf)                          \
-  log_telemetry_asynchronous((type), (buf), 3, sizeof(float));
+#define log_critical(msg)                                     \
+  log_telemetry_string_asynchronous(SEDS_DT_ORDERED_MESSAGE,  \
+                                    (msg))
 
-#define log_filter_data(buf, size)                          \
-  log_telemetry_asynchronous(SEDS_DT_KALMAN_FILTER_DATA,    \
-                             (buf), (size), sizeof(float));
+#define log_valve_board_command(cmd)                          \
+  log_telemetry_asynchronous(SEDS_DT_VALVE_COMMAND,           \
+                             &(cmd), 1, sizeof(uint8_t))      \
+
+#define log_flight_state(state)                               \
+  log_telemetry_asynchronous(SEDS_DT_FLIGHT_STATE,            \
+                             (const void *)&(state),          \
+                             1, sizeof(uint8_t))              \
+
+#define log_measm(k, buf)                                     \
+  log_telemetry_asynchronous((k), (buf), 3, sizeof(float))
+
+#define log_ascent_state(buf)                                 \
+  log_telemetry_asynchronous(SEDS_DT_ASCENT_STATE, (buf),     \
+                             EKF_STATE, sizeof(float))
+
+#define log_descent_state(buf)                                \
+  log_telemetry_asynchronous(SEDS_DT_DESCENT_STATE, (buf),    \
+                             DKF_STATE, sizeof(float))
+
+#define log_euler_angles(buf)                                 \
+  log_telemetry_asynchronous(SEDS_DT_EULER_ANGLES, (buf),     \
+                             3, sizeof(float))
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
-#define log_err_sync(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                                \
   log_error_synchronous(fmt __VA_OPT__(,) __VA_ARGS__)
                            
-#define log_err(fmt, ...)                                   \
+#define log_err(fmt, ...)                                     \
   log_error_asynchronous(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
 
-#else 
-#if defined (__GNUC__)
+#else /* !C 23 */
+#ifdef __GNUC__
 
-#define log_err_sync(fmt, ...)                              \
+#define log_err_sync(fmt, ...)                                \
   log_error_synchronous(fmt, ##__VA_ARGS__)
 
-#define log_err(fmt, ...)                                   \
+#define log_err(fmt, ...)                                     \
   log_error_asynchronous(fmt, ##__VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
 
-#endif /* GNUC*/
-#endif /* C >= 23 */
+#endif /* GNUC */
+#endif /* C 23 */
 
-/* GroundStation26: backend/src/rocket_commands.rs */
-#define IGNITION_COMMAND 13
+#else /* !TELEMETRY_ENABLED */
 
-static inline SedsResult request_ignition(void)
-{
-  uint8_t vcmd = IGNITION_COMMAND;
-  return log_telemetry_synchronous(SEDS_DT_VALVE_COMMAND,
-                                   &vcmd, 1, sizeof(uint8_t));
-}
+#define SEDS_OK  0
+#define SEDS_ERR 1
 
-#else /* Log to terminal emulator */
-
-#define SEDS_OK 0
-
+#define SEDS_DT_ASCENT_BIASES  2
 #define SEDS_DT_BAROMETER_DATA "Barometer"
 #define SEDS_DT_GYRO_DATA      "Gyroscope"
 #define SEDS_DT_ACCEL_DATA     "Accelerometer"
@@ -278,19 +291,37 @@ static inline SedsResult request_ignition(void)
 
 #define log_msg_sync(msg, size) printf("\n%s\n", (msg))
 
-#define log_msg(msg) log_msg_sync(msg, 0)
+#define log_valve_board_command(cmd)                          \
+  ( (void)( printf("Valve cmd sent: %u\n", cmd) ), SEDS_OK )
 
-#define log_measm(type, buf)                            \
+#define log_flight_state(state)                               \
+  printf("Flight state propagated to %u\n", state)
+
+#define log_measm(type, buf)                                  \
   do {                                                        \
     printf("Measurement: %s\n", #type);                       \
     fwrite((buf), sizeof(float), 3, stdout);                  \
     putchar('\n');                                            \
   } while (0)
 
-#define log_filter_data(buf, size)                            \
+#define log_ascent_state(buf)                                 \
   do {                                                        \
-    printf("State vector:\n");                                \
-    fwrite((buf), sizeof(float), (size), stdout);             \
+    printf("Ascent state:\n");                                \
+    fwrite((buf), sizeof(float), EKF_STATE, stdout);          \
+    putchar('\n');                                            \
+  } while (0)
+
+#define log_descent_state(buf)                                \
+  do {                                                        \
+    printf("Descent state:\n");                               \
+    fwrite((buf), sizeof(float), DKF_STATE, stdout);          \
+    putchar('\n');                                            \
+  } while (0)
+
+#define log_euler_angles(buf)                                 \
+  do {                                                        \
+    printf("Euler angles:\n");                                \
+    fwrite((buf), sizeof(float), 3, stdout);                  \
     putchar('\n');                                            \
   } while (0)
 
@@ -307,8 +338,8 @@ static inline SedsResult request_ignition(void)
     }                                                         \
   } while (0)
 
-#else
-#if defined(__GNUC__)
+#else /* !C 23 */
+#ifdef __GNUC__
 
 #define log_err_sync(fmt, ...)                                \
   fprintf(stderr, fmt "\n", ##__VA_ARGS__)
@@ -321,35 +352,34 @@ static inline SedsResult request_ignition(void)
     }                                                         \
   } while (0)
 
-#endif /* GNUC*/
-#endif /* C >= 23 */
+#endif /* GNUC */
+#endif /* C 23 */
 
-#define log_err log_err_sync
-
-#define request_ignition()                                    \
-  ( (void)( printf("Ignition requested.\n") ), SEDS_OK )
-
-#else /* Do not log at all */
+#else /* !USB_ENUMERATES */
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
 #define log_msg_sync(msg, size) 
 
-#define log_msg(msg) log_msg_sync(msg, 0)
+#define log_valve_board_command(cmd) (SEDS_OK)
+
+#define log_flight_state(state)
 
 #define log_measm(type, buf) 
 
-#define log_filter_data(buf, size) 
+#define log_ascent_state(buf) 
+#define log_descent_state(buf) 
+
+#define log_euler_angles(buf)
 
 #define log_err_sync(fmt, ...) 
-
 #define log_die(fmt, ...) Error_Handler()
 
-#define log_err log_err_sync
-
-#define request_ignition() SEDS_OK
-
 #endif /* USB_ENUMERATES */
+
+#define log_msg(msg) log_msg_sync(msg, 0)
+#define log_err log_err_sync
+#define log_critical log_msg
 
 #endif /* TELEMETRY_ENABLED */
 

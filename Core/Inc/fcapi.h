@@ -27,8 +27,7 @@ extern TX_BYTE_POOL kfpool;
 #endif
 
 extern void *kfpool_buf;
-
-extern spinlock meas_locks[];
+extern quat qv;
 
 void descent_predict(const float);
 void descent_update(void);
@@ -48,28 +47,23 @@ extern TX_EVENT_FLAGS_GROUP eval_stage;
 extern kf_svec sv[];
 extern sv_meta sm;
 extern measm meas;
+extern spinlock meas_locks[];
 
-extern const char *trans[];
+void evaluate_rocket_state(fu32);
 
 #ifdef TELEMETRY_ENABLED
 SedsResult on_fc_packet(const SedsPacketView *, void *);
 #endif
 
-void evaluate_rocket_state(fu32);
-
 static inline void
-log_transition(const char *task, float metric)
+log_metric(const char *msg, float metric, bool critical)
 {
-  char buf[MAX_REPORT_SIZE];
+  char buf[MAX_METRIC_REPORT_SIZE];
   
-  snprintf(buf,
-           8 + sizeof(trans[sm.flight]) + FLOAT_LOG_PRECISION,
-           "%s%s %.*g\n",
-           task, trans[sm.flight],
-           FLOAT_LOG_PRECISION,
-           metric);
+  sprintf(buf, "%s: %.*g\n", msg,
+          FLOAT_LOG_PRECISION, metric);
 
-  log_msg(buf);
+  critical ? log_critical(buf) : log_msg(buf);
 }
 
 
@@ -121,6 +115,15 @@ static inline void restore_spi1_irq(void)
 }
 
 
+/* Ignition */
+
+static inline SedsResult request_ignition(void)
+{
+  const fu8 igniter_seq = IGNITION_COMMAND;
+  return log_valve_board_command(igniter_seq);
+}
+
+
 /* Timer */
 
 extern volatile fu32 local_time[Time_Users];
@@ -151,7 +154,7 @@ static inline bool beyond(state bound)
   return true;
 #else
   return sm.flight > bound;
-#endif /* LUNATIC_STATE */
+#endif
 }
 
 
@@ -161,11 +164,13 @@ static inline bool release_parachute(void)
 {
   if (!beyond(Launch))
   {
-    log_err("SE blocked deployment, state %u", sm.flight);
+    log_err("PD drogue blocked, state %u", sm.flight);
     return false;
   }
 
   co2_high();
+  log_metric("PD exact altitude", svec(0).alt, true);
+
   sweetbench_start(4, 1);
 
   timer_update(AssertCO2);
@@ -178,17 +183,19 @@ static inline bool expand_parachute(void)
 {
   if (!beyond(Launch))
   {
-    log_err("ND blocked expansion, state %u", sm.flight);
+    log_err("PR reef expansion, state %u", sm.flight);
     return false;
   }
   
   if (!(load(&g_conf, Acq) & option(Parachute_Deployed)))
   {
-    log_err("ND blocked expansion: no deployment");
+    log_err("PR reef blocked: not drogue");
     return false;
   }
 
   reef_high();
+  log_metric("PR exact altitude", svec(0).alt, true);
+
   sweetbench_start(4, 1);
 
   timer_update(AssertREEF);

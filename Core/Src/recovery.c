@@ -176,7 +176,7 @@ static inline void auto_abort(void)
   else
   {
     g_conf |= option(In_Aborted_State);
-    log_msg(id "aborted, expecting commands");
+    log_critical(id "aborted, expecting commands");
   }
 }
 
@@ -235,7 +235,7 @@ static inline void eval_configure(bool focus)
 }
 
 /*
- * Bundles deployment and KF initialization.
+ * Bundles manual deployment and Descent KF initialization.
  */
 static inline void manual_deployment(bool apogee)
 {
@@ -243,16 +243,16 @@ static inline void manual_deployment(bool apogee)
   {
     sm.flight = Descent;
     release_parachute();
-    blink(5);
+    blink(LED_BLINKS_ON_CO2);
   }
   else if (expand_parachute())
   {
     sm.flight = Reefing;
-    blink(20);
+    blink(LED_BLINKS_ON_REEF);
   }
   else return;
 
-  log_transition(id, svec(0).alt);
+  log_flight_state(sm.flight);
 
   if (g_conf & option(Using_Ascent_KF))
   {
@@ -275,7 +275,7 @@ static inline void enter_postinit(bool noconfirm)
   if (!noconfirm &&
       timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
   {
-    log_msg(id "please confirm postinit");
+    log_critical(id "please confirm postinit");
     return;
   }
 
@@ -296,7 +296,7 @@ static inline void enter_launch(bool noconfirm)
   if (!noconfirm &&
       timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
   {
-    log_msg(id "please confirm launch");
+    log_critical(id "please confirm launch");
     return;
   }
 
@@ -333,7 +333,7 @@ static inline void rollback_to_idle(void)
       log_err(id "looks like we're flying. ARE YOU SURE?");
     }
 
-    log_msg(id "please confirm rollback");
+    log_critical(id "please confirm rollback");
     return;
   }
 

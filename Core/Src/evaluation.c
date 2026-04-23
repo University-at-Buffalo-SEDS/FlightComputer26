@@ -23,19 +23,6 @@ void tx_align *kfpool_buf = NULL;
 kf_svec sv[STATE_HISTORY] = {};
 sv_meta sm = {1, 0, Suspended};
 
-const char *trans[Flight_States] = {
-    [Suspended] = " interval in streaming mode:",
-    [Postinit]  = " interval in postinit mode:",
-    [Awaiting]  = "",
-    [Launch]    = "Launch detected. Acceleration in Z:",
-    [Ascent]    = "Ascending. Velocity in Z:",
-    [Burnout]   = "Decelerating. Altitude:",
-    [Apogee]    = "Approaching apogee. Altitude:",
-    [Descent]   = "Descending in drogue. Altitude:",
-    [Reefing]   = "Expanded parachute. Altitude:",
-    [Landed]    = "Landed. Coordinates will follow.",
-};
-
 
 /*
  * Vigilant mode routine. Can perform urgent deployments
@@ -73,14 +60,14 @@ static inline void evaluate_altitude(fu32 mode)
       expand_parachute();
 
       sm.flight = Reefing;
-      log_transition(id_vigilant, last);
+      log_flight_state(sm.flight);
     }
     else
     {
       release_parachute();
 
       sm.flight = Descent;
-      log_transition(id_vigilant, last);
+      log_flight_state(sm.flight);
 
       descent_initialize();
 
@@ -88,7 +75,7 @@ static inline void evaluate_altitude(fu32 mode)
       expand_parachute();
 
       sm.flight = Reefing;
-      log_transition(id_vigilant, last);
+      log_flight_state(sm.flight);
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
@@ -100,7 +87,7 @@ static inline void evaluate_altitude(fu32 mode)
     release_parachute();
     
     sm.flight = Descent;
-    log_transition(id_vigilant, last);
+    log_flight_state(sm.flight);
     
     descent_initialize();
   }
@@ -116,7 +103,7 @@ static inline void detect_launch(void)
       meas.accl.z >= LAUNCH_MIN_VAX)
   {
     sm.flight = Launch;
-    log_transition(id, meas.accl.z);
+    log_flight_state(sm.flight);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -135,7 +122,7 @@ static inline void detect_ascent(fu32 mode)
     {
       sm.flight = Ascent;
       sm.samp = 0;
-      log_transition(id, svec(0).vel);
+      log_flight_state(sm.flight);
     }
   }
   else if (mode & option(Consecutive_Samples) && sm.samp > 0)
@@ -163,7 +150,7 @@ static inline void detect_burnout(fu32 mode)
     {
       sm.flight = Burnout;
       sm.samp = 0;
-      log_transition(id, svec(0).alt);
+      log_flight_state(sm.flight);
     }
   }
   else if (mode & option(Consecutive_Samples) && sm.samp > 0)
@@ -186,7 +173,7 @@ static inline void detect_apogee(void)
       svec(2).vel < svec(3).vel)
   {
     sm.flight = Apogee;
-    log_transition(id, svec(0).alt);
+    log_flight_state(sm.flight);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -206,7 +193,7 @@ static inline void detect_descent(fu32 mode)
       sm.flight = Descent;
       sm.samp = 0;
       release_parachute();
-      log_transition(id, svec(0).alt);
+      log_flight_state(sm.flight);
 
       descent_initialize();
     }
@@ -233,7 +220,7 @@ static inline void detect_reef(fu32 mode)
       sm.flight = Reefing;
       sm.samp = 0;
       expand_parachute();
-      log_transition(id, svec(0).alt);
+      log_flight_state(sm.flight);
     }
   }
   else if (mode & option(Consecutive_Samples) && sm.samp > 0)
@@ -258,7 +245,7 @@ static inline void detect_landed(fu32 mode)
     if (++sm.samp >= MIN_SAMP_LANDED)
     {
       sm.flight = Landed;
-      log_msg(trans[Landed]);
+      log_flight_state(sm.flight);
 
       fc_msg cmd = fc_mask(Evaluation_Focus);
       tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
@@ -292,12 +279,32 @@ static inline void crew_send_coords(fu32 mode)
 }
 
 /*
+ * Logs and advances state in the ring buffer.
+ */
+static inline void propel_kalman_state(fu32 conf)
+{
+  if (conf & option(Using_Ascent_KF))
+  {
+    float tmp[EKF_STATE];
+
+    *((quat *)tmp) = qv;
+    tmp[EKF_STATE - 2] = svec(0).alt;
+    tmp[EKF_STATE - 1] = svec(0).vel;
+
+    log_ascent_state(tmp);
+  }
+  else log_descent_state(dkf_view(&svec(0)));
+
+  sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
+}
+
+/*
  * Finite-state machine for state transition.
  * Before leaving, logs state vector just used.
  */
 void evaluate_rocket_state(fu32 conf)
 {
-  if (conf & Monitor_Altitude)
+  if (conf & option(Monitor_Altitude))
   {
     evaluate_altitude(conf);
   }
@@ -328,16 +335,10 @@ void evaluate_rocket_state(fu32 conf)
   case Landed:
     crew_send_coords(conf);
     break;
-  default:
-    break;
+  default: break;
   }
 
-  fu32 size = conf & option(Using_Ascent_KF) ? EKF_STATE
-                                             : DKF_STATE;
-
-  log_filter_data(&svec(0), size);
-
-  sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
+  propel_kalman_state(conf);
 }
 
 /*
@@ -354,7 +355,7 @@ static inline void enter_flight_state(fu32 conf)
   else
   {
     ascent_initialize();
-    log_msg(id "received launch signal");
+    log_critical(id "received launch signal");
 
     if (satur_incr(sm.flight, Landed) != Awaiting)
     {

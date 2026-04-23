@@ -33,7 +33,7 @@
 TX_BYTE_POOL kfpool;
 #endif
 
-static quat qv = {0};
+quat qv = {0};
 
 static kf_svec imedsv = {0};
 
@@ -162,7 +162,13 @@ static inline void euler_to_quat(eul *ang)
   qv.rho2 *= norm;
   qv.rho3 *= norm;
 
-  // TODO log
+  float init_quat[EKF_STATE];
+
+  *((quat *)init_quat) = qv;
+  init_quat[EKF_STATE - 2] = 0.0f; /* Fake alt, vel */
+  init_quat[EKF_STATE - 1] = 0.0f;
+
+  log_ascent_state(init_quat);
 }
 
 /*
@@ -170,14 +176,18 @@ static inline void euler_to_quat(eul *ang)
  */
 void accel_to_quaternion(const f_xyz *accl)
 {
-  eul ang;
+  eul ang, rep_in_deg;
 
   fatan2(accl->y, accl->z, &ang.phi);
   vnorm2(accl->y, accl->z, &ang.psi);
   fatan2(-accl->x, ang.psi, &ang.theta);
   ang.psi = 0;
 
-  // TODO log in deg
+  rep_in_deg.phi = deg(ang.phi);
+  rep_in_deg.theta = deg(ang.theta);
+  rep_in_deg.psi = deg(ang.psi);
+
+  log_euler_angles(&rep_in_deg);
 
   euler_to_quat(&ang);
 }

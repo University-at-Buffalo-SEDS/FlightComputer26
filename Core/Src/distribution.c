@@ -14,8 +14,6 @@
 #define id "DI "
 #define pilot "PI "
 #define telid "TE "
-#define pi_bar "BAR"
-#define pi_gps "GPS"
 
 
 TX_THREAD distribution_task;
@@ -487,7 +485,7 @@ static inline void data_streaming_mode(void)
     if (fetch_baro(&meas.baro))
     {
       acc_baro += fsec(timer_exchange(Auxiliary));
-      log_transition(pi_bar, acc_baro / ++ctr_baro);
+      log_metric(pilot "Baro interval", acc_baro / ++ctr_baro, false);
 
       code |= validate_baro(&meas.baro, conf) ? 0
                                               : Baro_Mask;
@@ -501,7 +499,7 @@ static inline void data_streaming_mode(void)
 
     if (monitor_gps(conf, &acc_gps, &ctr_gps) > 0)
     {
-      log_transition(pi_gps, acc_gps / ctr_gps);
+      log_metric(pilot "GPS interval", acc_gps / ctr_gps, false);
     }
 
     tx_thread_relinquish();
@@ -550,7 +548,7 @@ static inline void post_initialization(void)
 
   if (ctr_gps > 0)
   {
-    log_transition(pi_gps, acc_gps / ctr_gps);
+    log_metric(pilot "Average GPS interval", acc_gps / ctr_gps, true);
   }
 
   accl_acc.x /= ctr_accl;
@@ -710,7 +708,7 @@ void distribution_entry(ULONG input)
     conf = load(&g_conf, Acq);
     check_rollback_request(conf);
 
-    log_msg(id "postinit done, awaiting launch signal");
+    log_critical(id "postinit done, awaiting launch signal");
 
     task_loop (conf & option(Launch_Requested))
     {
@@ -721,7 +719,7 @@ void distribution_entry(ULONG input)
 
     task_loop (request_ignition() == SEDS_OK)
       ;
-    log_msg(id "ignition requested, in flight mode");
+    log_critical(id "ignition requested, in flight mode");
   }
 
   task_loop (DO_NOT_EXIT)

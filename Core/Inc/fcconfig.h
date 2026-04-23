@@ -14,6 +14,8 @@
 #define LAUNCH_SITE_LAT 32.000507f
 #define LAUNCH_SITE_LON -102.077408f
 
+#define IGNITION_COMMAND 14
+
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */
 
@@ -139,6 +141,8 @@
                       ) )
 
 #define LED_BLOCKING_CYCLES 80000000
+#define LED_BLINKS_ON_CO2	 5
+#define LED_BLINKS_ON_REEF 20
 
 
 #endif /* FC_USER_CONFIG */
