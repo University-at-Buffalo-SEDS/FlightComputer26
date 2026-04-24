@@ -79,8 +79,8 @@ static const fc_msg extmap[Compat_Messages] = {
     revoke(Consecutive_Samples),
     Reset_Failures,
     revoke(Reset_Failures),
-    Report_Bad_Measms,
-    revoke(Report_Bad_Measms),
+    Measm_Reports,
+    revoke(Measm_Reports),
 
     Deploy_Parachute,
     Expand_Parachute,
@@ -392,8 +392,9 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
     st |= Bad_Attitude_Z;
   }
 
-  if (conf & option(Report_Bad_Measms) &&
-      st != fc_mask(Sensor_Measm_Code))
+  if (conf & option(Measm_Reports) &&
+      (conf & option(Reset_Failures) ||
+       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return false;
@@ -420,8 +421,9 @@ validate_accl(const f_xyz *accl, fu32 conf)
     st |= Bad_Accel_Z;
   }
 
-  if (conf & option(Report_Bad_Measms) &&
-      st != fc_mask(Sensor_Measm_Code))
+  if (conf & option(Measm_Reports) &&
+      (conf & option(Reset_Failures) ||
+       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return false;
@@ -444,8 +446,9 @@ validate_baro(const baro *baro, fu32 conf)
     st |= Bad_Altitude;
   }
 
-  if (conf & option(Report_Bad_Measms) &&
-      st != fc_mask(Sensor_Measm_Code))
+  if (conf & option(Measm_Reports) &&
+      (conf & option(Reset_Failures) ||
+       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
     return false;
@@ -555,7 +558,7 @@ static inline void post_initialization(void)
 
   if (ctr_gps > 0)
   {
-    log_metric(pilot "Average GPS interval", acc_gps / ctr_gps, true);
+    log_metric(pilot "Avg GPS (sec)", acc_gps / ctr_gps, true);
   }
 
   accl_acc.x /= ctr_accl;
@@ -702,7 +705,7 @@ void distribution_entry(ULONG _)
     conf = load(&g_conf, Acq);
     check_rollback_request(conf);
 
-    log_critical(id "postinit done, awaiting launch signal");
+    log_critical(id "complete, awaiting launch signal");
 
     task_loop (conf & option(Launch_Requested))
     {

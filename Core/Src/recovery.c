@@ -46,7 +46,7 @@ static const conf_dict confmap[] = {
   { Consecutive_Samples, "consectuive-samples" },
   { Eval_Focus_Flag,     "eval-focus" },
   { Reset_Failures,      "reset-failures" },
-  { Report_Bad_Measms,   "report-bad-measms" },
+  { Measm_Reports,   "report-bad-measms" },
 };
 
 
@@ -165,7 +165,7 @@ static inline void barometer_fallback_vigilant(void)
   sensor_init_supervised(Baro_Mask);
 
   g_conf |= option(Monitor_Altitude);
-  g_conf |= option(Report_Bad_Measms);
+  g_conf |= option(Measm_Reports);
   log_msg(id "entered vigilant mode");
 }
 
@@ -296,7 +296,7 @@ static inline void rollback_to_idle(void)
   g_conf |= option(Rollback_Requested);
   g_conf &= ~option(Postinit_Requested);
   g_conf &= ~option(Launch_Requested);
-  g_conf &= ~option(Report_Bad_Measms);
+  g_conf &= ~option(Measm_Reports);
 
   sm.flight = Suspended;
 
@@ -431,19 +431,18 @@ static inline void process_sensor_report(fc_msg code)
 {
   if (code != Sensor_Measm_Code)
   {
-    bool bad_baro = (code & Bad_Altitude) || (code & Bad_Pressure);
+    bool bad_baro = (code & msmcode(Bad_Altitude)) ||
+                    (code & msmcode(Bad_Pressure));
 
     bool maybe_gps = (g_conf & option(GPS_Available)) &&
                       smon.gps_delay < GPS_SUS_DELAYS &&
                       smon.gps_malform < GPS_SUS_MALFORM;
 
-    log_err(id "dirty data report: %u", (unsigned)code);
+    log_err(id "bad data report: %u", msmcode(code));
 
     if (!beyond(Apogee) || (bad_baro && !maybe_gps))
     {
-      ++smon.failures;
-
-      if (smon.failures >= smon.to_abort)
+      if (++smon.failures >= smon.to_abort)
       {
         abortion_due_failures();
       }
@@ -456,10 +455,7 @@ static inline void process_sensor_report(fc_msg code)
       }
     }
   }
-  else if (g_conf & option(Reset_Failures))
-  {
-    smon.failures = 0;
-  }
+  else smon.failures = 0;
 }
 
 static inline void process_gps_code(fc_msg code)
@@ -521,7 +517,7 @@ static inline void decode_flight_message(fc_msg msg)
     return process_config_update(msg);
   }
 
-  log_err(id "unrecognized option: %u", (unsigned)msg);
+  log_err(id "unrecognized option: %u", (fu32) msg);
 }
 
 

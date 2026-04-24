@@ -120,8 +120,10 @@
 
 #define then && forward() &&
 
-#define fc_mask(message)    ((message) | FlightComputer_Mask)
-#define fc_unmask(message)  ((message) & ~FlightComputer_Mask)
+#define fc_mask(message)   ((message) | FlightComputer_Mask)
+#define fc_unmask(message) ((message) & ~FlightComputer_Mask)
+
+#define msmcode(code) (fu32)((code) & ~Sensor_Measm_Code)
 
 #define option(opt) ((opt) & ~Runtime_Configuration)
 #define revoke(opt) ((opt) | Revoke_Option)

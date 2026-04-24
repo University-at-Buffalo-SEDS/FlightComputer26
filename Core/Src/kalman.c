@@ -213,7 +213,7 @@ void descent_initialize(void)
   if (conf & option(Defer_Baro_Fallback))
   {
     toggle |= Defer_Baro_Fallback;
-    conf = Monitor_Altitude | Report_Bad_Measms;
+    conf = Monitor_Altitude | Measm_Reports;
 
     fetch_or(&g_conf, option(conf), Rlx);
 

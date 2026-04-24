@@ -1,83 +1,70 @@
 #!/usr/bin/env python3
 
 """
-Unified build script.
-
 This script is used to streamline building
 the UB SEDS 2026 Flight Computer executable.
 
-Build prerequisites:
-        Python >= 3.11
-        CMake >= 3.22
-        GCC ARM Embedded ABI >= 13.3.1
+Prerequisites:  Python >= 3.11
+                CMake >= 3.22
+                GCC ARM EABI >= 13.3.1
 
-Usage:
-        `python build.py [PRESET] [OPTIONS]`
+Usage:  `python build.py [PRESET] [OPTIONS]`
 
-PRESET:
-        debug   - includes debug info
-	release	- enables optimizations
+PRESET: debug   - default, with debug symbols (O0 or Og)
+	release	- strips debug symbols (O3 or O3 + LTO)
 
-If none specified, defaults to Debug.
+OPTIONS: (any option not specified -> opposite is true)
 
-OPTIONS:
-	flash-dfu       - download executable to eabi target
-                        - prerequisite: dfu-utils
+	flash-dfu       Download executable to eabi target.
+                        Prereq: dfu-utils.
 
-        flash-st        - alternative to flash-dfu, but over STLink
-                        - prerequisite: STM32_Programmer_CLI over SWD
+        flash-st        Alternative to flash-dfu over STLink.
+                        Prereq: STM32_Programmer_CLI over SWD.
 
-        stlink          - open STLink connection for debugger and exit
-                        - prerequisite: Debug 
+        stlink          Open STLink connection and exit.
+                        Prereq: Debug.
 
-        notelemetry     - disable telemetry and message handling 
-                        - output to stdout (unless nousb enabled)
-                        - default option for Debug preset
+        notelemetry     Disable telemetry and message handling.
+                        Output logs to stdout (unless nousb).
+                        Default option for Debug.
 
-        clean           - cleans build folder for the specified preset
-                        - this option has highest precedence
+        clean           Cleans build folder for specified preset.
+                        This option has highest precedence.
 
-        fullcmd         - expect full FC commands in handler and not byte
-                        - codes
+        fullcmd         Expect full 4-byte commands in handler.
+                        Otherwise expect 1-byte codes.
 
-        batching        - handle potentially several batched messages in
-                        - handler (note to self: reimplement if used)
+        batching        In handler, dispatch potentially several
+                        batched messages at once. 
 
-        parallelkf      - enables parallel predict/update support inside
-                        - the allocator wrapper. this is not yet implemented
-                        - in distribution/evaluation chains (planned 2027)
+        parallelkf      Enable parallel predict/update support.
+                        Partially implemented, deferred until 2027.
 
-        configure       - configure specified preset with given options,
-                        - but do not build the project
+        configure       Configure for specified preset and exit.
 
-        nogps           - no external GPS device, rely on Barometer for
-                        - descent. True if notelemetry enabled
+        nogps           No external GPS device. Rely on Barometer
+                        during descent. True if notelemetry.
 
-        nosd            - no on-board SD card. True if notelemetry enabled
+        nosd            No on-board SD card. True if notelemetry.
 
-        asm             - generate assembly code for the preset and options
-                        - chosen
+        asm             Generate assembly for specified options.
 
-        bench           - compile with benchmarks. omit this options intead
-                        - of removing benchmarks from code.
+        bench           Compile with project-wide benchmarks.
 
-        userflags       - compile with flags in top-level CMakeLists; use
-                        - this for the final release build (will enable LTO)
+        userflags       Use flags in CMakeLists for building.
+                        Debug: O0 -> Og. Release: += LTO.
 
-        sensortest      - run synchronous (polling) sensor tests
-                        - prerequisite: notelemetry
+        sensortest      Run synchronous (polling) sensor tests.
+                        Prereq: notelemetry.
 
-        nousb           - do not assume correctly enumerating USB
-                        - prerequisute: notelemetry
+        nousb           Do not assume correctly enumerating USB.
+                        Prereq: notelemetry
 
-        gmath           - report file and line for failures of math
-                        - functions using underlying API's status code
+        gmath           Report file and line for failures of math
+                        functions using underlying API's status.
 
-        lunatic         - do not check flight state when executing commands
-                        - sent over telemetry from the ground
-			
-If an option is not specified, then either it is not in effect
-or its complement (default per CMakeLists.txt) is in effect.
+        lunatic         Bypass flight state checks when executing
+                        mission-crtitical commands. For testing.
 """
 
 from __future__ import annotations
