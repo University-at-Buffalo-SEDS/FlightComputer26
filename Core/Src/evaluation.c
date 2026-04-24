@@ -21,7 +21,56 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 void tx_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {};
-sv_meta sm = {1, 0, Suspended};
+sv_meta sm = {1, 0, Suspended, 0};
+
+
+/*
+ * Logs state for which consecutive confirmation was not reached.
+ * Provides a better understanding of KF state fluctuations.
+ */
+static inline void detect_spurious(fu32 mode)
+{
+  if (sm.samp <= SPURIOUS_THRESHOLD)
+  {
+    return;
+  }
+
+  char buf[MAX_SPURIOUS_REPORT_SIZE];
+
+  sprintf(buf, id "confirm broke at %d, state %u",
+                           sm.ev_step, sm.flight);
+
+  log_msg(buf);
+
+  if (mode & option(Consecutive_Samples))
+  {
+    sm.samp = sm.ev_step = 0;
+  }
+}
+
+/*
+ * Step through in state detection logic. Reduces branching.
+ */
+static inline forceinline bool forward(void)
+{
+  return (bool) ++sm.ev_step;
+}
+
+/*
+ * Advances flight state and zeroes metadata.
+ */
+static inline void flight_advance(state promotion)
+{
+  sm.samp = sm.ev_step = 0;
+
+  if (satur_incr(sm.flight, Landed) != promotion)
+  {
+    sm.flight = promotion;
+    log_critical(id "vigilant mode deployment:");
+  }
+
+  log_flight_state(sm.flight);
+}
 
 
 /*
@@ -55,40 +104,30 @@ static inline void evaluate_altitude(fu32 mode)
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
 
-    if (mode & option(Parachute_Deployed))
+    if (mode & option(Parachute_Deployed)
+        && expand_parachute())
     {
-      expand_parachute();
-
-      sm.flight = Reefing;
-      log_flight_state(sm.flight);
+      flight_advance(Reefing);
     }
-    else
+    else if (release_parachute())
     {
-      release_parachute();
-
-      sm.flight = Descent;
-      log_flight_state(sm.flight);
+      flight_advance(Descent);
 
       descent_initialize();
-
       tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
-      expand_parachute();
 
-      sm.flight = Reefing;
-      log_flight_state(sm.flight);
+      flight_advance(Reefing);      
+      expand_parachute();
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
   {
     fetch_or(&g_conf, option(Confirm_Altitude), Rlx);
   }
-  else if (!(mode & option(Parachute_Deployed)))
+  else if (!(mode & option(Parachute_Deployed))
+           && release_parachute())
   {
-    release_parachute();
-    
-    sm.flight = Descent;
-    log_flight_state(sm.flight);
-    
+    flight_advance(Descent);
     descent_initialize();
   }
 }
@@ -99,11 +138,11 @@ static inline void evaluate_altitude(fu32 mode)
  */
 static inline void detect_launch(void)
 {
-  if (svec(0).vel >= LAUNCH_MIN_VEL &&
-      meas.accl.z >= LAUNCH_MIN_VAX)
+  if (svec(0).vel >= LAUNCH_MIN_VEL     then
+      svec(0).vel > svec(1).vel         then
+      svec(1).vel > svec(2).vel)
   {
-    sm.flight = Launch;
-    log_flight_state(sm.flight);
+    flight_advance(Launch);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
@@ -113,24 +152,15 @@ static inline void detect_launch(void)
  */
 static inline void detect_ascent(fu32 mode)
 {
-  if (svec(0).vel > svec(1).vel &&
-      svec(1).vel > svec(2).vel &&
-      svec(0).alt > svec(1).alt &&
-      svec(1).alt > svec(2).alt)
+  if (svec(0).vel > svec(1).vel         then
+      svec(1).vel > svec(2).vel         then
+      svec(0).alt > svec(1).alt         then
+      svec(1).alt > svec(2).alt         then
+      ++sm.samp >= MIN_SAMP_ASCENT)
   {
-    if (++sm.samp >= MIN_SAMP_ASCENT)
-    {
-      sm.flight = Ascent;
-      sm.samp = 0;
-      log_flight_state(sm.flight);
-    }
+    flight_advance(Ascent);
   }
-  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
-  {
-    sm.samp = 0;
-    fc_msg cmd = Not_Launch;
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
+  else detect_spurious(mode);
 }
 
 /*
@@ -141,24 +171,15 @@ static inline void detect_ascent(fu32 mode)
  */
 static inline void detect_burnout(fu32 mode)
 {
-  if (svec(0).vel >= BURNOUT_MIN_VEL &&
-      meas.accl.z <= BURNOUT_MAX_VAX &&
-      svec(0).alt > svec(1).alt &&
-      svec(0).vel < svec(1).vel)
+  if (svec(0).vel >= BURNOUT_MIN_VEL    then
+      svec(0).alt > svec(1).alt         then
+      svec(0).vel < svec(1).vel         then
+      svec(1).vel < svec(2).vel         then
+      ++sm.samp >= MIN_SAMP_BURNOUT)
   {
-    if (++sm.samp >= MIN_SAMP_BURNOUT)
-    {
-      sm.flight = Burnout;
-      sm.samp = 0;
-      log_flight_state(sm.flight);
-    }
+    flight_advance(Burnout);
   }
-  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
-  {
-    sm.samp = 0;
-    fc_msg cmd = Not_Burnout;
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
+  else detect_spurious(mode);
 }
 
 /*
@@ -167,13 +188,21 @@ static inline void detect_burnout(fu32 mode)
  */
 static inline void detect_apogee(void)
 {
-  if (svec(0).vel <= APOGEE_MAX_VEL &&
-      svec(0).vel < svec(1).vel &&
-      svec(1).vel < svec(2).vel &&
-      svec(2).vel < svec(3).vel)
+  const fu8 eval_depth = 4;
+  float absvel[eval_depth];
+
+  for (fu8 k = 0; k < eval_depth; ++k)
   {
-    sm.flight = Apogee;
-    log_flight_state(sm.flight);
+    absvel[k] = fabsf(svec(k).vel);
+  }
+
+  if (absvel[0] <= APOGEE_MAX_VEL       then
+      absvel[0] < absvel[1]             then
+      absvel[1] < absvel[2]             then
+      absvel[2] < absvel[3])
+  {
+    flight_advance(Apogee);
+    descent_initialize();
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
@@ -183,27 +212,24 @@ static inline void detect_apogee(void)
  */
 static inline void detect_descent(fu32 mode)
 {
-  if (svec(0).alt < svec(1).alt &&
-      svec(1).alt < svec(2).alt &&
-      svec(0).vel > svec(1).vel &&
-      svec(1).vel > svec(2).vel)
-  {
-    if (++sm.samp >= MIN_SAMP_DESCENT)
-    {
-      sm.flight = Descent;
-      sm.samp = 0;
-      release_parachute();
-      log_flight_state(sm.flight);
+  const fu8 eval_depth = 3;
+  float absvel[eval_depth];
 
-      descent_initialize();
-    }
-  }
-  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
+  for (fu8 k = 0; k < eval_depth; ++k)
   {
-    sm.samp = 0;
-    fc_msg cmd = Not_Descent;
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    absvel[k] = fabsf(svec(k).vel);
   }
+
+  if (svec(0).alt < svec(1).alt         then
+      svec(1).alt < svec(2).alt         then
+      absvel[0] > absvel[1]             then
+      absvel[1] > absvel[2]             then
+      ++sm.samp >= MIN_SAMP_DESCENT)
+  {
+    release_parachute();
+    flight_advance(Descent);
+  }
+  else detect_spurious(mode);
 }
 
 /*
@@ -212,23 +238,14 @@ static inline void detect_descent(fu32 mode)
  */
 static inline void detect_reef(fu32 mode)
 {
-  if (svec(0).alt <= REEF_TARGET_ALT &&
-      svec(0).alt < svec(1).alt)
+  if (svec(0).alt <= REEF_TARGET_ALT    then
+      svec(0).alt < svec(1).alt         then
+      ++sm.samp >= MIN_SAMP_REEF)
   {
-    if (++sm.samp >= MIN_SAMP_REEF)
-    {
-      sm.flight = Reefing;
-      sm.samp = 0;
-      expand_parachute();
-      log_flight_state(sm.flight);
-    }
+    expand_parachute();
+    flight_advance(Reefing);
   }
-  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
-  {
-    sm.samp = 0;
-    fc_msg cmd = Not_Reefing;
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
+  else detect_spurious(mode);
 }
 
 /*
@@ -240,23 +257,16 @@ static inline void detect_landed(fu32 mode)
   float dh = svec(0).alt - svec(1).alt;
   float dv = svec(0).vel - svec(1).vel;
 
-  if (fabsf(dh) <= ALT_TOLER && fabsf(dv) <= VEL_TOLER)
+  if (fabsf(dh) <= ALT_TOLER            then
+      fabsf(dv) <= VEL_TOLER            then
+      ++sm.samp >= MIN_SAMP_LANDED)
   {
-    if (++sm.samp >= MIN_SAMP_LANDED)
-    {
-      sm.flight = Landed;
-      log_flight_state(sm.flight);
+    flight_advance(Landed);
 
-      fc_msg cmd = fc_mask(Evaluation_Focus);
-      tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
-    }
+    fc_msg cmd = fc_mask(Evaluation_Focus);
+    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
   }
-  else if (mode & option(Consecutive_Samples) && sm.samp > 0)
-  {
-    sm.samp = 0;
-    fc_msg cmd = Not_Landed;
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-  }
+  else detect_spurious(mode);
 }
 
 

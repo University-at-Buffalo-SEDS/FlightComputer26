@@ -78,7 +78,7 @@ bool fetch_baro(baro *buf)
              taskrx[Sensor_Baro][4],
              taskrx[Sensor_Baro][5]);
 
-  fc_unlock(&dma_locks[Sensor_Baro]);
+  fc_unlock(&dma_locks[Sensor_Baro], true);
 
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
@@ -112,7 +112,7 @@ bool fetch_gyro(f_xyz *buf)
   gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
   gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
   
-  fc_unlock(&dma_locks[Sensor_Gyro]);
+  fc_unlock(&dma_locks[Sensor_Gyro], true);
 
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
@@ -146,7 +146,7 @@ bool fetch_accl(f_xyz *buf)
   ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
   az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
   
-  fc_unlock(&dma_locks[Sensor_Accl]);
+  fc_unlock(&dma_locks[Sensor_Accl], true);
 
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
@@ -201,7 +201,7 @@ static inline void propagate_rx(void)
          (uint8_t *)(dmarx + gpio.offset[select.next]),
          sizeof taskrx / 3);
 
-  fc_unlock(&dma_locks[select.next]);
+  fc_unlock(&dma_locks[select.next], true);
 
   /* Relevance flags use the same EXTI pin masks. */
   (void) fetch_or(&flags.relv, gpio.drdy[select.next], Rel);

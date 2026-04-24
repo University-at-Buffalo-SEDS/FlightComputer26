@@ -220,14 +220,14 @@ static inline void fc_lock(spinlock *object)
   }
 }
 
-static inline void fc_unlock(spinlock *object)
+static inline void fc_unlock(spinlock *object, bool yield)
 {
   store(&object->lock, 0, Rel);
 
   /* Wakeyield: for single-core, signle data cache,
                 scheduler threadpool is a FIFO queue */
 
-  if (load(&object->waiters, Acq) > 0)
+  if (yield && load(&object->waiters, Acq) > 0)
   {
     tx_thread_relinquish();
   }

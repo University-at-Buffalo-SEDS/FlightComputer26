@@ -24,12 +24,13 @@ typedef int_fast32_t fi32;
 typedef int_fast64_t fi64;
 
 
-#define serial        __attribute__((packed, aligned(4)))
+#define align         __attribute__((aligned(sizeof(fu32))))
 #define tx_align      __attribute__((aligned(sizeof(ULONG))))
+#define serial        __attribute__((packed, aligned(sizeof(float))))
 #define conditional   __attribute__((unused))
 #define constexpr     __attribute__((const))
 #define pure          __attribute__((pure))
-#define blind_inline  __attribute__((always_inline))
+#define forceinline   __attribute__((always_inline))
 
 
 typedef enum seds_atomic_mo {

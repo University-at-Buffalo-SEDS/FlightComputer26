@@ -570,7 +570,7 @@ static inline void asc_upd(fu32 conf)
   {
     fc_lock(&meas_locks[1]);
     meas.baro = baro_suspect;
-    fc_unlock(&meas_locks[1]);
+    fc_unlock(&meas_locks[1], true);
   }
   else return;
 
@@ -622,7 +622,7 @@ static inline void asc_pred(fu32 conf, fu8 *imu)
   meas.gyro = accum_gyro;
   meas.accl = accum_accl;
 
-  fc_unlock(&meas_locks[0]);
+  fc_unlock(&meas_locks[0], true);
 
   tx_event_flags_set(&eval_stage, Gyro_Mask | Accl_Mask, TX_OR);
 

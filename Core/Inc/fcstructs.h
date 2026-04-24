@@ -103,19 +103,19 @@ typedef enum sensor_id : fu8 {
   Sensors
 } sens;
 
-typedef struct gpio_lookup_table {
+typedef struct align gpio_lookup_table {
 	const GPIO_TypeDef *port[Sensors];
   const uint16_t pin[Sensors];
   const uint16_t drdy[Sensors];
   const fu8 offset[Sensors];
 } gpio_map;
 
-typedef struct callback_selector {
+typedef struct align callback_selector {
   volatile fu8 next;
   volatile fu8 valid;
 } dmasel;
 
-typedef struct dma_flags {
+typedef struct align dma_flags {
   atomic_uint_fast16_t drdy;
   atomic_uint_fast16_t relv;
 } fdma;
@@ -138,36 +138,27 @@ typedef enum flight_state : fu8 {
   Flight_States
 } state;
 
-typedef struct state_metadata {
-  fu32 idx;
+typedef struct align state_metadata {
+  volatile fu16 flight;
+  fi16 ev_step;
   fu16 samp;
-  volatile fu8 flight;
+  fu16 idx;
 } sv_meta;
 
 
 /* Recovery */
 
 typedef enum flight_message : fu32 {
-  Sensor_Measm_Code = 0,
+  Sensor_Measm_Code = (1u << 16),
 
-  Bad_Altitude   = 1u,
-  Bad_Pressure   = (1u << 1),
-  Bad_Attitude_X = (1u << 2),
-  Bad_Attitude_Y = (1u << 3),
-  Bad_Attitude_Z = (1u << 4),
-  Bad_Accel_X    = (1u << 5),  
-  Bad_Accel_Y    = (1u << 6),
-  Bad_Accel_Z    = (1u << 7),
-
-  /* Range reserved for possibly more sensors */
-
-  Spurious_Confirmations = (1u << 16),
-
-  Not_Launch  = Spurious_Confirmations + 1,
-  Not_Burnout = Spurious_Confirmations + 2,
-  Not_Descent = Spurious_Confirmations + 3,
-  Not_Reefing = Spurious_Confirmations + 4,
-  Not_Landed  = Spurious_Confirmations + 5,
+  Bad_Altitude   = Sensor_Measm_Code | 1u,
+  Bad_Pressure   = Sensor_Measm_Code | (1u << 1),
+  Bad_Attitude_X = Sensor_Measm_Code | (1u << 2),
+  Bad_Attitude_Y = Sensor_Measm_Code | (1u << 3),
+  Bad_Attitude_Z = Sensor_Measm_Code | (1u << 4),
+  Bad_Accel_X    = Sensor_Measm_Code | (1u << 5),  
+  Bad_Accel_Y    = Sensor_Measm_Code | (1u << 6),
+  Bad_Accel_Z    = Sensor_Measm_Code | (1u << 7),
   
   Actionable_Decrees = (1u << 17),
 
@@ -225,15 +216,13 @@ typedef enum flight_message : fu32 {
   Graceful_Reset      = Runtime_Configuration | (1u << 18),
   Confirm_Altitude    = Runtime_Configuration | (1u << 19),
   Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 22),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 21),
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
   Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
 
-  GroundStation_Heartbeat = (1u << 30),
   FlightComputer_Mask = (1u << 31),
-
   Invalid_Message = UINT_FAST32_MAX
 } fc_msg;
 
@@ -242,7 +231,7 @@ typedef struct config_description_map {
   const char *name;
 } conf_dict;
 
-typedef struct system_monitor {
+typedef struct align system_monitor {
   fu16 to_abort, to_reinit;
   fu16 gps_delay, gps_malform;
   volatile fu16 failures;

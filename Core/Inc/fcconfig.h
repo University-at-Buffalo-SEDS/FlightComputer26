@@ -32,15 +32,18 @@
 
 /* Evaluation */
 
+/* Increase this if FC spams */
+#define SPURIOUS_THRESHOLD 1
+
 #define MIN_SAMP_ASCENT   3
-#define MIN_SAMP_BURNOUT  3
-#define MIN_SAMP_DESCENT  2
+#define MIN_SAMP_BURNOUT  5
+#define MIN_SAMP_DESCENT  4
 #define MIN_SAMP_REEF     2
 #define MIN_SAMP_LANDED   6
 
 #define LAUNCH_CONFIRM_DELAY 30
 #define APOGEE_CONFIRM_DELAY 80
-#define LANDED_GPS_INTERVAL  500
+#define LANDED_GPS_INTERVAL  1000
 
 #define URGENT_DEPLOYMENT_DELAY 500
 
@@ -74,7 +77,7 @@
 #define BURNOUT_MIN_VEL 12.0f
 #define BURNOUT_MAX_VAX -3.0f
 
-#define APOGEE_MAX_VEL -3.0f
+#define APOGEE_MAX_VEL 3.0f
 
 #define REEF_TARGET_ALT 457.2f
 

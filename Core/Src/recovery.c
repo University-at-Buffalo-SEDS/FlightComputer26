@@ -560,7 +560,7 @@ static inline void decode_message(fc_msg msg)
   {
     msg = fc_unmask(msg);
 
-    if (msg < Spurious_Confirmations)
+    if (msg & Sensor_Measm_Code)
     {
       return process_report(msg);
     }
@@ -568,29 +568,18 @@ static inline void decode_message(fc_msg msg)
     {
       return process_gps_code(msg);
     }
-    else if (msg & Spurious_Confirmations)
-    {
-      msg &= ~Spurious_Confirmations;
-      log_err(id "unconfirmed transition: %u", (unsigned)msg);
-      return;
-    }
   }
 
-  if (msg & GroundStation_Heartbeat)
+  if (msg & Actionable_Decrees)
   {
-    sweetbench_catch(11);
-    timer_update(HeartbeatGND);
-    sweetbench_start(11, 100);
-  }
-  else if (msg & Actionable_Decrees)
-  {
-    process_action(msg, internal);
+    return process_action(msg, internal);
   }
   else if (msg & Runtime_Configuration)
   {
-    process_config(msg);
+    return process_config(msg);
   }
-  else log_err(id "unrecognized option: %u", (unsigned)msg);
+
+  log_err(id "unrecognized option: %u", (unsigned)msg);
 }
 
 

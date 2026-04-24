@@ -30,6 +30,8 @@
 #define FLOAT_LOG_PRECISION     8
 #define MAX_METRIC_MESSAGE_SIZE 84
 
+#define MAX_SPURIOUS_REPORT_SIZE 40
+
 #define MAX_METRIC_REPORT_SIZE 															      \
 	(MAX_METRIC_MESSAGE_SIZE + FLOAT_LOG_PRECISION)
 
@@ -117,6 +119,8 @@
 /* Common macros */
 
 #define mlen(len) (len + sizeof(id))
+
+#define then && forward() &&
 
 #define fc_mask(message)    ((message) | FlightComputer_Mask)
 #define fc_unmask(message)  ((message) & ~FlightComputer_Mask)

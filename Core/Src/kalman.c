@@ -397,7 +397,7 @@ void ascent_predict(const float dt, fu32 conf)
   f_xyz w = meas.gyro;
   f_xyz a = meas.accl;
 
-  fc_unlock(&meas_locks[0]);
+  fc_unlock(&meas_locks[0], false);
 
   w.x = rad(w.x) - svec(1).bias.gx;
   w.y = rad(w.y) - svec(1).bias.gy;
@@ -487,7 +487,7 @@ void ascent_update(void)
 
   const float baroz_innv = meas.baro.alt - imedsv.alt;
 
-  fc_unlock(&meas_locks[1]);
+  fc_unlock(&meas_locks[1], false);
 
   float *start = kfalloc(EKF_UPDATE_BYTES);
   
