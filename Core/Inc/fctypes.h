@@ -1,6 +1,4 @@
-/*
- * Flight Computer primitive type aliases.
- */
+/* Core/Inc/fctypes.h */
 
 #ifndef FC_TYPES
 #define FC_TYPES

@@ -1,7 +1,4 @@
-/*
- * Flight Computer user configuration file.
- * All time constants are in milliseconds.
- */
+/* Core/Inc/fcconfig.h */
 
 #ifndef FC_USER_CONFIG
 #define FC_USER_CONFIG

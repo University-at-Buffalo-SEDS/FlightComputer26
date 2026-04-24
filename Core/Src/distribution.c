@@ -1,6 +1,4 @@
-/*
- * Distribution Task
- */
+/* Core/Src/distribution.c */
 
 #include "platform.h"
 #include "fctypes.h"
@@ -19,7 +17,6 @@
 TX_THREAD distribution_task;
 
 measm meas = {0};
-
 spinlock meas_locks[Sensors - 1] = {0};
 
 #ifdef GPS_AVAILABLE
@@ -107,32 +104,30 @@ static const fc_msg extmap[Compat_Messages] = {
 
 #define MIN_CMD_SIZE 1
 
-static inline fc_msg decode_cmd(const uint8_t *raw)
+static inline fc_msg decode_cmd(const uint8_t *k)
 {
-  return *raw < Sensors ? extmap[*raw] : Invalid_Message;
+  return *k < Compat_Messages ? extmap[*k] : Invalid_Message;
 }
 
-#else
+#else /* TELEMETRY_CMD_COMPAT */
 
 #define MIN_CMD_SIZE 4
 
-static inline fc_msg decode_cmd(const uint8_t *raw)
+static inline fc_msg decode_cmd(const uint8_t *k)
 {
-  return (fc_msg) fc_unmask(U32(raw[0], raw[1], raw[2], raw[3]));
+  return (fc_msg) fc_unmask(U32(k[0], k[1], k[2], k[3]));
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
-
 #endif /* TELEMETRY_ENABLED */
 
+
+/* GPS coordinates handling */
+
+static inline void enqueue_raw_coords(const uint8_t *buf)
+{
 #ifdef GPS_AVAILABLE
 
-/*
- * Wait-free on atomics, as God intended.
- */
-static inline void
-enqueue_gps_data(const uint8_t *buf)
-{
   static fu8 idx = 0;
 
   fu8 i = idx;
@@ -146,13 +141,14 @@ enqueue_gps_data(const uint8_t *buf)
     fetch_add(&gps_mask, 1, Rel);
     idx = i;
   }
+
+#endif /* GPS_AVAILABLE */
 }
 
-/*
- * Transforms GPS data from ring into sub-KF struct.
- */
 static inline fu8 fetch_gps_data(kf_gps *buf)
 {
+#ifdef GPS_AVAILABLE
+
   static fu8 idx = UINT_FAST8_MAX;
 
   fu16 i = idx;
@@ -174,13 +170,15 @@ static inline fu8 fetch_gps_data(kf_gps *buf)
 
   fetch_or(&gps_mask, CLEAR_IDX, Rlx);
   return n;
+
+#else
+  return 0;
+
+#endif /* GPS_AVAILABLE */
 }
 
-/*
- * Checks received size and applicable sanity constraints.
- */
 static inline fu32
-validate_gps(const f_xyz *gps, size_t len, fu32 conf)
+validate_coords(const f_xyz *gps, size_t len, fu32 conf)
 {
   if (len != sizeof(f_xyz))
   {
@@ -208,12 +206,8 @@ validate_gps(const f_xyz *gps, size_t len, fu32 conf)
   return st;
 }
 
-/*
- * Accumulates helpers refresh RF board heartbeat,
- * validate GPS data, and enqueue valid packet.
- */
 static inline SedsResult
-handle_gps_data(const uint8_t *data, size_t len)
+process_gps_packet(const uint8_t *data, size_t len)
 {
 #ifdef GPS_AVAILABLE
 
@@ -222,7 +216,7 @@ handle_gps_data(const uint8_t *data, size_t len)
   timer_update(HeartbeatRF);
 
   fu32 cfg = fetch_or(&g_conf, option(GPS_Available), Rlx);
-  fu32 rep = validate_gps((const f_xyz *)data, len, cfg);
+  fu32 rep = validate_coords((const f_xyz *)data, len, cfg);
 
   if (rep != fc_mask(GPS_Data_Code))
   {
@@ -230,7 +224,7 @@ handle_gps_data(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
-  enqueue_gps_data(data);
+  enqueue_raw_coords(data);
 
   sweetbench_start(10, 50);
 
@@ -239,25 +233,47 @@ handle_gps_data(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
-/*
- * Converts GPS coordinates into distance from launch rail.
- */
-static inline void distance_from_rail(kf_gps *buf)
+static inline void to_relative_coords(kf_gps *buf)
 {
   buf->lon = fabsf(buf->lon - rail.lon);
   buf->lat = fabsf(buf->lat - rail.lat);
 }
 
-#endif /* GPS_AVAILABLE */
+static inline fu32
+watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
+{
+#ifdef GPS_AVAILABLE
 
+  if (conf & option(GPS_Available) &&
+      fetch_gps_data(&meas.gps))
+  {
+    *acc += fsec(timer_exchange(FillSequence));
+
+    rail = meas.gps;
+
+    if (!within(rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
+        !within(rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
+    {
+      log_err(id "new GPS reference "
+                 "LAT: %f, LON: %f", rail.lat, rail.lon);
+    }
+  }
+
+  return ++*ctr;
+
+#else
+  return 0;
+
+#endif /* GPS_AVAILABLE */
+}
+
+
+/* General packet handling */
 
 #ifdef TELEMETRY_ENABLED
 
-/*
- * Deposits one or multiple messages into the recovery queue.
- */
 static inline SedsResult
-handle_gnd_command(const uint8_t *data, size_t len)
+dispatch_flight_cmd(const uint8_t *data, size_t len)
 {
   fc_msg msg;
   UINT st = TX_SUCCESS;
@@ -281,7 +297,7 @@ handle_gnd_command(const uint8_t *data, size_t len)
   tx_thread_priority_change(&telemetry_thread,
                             TLMT_PRIORITY, &tlmt_old_pr);
 
-#else
+#else /* MESSAGE_BATCHING_ENABLED */
 
   msg = decode_cmd(data);
 
@@ -294,38 +310,70 @@ handle_gnd_command(const uint8_t *data, size_t len)
   return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
 }
 
-/*
- * Invokes an appropriate handler based on sender id.
- */
-SedsResult
-on_fc_packet(const SedsPacketView *pkt, void *user)
+static inline SedsResult pulse_ground(void)
 {
-  (void)user;
+  sweetbench_catch(11);
+  timer_update(HeartbeatGND);
+  sweetbench_start(11, 100);
+  return SEDS_OK;
+}
 
-  if (!pkt || pkt->ty != SEDS_EP_FLIGHT_CONTROLLER ||
-      !pkt->payload || !pkt->payload_len ||
-      !pkt->sender || !pkt->sender_len)
+static inline SedsResult
+update_ascent_biases(const uint8_t *data, size_t len)
+{
+  if (len != sizeof(ekf_bias))
+  {
+    return SEDS_ERR;
+  }
+
+  if (load(&g_conf, Acq) & option(Launch_Requested))
+  {
+    log_err(telid "biases rejected mid-flight");
+    return SEDS_ERR;
+  }
+
+  /* TODO Bias validation? */
+
+  for (fu8 k = 0; k < STATE_HISTORY; ++k)
+  {
+    svec(k).bias = *(ekf_bias *)data;
+  }
+
+  imedsv.bias = *(ekf_bias *)data;
+
+  fetch_or(&g_conf, option(Manual_Biases), Rel);
+
+  return SEDS_OK;
+}
+
+SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
+{
+  if (!pkt || !pkt->sender || !pkt->sender_len ||
+      !pkt->payload || !pkt->payload_len)
   {
     return SEDS_HANDLER_ERROR;
   }
 
-  if (pkt->sender[0] == 'G')
+  switch (pkt->ty)
   {
-    return handle_gnd_command(pkt->payload, pkt->payload_len);
+    case SEDS_DT_HEARTBEAT:
+      return pulse_ground();
+    case SEDS_DT_GPS_DATA:
+      return process_gps_packet(pkt->payload, pkt->payload_len);
+    case SEDS_DT_FLIGHT_COMMAND:
+      return dispatch_flight_cmd(pkt->payload, pkt->payload_len);
+    case SEDS_DT_ASCENT_BIASES:
+      return update_ascent_biases(pkt->payload, pkt->payload_len);
   }
-  else if (pkt->sender[0] == 'R')
-  {
-    return handle_gps_data(pkt->payload, pkt->payload_len);
-  }
-  else return SEDS_HANDLER_ERROR;
+
+  return SEDS_HANDLER_ERROR;
 }
 
 #endif /* TELEMETRY_ENABLED */
 
 
-/*
- * Gyroscope sanity check against its data range.
- */
+/* On-board sensor data validation */
+
 static inline bool
 validate_gyro(const f_xyz *gyro, fu32 conf)
 {
@@ -354,9 +402,6 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
   return true;
 }
 
-/*
- * Accelerometer sanity check against its data range.
- */
 static inline bool
 validate_accl(const f_xyz *accl, fu32 conf)
 {
@@ -385,9 +430,6 @@ validate_accl(const f_xyz *accl, fu32 conf)
   return true;
 }
 
-/*
- * Barometer sanity check against BMP390 data range.
- */
 static inline bool
 validate_baro(const baro *baro, fu32 conf)
 {
@@ -412,9 +454,6 @@ validate_baro(const baro *baro, fu32 conf)
   return true;
 }
 
-/*
- * Calls and aggregate statuses from all validators.
- */
 static inline conditional fu8
 validate_all(const measm *buf, fu32 conf)
 {
@@ -424,40 +463,8 @@ validate_all(const measm *buf, fu32 conf)
 }
 
 
-/*
- * Monitors and reports GPS throughout fill sequence.
- */
-static inline fu32 monitor_gps(fu32 conf, float *acc, fu32 *ctr)
-{
-#ifdef GPS_AVAILABLE
+/* Stage 0 of fill sequence */
 
-  if (conf & option(GPS_Available) &&
-      fetch_gps_data(&meas.gps))
-  {
-    *acc += fsec(timer_exchange(FillSequence));
-
-    rail = meas.gps;
-
-    if (!within(rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
-        !within(rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
-    {
-      log_err(id "new GPS reference "
-                 "LAT: %f, LON: %f", rail.lat, rail.lon);
-    }
-  }
-
-  return ++*ctr;
-
-#else
-  return 0;
-
-#endif /* GPS_AVAILABLE */
-}
-
-/*
- * Stage 0 of fill sequence: FC streams data
- * for human inspection and accepts runtime config options.
- */
 static inline void data_streaming_mode(void)
 {
   float acc_baro = 0.0f, acc_gps = 0.0f;
@@ -468,21 +475,21 @@ static inline void data_streaming_mode(void)
   {
     fu32 code = 0;
 
-    if (fetch_gyro(&meas.gyro))
+    if (try_fetch_gyro(&meas.gyro))
     {
       code |= validate_gyro(&meas.gyro, conf) ? 0
                                               : Gyro_Mask;
       log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
     }
 
-    if (fetch_accl(&meas.accl))
+    if (try_fetch_accl(&meas.accl))
     {
       code |= validate_accl(&meas.accl, conf) ? 0
                                               : Accl_Mask;
       log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
     }
 
-    if (fetch_baro(&meas.baro))
+    if (try_fetch_baro(&meas.baro))
     {
       acc_baro += fsec(timer_exchange(Auxiliary));
       log_metric(pilot "Baro interval", acc_baro / ++ctr_baro, false);
@@ -497,7 +504,7 @@ static inline void data_streaming_mode(void)
       log_err(pilot "malformed measm: %u", code);
     }
 
-    if (monitor_gps(conf, &acc_gps, &ctr_gps) > 0)
+    if (watch_for_gps_packets(conf, &acc_gps, &ctr_gps) > 0)
     {
       log_metric(pilot "GPS interval", acc_gps / ctr_gps, false);
     }
@@ -508,9 +515,9 @@ static inline void data_streaming_mode(void)
   }
 }
 
-/*
- * Stage 1 of fill sequence: euler angles -> quaternions.
- */
+
+/* Stage 1 of fill sequence */
+
 static inline void post_initialization(void)
 {
   f_xyz accl_acc = {0};
@@ -526,7 +533,7 @@ static inline void post_initialization(void)
 
   task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
-    if (fetch_accl(&meas.accl))
+    if (try_fetch_accl(&meas.accl))
     {
       log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
 
@@ -539,7 +546,7 @@ static inline void post_initialization(void)
       }
     }
 
-    (void) monitor_gps(conf, &acc_gps, &ctr_gps);
+    (void) watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
 
     tx_thread_relinquish();
 
@@ -558,14 +565,14 @@ static inline void post_initialization(void)
   accel_to_quaternion(&accl_acc);
 }
 
-/*
- * Data cycle for the Ascent filter: Update stage.
- */
-static inline void asc_upd(fu32 conf)
+
+/* Distribution for Ascent */
+
+static inline void for_ascent_update(fu32 conf)
 {
   baro baro_suspect;
 
-  if (fetch_baro(&baro_suspect) &&
+  if (try_fetch_baro(&baro_suspect) &&
       validate_baro(&baro_suspect, conf))
   {
     fc_lock(&meas_locks[1]);
@@ -586,10 +593,7 @@ static inline void asc_upd(fu32 conf)
   }
 }
 
-/*
- * Data cycle for the Ascent filter: Predict stage.
- */
-static inline void asc_pred(fu32 conf, fu8 *imu)
+static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 {
   static f_xyz accum_gyro, accum_accl;
 
@@ -597,14 +601,14 @@ static inline void asc_pred(fu32 conf, fu8 *imu)
 
   sweetbench_start(8);
 
-  if (fetch_gyro(&suspect_gyro) && 
+  if (try_fetch_gyro(&suspect_gyro) && 
       validate_gyro(&suspect_gyro, conf))
   {
     accum_gyro = suspect_gyro;
     *imu |= Gyro_Mask;
   }
 
-  if (fetch_accl(&suspect_accl) &&
+  if (try_fetch_accl(&suspect_accl) &&
       validate_accl(&suspect_accl, conf))
   {
     accum_accl = suspect_accl;
@@ -637,10 +641,10 @@ static inline void asc_pred(fu32 conf, fu8 *imu)
   }
 }
 
-/*
- * Data cycle for the Descent filter.
- */
-static inline void desc_full_cycle(fu32 conf)
+
+/* Distribution for Descent and itself */
+
+static inline void descent_full_cycle(fu32 conf)
 {
   fu32 stage = 0;
 
@@ -650,7 +654,7 @@ static inline void desc_full_cycle(fu32 conf)
 
   descent_predict(dt);
 
-  if (fetch_baro(&meas.baro) &&
+  if (try_fetch_baro(&meas.baro) &&
       validate_baro(&meas.baro, conf))
   {
     descent_update();
@@ -658,12 +662,10 @@ static inline void desc_full_cycle(fu32 conf)
     log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
   }
 
-#ifdef GPS_AVAILABLE
-
   if ((conf & option(GPS_Available)) &&
       fetch_gps_data(&meas.gps))
   {
-    distance_from_rail(&meas.gps);
+    to_relative_coords(&meas.gps);
     descent_update();
 
     if (!(conf & option(Monitor_Altitude)))
@@ -671,8 +673,6 @@ static inline void desc_full_cycle(fu32 conf)
       stage = EVALUATION_STAGED;
     }
   }
-
-#endif /* GPS_AVAILABLE */
 
   if (stage == EVALUATION_STAGED)
   {
@@ -683,19 +683,13 @@ static inline void desc_full_cycle(fu32 conf)
 }
 
 
-/*
- * Operates flight states before launch, runs KF
- * data distribution loops.
- */
-void distribution_entry(ULONG input)
-{
-  (void)input;
+/* Task */
 
+void distribution_entry(ULONG _)
+{
   fu8 imu = 0;
   fu32 conf = load(&g_conf, Acq);
 
-  /* Fill sequence is here
-   */
   if (!(conf & option(Launch_Requested)))
   {
     data_streaming_mode();
@@ -729,17 +723,14 @@ void distribution_entry(ULONG input)
 
     if (conf & option(Using_Ascent_KF))
     {
-      conf & option(Ascent_KF_Staged) ? asc_upd(conf)
-                                      : asc_pred(conf, &imu);
+      conf & option(Ascent_KF_Staged)
+           ? for_ascent_update(conf)
+           : for_ascent_predict(conf, &imu);
     }
-    else desc_full_cycle(conf);
+    else descent_full_cycle(conf);
   }
 }
 
-/*
- * Creates a preemptive, cooperative Distribution task
- * with defined parameters.
- */
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 {
   UINT st;

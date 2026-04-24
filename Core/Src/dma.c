@@ -1,17 +1,4 @@
-/*
- * Direct Memory Access implementation
- *
- * Sensors:  Barometer, Gyroscope, Accelerometer
- * Consumer: Distribution Task
- *
- * This module implements the HAL Interrupt Service
- * Routine, DMA transfer callbacks for completion and
- * error handling, logical sensor selector function,
- * DMA transfer routine, and public fetching functions.
- *
- * Compensation is performed in fetching functions and
- * is not needed to be done elsewhere.
- */
+/* Core/Src/dma.c */
 
 #include "platform.h"
 #include "fctypes.h"
@@ -51,11 +38,9 @@ static dmasel select = {Sensors, 0};
 static fdma flags = {0, 0};
 
 
-/*
- * Tries to fetch barometer from shared buffer.
- * Returns true on success and false otherwise.
- */
-bool fetch_baro(baro *buf)
+/* Consumer */
+
+bool try_fetch_baro(baro *buf)
 {
   fu16 rxdone = fetch_and(&flags.relv, ~DMA_BARO_MASK, Acq);
 
@@ -89,11 +74,7 @@ bool fetch_baro(baro *buf)
   return true;
 }
 
-/*
- * Tries to fetch gyroscope from shared buffer.
- * Returns true on success and false otherwise.
- */
-bool fetch_gyro(f_xyz *buf)
+bool try_fetch_gyro(f_xyz *buf)
 {
   fu16 rxdone = fetch_and(&flags.relv, ~DMA_GYRO_MASK, Acq);
 
@@ -123,11 +104,7 @@ bool fetch_gyro(f_xyz *buf)
   return true;
 }
 
-/*
- * Tries to fetch accelerometer from shared buffer.
- * Returns true on success and false otherwise.
- */
-bool fetch_accl(f_xyz *buf)
+bool try_fetch_accl(f_xyz *buf)
 {
   fu16 rxdone = fetch_and(&flags.relv, ~DMA_ACCL_MASK, Acq);
 
@@ -158,10 +135,8 @@ bool fetch_accl(f_xyz *buf)
 }
 
 
-/*
- * Success callback. Sets valid flag, invalidates data cache
- * for the DMA buffer and wakes DMA task.
- */
+/* Callbacks */
+
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
 	gpio_cs_high(select.next);
@@ -170,9 +145,6 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 	tx_thread_wait_abort(&dma_task);
 }
 
-/*
- * Error callback. Sets invalid flag and wakes DMA task.
- */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
 	gpio_cs_high(select.next);
@@ -180,19 +152,14 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 	tx_thread_wait_abort(&dma_task);
 }
 
-/*
- * Sets data readiness flag for a sensor that rose SPI edge.
- */
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
 	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
 }
 
 
-/*
- * Propagates raw data from DMA buffer to one of the shared
- * buffers.
- */
+/* DMA routine */
+
 static inline void propagate_rx(void)
 {
   fc_lock(&dma_locks[select.next]);
@@ -203,21 +170,17 @@ static inline void propagate_rx(void)
 
   fc_unlock(&dma_locks[select.next], true);
 
-  /* Relevance flags use the same EXTI pin masks. */
-  (void) fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
+  fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
 }
 
-/*
- * Begins DMA transfer and blocks for a timeout until it
- * elapses or until the task is woken by a callback.
- */
 static inline void start_dma_transfer(void)
 {
   HAL_StatusTypeDef st;
 
   gpio_cs_low(select.next);
 
-  st = dma_spi_txrx(tx[select.next], (uint8_t *)dmarx, SENSOR_BUF_SIZE);
+  st = dma_spi_txrx(tx[select.next], (uint8_t *)dmarx,
+                                     SENSOR_BUF_SIZE);
 
   if (st != HAL_OK)
   {
@@ -225,16 +188,8 @@ static inline void start_dma_transfer(void)
     return;
   }
 
-  /* Sensor's drdy flag is erased after starting DMA transfer
-   * but before a callback fires. This is a compromise between 
-   * a) erasing a flag despite possible SPI errors (see right
-   * above) and b) almost certainly erasing a newer drdy flag.
-   */
-  (void) fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
+  fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
 
-  /* As a lightweght substitute for a binary condvar,
-   * this suspension should be aborted by a callback.
-   */
   st = tx_thread_sleep(DMA_TIMEOUT_MS);
 
   if (st == TX_WAIT_ABORTED && select.valid)
@@ -244,10 +199,8 @@ static inline void start_dma_transfer(void)
 }
 
 
-/*
- * Loops sensor selector and blocks on DMA transfers.
- * This IO task should be "futex"-ed most of the time.
- */
+/* Task */
+
 void dma_entry(ULONG input)
 {
   (void) input;
@@ -277,8 +230,8 @@ void dma_entry(ULONG input)
       bool re_g = relv_snapshot & DMA_GYRO_MASK;
       bool re_a = relv_snapshot & DMA_ACCL_MASK;
 
-      /* The selector is defined as a simplified boolean expression
-       * of 6 inputs (and 2^6 - 6 possible outcomes).
+      /* The selector is defined as a QMC-minimized
+       * expression 3 data-ready and 3 relevance flags.
        */
       if (dr_g && ((!dr_b && (re_g || !dr_a)) ||
                    (!re_g && (!dr_a || re_a || re_b))))
@@ -306,10 +259,6 @@ void dma_entry(ULONG input)
   }
 }
 
-/*
- * Creates a preemptive, cooperative DMA task with defined
- * parameters.
- */
 UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 {
 	UINT st;

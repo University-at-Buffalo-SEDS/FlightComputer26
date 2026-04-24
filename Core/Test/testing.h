@@ -1,6 +1,4 @@
-/*
- * Flight Computer 26 testing definitions and API.
- */
+/* Core/Test/testing.h */
 
 #ifndef TESTING_H
 #define TESTING_H

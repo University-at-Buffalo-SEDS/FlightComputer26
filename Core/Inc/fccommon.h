@@ -1,6 +1,4 @@
-/*
- * Flight Computer common constants and macros.
- */
+/* Core/Inc/fccommon.h */
 
 #ifndef FC_COMMON
 #define FC_COMMON
@@ -10,7 +8,7 @@
 #include "testing.h"
 
 
-/* DMA constants */
+/* DMA */
 
 #define SENSOR_BUF_SIZE 8
 
@@ -25,7 +23,7 @@
 #define DMA_ACCL_OFFSET 0x2u
 
 
-/* Evaluation constants */
+/* Evaluation */
 
 #define FLOAT_LOG_PRECISION     8
 #define MAX_METRIC_MESSAGE_SIZE 84
@@ -45,7 +43,7 @@
 #define AZ_RAIL_THRES (GRAVITY_SI + EKF_ACCL_RAIL_DIV)
 
 
-/* Kalman filter constants */
+/* Kalman filter */
 
 #define TOLERANCE 1e-3f
 #define DKF_TOLER 1e-2f
@@ -100,7 +98,7 @@
 #define KF_POOL_SIZE (KF_POOL_USED + KFP_OVERHEAD)
 
 
-/* Recovery constants */
+/* Recovery */
 
 #define MAX_THRESHOLD 0x3FFu
 #define FC_MSG_Q_SIZE 8
@@ -145,16 +143,16 @@
 #define rad(deg) ((deg) * PI / 180.0f)
 
 #define vnorm2(x, y, res) fvsqrt((x)*(x) + (y)*(y), (res))
-#define inorm4(w, x, y, z) invsqrtf((w)*(w) + (x)*(x) + \
-                                    (y)*(y) + (z)*(z))
+#define inorm4(w, x, y, z) isqrtf_quake((w)*(w) + (x)*(x) + \
+                                        (y)*(y) + (z)*(z))
 
-#define within(expr, bound)                               \
+#define within(expr, bound)                                 \
   (fabsf((float)(expr)) <= (bound))
 
-#define proxim_lat(k)                                     \
+#define proxim_lat(k)                                       \
   within((k) - LAUNCH_SITE_LAT, GPS_TOLER)
 
-#define proxim_lon(k)                                     \
+#define proxim_lon(k)                                       \
   within((k) - LAUNCH_SITE_LON, GPS_TOLER)
 
 /* Go 'k' state vectors back, 0 to get the current vector.

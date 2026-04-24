@@ -1,21 +1,4 @@
-/*
- * Shared platform header
- *
- * The purpose of this file is to unify external APIs
- * used by the Flight Computer, providing a single point
- * of reference and modification, easier conditional
- * compilation and poisoning.
- *
- * This header provides the following components for the
- * DMA, Kalman, Distribution, Evaluation, and Recovery modules:
- *
- * - GPIO and EXTI port mappings;
- * - ThreadX, HAL, sedsprintf_rs, and driver includes;
- * - Variadic aliases for select sedsprintf_rs functions;
- * - Variadic aliases for substitute stdio functions;
- * - Aliases for select HAL and driver functions;
- * - Misc aliases and includes as required by the modules.
- */
+/* Core/Inc/platform.h */
 
 #ifndef PLATFORM_H
 #define PLATFORM_H

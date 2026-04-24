@@ -1,6 +1,4 @@
-/*
- * Flight Computer tasks.
- */
+/* Core/Inc/fctasks.h */
 
 #ifndef FC_TASKS
 #define FC_TASKS
@@ -8,7 +6,7 @@
 #include "platform.h"
 
 
-/* ------ Telemetry Task ------ */
+/* Telemetry Task */
 
 #ifdef TELEMETRY_ENABLED
 
@@ -23,10 +21,10 @@ extern TX_THREAD telemetry_thread;
 void telemetry_thread_entry(ULONG initial_input);
 UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
 
-#endif // TELEMETRY_ENABLED
+#endif /* TELEMETRY_ENABLED */
 
 
-/* ------ Recovery Task ------ */
+/* Recovery Task */
 
 #define RECV_INPUT 0
 #define RECV_PRIORITY 0
@@ -39,7 +37,7 @@ void recovery_entry(ULONG input);
 UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 
 
-/* ------ Evaluation Task ------ */
+/* Evaluation Task */
 
 #define EVAL_INPUT 0
 #define EVAL_TIME_SLICE 25
@@ -56,7 +54,7 @@ void evaluation_entry(ULONG input);
 UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 
 
-/* ------ Distribution Task ------ */
+/* Distribution Task */
 
 #define DIST_INPUT 0
 #define DIST_TIME_SLICE 20
@@ -71,7 +69,7 @@ void distribution_entry(ULONG input);
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 
 
-/* ------ DMA Task ------ */
+/* DMA Task */
 
 #define DMA_INPUT 0
 #define DMA_TIME_SLICE 15

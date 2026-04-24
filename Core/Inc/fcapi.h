@@ -1,6 +1,4 @@
-/*
- * Flight Computer internal API header.
- */
+/* Core/Inc/fcapi.h */
 
 #ifndef FC_API
 #define FC_API
@@ -15,9 +13,9 @@
 
 /* DMA */
 
-bool fetch_baro(baro *);
-bool fetch_gyro(f_xyz *);
-bool fetch_accl(f_xyz *);
+bool try_fetch_baro(baro *);
+bool try_fetch_gyro(f_xyz *);
+bool try_fetch_accl(f_xyz *);
 
 
 /* Kalman filter */
@@ -26,16 +24,17 @@ bool fetch_accl(f_xyz *);
 extern TX_BYTE_POOL kfpool;
 #endif
 
-extern void *kfpool_buf;
 extern quat qv;
+extern kf_svec imedsv;
+extern void *kfpool_buf;
 
 void descent_predict(const float);
 void descent_update(void);
 void descent_initialize(void);
 
-void ascent_predict(const float, fu32 conf);
+void ascent_predict(const float, fu32);
 void ascent_update(void);
-void ascent_initialize(void);
+void ascent_initialize(fu32);
 
 void accel_to_quaternion(const f_xyz *);
 
@@ -230,7 +229,7 @@ static inline void fc_unlock(spinlock *object, bool yield)
   store(&object->lock, 0, Rel);
 
   /* Wakeyield: for single-core, signle data cache,
-                scheduler threadpool is a FIFO queue */
+                with a FIFO queue for scheduler threadpool */
 
   if (yield && load(&object->waiters, Acq) > 0)
   {

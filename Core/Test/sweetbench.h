@@ -1,17 +1,15 @@
-/*
- * Benchmark for Flight Computer 26.
- *
- * The first version of this benchmark is designed to
- * measure the time it takes to execute between any two
- * points in one thread, including synchronization and
- * preemption overheads (sans out-of-order execution,
- * because Cortex-M33 has an in-order issue pipeline).
- */
+/* Core/Test/sweetbench.h */
 
 #ifndef _SWEETBENCH_H
 #define _SWEETBENCH_H
 
 #ifdef FC_BENCHMARK
+
+/* The first version of this benchmark is designed to
+ * measure the time it takes to execute between any two
+ * points in one thread, including synchronization and
+ * preemption overheads (sans out-of-order execution,
+ * because Cortex-M33 has an in-order issue pipeline). */
 
 #include "platform.h"
 #include "fctypes.h"

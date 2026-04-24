@@ -1,7 +1,4 @@
-/*
- * Tests usage correctness of CMSIS math functions
- * used by KFs.
- */
+/* Core/Inc/kalmanpill.c */
 
 #include "platform.h"
 #include "fctypes.h"

@@ -1,6 +1,4 @@
-/*
- * Evaluation Task
- */
+/* Core/Src/evaluation.c */
 
 #include "platform.h"
 #include "fctypes.h"
@@ -24,10 +22,8 @@ kf_svec sv[STATE_HISTORY] = {};
 sv_meta sm = {1, 0, Suspended, 0};
 
 
-/*
- * Logs state for which consecutive confirmation was not reached.
- * Provides a better understanding of KF state fluctuations.
- */
+/* FSM helpers */
+
 static inline void detect_spurious(fu32 mode)
 {
   if (sm.samp <= SPURIOUS_THRESHOLD || sm.ev_step <= 0)
@@ -48,17 +44,13 @@ static inline void detect_spurious(fu32 mode)
   }
 }
 
-/*
- * Step through in state detection logic. Reduces branching.
+/* Step through in state evaluation. Reduces branching.
  */
 static inline forceinline bool forward(void)
 {
   return ++sm.ev_step > 0;
 }
 
-/*
- * Advances flight state and zeroes metadata.
- */
 static inline void flight_advance(state promotion)
 {
   sm.samp = sm.ev_step = 0;
@@ -73,11 +65,9 @@ static inline void flight_advance(state promotion)
 }
 
 
-/*
- * Vigilant mode routine. Can perform urgent deployments
- * and skip states.
- */
-static inline void evaluate_altitude(fu32 mode)
+/* Evaluation routines */
+
+static inline void vigilant_evaluate_altitude(fu32 mode)
 {
   float last = svec(0).alt;
 
@@ -132,10 +122,27 @@ static inline void evaluate_altitude(fu32 mode)
   }
 }
 
-/*
- * Monitors if minimum thresholds for velocity and
- * acceleration were exceded.
- */
+static inline void crew_send_coords(fu32 mode)
+{
+#ifdef GPS_AVAILABLE
+  if (!(mode & option(GPS_Available)))
+  {
+    return;
+  }
+
+  log_measm(SEDS_DT_GPS_DATA, &meas.gps);
+
+  tx_thread_sleep(LANDED_GPS_INTERVAL);
+
+#else
+  return;
+
+#endif /* GPS_AVAILABLE */
+}
+
+
+/* State transitions */
+
 static inline void detect_launch(void)
 {
   if (svec(0).vel >= LAUNCH_MIN_VEL     then
@@ -147,9 +154,6 @@ static inline void detect_launch(void)
   }
 }
 
-/*
- * Monitors height and velocity increase consistency.
- */
 static inline void detect_ascent(fu32 mode)
 {
   if (svec(0).vel > svec(1).vel         then
@@ -163,12 +167,6 @@ static inline void detect_ascent(fu32 mode)
   else detect_spurious(mode);
 }
 
-/*
- * Monitors if minimum threshold for velocity and
- * maximum threshold for acceleration were passed.
- * Checks for height increase and velocity decrease
- * consistency.
- */
 static inline void detect_burnout(fu32 mode)
 {
   if (svec(0).vel >= BURNOUT_MIN_VEL    then
@@ -182,10 +180,6 @@ static inline void detect_burnout(fu32 mode)
   else detect_spurious(mode);
 }
 
-/*
- * Initially monitors for continuing burnout and
- * for velocity to pass the minimum threshold.
- */
 static inline void detect_apogee(void)
 {
   const fu8 eval_depth = 4;
@@ -207,9 +201,6 @@ static inline void detect_apogee(void)
   }
 }
 
-/*
- * Monitors for decreasing altitude and increasing velocity.
- */
 static inline void detect_descent(fu32 mode)
 {
   const fu8 eval_depth = 3;
@@ -232,10 +223,6 @@ static inline void detect_descent(fu32 mode)
   else detect_spurious(mode);
 }
 
-/*
- * Monitors for falling below a specific altitude,
- * and checks for altitude consistency.
- */
 static inline void detect_reef(fu32 mode)
 {
   if (svec(0).alt <= REEF_TARGET_ALT    then
@@ -248,10 +235,6 @@ static inline void detect_reef(fu32 mode)
   else detect_spurious(mode);
 }
 
-/*
- * Monitors that all statistical metrics do not
- * deviate beyond allowed tolerance thresholds.
- */
 static inline void detect_landed(fu32 mode)
 {
   float dh = svec(0).alt - svec(1).alt;
@@ -270,27 +253,8 @@ static inline void detect_landed(fu32 mode)
 }
 
 
-static inline void crew_send_coords(fu32 mode)
-{
-#ifdef GPS_AVAILABLE
-  if (!(mode & option(GPS_Available)))
-  {
-    return;
-  }
+/* FSM */
 
-  log_measm(SEDS_DT_GPS_DATA, &meas.gps);
-
-  tx_thread_sleep(LANDED_GPS_INTERVAL);
-
-#else
-  return;
-
-#endif /* GPS_AVAILABLE */
-}
-
-/*
- * Logs and advances state in the ring buffer.
- */
 static inline void propel_kalman_state(fu32 conf)
 {
   if (conf & option(Using_Ascent_KF))
@@ -308,15 +272,11 @@ static inline void propel_kalman_state(fu32 conf)
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
-/*
- * Finite-state machine for state transition.
- * Before leaving, logs state vector just used.
- */
 void evaluate_rocket_state(fu32 conf)
 {
   if (conf & option(Monitor_Altitude))
   {
-    evaluate_altitude(conf);
+    vigilant_evaluate_altitude(conf);
   }
 
   switch (current())
@@ -351,11 +311,6 @@ void evaluate_rocket_state(fu32 conf)
   propel_kalman_state(conf);
 }
 
-/*
- * Initializes Ascent filter and signals Distribution
- * task to start performing data logistics. Idempotent.
- * If there is a re-entrancy, discards dirty KF buffer.
- */
 static inline void enter_flight_state(fu32 conf)
 {
   if (conf & option(Launch_Requested))
@@ -364,7 +319,7 @@ static inline void enter_flight_state(fu32 conf)
   }
   else
   {
-    ascent_initialize();
+    ascent_initialize(conf);
     log_critical(id "received launch signal");
 
     if (fetch_add(&sm.flight, 1, Acq) != Awaiting - 1)
@@ -377,10 +332,9 @@ static inline void enter_flight_state(fu32 conf)
   }
 }
 
-/*
- * Suspends on a message queue and performs
- * data evaluation in accordance with global config.
- */
+
+/* Task */
+
 void evaluation_entry(ULONG input)
 {
   (void)input;
@@ -430,10 +384,6 @@ void evaluation_entry(ULONG input)
   }
 }
 
-/*
- * Creates a configurably-preemptive, cooperative Evaluation task
- * with defined parameters. Started by the Recovery task.
- */
 UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 {
   UINT st;

@@ -1,6 +1,4 @@
-/*
- * Flight Computer data structures.
- */
+/* Core/Inc/fcstructs.h */
 
 #ifndef FC_DATA_STRUCTURES
 #define FC_DATA_STRUCTURES
@@ -67,11 +65,6 @@ typedef struct serial state_vector {
 	float alt, vel;
   ekf_bias bias;
 } kf_svec;
-
-typedef union newton_raphson_bithack {
-  float f;
-  uint32_t d;
-} f32u;
 
 typedef struct serial euler_angles {
   float phi, theta, psi;
@@ -191,7 +184,7 @@ typedef enum flight_message : fu32 {
 
   Revoke_Option = Runtime_Configuration | (1u << 28),
 
-  /* User flags */
+  /* User */
   Monitor_Altitude    = Runtime_Configuration | 1u,
   Consecutive_Samples = Runtime_Configuration | (1u << 1),
   Eval_Focus_Flag     = Runtime_Configuration | (1u << 2),
@@ -201,7 +194,7 @@ typedef enum flight_message : fu32 {
 
   User_Option_Bound   = Runtime_Configuration | (1u << 6), 
 
-  /* Internal flags */
+  /* Internal */
   Postinit_Requested  = Runtime_Configuration | (1u << 7),
   Launch_Requested    = Runtime_Configuration | (1u << 8),
   Rollback_Requested  = Runtime_Configuration | (1u << 9),
@@ -215,9 +208,10 @@ typedef enum flight_message : fu32 {
   In_Aborted_State    = Runtime_Configuration | (1u << 17),
   Graceful_Reset      = Runtime_Configuration | (1u << 18),
   Confirm_Altitude    = Runtime_Configuration | (1u << 19),
-  Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 21),
-  Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
+  Manual_Biases       = Runtime_Configuration | (1u << 20),
+  Ascent_KF_Staged    = Runtime_Configuration | (1u << 21),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 22),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 23),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
   Reinit_Thresholds   = Runtime_Configuration | (1u << 27),

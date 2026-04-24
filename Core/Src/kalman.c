@@ -1,22 +1,4 @@
-/*
- * Kalman Filters
- *
- * Regular (descent) KF
- * Extended error state (ascent) KF
- * Initialization functions
- * Domain-specifc math helpers
- *
- * The entirety of logic in this file is executed within
- * the context of either Distribution or Evaluation task,
- * which invoke parts of one of two filters based on the
- * flight state and global run time configuration.
- *
- * Both KF implementations share the same buffers, the size
- * of which equals to the largest demanded size among the
- * two filters. When the filters are switched, the buffers
- * are cleared and set to the default values expected by
- * the newly selected filter.
- */
+/* Core/Src/kalman.c */
 
 #include "platform.h"
 #include "fctypes.h"
@@ -34,8 +16,7 @@ TX_BYTE_POOL kfpool;
 #endif
 
 quat qv = {0};
-
-static kf_svec imedsv = {0};
+kf_svec imedsv = {0};
 
 static kf_buf kf = {
   .mxp = {.numRows = 0, .numCols = 0, .pData = &kf.P_stacov[0][0]},
@@ -51,10 +32,6 @@ static kf_buf kf = {
 };
 
 
-/*
- * Fault-tolerant (fault-friendly) KF-specific wrapper
- * around TX heap manager.
- */
 static inline float *kfalloc(size_t size)
 {
 #ifdef PARALLEL_PREDICT_UPDATE
@@ -107,17 +84,14 @@ static inline void kffree(float *ptr)
 }
 
 
-/*
- * Inverse square root from Quake 3 Arena.
- */
-static inline constexpr float invsqrtf(float x)
+static inline constexpr float isqrtf_quake(float x)
 {
   if (within(x - 1, TOLERANCE))
   {
     return 1.0f;
   }
 
-  f32u alias = {.f = x};
+  union { float f; fu32 d; } alias = {x};
 
   alias.d = 0x5f3759df - (alias.d >> 1);
 
@@ -129,9 +103,6 @@ static inline constexpr float invsqrtf(float x)
   return alias.f;
 }
 
-/*
- * Converts euler angles to quaternions, stored globally.
- */
 static inline void euler_to_quat(eul *ang)
 {
   ang->phi *= 0.5f;
@@ -171,9 +142,6 @@ static inline void euler_to_quat(eul *ang)
   log_ascent_state(init_quat);
 }
 
-/*
- * ang.psi used to temporarily hold the norm.
- */
 void accel_to_quaternion(const f_xyz *accl)
 {
   eul ang, rep_in_deg;
@@ -192,18 +160,23 @@ void accel_to_quaternion(const f_xyz *accl)
   euler_to_quat(&ang);
 }
 
-/*
- * Calculate offset from previous heap-allocated matrix.
- */
 static inline pure float *mxoff(const matrix *prev)
 {
   return prev->pData + prev->numRows * prev->numCols;
 }
 
 
-/*
- * In DKF, "A_genpur" will serve A (state transition).
- */
+/* Descent (regular) KF.
+ * Implementer's notes:
+ *    1. Uses mxa to store A (state transition matrix)
+ *    2. Uses imedsv to store x_2 (predict -> update) 
+ *    3. Can reuse space within the heap-allocated buffer
+ *       and repurpose stack-allocated matrix wrappers.
+ *       Comments relate such wrappers to MATLAB names.
+ *    4. Prerequisites for Predict: None.
+ *    5. Prerequisites for Update:  Barometer or GPS.     */
+
+
 void descent_initialize(void)
 {
   kf_clear_shared_buffers();
@@ -253,10 +226,6 @@ void descent_initialize(void)
   fetch_and(&g_conf, ~option(toggle), Rel);
 }
 
-/*
- * Note: uses intermediate buffer for resulting state vector.
- * Prerequisites: None.
- */
 void descent_predict(const float dt)
 {
   kf.A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
@@ -278,11 +247,6 @@ void descent_predict(const float dt)
   kffree(start);
 }
 
-/*
- * Allocated buffer is partitioned into blocks,
- * coalesced when necessary to hold bigger matrices.
- * Prerequisites: Barometer or GPS.
- */
 void descent_update(void)
 {
   matrix v_sv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
@@ -332,11 +296,22 @@ void descent_update(void)
 }
 
 
-/* 
- * In EKF, "R_measno" will serve F (transition Jacobian),
- * "A_genpur" will serve Omega (quaternion propagation).
- */
-void ascent_initialize(void) 
+/* Ascent (error state) KF.
+ * Implementer's notes:
+ *    1. Uses mxa to store Omega (quaternion propagation)
+ *    2. Uses mxr to store (in Predict) F (transition Jacobian)
+                           (in Update)  I (referenced identity)
+ *    3. Biases are either constant or user-set at runtime.
+ *    4. Can reuse space within the heap-allocated buffer
+ *       and repurpose stack-allocated matrix wrappers.
+ *       Comments relate such wrappers to MATLAB names.
+ *    5. Predict includes currently non-functional midpoint
+ *       integration for quaternion (commented out).
+ *    6. Prerequisites for Predict: IMU.
+ *    7. Prerequisites for Update:  Barometer.               */
+
+
+void ascent_initialize(fu32 conf) 
 {
   kf_clear_shared_buffers();
 
@@ -359,20 +334,23 @@ void ascent_initialize(void)
   kf.mxh.numRows = 1;
   kf.mxh.numCols = EKF_MEASM;
 
-  for (fu8 k = 0; k < STATE_HISTORY; ++k)
+  if (!(conf & option(Manual_Biases)))
   {
-    svec(k).bias.gx = EKF_BIAS_GYRO_X;
-    svec(k).bias.gy = EKF_BIAS_GYRO_Y;
-    svec(k).bias.gz = EKF_BIAS_GYRO_Z;
-    svec(k).bias.az = EKF_BIAS_ACCL_Z;
+    for (fu8 k = 0; k < STATE_HISTORY; ++k)
+    {
+      svec(k).bias.gx = EKF_BIAS_GYRO_X;
+      svec(k).bias.gy = EKF_BIAS_GYRO_Y;
+      svec(k).bias.gz = EKF_BIAS_GYRO_Z;
+      svec(k).bias.az = EKF_BIAS_ACCL_Z;
+    }
+    
+    imedsv.bias.gx = EKF_BIAS_GYRO_X;
+    imedsv.bias.gy = EKF_BIAS_GYRO_Y;
+    imedsv.bias.gz = EKF_BIAS_GYRO_Z;
+    imedsv.bias.az = EKF_BIAS_ACCL_Z;
   }
-  
-  imedsv.bias.gx = EKF_BIAS_GYRO_X;
-  imedsv.bias.gy = EKF_BIAS_GYRO_Y;
-  imedsv.bias.gz = EKF_BIAS_GYRO_Z;
-  imedsv.bias.az = EKF_BIAS_ACCL_Z;
 
-  if (!(load(&g_conf, Acq) & option(Using_Ascent_KF)))
+  if (!(conf & option(Using_Ascent_KF)))
   {
     /* Switched to Ascent mid-flight or user messed with
      * FC_DEFAULTS. */
@@ -386,10 +364,6 @@ void ascent_initialize(void)
   fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
 
-/*
- * Bias is compile-time, set during initialization.
- * Prerequisites: IMU.
- */
 void ascent_predict(const float dt, fu32 conf)
 {
   fc_lock(&meas_locks[0]);
@@ -477,10 +451,6 @@ void ascent_predict(const float dt, fu32 conf)
   kffree(start);
 }
 
-/*
- * DT is cleared in F (R_measno) to use as identity.
- * Prerequisites: Barometer.
- */
 void ascent_update(void)
 {
   fc_lock(&meas_locks[1]);

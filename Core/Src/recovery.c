@@ -1,6 +1,4 @@
-/*
- * Recovery Task
- */
+/* Core/Src/recovery.c */
 
 #include "platform.h"
 #include "fctypes.h"
@@ -52,11 +50,9 @@ static const conf_dict confmap[] = {
 };
 
 
-/*
- * Tries to (re)initialize or shut given sensors.
- * Should never be preemtped by other task.
- */
-static inline void initialize_sensors(sens_init sn)
+/* Sensor init */
+
+static inline void sensor_init_supervised(sens_init sn)
 {
   sens_init fails = 0;
 
@@ -124,37 +120,10 @@ static inline void initialize_sensors(sens_init sn)
   sweetbench_catch(5);
 }
 
-/*
- * Resets Distribution task after it completes.
- */
-static void dist_callback(TX_THREAD *ptr, UINT cond)
-{
-  if (ptr != &distribution_task ||
-      (g_conf & option(Graceful_Reset)) == 0)
-  {
-     return;
-  }
 
-  if (cond == TX_THREAD_EXIT)
-  {
-    tx_thread_reset(&distribution_task);
+/* Critical conditions */
 
-    if (g_conf & option(Rollback_Requested))
-    {
-      g_conf &= ~option(Rollback_Requested);
-      initialize_sensors(Wild_Mask);
-      timer_update(FillSequence);
-      tx_thread_resume(&distribution_task);
-    }
-  }
-  else log_msg(id "(re)started distribution");
-}
-
-/*
- * Resets Distribution and Evaluation tasks.
- * If GroundStation is lost, restarts them.
- */
-static inline void auto_abort(void)
+static inline void abortion_due_failures(void)
 {
   tx_thread_terminate(&evaluation_task);
   tx_thread_reset(&evaluation_task);
@@ -180,11 +149,7 @@ static inline void auto_abort(void)
   }
 }
 
-/*
- * Signals other tasks to not fetch or use GPS.
- * Reinitializes barometer with larger OSR.
- */
-static inline void barometer_fallback(void)
+static inline void barometer_fallback_vigilant(void)
 {
   g_conf &= ~option(GPS_Available);
 
@@ -197,17 +162,17 @@ static inline void barometer_fallback(void)
     return;
   }
 
-  initialize_sensors(Baro_Mask);
+  sensor_init_supervised(Baro_Mask);
 
   g_conf |= option(Monitor_Altitude);
   g_conf |= option(Report_Bad_Measms);
   log_msg(id "entered vigilant mode");
 }
 
-/*
- * Turns on and off Evaluation task focus mode.
- */
-static inline void eval_configure(bool focus)
+
+/* Intrusive control */
+
+static inline void evaluation_configure(bool focus)
 {
   UINT eval_old_pt, eval_new_pt;
 
@@ -234,9 +199,6 @@ static inline void eval_configure(bool focus)
                               &eval_old_pt);
 }
 
-/*
- * Bundles manual deployment and Descent KF initialization.
- */
 static inline void manual_deployment(bool apogee)
 {
   if (apogee)
@@ -261,9 +223,9 @@ static inline void manual_deployment(bool apogee)
   }
 }
 
-/*
- * Enters post-init stage.
- */
+
+/* Launch procedures */
+
 static inline void enter_postinit(bool noconfirm)
 {
   if (beyond(Launch))
@@ -288,9 +250,6 @@ static inline void enter_postinit(bool noconfirm)
   g_conf |= option(Postinit_Requested);
 }
 
-/*
- * Triggers launch procedures. No confirm if sent internally.
- */
 static inline void enter_launch(bool noconfirm)
 {
   if (!noconfirm &&
@@ -321,9 +280,6 @@ static inline void enter_launch(bool noconfirm)
   tx_thread_resume(&evaluation_task);
 }
 
-/*
- * Rolls back to pre-initialization. Use ONLY before launch.
- */
 static inline void rollback_to_idle(void)
 {
   if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
@@ -347,9 +303,9 @@ static inline void rollback_to_idle(void)
   log_msg(id "rolled back to pre-init");
 }
 
-/*
- * Process general command from either endpoint.
- */
+
+/* Decree execution */
+
 static inline void process_action(fc_msg cmd, bool internal)
 {
   switch (cmd) {
@@ -369,22 +325,22 @@ static inline void process_action(fc_msg cmd, bool internal)
       return manual_deployment(false);
 
     case Reinit_Sensors:
-      return initialize_sensors(Wild_Mask);
+      return sensor_init_supervised(Wild_Mask);
 
     case Reinit_Barometer:
-      return initialize_sensors(Baro_Mask);
+      return sensor_init_supervised(Baro_Mask);
 
     case Reinit_IMU:
-      return initialize_sensors(Gyro_Mask | Accl_Mask);
+      return sensor_init_supervised(Gyro_Mask | Accl_Mask);
 
     case Disable_IMU:
-      return initialize_sensors(Shut_Gyro | Shut_Accl);
+      return sensor_init_supervised(Shut_Gyro | Shut_Accl);
 
     case Evaluation_Relax:  
-      return eval_configure(false);
+      return evaluation_configure(false);
 
     case Evaluation_Focus:
-      return eval_configure(true);
+      return evaluation_configure(true);
 
     case Evaluation_Abort:
       g_conf |= option(Eval_Abort_Flag);
@@ -404,10 +360,9 @@ static inline void process_action(fc_msg cmd, bool internal)
   }
 }
 
-/*
- * Constant-folded mask of all possible user options.
- * Allows to extend enum message without modifying code.
- */
+
+/* Global config */
+
 static inline constexpr fc_msg user_options()
 {
   fc_msg options = 0;
@@ -421,11 +376,7 @@ static inline constexpr fc_msg user_options()
   return options;
 }
 
-/*
- * Updates global configuration and lists all currently
- * set options.
- */
-static inline void update_config(fc_msg incoming)
+static inline void update_global_config(fc_msg incoming)
 {
   const fc_msg valid = user_options();
   fu32 raw = incoming & ~Revoke_Option;
@@ -460,10 +411,10 @@ static inline void update_config(fc_msg incoming)
   log_msg(buf);
 }
 
-/*
- * Applies or revokes passed runtime configuration option.
- */
-static inline void process_config(fc_msg code)
+
+/* Message processing */
+
+static inline void process_config_update(fc_msg code)
 {
   if (code & Abortion_Thresholds)
   {
@@ -473,13 +424,10 @@ static inline void process_config(fc_msg code)
   {
     smon.to_reinit = threshold(code & ~Reinit_Thresholds);
   }
-  else update_config(option(code));
+  else update_global_config(option(code));
 }
 
-/*
- * Checks whether raw data report is OK.
- */
-static inline void process_report(fc_msg code)
+static inline void process_sensor_report(fc_msg code)
 {
   if (code != Sensor_Measm_Code)
   {
@@ -497,14 +445,14 @@ static inline void process_report(fc_msg code)
 
       if (smon.failures >= smon.to_abort)
       {
-        auto_abort();
+        abortion_due_failures();
       }
       else if (smon.failures >= smon.to_reinit)
       {
         /* Broad heuristic because Baro takes a while to init.
          */
-        bad_baro ? initialize_sensors(Wild_Mask)
-                 : initialize_sensors(Gyro_Mask | Accl_Mask);
+        bad_baro ? sensor_init_supervised(Wild_Mask)
+                 : sensor_init_supervised(Gyro_Mask | Accl_Mask);
       }
     }
   }
@@ -514,9 +462,6 @@ static inline void process_report(fc_msg code)
   }
 }
 
-/*
- * Handles delayed or malformed GPS data report.
- */
 static inline void process_gps_code(fc_msg code)
 {
   switch (code)
@@ -545,14 +490,11 @@ static inline void process_gps_code(fc_msg code)
   if (smon.gps_delay >= GPS_MAX_DELAYS ||
       smon.gps_malform >= GPS_MAX_MALFORM)
   {
-    barometer_fallback();
+    barometer_fallback_vigilant();
   }
 }
 
-/*
- * Decodes an FC message from an endpoint {FC, GND}.
- */
-static inline void decode_message(fc_msg msg)
+static inline void decode_flight_message(fc_msg msg)
 {
   bool internal = msg == fc_mask(msg);
 
@@ -562,7 +504,7 @@ static inline void decode_message(fc_msg msg)
 
     if (msg & Sensor_Measm_Code)
     {
-      return process_report(msg);
+      return process_sensor_report(msg);
     }
     else if (msg & GPS_Data_Code)
     {
@@ -576,17 +518,15 @@ static inline void decode_message(fc_msg msg)
   }
   else if (msg & Runtime_Configuration)
   {
-    return process_config(msg);
+    return process_config_update(msg);
   }
 
   log_err(id "unrecognized option: %u", (unsigned)msg);
 }
 
 
-/*
- * Monotonic routine. Monitors for endpoint timeouts
- * and deactivates open deployment channels.
- */
+/* Scheduler-managed routines */
+
 static void fc_timer_routine(ULONG timer_id)
 {
   (void)timer_id;
@@ -668,11 +608,32 @@ static void fc_timer_routine(ULONG timer_id)
   sweetbench_start(6, 10);
 }
 
+static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
+{
+  if (ptr != &distribution_task ||
+      (g_conf & option(Graceful_Reset)) == 0)
+  {
+     return;
+  }
 
-/*
- * This task is responsible for global configuration
- * and starting other dependent tasks.
- */
+  if (cond == TX_THREAD_EXIT)
+  {
+    tx_thread_reset(&distribution_task);
+
+    if (g_conf & option(Rollback_Requested))
+    {
+      g_conf &= ~option(Rollback_Requested);
+      sensor_init_supervised(Wild_Mask);
+      timer_update(FillSequence);
+      tx_thread_resume(&distribution_task);
+    }
+  }
+  else log_msg(id "(re)started distribution");
+}
+
+
+/* Task */
+
 void recovery_entry(ULONG input)
 {
   (void)input;
@@ -680,14 +641,14 @@ void recovery_entry(ULONG input)
   UINT st;
   
   st = tx_thread_entry_exit_notify(&distribution_task,
-                                   dist_callback);
+                                   grace_reset_distribution);
 
   if (st != TX_SUCCESS)
   {
     log_die(id "get off me: %u", st);
   }
 
-  initialize_sensors(Wild_Mask);
+  sensor_init_supervised(Wild_Mask);
 
   for (timer k = 0; k < Time_Users; ++k)
   {
@@ -712,13 +673,10 @@ void recovery_entry(ULONG input)
       continue;
     }
 
-    decode_message(msg);
+    decode_flight_message(msg);
   }
 }
 
-/*
- * Creates a non-preemptive Recovery Task with defined parameters.
- */
 UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 {
   UINT st;
