@@ -30,7 +30,7 @@ sv_meta sm = {1, 0, Suspended, 0};
  */
 static inline void detect_spurious(fu32 mode)
 {
-  if (sm.samp <= SPURIOUS_THRESHOLD)
+  if (sm.samp <= SPURIOUS_THRESHOLD || sm.ev_step <= 0)
   {
     return;
   }
@@ -38,7 +38,7 @@ static inline void detect_spurious(fu32 mode)
   char buf[MAX_SPURIOUS_REPORT_SIZE];
 
   sprintf(buf, id "confirm broke at %d, state %u",
-                           sm.ev_step, sm.flight);
+                           sm.ev_step, current());
 
   log_msg(buf);
 
@@ -53,7 +53,7 @@ static inline void detect_spurious(fu32 mode)
  */
 static inline forceinline bool forward(void)
 {
-  return (bool) ++sm.ev_step;
+  return ++sm.ev_step > 0;
 }
 
 /*
@@ -63,13 +63,13 @@ static inline void flight_advance(state promotion)
 {
   sm.samp = sm.ev_step = 0;
 
-  if (satur_incr(sm.flight, Landed) != promotion)
+  if (fetch_add(&sm.flight, 1, Acq) != promotion - 1)
   {
-    sm.flight = promotion;
+    store(&sm.flight, promotion, Rlx);
     log_critical(id "vigilant mode deployment:");
   }
 
-  log_flight_state(sm.flight);
+  log_flight_state(promotion);
 }
 
 
@@ -319,7 +319,7 @@ void evaluate_rocket_state(fu32 conf)
     evaluate_altitude(conf);
   }
 
-  switch (sm.flight)
+  switch (current())
   {
   case Awaiting:
     detect_launch();
@@ -367,9 +367,9 @@ static inline void enter_flight_state(fu32 conf)
     ascent_initialize();
     log_critical(id "received launch signal");
 
-    if (satur_incr(sm.flight, Landed) != Awaiting)
+    if (fetch_add(&sm.flight, 1, Acq) != Awaiting - 1)
     {
-      sm.flight = Awaiting;
+      store(&sm.flight, Awaiting, Rlx);
       log_err(id "unusual startup sequence");
     }
     
@@ -406,9 +406,10 @@ void evaluation_entry(ULONG input)
 
     if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
     {
+      accum &= ~(EVALUATION_STAGED | Baro_Mask);
+
       ascent_update();
 
-      accum &= ~(EVALUATION_STAGED | Baro_Mask);
       conf = fetch_and(&g_conf,
                        ~option(Ascent_KF_Staged), AcqRel);
 
@@ -418,13 +419,13 @@ void evaluation_entry(ULONG input)
     }
     else if (accum & (Gyro_Mask | Accl_Mask))
     {
-      conf = fetch_or(&g_conf,
-                      option(Ascent_KF_Staged), AcqRel);
-      
-      ascent_predict(fsec(timer_exchange(AscentKF)), conf);
-
       accum |= EVALUATION_STAGED;
       accum &= ~(Gyro_Mask | Accl_Mask);
+
+      conf = fetch_or(&g_conf,
+                      option(Ascent_KF_Staged), AcqRel);
+
+      ascent_predict(fsec(timer_exchange(AscentKF)), conf);
     }
   }
 }

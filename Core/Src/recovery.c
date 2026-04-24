@@ -652,15 +652,15 @@ static void fc_timer_routine(ULONG timer_id)
 #endif /* TELEMETRY_ENABLED */
   }
 
-  if (g_conf & option(GPS_Available))
+  fu32 gps_interval = timer_fetch(HeartbeatRF);
+
+  if (g_conf & option(GPS_Available) &&
+      gps_interval > GPS_DELAY_MS)
   {
-    if (timer_fetch(HeartbeatRF) > GPS_DELAY_MS)
-    {
-      fc_msg cmd = fc_mask(GPS_Delayed);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
-    }
+    fc_msg cmd = fc_mask(GPS_Delayed);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
-  else if (timer_fetch(HeartbeatRF) < TX_TIMER_TICKS)
+  else if (gps_interval < TX_TIMER_TICKS)
   {
     g_conf |= option(GPS_Available);
   }

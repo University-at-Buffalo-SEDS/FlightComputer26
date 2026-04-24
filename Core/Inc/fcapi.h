@@ -148,12 +148,17 @@ static inline fu32 timer_fetch(timer u)
 
 /* Flight state checking */
 
+static inline state current(void)
+{
+  return load(&sm.flight, Acq);
+}
+
 static inline bool beyond(state bound)
 {
 #ifdef LUNATIC_STATE
   return true;
 #else
-  return sm.flight > bound;
+  return current() > bound;
 #endif
 }
 
@@ -164,7 +169,7 @@ static inline bool release_parachute(void)
 {
   if (!beyond(Launch))
   {
-    log_err("PD drogue blocked, state %u", sm.flight);
+    log_err("PD drogue blocked, state %u", current());
     return false;
   }
 
@@ -183,7 +188,7 @@ static inline bool expand_parachute(void)
 {
   if (!beyond(Launch))
   {
-    log_err("PR reef expansion, state %u", sm.flight);
+    log_err("PR reef expansion, state %u", current());
     return false;
   }
   

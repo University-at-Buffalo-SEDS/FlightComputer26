@@ -447,7 +447,7 @@ void ascent_predict(const float dt, fu32 conf)
   float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
 
   float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
-  bool raising = sm.flight >= Launch || a.z > AZ_RAIL_THRES;
+  bool raising = current() >= Launch || a.z > AZ_RAIL_THRES;
 
   imedsv.alt = svec(1).alt + dt * svec(1).vel;
   imedsv.vel = svec(1).vel + dt * (raising

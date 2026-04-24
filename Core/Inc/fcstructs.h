@@ -139,10 +139,10 @@ typedef enum flight_state : fu8 {
 } state;
 
 typedef struct align state_metadata {
-  volatile fu16 flight;
-  fi16 ev_step;
-  fu16 samp;
+  atomic_uint_fast16_t flight;
   fu16 idx;
+  fu16 samp;
+  fi16 ev_step;
 } sv_meta;
 
 
