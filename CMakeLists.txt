@@ -160,7 +160,7 @@ option(FC_BENCH         "Project-wide benchmark"        ON)
 option(CUSTOM_FLAGS     "User-defined flags"            ON)
 option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
-option(DEBUG_MATH       "Report failures of math fns"   ON)
+option(DEBUG_MATH       "Report failures of math fns"   OFF)
 option(IGNORE_STATES    "Disable recovery state checks" OFF)
 option(SWAP_CONFIG      "Use simulation user config"    OFF)
 

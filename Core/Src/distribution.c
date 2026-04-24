@@ -119,8 +119,6 @@ static inline fc_msg decode_cmd(const uint8_t *k)
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
-#endif /* TELEMETRY_ENABLED */
-
 
 /* GPS coordinates handling */
 
@@ -144,6 +142,8 @@ static inline void enqueue_raw_coords(const uint8_t *buf)
 
 #endif /* GPS_AVAILABLE */
 }
+
+#endif /* TELEMETRY_ENABLED */
 
 static inline fu8 fetch_gps_data(kf_gps *buf)
 {
@@ -176,6 +176,8 @@ static inline fu8 fetch_gps_data(kf_gps *buf)
 
 #endif /* GPS_AVAILABLE */
 }
+
+#ifdef TELEMETRY_ENABLED
 
 static inline fu32
 validate_coords(const f_xyz *gps, size_t len, fu32 conf)
@@ -233,10 +235,14 @@ process_gps_packet(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
+#endif /* TELEMETRY_ENABLED */
+
 static inline void to_relative_coords(kf_gps *buf)
 {
+#ifdef GPS_AVAILABLE
   buf->lon = fabsf(buf->lon - rail.lon);
   buf->lat = fabsf(buf->lat - rail.lat);
+#endif
 }
 
 static inline fu32
@@ -397,10 +403,9 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
        st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return false;
   }
 
-  return true;
+  return st == fc_mask(Sensor_Measm_Code);
 }
 
 static inline bool
@@ -426,10 +431,9 @@ validate_accl(const f_xyz *accl, fu32 conf)
        st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return false;
   }
 
-  return true;
+  return st == fc_mask(Sensor_Measm_Code);
 }
 
 static inline bool
@@ -451,10 +455,9 @@ validate_baro(const baro *baro, fu32 conf)
        st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
-    return false;
   }
 
-  return true;
+  return st == fc_mask(Sensor_Measm_Code);
 }
 
 static inline conditional fu8

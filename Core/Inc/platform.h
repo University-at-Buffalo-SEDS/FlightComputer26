@@ -189,6 +189,9 @@ extern DCACHE_HandleTypeDef hdcache1;
 #define toggle_green_led()                                      \
   HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin)
 
+#define toggle_blue_led()                                       \
+  HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin)
+
   
 /* Telemetry */
 
@@ -342,7 +345,7 @@ extern void telemetry_init_lock(void);
 
 #pragma GCC diagnostic ignored "-Wunused-variable"
 
-#define log_msg_sync(msg, size) 
+#define log_msg_sync(msg, size)
 
 #define log_valve_board_command(cmd) (SEDS_OK)
 
@@ -353,7 +356,7 @@ extern void telemetry_init_lock(void);
 #define log_ascent_state(buf) 
 #define log_descent_state(buf) 
 
-#define log_euler_angles(buf)
+#define log_euler_angles(buf) ((void)(buf))
 
 #define log_err_sync(fmt, ...) 
 #define log_die(fmt, ...) Error_Handler()

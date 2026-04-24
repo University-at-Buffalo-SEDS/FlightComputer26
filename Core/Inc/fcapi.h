@@ -62,25 +62,51 @@ log_metric(const char *msg, float metric, bool critical)
   sprintf(buf, "%s: %.*g\n", msg,
           FLOAT_LOG_PRECISION, metric);
 
-  critical ? log_critical(buf) : log_msg(buf);
+  if (critical)
+  {
+    log_critical(buf);
+  }
+  else log_msg(buf);
 }
 
 
 /* LED */
 
-static inline void blink(volatile fu32 count)
+static inline void paindbg(void)
 {
+  static fu32 stage = 2;
+
+  volatile fu32 count = stage;
   volatile fu32 delay;
 
-  do {
-    toggle_green_led();
+  while (count--)
+  {
+    toggle_blue_led();
     delay = LED_BLOCKING_CYCLES;
 
     while (delay--)
     {
       __NOP();
     }
-  } while (--count);
+  }
+
+  stage += 2;
+}
+
+static inline void blink(volatile fu32 count, bool fast)
+{
+  volatile fu32 delay;
+
+  do {
+    toggle_green_led();
+    delay = fast ? LED_BLOCKING_CYCLES
+                 : LED_BLOCKING_CYCLES * 2;
+
+    while (delay--)
+    {
+      __NOP();
+    }
+  } while (count--);
 }
 
 
@@ -116,11 +142,23 @@ static inline void restore_spi1_irq(void)
 
 /* Ignition */
 
+#ifdef TELEMETRY_ENABLED
+
 static inline SedsResult request_ignition(void)
 {
   const fu8 igniter_seq = IGNITION_COMMAND;
   return log_valve_board_command(igniter_seq);
 }
+
+#else 
+
+static inline fu8 request_ignition(void)
+{
+  log_critical("Debug ignition requested");
+  return SEDS_OK;
+}
+
+#endif /* TELEMETRY_ENABLED */
 
 
 /* Timer */
@@ -154,11 +192,7 @@ static inline state current(void)
 
 static inline bool beyond(state bound)
 {
-#ifdef LUNATIC_STATE
-  return true;
-#else
   return current() > bound;
-#endif
 }
 
 

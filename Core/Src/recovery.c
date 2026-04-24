@@ -199,18 +199,18 @@ static inline void evaluation_configure(bool focus)
                               &eval_old_pt);
 }
 
-static inline void manual_deployment(bool apogee)
+static inline void manual_deployment(bool apogee, bool force)
 {
   if (apogee)
   {
     sm.flight = Descent;
     release_parachute();
-    blink(LED_BLINKS_ON_CO2);
+    blink(LED_BLINKS_ON_CO2, true);
   }
   else if (expand_parachute())
   {
     sm.flight = Reefing;
-    blink(LED_BLINKS_ON_REEF);
+    blink(LED_BLINKS_ON_REEF, true);
   }
   else return;
 
@@ -318,11 +318,23 @@ static inline void process_action(fc_msg cmd, bool internal)
     case Rollback_Signal:
       return rollback_to_idle();
 
+#ifdef LUNATIC_STATE
+
     case Deploy_Parachute:
-      return manual_deployment(true);
+      return manual_deployment(true, true);
 
     case Expand_Parachute:
-      return manual_deployment(false);
+      return manual_deployment(false, true);
+
+#else
+
+    case Deploy_Parachute:
+      return manual_deployment(true, false);
+
+    case Expand_Parachute:
+      return manual_deployment(false, false);
+
+#endif /* LUNATIC_STATE */
 
     case Reinit_Sensors:
       return sensor_init_supervised(Wild_Mask);
@@ -523,10 +535,8 @@ static inline void decode_flight_message(fc_msg msg)
 
 /* Scheduler-managed routines */
 
-static void fc_timer_routine(ULONG timer_id)
+static void fc_timer_routine(ULONG _)
 {
-  (void)timer_id;
-
   sweetbench_catch(6);
 
   if (g_conf & option(CO2_Asserted) &&
@@ -630,12 +640,9 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
 
 /* Task */
 
-void recovery_entry(ULONG input)
+void recovery_entry(ULONG _)
 {
-  (void)input;
-
-  UINT st;
-  
+  UINT st; 
   st = tx_thread_entry_exit_notify(&distribution_task,
                                    grace_reset_distribution);
 
