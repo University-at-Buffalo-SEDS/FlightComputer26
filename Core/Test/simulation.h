@@ -136,7 +136,7 @@
 											| option(Consecutive_Samples)       \
 											| option(Eval_Focus_Flag)           \
 											| option(Reset_Failures)            \
-											| option(Measm_Reportss)    				\
+											| option(Measm_Reports)    					\
                       ) )
 
 #define LED_BLOCKING_CYCLES 80000000

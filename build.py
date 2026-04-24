@@ -65,6 +65,9 @@ OPTIONS: (any option not specified -> opposite is true)
 
         lunatic         Bypass flight state checks when executing
                         mission-crtitical commands. For testing.
+
+        simulation      Swap user config to simulation one with
+                        adjusted thesholds.
 """
 
 from __future__ import annotations
@@ -101,7 +104,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "nousb",
                         "parallelkf",
                         "gmath",
-                        "lunatic"
+                        "lunatic",
+                        "simulation"
                 }
 
 # Repo constants
@@ -181,20 +185,23 @@ def configure(buildir: Path, preset: str, options: dict):
         parkf           = "-DPARALLEL_KF=OFF"
         mathdbg         = "-DDEBUG_MATH=OFF"
         lunatic         = "-DIGNORE_STATES=OFF"
+        simul           = "-DSWAP_CONFIG=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
                 gps = "-DEXTERNAL_GPS=OFF"
                 sd = "-DONBOARD_SD=OFF"
+
                 if options["sensortest"]:
                         sensortest = "-DSENSOR_TESTS=ON"
-                if options["nousb"]:
-                        usb = "-DUSB_ENUM=OFF"
         else:
                 if options["nogps"]:
                         gps = "-DEXTERNAL_GPS=OFF"
                 if options["nosd"]:
                         sd = "-DONBOARD_SD=OFF"
+
+        if options["nousb"]:
+                        usb = "-DUSB_ENUM=OFF"
 
         if options["fullcmd"]:
                 compat = "-DTELEMETRY_COMPAT=OFF"
@@ -217,6 +224,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["lunatic"]:
                 lunatic = "-DIGNORE_STATES=ON"
 
+        if options["simulation"]:
+                simul = "-DSWAP_CONFIG=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -234,6 +244,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 parkf,
                 mathdbg,
                 lunatic,
+                simul,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

@@ -119,7 +119,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 option(ENABLE_TELEMETRY "Enable the telemetry subsystem" OFF)
 
 # Print its state for debugging
-message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
+message(STATUS "Telemetry enabled:      ${ENABLE_TELEMETRY}")
 
 if (ENABLE_TELEMETRY)
     # Define or undefine the macro globally
@@ -162,6 +162,7 @@ option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
 option(DEBUG_MATH       "Report failures of math fns"   ON)
 option(IGNORE_STATES    "Disable recovery state checks" OFF)
+option(SWAP_CONFIG      "Use simulation user config"    OFF)
 
 message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
@@ -174,6 +175,7 @@ message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
 message(STATUS "USB enumeration:        ${USB_ENUM}")
 message(STATUS "Math debugging:         ${DEBUG_MATH}")
 message(STATUS "Ignore states:          ${IGNORE_STATES}")
+message(STATUS "Simulation:             ${SWAP_CONFIG}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
@@ -219,6 +221,10 @@ endif()
 
 if (IGNORE_STATES)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE LUNATIC_STATE)
+endif()
+
+if (SWAP_CONFIG)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SIMULATION_CONFIG)
 endif()
 
 if (CUSTOM_FLAGS)
