@@ -13,7 +13,7 @@
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
 #define TLMT_TIME_SLICE 20
-#define TLMT_STACK_BYTES (24U * 1024U)
+#define TLMT_STACK_BYTES (32U * 1024U)
 #define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD telemetry_thread;

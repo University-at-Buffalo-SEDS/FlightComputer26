@@ -105,7 +105,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "parallelkf",
                         "gmath",
                         "lunatic",
-                        "simulation"
+                        "simulation",
+                        "manualconfirm"
                 }
 
 # Repo constants
@@ -186,6 +187,7 @@ def configure(buildir: Path, preset: str, options: dict):
         mathdbg         = "-DDEBUG_MATH=OFF"
         lunatic         = "-DIGNORE_STATES=OFF"
         simul           = "-DSWAP_CONFIG=OFF"
+        manualconfirm   = "-DMANUAL_CONFIRM=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -227,6 +229,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["simulation"]:
                 simul = "-DSWAP_CONFIG=ON"
 
+        if options["manualconfirm"]:
+                manualconfirm   = "-DMANUAL_CONFIRM=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -245,6 +250,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 mathdbg,
                 lunatic,
                 simul,
+                manualconfirm,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

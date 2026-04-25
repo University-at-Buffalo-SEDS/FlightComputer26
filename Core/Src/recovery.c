@@ -234,12 +234,16 @@ static inline void enter_postinit(bool noconfirm)
     return;
   }
 
+#ifdef USER_CONFIRMATION
+
   if (!noconfirm &&
       timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
   {
     log_critical(id "please confirm postinit");
     return;
   }
+
+#endif
 
   if (satur_incr(sm.flight, Landed) != Postinit)
   {
@@ -252,12 +256,16 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
+#ifdef USER_CONFIRMATION
+
   if (!noconfirm &&
       timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
   {
     log_critical(id "please confirm launch");
     return;
   }
+
+#endif
 
   if (g_conf & option(In_Aborted_State))
   {
@@ -282,6 +290,8 @@ static inline void enter_launch(bool noconfirm)
 
 static inline void rollback_to_idle(void)
 {
+#ifdef USER_CONFIRMATION
+
   if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
   {
     if (g_conf & option(Launch_Requested))
@@ -292,6 +302,15 @@ static inline void rollback_to_idle(void)
     log_critical(id "please confirm rollback");
     return;
   }
+
+#else
+
+  if (g_conf & option(Launch_Requested))
+  {
+    log_critical(id "WARNING: rollback after launch");
+  }
+
+#endif
 
   g_conf |= option(Rollback_Requested);
   g_conf &= ~option(Postinit_Requested);
@@ -658,9 +677,13 @@ void recovery_entry(ULONG _)
     timer_update(k);
   }
 
+#ifdef USER_CONFIRMATION
+
   local_time[PostinitCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
   local_time[RollbackCmd] = UINT_FAST32_MAX;
+
+#endif
 
   tx_timer_activate(&monotonic_checks);
 
