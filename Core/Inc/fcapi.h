@@ -75,14 +75,11 @@ log_metric(const char *msg, float metric, bool critical)
 static inline void paindbg(void)
 {
   static fu32 stage = 2;
-
-  volatile fu32 count = stage;
-  volatile fu32 delay;
-
-  while (count--)
+  
+  for (fu32 k = 0; k < stage; ++k)
   {
     toggle_blue_led();
-    delay = LED_BLOCKING_CYCLES;
+    volatile fu32 delay = LED_BLOCKING_CYCLES;
 
     while (delay--)
     {
