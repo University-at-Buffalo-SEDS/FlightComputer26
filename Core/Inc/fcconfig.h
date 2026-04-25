@@ -144,7 +144,7 @@
 											| option(Measm_Reports)    					\
                       ) )
 
-#define LED_BLOCKING_CYCLES 80000000
+#define LED_BLOCKING_CYCLES 10000000
 #define LED_BLINKS_ON_CO2	 5
 #define LED_BLINKS_ON_REEF 20
 

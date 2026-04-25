@@ -92,6 +92,7 @@ extern void *_sbrk(ptrdiff_t);
 
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
+extern FDCAN_HandleTypeDef hfdcan1;
 
 #define now_ms() HAL_GetTick()
 

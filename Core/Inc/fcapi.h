@@ -87,7 +87,7 @@ static inline void paindbg(void)
     }
   }
 
-  stage += 2;
+  //stage += 2;
 }
 
 static inline void blink(volatile fu32 count, bool fast)

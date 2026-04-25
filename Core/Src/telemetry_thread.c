@@ -1,5 +1,6 @@
 // telemetry_thread.c
 
+#include "fcapi.h"
 #include "platform.h"
 #include "fctasks.h"
 #include "can_bus.h"
@@ -9,6 +10,8 @@ TX_THREAD telemetry_thread;
 void telemetry_thread_entry(ULONG initial_input)
 {
   (void)initial_input;
+
+  can_bus_init(&hfdcan1);
 
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
