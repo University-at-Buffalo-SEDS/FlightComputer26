@@ -688,6 +688,7 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
     .osr_p = Baro_OSR_x2,
     .odr = BARO_DEFAULT_ODR_SEL,
     .iir_coef = Baro_IIR_Coef_0,
+    .rezero = 1,
   };
 
   if (conf) {
@@ -703,6 +704,7 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
     if (conf->iir_coef <= Baro_IIR_Coef_127) {
       valid.iir_coef = conf->iir_coef;
     }
+    valid.rezero = conf->rezero;
   }
 
   /* Oversampling and data rates (C-f OSR / ODR) */
@@ -759,9 +761,10 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
     return HAL_ERROR;
   }
 
-  /* Try to validate first mesurements, but only once per boot
+  /* Try to validate first mesurements, but only per request
+   * or in absence of an explicit request
    */
-  if (gnd_lvl_pressure == 0.0f)
+  if (valid.rezero > 0)
   {
     /* Let measurements settle (~2 frames) */
     uint8_t odr_sel = 0;

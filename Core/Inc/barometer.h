@@ -212,7 +212,7 @@ struct baro_calibration {
 };
 
 struct baro_config {
-  uint8_t osr_t, osr_p, odr, iir_coef;
+  uint8_t osr_t, osr_p, odr, iir_coef, rezero;
 };
 
 

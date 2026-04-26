@@ -530,7 +530,7 @@ static inline void post_initialization(void)
   float acc_gps = 0.0f;
   fu32 ctr_gps = 0, ctr_accl = 0;
 
-  fc_msg cmd = option(Reinit_IMU);
+  fc_msg cmd = option(Reinit_Sensors);
   tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
 
   fu32 conf = load(&g_conf, Acq);

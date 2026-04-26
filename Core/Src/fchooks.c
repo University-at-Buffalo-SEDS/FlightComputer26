@@ -66,8 +66,8 @@ static conditional noreturn void panic_unknown(void)
 
 /* Panic string parser */
 
-static inline bool panics_for(const char *s, size_t n,
-                              const char *needle)
+static inline conditional bool
+panics_for(const char *s, size_t n, const char *needle)
 {
   if (!s || n <= 0 || !needle)
   {

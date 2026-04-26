@@ -162,6 +162,7 @@ static inline void barometer_fallback_vigilant(void)
 
   baro_conf.osr_p = Baro_OSR_x8;
   baro_conf.iir_coef = Baro_IIR_Coef_15;
+  baro_conf.rezero = 0;
 
   if (g_conf & option(Using_Ascent_KF))
   {
@@ -258,6 +259,7 @@ static inline void enter_postinit(bool noconfirm)
     log_err(id "unusual sequence at postinit");
   }
 
+  baro_conf.rezero = 1;
   g_conf |= option(Postinit_Requested);
 }
 
@@ -290,6 +292,7 @@ static inline void enter_launch(bool noconfirm)
   }
 
   smon.failures = 0;
+  baro_conf.rezero = 0;
   g_conf &= ~option(Eval_Abort_Flag);
 
   tx_thread_resume(&evaluation_task);
