@@ -669,15 +669,14 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
 
 /* Task */
 
-void recovery_entry(ULONG _)
+void recovery_entry(ULONG st)
 {
-  UINT st; 
   st = tx_thread_entry_exit_notify(&distribution_task,
                                    grace_reset_distribution);
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "get off me: %u", st);
+    log_die(id "notification %u", st);
   }
 
   sensor_init_supervised(Wild_Mask);
@@ -688,12 +687,12 @@ void recovery_entry(ULONG _)
   }
 
   local_time[PostinitCmd] = UINT_FAST32_MAX;
-  local_time[LaunchCmd] = UINT_FAST32_MAX;
   local_time[RollbackCmd] = UINT_FAST32_MAX;
+  local_time[LaunchCmd] = UINT_FAST32_MAX;
 
   tx_timer_activate(&monotonic_checks);
 
-  task_loop(DO_NOT_EXIT)
+  task_loop (DO_NOT_EXIT)
   {
     fc_msg msg;
 

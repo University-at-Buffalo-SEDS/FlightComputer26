@@ -311,7 +311,7 @@ void evaluate_rocket_state(fu32 conf)
   propel_kalman_state(conf);
 }
 
-static inline void enter_flight_state(fu32 conf)
+static inline void enter_flight_mode(fu32 conf)
 {
   if (conf & option(Launch_Requested))
   {
@@ -335,15 +335,12 @@ static inline void enter_flight_state(fu32 conf)
 
 /* Task */
 
-void evaluation_entry(ULONG input)
+void evaluation_entry(ULONG st)
 {
-  (void)input;
-
-  UINT st;
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
 
-  enter_flight_state(conf);
+  enter_flight_mode(conf);
 
   task_loop (conf & option(Eval_Abort_Flag))
   {

@@ -201,10 +201,8 @@ static inline void start_dma_transfer(void)
 
 /* Task */
 
-void dma_entry(ULONG input)
+void dma_entry(ULONG _)
 {
-  (void) input;
-
   fu16 drdy_snapshot;
   fu16 relv_snapshot;
 

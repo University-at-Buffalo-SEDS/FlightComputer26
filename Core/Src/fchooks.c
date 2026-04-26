@@ -148,7 +148,7 @@ static inline void *seds_alloc(size_t size, size_t walk_depth)
   greedy_hdr *node = reserve;
   greedy_hdr *prev = NULL;
 
-  for (size_t k = 0; node && k < walk_depth; ++k)
+  for (size_t k = 0; node && k <= walk_depth; ++k)
   {
     if (node->size >= size)
     {
@@ -247,14 +247,12 @@ void seds_error_msg(const char *str, size_t len)
 {
   if (str != NULL && len > 0U)
   {
-    mem_hint = (fu8)(
-      panics_for(str, len, "alloc") ||
-      panics_for(str, len, "memory") ||
-      panics_for(str, len, "oom"));
+    mem_hint = panics_for(str, len, "alloc")  ||
+               panics_for(str, len, "memory") ||
+               panics_for(str, len, "oom");
 
-    mu_hint = (fu8)(
-      panics_for(str, len, "mutex") ||
-      panics_for(str, len, "lock"));
+    mu_hint = panics_for(str, len, "mutex") ||
+              panics_for(str, len, "lock");
 
     printf("%.*s\r\n", (int)len, str);
   }

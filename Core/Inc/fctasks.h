@@ -20,7 +20,7 @@ extern TX_THREAD telemetry_task;
 extern TX_MUTEX telemetry_mu;
 extern TX_BYTE_POOL telemetry_pool;
 
-void telemetry_task_entry(ULONG _);
+void telemetry_task_entry(ULONG);
 UINT create_telemetry_task(void);
 
 #endif /* TELEMETRY_ENABLED */
@@ -35,8 +35,8 @@ UINT create_telemetry_task(void);
 
 extern TX_THREAD recovery_task;
 
-void recovery_entry(ULONG _);
-UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
+void recovery_entry(ULONG);
+UINT create_recovery_task(TX_BYTE_POOL *);
 
 
 /* Evaluation Task */
@@ -52,8 +52,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD evaluation_task;
 
-void evaluation_entry(ULONG _);
-UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
+void evaluation_entry(ULONG);
+UINT create_evaluation_task(TX_BYTE_POOL *);
 
 
 /* Distribution Task */
@@ -67,8 +67,8 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD distribution_task;
 
-void distribution_entry(ULONG _);
-UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
+void distribution_entry(ULONG);
+UINT create_distribution_task(TX_BYTE_POOL *);
 
 
 /* DMA Task */
@@ -83,8 +83,8 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD dma_task;
 
-void dma_entry(ULONG _);
-UINT create_dma_task(TX_BYTE_POOL *byte_pool);
+void dma_entry(ULONG);
+UINT create_dma_task(TX_BYTE_POOL *);
 
 
 #endif /* FC_TASKS */
