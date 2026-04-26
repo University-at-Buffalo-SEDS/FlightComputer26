@@ -35,7 +35,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include "stm32g4xx_hal.h"
+#include "stm32h5xx_hal.h"
 
 #ifndef CAN_BUS_DEBUG
 #define CAN_BUS_DEBUG 0
