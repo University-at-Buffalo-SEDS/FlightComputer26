@@ -13,13 +13,15 @@
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
 #define TLMT_TIME_SLICE 20
-#define TLMT_STACK_BYTES (32U * 1024U)
+#define TLMT_STACK_BYTES (16U * 1024U)
 #define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
 
-extern TX_THREAD telemetry_thread;
+extern TX_THREAD telemetry_task;
+extern TX_MUTEX telemetry_mu;
+extern TX_BYTE_POOL telemetry_pool;
 
-void telemetry_thread_entry(ULONG initial_input);
-UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
+void telemetry_task_entry(ULONG _);
+UINT create_telemetry_task(void);
 
 #endif /* TELEMETRY_ENABLED */
 
@@ -33,7 +35,7 @@ UINT create_telemetry_thread(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD recovery_task;
 
-void recovery_entry(ULONG input);
+void recovery_entry(ULONG _);
 UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 
 
@@ -50,7 +52,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD evaluation_task;
 
-void evaluation_entry(ULONG input);
+void evaluation_entry(ULONG _);
 UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 
 
@@ -65,7 +67,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD distribution_task;
 
-void distribution_entry(ULONG input);
+void distribution_entry(ULONG _);
 UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 
 
@@ -81,7 +83,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool);
 
 extern TX_THREAD dma_task;
 
-void dma_entry(ULONG input);
+void dma_entry(ULONG _);
 UINT create_dma_task(TX_BYTE_POOL *byte_pool);
 
 

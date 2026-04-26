@@ -70,47 +70,12 @@ log_metric(const char *msg, float metric, bool critical)
 }
 
 
-/* LED */
-
-static inline void paindbg(void)
-{
-  static fu32 stage = 2;
-  
-  for (fu32 k = 0; k < stage; ++k)
-  {
-    toggle_blue_led();
-    volatile fu32 delay = LED_BLOCKING_CYCLES;
-
-    while (delay--)
-    {
-      __NOP();
-    }
-  }
-
-  //stage += 2;
-}
-
-static inline void blink(volatile fu32 count, bool fast)
-{
-  volatile fu32 delay;
-
-  do {
-    toggle_green_led();
-    delay = fast ? LED_BLOCKING_CYCLES
-                 : LED_BLOCKING_CYCLES * 2;
-
-    while (delay--)
-    {
-      __NOP();
-    }
-  } while (count--);
-}
-
-
 /* Recovery */
 
 extern TX_QUEUE shared;
 extern atomic_uint_fast32_t g_conf;
+
+extern TX_BYTE_POOL *tx_app_shared;
 
 static inline void clear_spi1_irq(void)
 {
@@ -156,6 +121,33 @@ static inline fu8 request_ignition(void)
 }
 
 #endif /* TELEMETRY_ENABLED */
+
+
+/* Blocking indicator (panic, debug) */
+
+extern const led_gpio light[];
+
+static inline void blink(led kind, bool slow,
+                         volatile fu32 count)
+{
+  volatile fu32 cycles;
+  const fu32 delay = slow
+                   ? LED_BLOCKING_CYCLES * 8
+                   : LED_BLOCKING_CYCLES;
+
+  while (count--)
+  {
+    led_on(light[kind].port, light[kind].pin);
+
+    cycles = delay;
+    while (--cycles) __NOP();
+
+    led_off(light[kind].port, light[kind].pin);
+
+    cycles = delay;
+    while (--cycles) __NOP();
+  }
+}
 
 
 /* Timer */

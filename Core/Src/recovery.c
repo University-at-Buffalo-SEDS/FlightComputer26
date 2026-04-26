@@ -16,7 +16,14 @@ TX_THREAD recovery_task;
 TX_QUEUE shared;
 TX_TIMER monotonic_checks;
 
+TX_BYTE_POOL *tx_app_shared;
+
 volatile fu32 local_time[Time_Users] = {0};
+
+const led_gpio light[Leds] = {
+  [Green] = {LED1_PORT, LED1_PIN},
+  [Blue]  = {LED2_PORT, LED2_PIN},
+};
 
 static tx_align fc_msg recvq[FC_MSG_Q_SIZE] = {0};
 
@@ -205,12 +212,12 @@ static inline void manual_deployment(bool apogee, bool force)
   {
     sm.flight = Descent;
     release_parachute();
-    blink(LED_BLINKS_ON_CO2, true);
+    blink(Blue, false, 2);
   }
   else if (expand_parachute())
   {
     sm.flight = Reefing;
-    blink(LED_BLINKS_ON_REEF, true);
+    blink(Blue, false, 4);
   }
   else return;
 
@@ -677,13 +684,9 @@ void recovery_entry(ULONG _)
     timer_update(k);
   }
 
-#ifdef USER_CONFIRMATION
-
   local_time[PostinitCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
   local_time[RollbackCmd] = UINT_FAST32_MAX;
-
-#endif
 
   tx_timer_activate(&monotonic_checks);
 

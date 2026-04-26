@@ -13,6 +13,10 @@
 
 #define IGNITION_COMMAND 14
 
+#define ALLOC_MAX 	8192
+#define ALLOC_ALIGN	4
+#define ALLOC_MAGIC (greedy_hdr *)UINTPTR_MAX
+
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */
 

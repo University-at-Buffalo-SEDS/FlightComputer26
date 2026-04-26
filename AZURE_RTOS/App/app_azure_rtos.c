@@ -23,13 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "main.h"
-static void busy_delay(volatile uint32_t n)
-{
-  while (n--)
-  {
-    __NOP();
-  }
-}
+#include "fcapi.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -118,6 +112,7 @@ VOID tx_application_define(VOID *first_unused_memory)
       /* USER CODE BEGIN  App_ThreadX_Init_Error */
       while(1)
       {
+        blink(Blue, true, 1);
       }
       /* USER CODE END  App_ThreadX_Init_Error */
     }
@@ -129,10 +124,9 @@ VOID tx_application_define(VOID *first_unused_memory)
   if (tx_byte_pool_create(&fx_app_byte_pool, "Fx App memory pool", fx_byte_pool_buffer, FX_APP_MEM_POOL_SIZE) != TX_SUCCESS)
   {
     /* USER CODE BEGIN FX_Byte_Pool_Error */
- while (1)
+    while (1)
     {
-      HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-      busy_delay(50000000); // adjust until visible
+      blink(Green, true, 1);
     }
     /* USER CODE END FX_Byte_Pool_Error */
   }
@@ -146,11 +140,10 @@ VOID tx_application_define(VOID *first_unused_memory)
     status = MX_FileX_Init(memory_ptr);
     if (status != FX_SUCCESS)
     {
-      /* USER CODE BEGIN  MX_FileX_Init_Error */
-       while (1)
+    /* USER CODE BEGIN  MX_FileX_Init_Error */
+    while (1)
     {
-      HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-      busy_delay(80000000); // adjust until visible
+      blink(Green, false, 1);
     }
       /* USER CODE END  MX_FileX_Init_Error */
     }
@@ -175,11 +168,11 @@ VOID tx_application_define(VOID *first_unused_memory)
     // status = MX_USBX_Init(memory_ptr);
     // if (status != UX_SUCCESS)
     // {
-      /* USER CODE BEGIN  MX_USBX_Init_Error */
+    /* USER CODE BEGIN  MX_USBX_Init_Error */
 
       // while(1) {} 
 
-      /* USER CODE END  MX_USBX_Init_Error */
+    /* USER CODE END  MX_USBX_Init_Error */
     // }
     /* USER CODE BEGIN  MX_USBX_Init_Success */
     cdc_printf_init();

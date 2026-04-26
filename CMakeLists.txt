@@ -76,6 +76,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
 
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_atan2_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_cos_f32.c
@@ -126,7 +127,7 @@ if (ENABLE_TELEMETRY)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
 
     set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_MAX_STACK_PAYLOAD "128" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_MAX_QUEUE_SIZE "1024" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
     set(SEDSPRINTF_RS_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
@@ -139,8 +140,6 @@ if (ENABLE_TELEMETRY)
     set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
 
     target_sources(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_thread.c
-        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_hooks.c
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
     )
 

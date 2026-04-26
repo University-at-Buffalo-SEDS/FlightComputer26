@@ -187,11 +187,19 @@ extern FDCAN_HandleTypeDef hfdcan1;
 #define reef_high()                                             \
   HAL_GPIO_WritePin(PYRO_PORT, REEF_PIN, GPIO_PIN_SET)
 
-#define toggle_green_led()                                      \
-  HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin)
 
-#define toggle_blue_led()                                       \
-  HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin)
+/* LED */
+
+#define LED1_PORT GREEN_LED_GPIO_Port
+#define LED1_PIN  GREEN_LED_Pin
+#define LED2_PORT BLUE_LED_GPIO_Port
+#define LED2_PIN  BLUE_LED_Pin
+
+#define led_off(port, pin)                                      \
+  HAL_GPIO_WritePin((port), (pin), GPIO_PIN_RESET)
+
+#define led_on(port, pin)                                       \
+  HAL_GPIO_WritePin((port), (pin), GPIO_PIN_SET)
 
   
 /* Telemetry */

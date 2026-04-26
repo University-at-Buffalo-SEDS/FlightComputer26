@@ -1,18 +1,12 @@
-// telemetry.c
-#include "telemetry.h"
+/* Core/Src/telemetry.c */
 
-#include "app_threadx.h"
-#include "can_bus.h"
-#include "sedsprintf.h"
-#include "stm32h5xx_hal.h"
-
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
+#include "platform.h"
 #include "fcapi.h"
+#include "fctasks.h"
+#include "can_bus.h"
+
+#define id "TE "
+
 
 #ifndef TELEMETRY_ENABLED
 static void print_data_no_telem(void *data, size_t len) {
@@ -636,4 +630,74 @@ void die(const char *fmt, ...) {
     printf("FATAL: %s\r\n", buf);
     HAL_Delay(1000);
   }
+}
+
+
+/* Thread */
+
+TX_THREAD telemetry_task;
+TX_MUTEX telemetry_mu;
+TX_BYTE_POOL telemetry_pool;
+
+static CHAR static_pool[TLMT_STACK_BYTES*4];
+
+void telemetry_task_entry(ULONG _)
+{
+  can_bus_init(&hfdcan1);
+
+  // Ensure router exists early (so we can send requests immediately)
+  (void)init_telemetry_router();
+
+  task_loop (DO_NOT_EXIT)
+  {
+    can_bus_process_rx();
+    (void)telemetry_poll_discovery();
+    (void)process_all_queues_timeout(50);
+    (void)telemetry_poll_timesync();
+
+    tx_thread_relinquish();
+  }
+}
+
+UINT create_telemetry_task(void)
+{
+  UINT st;
+  CHAR *ptr;
+
+  st = tx_byte_pool_create(&telemetry_pool, id "bp",
+                           static_pool, TLMT_STACK_BYTES*4);
+
+  if (st != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
+  }
+
+  st = tx_byte_allocate(&telemetry_pool, (VOID**) &ptr,
+                        TLMT_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
+  {
+    return TX_POOL_ERROR;
+  }
+
+  st = tx_thread_create(&telemetry_task,
+                        "Telemetry Task",
+                        telemetry_task_entry,
+                        TLMT_INPUT,
+                        ptr,
+                        TLMT_STACK_BYTES,
+                        /* No preemption threshold */
+                        TLMT_PRIORITY,
+                        TLMT_PRIORITY,
+                        TLMT_TIME_SLICE,
+                        TX_AUTO_START);
+
+  tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
+
+  if (st != TX_SUCCESS)
+  {
+    return TX_MUTEX_ERROR;
+  }
+                                
+  return st;
 }

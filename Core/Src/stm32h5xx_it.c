@@ -97,7 +97,8 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    blink(1, true);
+    blink(Green, true, 1);
+    blink(Blue, false, 1);
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }

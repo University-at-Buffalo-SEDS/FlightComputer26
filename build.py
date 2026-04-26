@@ -68,6 +68,9 @@ OPTIONS: (any option not specified -> opposite is true)
 
         simulation      Swap user config to simulation one with
                         adjusted thesholds.
+
+        manualconfirm   Prompt the user to confirm critical actions
+                        within a specified timeout. Recommended. 
 """
 
 from __future__ import annotations

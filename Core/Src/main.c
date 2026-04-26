@@ -19,34 +19,24 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 #include "main.h"
+#include "fcapi.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ux_api.h"
 #include "ux_device_class_cdc_acm.h"
-#include <stdint.h>
-#include <stdio.h>
+#include "platform.h"
 
-#if defined (DMA_LOCAL_TEST) || defined (TEST_SENSORS)
+#ifdef TEST_SENSORS
   #include "testing.h"
 #endif
 
 extern UX_SLAVE_CLASS_CDC_ACM *cdc_acm;
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-static void busy_delay(volatile uint32_t n)
-{
-  while (n--)
-  {
-    __NOP();
-  }
-}
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -791,13 +781,14 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1) {
-    HAL_GPIO_TogglePin(GREEN_LED_GPIO_Port, GREEN_LED_Pin);
-    HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
-    busy_delay(1000000);
+  while (1)
+  {
+    blink(Blue, true, 1);
+    blink(Green, false, 1);
   }
   /* USER CODE END Error_Handler_Debug */
 }
+
 #ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number

@@ -30,6 +30,23 @@ typedef struct wakeyield_spinlock {
   atomic_uint_fast8_t lock, waiters;
 } spinlock;
 
+typedef enum led_kind {
+  Green,
+  Blue,
+
+  Leds
+} led;
+
+typedef struct led_gpio {
+  GPIO_TypeDef *port;
+  uint16_t pin;
+} led_gpio;
+
+typedef struct hungry_alloc_hdr {
+  size_t size;
+  struct hungry_alloc_hdr *next;
+} greedy_hdr;
+
 
 /* Kalman filter */
 
@@ -96,19 +113,19 @@ typedef enum sensor_id : fu8 {
   Sensors
 } sens;
 
-typedef struct align gpio_lookup_table {
+typedef struct cm_align gpio_lookup_table {
 	const GPIO_TypeDef *port[Sensors];
   const uint16_t pin[Sensors];
   const uint16_t drdy[Sensors];
   const fu8 offset[Sensors];
 } gpio_map;
 
-typedef struct align callback_selector {
+typedef struct cm_align callback_selector {
   volatile fu8 next;
   volatile fu8 valid;
 } dmasel;
 
-typedef struct align dma_flags {
+typedef struct cm_align dma_flags {
   atomic_uint_fast16_t drdy;
   atomic_uint_fast16_t relv;
 } fdma;
@@ -131,7 +148,7 @@ typedef enum flight_state : fu8 {
   Flight_States
 } state;
 
-typedef struct align state_metadata {
+typedef struct cm_align state_metadata {
   atomic_uint_fast16_t flight;
   fu16 idx;
   fu16 samp;
@@ -225,7 +242,7 @@ typedef struct config_description_map {
   const char *name;
 } conf_dict;
 
-typedef struct align system_monitor {
+typedef struct cm_align system_monitor {
   fu16 to_abort, to_reinit;
   fu16 gps_delay, gps_malform;
   volatile fu16 failures;
