@@ -78,7 +78,7 @@
 #define MIN_LON (LAUNCH_SITE_LON - 1.0f)
 #define MIN_SEA (LAUNCH_SITE_SEA - 100.0f)
 
-#define LAUNCH_MIN_VEL  8.0f
+#define LAUNCH_MIN_VEL  20.0f
 #define BURNOUT_MIN_VEL 12.0f
 #define APOGEE_MAX_VEL 	3.0f
 #define REEF_TARGET_ALT 457.2f

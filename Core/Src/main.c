@@ -128,6 +128,8 @@ int main(void)
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
+  co2_low();
+  reef_low();
 
 #ifdef TEST_SENSORS
   test_sensors_sync();

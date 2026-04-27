@@ -10,7 +10,6 @@
 #include "sweetbench.h"
 
 #define id "EV "
-#define id_vigilant "VM "
 
 
 TX_THREAD evaluation_task;
