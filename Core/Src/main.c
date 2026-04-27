@@ -19,13 +19,13 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 #include "main.h"
-#include "fcapi.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ux_api.h"
 #include "ux_device_class_cdc_acm.h"
 #include "platform.h"
+#include "fcapi.h"
 
 #ifdef TEST_SENSORS
   #include "testing.h"

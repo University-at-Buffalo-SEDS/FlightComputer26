@@ -66,8 +66,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
 
-  blink(Green, true, 1);
-
   TX_BYTE_POOL *shared_pool = (TX_BYTE_POOL *)memory_ptr;
 
   /* USER CODE END App_ThreadX_MEM_POOL */

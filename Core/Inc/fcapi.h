@@ -132,7 +132,7 @@ static inline void blink(led kind, bool slow,
 {
   volatile fu32 cycles;
   const fu32 delay = slow
-                   ? LED_BLOCKING_CYCLES * 8
+                   ? LED_BLOCKING_CYCLES * 4
                    : LED_BLOCKING_CYCLES;
 
   while (count--)

@@ -1,5 +1,6 @@
 /* Core/Src/recovery.c */
 
+#include "barometer.h"
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
@@ -34,7 +35,7 @@ static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
     .osr_p = Baro_OSR_x8,
-    .odr = Baro_ODR_100,
+    .odr = Baro_ODR_50,
     .iir_coef = Baro_IIR_Coef_3,
     .rezero = 1,
 };
