@@ -181,7 +181,8 @@ static inline state current(void)
 
 static inline bool beyond(state bound)
 {
-  return current() > bound;
+  state k = current();
+  return k > bound;
 }
 
 static inline gnd_state *to_global_state(state local)

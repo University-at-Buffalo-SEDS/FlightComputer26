@@ -236,7 +236,7 @@ void descent_predict(const float dt)
   matrix m_ap = {DKF_STATE, DKF_STATE, mxoff(&m_at)};
   matrix m_fi = {DKF_STATE, DKF_STATE, mxoff(&m_ap)};
 
-	matvec_mul(&kf.mxa, dkf_view(&svec(1)), dkf_view(&imedsv));
+  matvec_mul(&kf.mxa, dkf_view(&svec(1)), dkf_view(&imedsv));
   
   mx_transpose(&kf.mxa, &m_at);
 
@@ -322,8 +322,8 @@ void ascent_initialize(fu32 conf)
 
   kf.H_measjc[0][0] = 1.0f;
 
-  kf.Q_procno[0][0] = 1e-5f;
-  kf.Q_procno[1][1] = 1e-4f;
+  kf.Q_procno[0][0] = 1e-2;
+  kf.Q_procno[1][1] = 1e-2;
   kf.Q_procno[2][2] = 1e-7f;
   kf.Q_procno[3][3] = kf.Q_procno[4][4] = kf.Q_procno[5][5] = 1e-10f;
 
@@ -416,18 +416,14 @@ void ascent_predict(const float dt, fu32 conf)
   qv.rho2 *= inormq;
   qv.rho3 *= inormq;
 
-  float r13 = 2.0f * (qv.rho1*qv.rho3 - qv.q0*qv.rho2);
+  float r13 = 2.0f * (qv.rho1*qv.rho3 + qv.q0*qv.rho2);
   float r23 = 2.0f * (qv.rho2*qv.rho3 + qv.q0*qv.rho1);
   float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
 
   float a_vert = (r13 * a.x + r23 * a.y + r33 * a.z);
-  bool raising = beyond(Postinit) || a.z > AZ_RAIL_THRES;
 
   imedsv.alt = svec(1).alt + dt * svec(1).vel;
-  imedsv.vel = svec(1).vel + dt * (raising
-        ? a_vert - svec(1).bias.az
-        : a_vert - svec(1).bias.az - GRAVITY_SI
-  );
+  imedsv.vel = svec(1).vel + dt * (a_vert - svec(1).bias.az - GRAVITY_SI);
 
   /* v_qmid -> "m_fp"; v_k1k2 (start moved) -> "m_ft"
    */

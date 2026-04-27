@@ -94,7 +94,7 @@
 #define DKF_GPS_TRUST	1.2f
 #define DKF_BARO_TRUST 0.05f
 
-#define EKF_BARO_VARIANCE 2.0f
+#define EKF_BARO_VARIANCE 0.1f
 #define EKF_ACCL_RAIL_DIV (GRAVITY_SI * 1.5f)
 
 #define EKF_BIAS_GYRO_X 0

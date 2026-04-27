@@ -35,7 +35,7 @@ static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
     .osr_p = Baro_OSR_x8,
-    .odr = Baro_ODR_50,
+    .odr = Baro_ODR_25,
     .iir_coef = Baro_IIR_Coef_3,
     .rezero = 1,
 };
@@ -143,7 +143,7 @@ static inline void abortion_due_failures(void)
   smon.gps_delay = 0;
   smon.gps_malform = 0;
 
-  if (beyond(Postinit) ||
+  if (beyond(Awaiting) ||
       g_conf & option(Lost_GroundStation))
   {
     smon.to_abort = TO_ABORT * 10;

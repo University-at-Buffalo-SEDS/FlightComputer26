@@ -95,9 +95,9 @@ bool try_fetch_gyro(f_xyz *buf)
   
   fc_unlock(&dma_locks[Sensor_Gyro], false);
 
-  buf->x = gx * inv_sens[init_rng];
+  buf->x = gz * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
-  buf->z = gz * inv_sens[init_rng];
+  buf->z = gx * inv_sens[init_rng];
 
   sweetbench_start(1, 150);
 
