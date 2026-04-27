@@ -16,7 +16,7 @@
 
 #define ALLOC_MAX 	8192
 #define ALLOC_ALIGN	4
-#define ALLOC_MAGIC (greedy_hdr *)UINTPTR_MAX
+#define ALLOC_MAGIC (greedy_hdr *)(0xFEE1DEAD)
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */

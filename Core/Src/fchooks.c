@@ -11,10 +11,14 @@
 static volatile fu32 lock_fails = 0;
 static volatile fu32 unlock_fails = 0;
 static volatile fu32 alloc_fails = 0;
-static volatile fu8 mem_hint = 0;
-static volatile fu8 mu_hint = 0;
+static volatile bool mem_hint = 0;
+static volatile bool mu_hint = 0;
 
 static greedy_hdr *reserve = NULL;
+
+#ifdef EXPORT_SPINLOCK
+  static spinlock external_lock = {0};
+#endif
 
 
 /* Panic handlers */
@@ -116,22 +120,34 @@ panics_for(const char *s, size_t n, const char *needle)
 
 static inline conditional void fchook_lock(TX_MUTEX *mu)
 {
-  if (tx_thread_identify() == TX_NULL)
-  {
-    return;
-  }
+#ifdef EXPORT_SPINLOCK
+
+  fc_lock(&external_lock);
+
+#else
+
   if (tx_mutex_get(mu, TX_WAIT_FOREVER) != TX_SUCCESS)
   {
     ++lock_fails;
   }
+
+#endif /* EXPORT_SPINLOCK */
 }
 
 static inline conditional void fchook_unlock(TX_MUTEX *mu)
 {
+#ifdef EXPORT_SPINLOCK
+
+  fc_unlock(&external_lock, true);
+
+#else
+
   if (tx_mutex_put(mu) != TX_SUCCESS)
   {
     ++unlock_fails;
   }
+
+#endif /* EXPORT_SPINLOCK */
 }
 
 
@@ -280,18 +296,18 @@ void telemetryFree(void *pv)
 
 void telemetry_panic_hook(const char *str, size_t len)
 {
-  if (panics_for(str, len, "alloc") || alloc_fails != 0)
+  if (panics_for(str, len, "alloc") || alloc_fails)
   {
     panic_alloc();
   }
 
-  if (panics_for(str, len, "memory") || mem_hint != 0)
+  if (panics_for(str, len, "memory") || mem_hint)
   {
     panic_memory();
   }
 
   if (panics_for(str, len, "mutex") || panics_for(str, len, "lock")
-      || mu_hint != 0 || lock_fails + unlock_fails != 0U)
+      || mu_hint || lock_fails + unlock_fails != 0U)
   {
     panic_lock();
   }

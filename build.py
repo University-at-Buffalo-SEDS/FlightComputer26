@@ -70,7 +70,10 @@ OPTIONS: (any option not specified -> opposite is true)
                         adjusted thesholds.
 
         manualconfirm   Prompt the user to confirm critical actions
-                        within a specified timeout. Recommended. 
+                        within a specified timeout. Recommended.
+
+        exspin          For linked libraries, use wakeyield spinlock
+                        instead of TX mutex. Experimental.
 """
 
 from __future__ import annotations
@@ -109,7 +112,8 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "gmath",
                         "lunatic",
                         "simulation",
-                        "manualconfirm"
+                        "manualconfirm",
+                        "exspin",
                 }
 
 # Repo constants
@@ -191,6 +195,7 @@ def configure(buildir: Path, preset: str, options: dict):
         lunatic         = "-DIGNORE_STATES=OFF"
         simul           = "-DSWAP_CONFIG=OFF"
         manualconfirm   = "-DMANUAL_CONFIRM=OFF"
+        exspin          = "-DEXPORT_SPINLOCK=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -235,6 +240,9 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["manualconfirm"]:
                 manualconfirm   = "-DMANUAL_CONFIRM=ON"
 
+        if options["exspin"]:
+                exspin = "-DEXPORT_SPINLOCK=ON"
+
         cmake_args = [
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
@@ -254,6 +262,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 lunatic,
                 simul,
                 manualconfirm,
+                exspin,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

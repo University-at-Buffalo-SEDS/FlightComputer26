@@ -714,6 +714,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   UINT st;
   CHAR *pointer;
 
+  tx_app_shared = byte_pool;
+
   /* Allocate the stack for test  */
   if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
                        RECV_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
