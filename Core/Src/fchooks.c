@@ -11,8 +11,9 @@
 static volatile fu32 lock_fails = 0;
 static volatile fu32 unlock_fails = 0;
 static volatile fu32 alloc_fails = 0;
-static volatile bool mem_hint = 0;
-static volatile bool mu_hint = 0;
+
+static volatile conditional bool mem_hint = 0;
+static volatile conditional bool mu_hint = 0;
 
 static greedy_hdr *reserve = NULL;
 
@@ -122,7 +123,11 @@ static inline conditional void fchook_lock(TX_MUTEX *mu)
 {
 #ifdef EXPORT_SPINLOCK
 
-  fc_lock(&external_lock);
+  if (tx_thread_identify() != NULL)
+  {
+    fc_lock(&external_lock);
+  }
+  else ++lock_fails;
 
 #else
 
@@ -138,7 +143,11 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
 {
 #ifdef EXPORT_SPINLOCK
 
-  fc_unlock(&external_lock, true);
+  if (tx_thread_identify() != NULL)
+  {
+    fc_unlock(&external_lock, true);
+  }
+  else ++unlock_fails;
 
 #else
 
