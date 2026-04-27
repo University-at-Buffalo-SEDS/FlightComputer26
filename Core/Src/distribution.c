@@ -31,43 +31,6 @@ static atomic_uint_fast16_t gps_mask = 0xFF00u;
 #ifdef TELEMETRY_ENABLED
 #ifdef TELEMETRY_CMD_COMPAT
 
-typedef enum remote_cmd_compat : uint8_t
-{
-  Compat_Postinit_Signal,
-  Compat_Launch_Signal,
-  Compat_Rollback_Signal,
-
-  Compat_Monitor_Altitude,
-  Revoke_Monitor_Altitude,
-  Compat_Consecutive_Samples,
-  Revoke_Consecutive_Samples,
-  Compat_Reset_Failures,
-  Revoke_Reset_Failures,
-  Compat_Report_Bad_Measms,
-  Revoke_Report_Bad_Measms,
-
-  Compat_Deploy_Parachute,
-  Compat_Expand_Parachute,
-  Compat_Evaluation_Relax,
-  Compat_Evaluation_Focus,
-  Compat_Evaluation_Abort,
-  Compat_Reinit_Sensors,
-  Compat_Reinit_Barometer,
-  Compat_Reinit_IMU,
-  Compat_Disable_IMU,
-  Compat_Advance_State,
-  Compat_Rewind_State,
-
-  Compat_Abort_After_40,
-  Compat_Abort_After_100,
-  Compat_Abort_After_250,
-  Compat_Reinit_After_15,
-  Compat_Reinit_After_30,
-  Compat_Reinit_After_50,
-
-  Compat_Messages
-} compat;
-
 static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
     Launch_Signal,
@@ -703,6 +666,8 @@ void distribution_entry(ULONG _)
     conf = load(&g_conf, Acq);
     check_rollback_request(conf);
 
+    /* Assert: state is Postinit */
+    log_flight_state(to_global_state(current()));
     post_initialization();
 
     conf = load(&g_conf, Acq);

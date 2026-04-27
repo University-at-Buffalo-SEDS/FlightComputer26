@@ -172,7 +172,7 @@ static inline fu32 timer_fetch(timer u)
 }
 
 
-/* Flight state checking */
+/* Flight state helpers */
 
 static inline state current(void)
 {
@@ -182,6 +182,28 @@ static inline state current(void)
 static inline bool beyond(state bound)
 {
   return current() > bound;
+}
+
+static inline gnd_state *to_global_state(state local)
+{
+  switch (local) {
+    case Suspended: sm.global_state = G_Startup;    break;
+    case Postinit:  sm.global_state = G_Postinit;   break;
+    case Awaiting:  sm.global_state = G_Armed;      break;
+    case Launch:    sm.global_state = G_Launch;     break;
+    case Ascent:    sm.global_state = G_Ascent;     break;
+    case Burnout:   sm.global_state = G_Coast;      break;
+    case Apogee:    sm.global_state = G_Apogee;     break;
+    case Descent:   sm.global_state = G_Descent;    break;
+    case Reefing:   sm.global_state = G_Reefing;    break;
+    case Landed:    sm.global_state = G_Landed;     break;
+    case Recovery:  sm.global_state = G_Recovery;   break;
+
+    /* Something went terribly wrong */
+    default:        sm.global_state = G_Aborted;
+  }
+
+  return &sm.global_state;
 }
 
 

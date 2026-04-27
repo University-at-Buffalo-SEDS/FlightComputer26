@@ -19,7 +19,7 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 void tx_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {};
-sv_meta sm = {1, 0, Suspended, 0};
+sv_meta sm = {Suspended, G_Startup, 1, 0, 0};
 
 
 /* FSM helpers */
@@ -61,7 +61,7 @@ static inline void flight_advance(state promotion)
     log_critical(id "vigilant mode deployment:");
   }
 
-  log_flight_state(promotion);
+  log_flight_state(to_global_state(promotion));
 }
 
 
@@ -245,11 +245,22 @@ static inline void detect_landed(fu32 mode)
       ++sm.samp >= MIN_SAMP_LANDED)
   {
     flight_advance(Landed);
-
-    fc_msg cmd = fc_mask(Evaluation_Focus);
-    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    sm.ev_step = -STABILIZATION_PAD;
   }
   else detect_spurious(mode);
+}
+
+static inline void stabilize(fu32 steps)
+{
+  float dh = svec(0).alt - svec(1).alt;
+  float dv = svec(0).vel - svec(1).vel;
+
+  if (fabsf(dh) <= ALT_TOLER            then
+      fabsf(dv) <= VEL_TOLER            then
+      ++sm.samp >= steps)
+  {
+    flight_advance(Recovery);
+  }
 }
 
 
@@ -274,12 +285,14 @@ static inline void propel_kalman_state(fu32 conf)
 
 void evaluate_rocket_state(fu32 conf)
 {
-  if (conf & option(Monitor_Altitude))
+  state curr = current();
+
+  if (curr < Reefing && (conf & option(Monitor_Altitude)))
   {
     vigilant_evaluate_altitude(conf);
   }
 
-  switch (current())
+  switch (curr)
   {
   case Awaiting:
     detect_launch();
@@ -303,6 +316,9 @@ void evaluate_rocket_state(fu32 conf)
     detect_landed(conf);
     break;
   case Landed:
+    stabilize(STABILIZATION_STEPS);
+    break;
+  case Recovery:
     crew_send_coords(conf);
     break;
   default: break;

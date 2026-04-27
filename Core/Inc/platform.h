@@ -230,7 +230,7 @@ extern void telemetry_init_lock(void);
 
 #define log_flight_state(state)                               \
   log_telemetry_asynchronous(SEDS_DT_FLIGHT_STATE,            \
-                             (const void *)&(state),          \
+                             (const void *)(state),           \
                              1, sizeof(uint8_t))              \
 
 #define log_measm(k, buf)                                     \
@@ -290,7 +290,7 @@ extern void telemetry_init_lock(void);
   ( (void)( printf("Valve cmd sent: %u\n", cmd) ), SEDS_OK )
 
 #define log_flight_state(state)                               \
-  printf("Flight state propagated to %u\n", state)
+  printf("Flight state propagated to %u\n", *(state))
 
 #define log_measm(type, buf)                                  \
   do {                                                        \

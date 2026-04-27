@@ -223,7 +223,7 @@ static inline void manual_deployment(bool apogee, bool force)
   }
   else return;
 
-  log_flight_state(sm.flight);
+  log_flight_state(to_global_state(sm.flight));
 
   if (g_conf & option(Using_Ascent_KF))
   {
@@ -692,6 +692,8 @@ void recovery_entry(ULONG st)
   local_time[LaunchCmd] = UINT_FAST32_MAX;
 
   tx_timer_activate(&monotonic_checks);
+
+  log_flight_state(to_global_state(sm.flight));
 
   task_loop (DO_NOT_EXIT)
   {

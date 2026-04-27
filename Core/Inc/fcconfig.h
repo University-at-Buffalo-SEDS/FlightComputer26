@@ -91,6 +91,9 @@
 #define VIGILANT_MAX_ALT 3657.6f
 #define VIGILANT_MIN_ALT -2.0f
 
+#define STABILIZATION_PAD 60
+#define STABILIZATION_STEPS 20
+
 
 /* Kalman */
 

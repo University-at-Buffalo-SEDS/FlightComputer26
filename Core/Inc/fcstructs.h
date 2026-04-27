@@ -144,12 +144,36 @@ typedef enum flight_state : fu8 {
   Descent,
   Reefing,
   Landed,
+  Recovery,
 
   Flight_States
 } state;
 
+typedef enum global_state : uint8_t {
+  G_Startup,
+  G_Idle,
+  G_PreFill,
+  G_FillTest,
+  G_NitrogenFill,
+  G_NitrousFill,
+  G_Postinit,
+  G_Armed,
+  G_Launch,
+  G_Ascent,
+  G_Coast,
+  G_Apogee,
+  G_Descent,
+  G_Reefing,
+  G_Landed,
+  G_Recovery,
+  G_Aborted,
+
+  Global_States
+} gnd_state;
+
 typedef struct cm_align state_metadata {
-  atomic_uint_fast16_t flight;
+  atomic_uint_fast8_t flight;
+  uint8_t global_state;
   fu16 idx;
   fu16 samp;
   fi16 ev_step;
@@ -261,6 +285,43 @@ typedef enum sensor_init_mask : fu8 {
   Wild_Mask = (Baro_Mask | Gyro_Mask | Accl_Mask),
   Shut_Mask = (Shut_Baro | Shut_Gyro | Shut_Accl)
 } sens_init;
+
+typedef enum remote_cmd_compat : uint8_t
+{
+  Compat_Postinit_Signal,
+  Compat_Launch_Signal,
+  Compat_Rollback_Signal,
+
+  Compat_Monitor_Altitude,
+  Revoke_Monitor_Altitude,
+  Compat_Consecutive_Samples,
+  Revoke_Consecutive_Samples,
+  Compat_Reset_Failures,
+  Revoke_Reset_Failures,
+  Compat_Report_Bad_Measms,
+  Revoke_Report_Bad_Measms,
+
+  Compat_Deploy_Parachute,
+  Compat_Expand_Parachute,
+  Compat_Evaluation_Relax,
+  Compat_Evaluation_Focus,
+  Compat_Evaluation_Abort,
+  Compat_Reinit_Sensors,
+  Compat_Reinit_Barometer,
+  Compat_Reinit_IMU,
+  Compat_Disable_IMU,
+  Compat_Advance_State,
+  Compat_Rewind_State,
+
+  Compat_Abort_After_40,
+  Compat_Abort_After_100,
+  Compat_Abort_After_250,
+  Compat_Reinit_After_15,
+  Compat_Reinit_After_30,
+  Compat_Reinit_After_50,
+
+  Compat_Messages
+} compat;
 
 
 #endif /* FC_DATA_STRUCTURES */

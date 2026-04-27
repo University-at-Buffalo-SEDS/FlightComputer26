@@ -18,7 +18,7 @@ static volatile conditional bool mu_hint = 0;
 static greedy_hdr *reserve = NULL;
 
 #ifdef EXPORT_SPINLOCK
-  static spinlock external_lock = {0};
+static spinlock external_lock = {0};
 #endif
 
 
@@ -123,7 +123,7 @@ static inline conditional void fchook_lock(TX_MUTEX *mu)
 {
 #ifdef EXPORT_SPINLOCK
 
-  if (tx_thread_identify() != NULL)
+  if (tx_thread_identify() != TX_NULL)
   {
     fc_lock(&external_lock);
   }
@@ -143,7 +143,7 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
 {
 #ifdef EXPORT_SPINLOCK
 
-  if (tx_thread_identify() != NULL)
+  if (tx_thread_identify() != TX_NULL)
   {
     fc_unlock(&external_lock, true);
   }
@@ -236,7 +236,7 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
     size = (size + (ALLOC_ALIGN - 1)) & (ALLOC_ALIGN - 1);
   }
 
-  if (!bp)
+  if (bp == NULL)
   {
     return seds_alloc(size, timeout);
   }
