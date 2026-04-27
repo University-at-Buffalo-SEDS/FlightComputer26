@@ -29,6 +29,7 @@ typedef int_fast64_t fi64;
 #define constexpr     __attribute__((const))
 #define pure          __attribute__((pure))
 #define forceinline   __attribute__((always_inline))
+#define noreturn      __attribute__((noreturn))
 
 
 typedef enum seds_atomic_mo {

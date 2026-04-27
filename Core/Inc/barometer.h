@@ -145,7 +145,7 @@ enum baro_odr : uint8_t {
 };
 
 enum baro_iir_coef : uint8_t {
-  Baro_IIR_Coef_0   = 0x00, /* Bypass, default */
+  Baro_IIR_Coef_0   = 0x00,
   Baro_IIR_Coef_1   = 0x01,
   Baro_IIR_Coef_3   = 0x02,
   Baro_IIR_Coef_7   = 0x03,
@@ -156,12 +156,8 @@ enum baro_iir_coef : uint8_t {
 };
 
 // Default OSR/ODR
-#define BARO_DEFAULT_OSR                                            \
-  baro_osr_make(BARO_OSR_X1, BARO_OSR_X2)   // T x1, P x2  -> 0x0D
 #define BARO_ODR_SEL_MASK 0x1Fu
-#define BARO_DEFAULT_ODR_SEL 0x04u          // 12.5 Hz
-#define BARO_PERIOD_MS_FROM_ODRSEL(s)                               \
-  (5u << ((s) & BARO_ODR_SEL_MASK))         // approx
+#define BARO_PERIOD_MS_FROM_ODRSEL(s) (5u << ((s) & BARO_ODR_SEL_MASK))
 
 /* 0100 0010 : INT active high data ready */
 #define BARO_INT_CTRL_VAL 0x42

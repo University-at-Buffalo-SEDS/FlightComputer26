@@ -9,12 +9,14 @@
 
 #else
 
+
 /* IREC 2026 */
 
 #define GRAVITY_SI 9.80665f
 
-#define LAUNCH_SITE_LAT 32.000507f
-#define LAUNCH_SITE_LON -102.077408f
+#define LAUNCH_SITE_LAT 31.9436879f
+#define LAUNCH_SITE_LON -102.214251f
+#define LAUNCH_SITE_SEA	872.0f
 
 #define IGNITION_COMMAND 14
 
@@ -60,41 +62,34 @@
  * Longtitude       LON     degrees
  * Alt. above sea   SEA     meters    */
 
-#define MAX_ALT 4800.0f
-#define MAX_PRS 125000.0f
-#define MAX_DPS 2000.0f
-#define MAX_ACC (GRAVITY_SI * 24.0f)
-#define MAX_LAT 90.0f
-#define MAX_LON 180.0f
-#define MAX_SEA 9999.9f
+#define MAX_ALT 4572.0f
+#define MAX_PRS 110000.0f
+#define MAX_DPS 360.0f
+#define MAX_ACC (GRAVITY_SI * 18.0f)
+#define MAX_LAT (LAUNCH_SITE_LAT + 1.0f)
+#define MAX_LON (LAUNCH_SITE_LON + 1.0f)
+#define MAX_SEA (LAUNCH_SITE_SEA + MAX_ALT)
 
-#define MIN_ALT -10.0f
-#define MIN_PRS 30000.0f
+#define MIN_ALT -5.0f
+#define MIN_PRS 57200.0f
 #define MIN_DPS -MAX_DPS
 #define MIN_ACC -MAX_ACC
-#define MIN_LAT -MAX_LAT
-#define MIN_LON -MAX_LON
-#define MIN_SEA -999.9f
+#define MIN_LAT (LAUNCH_SITE_LAT - 1.0f)
+#define MIN_LON (LAUNCH_SITE_LON - 1.0f)
+#define MIN_SEA (LAUNCH_SITE_SEA - 100.0f)
 
 #define LAUNCH_MIN_VEL  8.0f
-#define LAUNCH_MIN_VAX  10.0f
-
 #define BURNOUT_MIN_VEL 12.0f
-#define BURNOUT_MAX_VAX -3.0f
-
-#define APOGEE_MAX_VEL 3.0f
-
+#define APOGEE_MAX_VEL 	3.0f
 #define REEF_TARGET_ALT 457.2f
 
 #define ALT_TOLER 2.0f
 #define VEL_TOLER 1.5f
-#define VAX_TOLER 1.0f
 #define GPS_TOLER 1.41f
-
 #define GPS_RAIL_TOLER 0.05f
 
 #define VIGILANT_MAX_ALT 3657.6f
-#define VIGILANT_MIN_ALT 3.0f
+#define VIGILANT_MIN_ALT -2.0f
 
 
 /* Kalman */
@@ -114,28 +109,25 @@
 /* Recovery */
 
 #define TO_REINIT 40
-#define TO_ABORT  80
+#define TO_ABORT  120
 
 #define SENSOR_REINIT_ATTEMPTS 3
 
-#define GPS_DELAY_MS 200
-
+#define GPS_DELAY_MS 		200
 #define GPS_MAX_DELAYS	40
-#define GPS_MAX_MALFORM 30
-
+#define GPS_MAX_MALFORM 40
 #define GPS_SUS_DELAYS	(GPS_MAX_DELAYS / 2)
 #define GPS_SUS_MALFORM (GPS_MAX_MALFORM / 2)
 
 #define FC_TIMEOUT	3000
 #define GND_TIMEOUT 3000
 
-#define POSTINIT_DURATION 5000
-#define POSTINIT_INTERVAL 150
-#define IGNITER_SEQ_TIMER 1200
-
 #define CONFIRMATION_TIMEOUT 5000
 
-#define TX_TIMER_TICKS   500
+#define POSTINIT_DURATION 5000
+#define POSTINIT_INTERVAL 100
+
+#define TX_TIMER_TICKS   450
 #define TX_TIMER_INITIAL (TX_TIMER_TICKS * 2)
 
 #define CO2_ASSERT_INTERVAL  500

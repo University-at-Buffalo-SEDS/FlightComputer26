@@ -685,9 +685,9 @@ baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *conf)
   /* Configuration setup with default fallbacks */
   struct baro_config valid = {
     .osr_t = Baro_OSR_x1,
-    .osr_p = Baro_OSR_x2,
-    .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = Baro_IIR_Coef_0,
+    .osr_p = Baro_OSR_x8,
+    .odr = Baro_ODR_100,
+    .iir_coef = Baro_IIR_Coef_3,
     .rezero = 1,
   };
 

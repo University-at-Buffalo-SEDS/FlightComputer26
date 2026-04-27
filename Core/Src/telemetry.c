@@ -1,6 +1,7 @@
 /* Core/Src/telemetry.c */
 
 #include "platform.h"
+#include "fctypes.h"
 #include "fcapi.h"
 #include "fctasks.h"
 #include "can_bus.h"
@@ -639,7 +640,7 @@ TX_THREAD telemetry_task;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
 
-static CHAR static_pool[TLMT_STACK_BYTES*4];
+static tx_align CHAR static_pool[TLMT_STACK_BYTES * 4];
 
 void telemetry_task_entry(ULONG _)
 {

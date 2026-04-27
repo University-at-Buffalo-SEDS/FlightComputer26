@@ -12,7 +12,7 @@
 
 #define SENSOR_BUF_SIZE 8
 
-#define DMA_TIMEOUT_MS 10
+#define DMA_TIMEOUT_MS 20
 
 #define DMA_BARO_MASK BARO_EXTI_Pin
 #define DMA_GYRO_MASK (GYRO_EXTI_1_Pin | GYRO_EXTI_2_Pin)

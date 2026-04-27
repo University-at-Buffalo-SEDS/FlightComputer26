@@ -33,9 +33,10 @@ static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
-    .osr_p = Baro_OSR_x2,
-    .odr = BARO_DEFAULT_ODR_SEL,
+    .osr_p = Baro_OSR_x8,
+    .odr = Baro_ODR_100,
     .iir_coef = Baro_IIR_Coef_3,
+    .rezero = 1,
 };
 
 static struct gyro_config gyro_conf = {
@@ -676,7 +677,7 @@ void recovery_entry(ULONG st)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "notification %u", st);
+    log_die(id "notification %u", (fu32) st);
   }
 
   sensor_init_supervised(Wild_Mask);

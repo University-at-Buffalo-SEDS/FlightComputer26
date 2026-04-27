@@ -1,22 +1,20 @@
-/*
- * Flight Computer 26 synchronous sensor tests.
- */
-
-#include <assert.h>
+/* Core/Test/sensors.c */
 
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "testing.h"
 
+
 extern SPI_HandleTypeDef hspi1;
 
 
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
-    .osr_p = Baro_OSR_x2,
-    .odr = BARO_DEFAULT_ODR_SEL,
-    .iir_coef = Baro_IIR_Coef_0,
+    .osr_p = Baro_OSR_x8,
+    .odr = Baro_ODR_100,
+    .iir_coef = Baro_IIR_Coef_3,
+		.rezero = 1,
 };
 
 static struct gyro_config gyro_conf = {
@@ -30,7 +28,7 @@ static struct accl_config accl_conf = {
 };
 
 
-void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
+void test_baro_sync(SPI_HandleTypeDef *hspi, bool precise)
 {
 	if (precise)
 	{
@@ -59,7 +57,7 @@ void test_baro_sync(SPI_HandleTypeDef *hspi, int precise)
 }
 
 
-void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
+void test_gyro_sync(SPI_HandleTypeDef *hspi, bool lowpower)
 {
 	if (lowpower)
 	{
@@ -87,7 +85,7 @@ void test_gyro_sync(SPI_HandleTypeDef *hspi, int lowpower)
 }
 
 
-void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
+void test_accl_sync(SPI_HandleTypeDef *hspi, bool lowpower)
 {
 	if (lowpower)
 	{
@@ -117,12 +115,12 @@ void test_accl_sync(SPI_HandleTypeDef *hspi, int lowpower)
 
 void noreturn test_sensors_sync(void)
 {
-	test_baro_sync(&hspi1, 0);
-	test_baro_sync(&hspi1, 1);
-	test_gyro_sync(&hspi1, 0);
-	test_gyro_sync(&hspi1, 1);
-	test_accl_sync(&hspi1, 0);
-	test_accl_sync(&hspi1, 1);
+	test_baro_sync(&hspi1, false);
+	test_baro_sync(&hspi1, true);
+	test_gyro_sync(&hspi1, false);
+	test_gyro_sync(&hspi1, true);
+	test_accl_sync(&hspi1, false);
+	test_accl_sync(&hspi1, true);
 
 	_Exit(0);
 }

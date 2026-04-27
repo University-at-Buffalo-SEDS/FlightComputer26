@@ -1,4 +1,4 @@
-/* Core/Inc/kalmanpill.c */
+/* Core/Test/kalmanpill.c */
 
 #include "platform.h"
 #include "fctypes.h"

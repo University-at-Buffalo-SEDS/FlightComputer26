@@ -15,7 +15,6 @@
 #define MAX_SYNC_CYCLES 16
 
 #define random_wait HAL_Delay(rand() % MAX_FETCH_INTERVAL_MS);
-#define noreturn __attribute__ ((noreturn))
 
 
 #ifdef TEST_SENSORS
