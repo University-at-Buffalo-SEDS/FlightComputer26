@@ -16,6 +16,7 @@
 
 #define random_wait HAL_Delay(rand() % MAX_FETCH_INTERVAL_MS);
 
+void test_telemetry_alloc(void);
 
 #ifdef TEST_SENSORS
 

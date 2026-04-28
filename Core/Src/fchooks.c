@@ -184,10 +184,13 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
   st = tx_byte_allocate(tx_app_shared, &ptr, size, timeout);
 
-  if (st != TX_SUCCESS)
+  while (st != TX_SUCCESS)
   {
-    fc_msg cmd = fc_mask(Log_Terminate);
-    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    do {
+      fc_msg cmd = fc_mask(Log_Terminate);
+      st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    }
+    while (st != TX_SUCCESS);
 
     /* Assert unreachable */
 
