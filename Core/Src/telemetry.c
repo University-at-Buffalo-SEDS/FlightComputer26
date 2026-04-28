@@ -647,8 +647,6 @@ void telemetry_entry(ULONG _)
 {
   can_bus_init(&hfdcan1);
 
-  //test_telemetry_alloc();
-
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
 
