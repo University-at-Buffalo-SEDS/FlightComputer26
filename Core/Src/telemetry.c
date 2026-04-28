@@ -640,7 +640,7 @@ TX_THREAD telemetry_task;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
 
-static tx_align CHAR static_pool[TLMT_STACK_BYTES * 4];
+static tx_align CHAR static_pool[TLMT_STACK_BYTES * 7];
 
 void telemetry_task_entry(ULONG _)
 {
@@ -666,7 +666,7 @@ UINT create_telemetry_task(void)
   CHAR *ptr;
 
   st = tx_byte_pool_create(&telemetry_pool, id "bp",
-                           static_pool, TLMT_STACK_BYTES*4);
+                           static_pool, TLMT_STACK_BYTES * 7);
 
   if (st != TX_SUCCESS)
   {

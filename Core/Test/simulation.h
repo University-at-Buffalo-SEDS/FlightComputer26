@@ -15,7 +15,7 @@
 #define IGNITION_COMMAND 14
 
 #define ALLOC_MAX 	8192
-#define ALLOC_ALIGN	4
+#define ALLOC_ALIGN	8
 #define ALLOC_MAGIC (greedy_hdr *)(0xFEE1DEAD)
 
 

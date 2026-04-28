@@ -211,17 +211,18 @@ static inline void *seds_alloc(size_t size, size_t walk_depth)
   return (void *)((greedy_hdr *)ptr + 1);
 }
 
-static inline void seds_free(void *ptr)
+static inline bool seds_free(void *ptr)
 {
   greedy_hdr *head = ((greedy_hdr *)ptr) - 1;
 
   if (head->next != ALLOC_MAGIC)
   {
-    return;
+    return false;
   }
 
   head->next = reserve;
   reserve = head;
+  return true;
 }
 
 static inline conditional void *
@@ -233,7 +234,7 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
   }
   else if (size & (ALLOC_ALIGN - 1))
   {
-    size = (size + (ALLOC_ALIGN - 1)) & (ALLOC_ALIGN - 1);
+    size = (size + (ALLOC_ALIGN - 1)) & ~(ALLOC_ALIGN - 1);
   }
 
   if (bp == NULL)
@@ -257,9 +258,9 @@ static inline conditional void fchook_free(void *ptr)
   {
     return;
   }
-  if (tx_byte_release(ptr) == TX_PTR_ERROR)
+  if (!seds_free(ptr))
   {
-    seds_free(ptr);
+    tx_byte_release(ptr);
   }
 }
 
