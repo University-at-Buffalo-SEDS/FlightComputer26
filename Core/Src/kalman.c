@@ -228,7 +228,7 @@ void descent_initialize(void)
 
 void descent_predict(const float dt)
 {
-  kf.A_genpur[DKF_STATE -  1][DKF_MEASM - 1] = dt;
+  kf.A_genpur[DKF_MEASM -  1][DKF_STATE - 1] = dt;
 
   float *start = kfalloc(DKF_PREDICT_BYTES);
 
@@ -265,7 +265,16 @@ void descent_update(void)
   mx_mul(&kf.mxh, &kf.mxp, &m_hp);
   mx_mul(&m_hp, &m_ht, &m_hpht);
   mx_add(&m_hpht, &kf.mxr, &m_s);
-  mx_inverse(&m_s, &m_hpht);
+
+  math_status maybe_singular = mx_inverse(&m_s, &m_hpht);
+
+  if (maybe_singular != ARM_MATH_SUCCESS)
+  {
+    /* Dead reckon from Predict */
+    memcpy(dkf_view(&svec(0)), dkf_view(&imedsv), fbyte(DKF_STATE));
+    return;
+  }
+
   mx_mul(&kf.mxp, &m_ht, &m_pht);
   mx_mul(&m_pht, &m_hpht, &m_ht);
 

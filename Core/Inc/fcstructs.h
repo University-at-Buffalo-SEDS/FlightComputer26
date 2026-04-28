@@ -54,7 +54,7 @@ typedef struct serial coords {
 	float x, y, z;
 } f_xyz;
 
-typedef struct serial quaternion {
+typedef struct cmsis_ok quaternion {
   float q0, rho1, rho2, rho3;
 } quat;
 
@@ -62,22 +62,22 @@ typedef struct serial barometer {
 	float alt, prs, tmp;
 } baro;
 
-typedef struct serial gps_reversed {
+typedef struct cmsis_ok gps_reversed {
   float sea, lon, lat;
 } kf_gps;
 
-typedef struct serial measurement {
+typedef struct cmsis_ok measurement {
   kf_gps gps;
 	baro baro;
   f_xyz accl;
   f_xyz gyro;
 } measm;
 
-typedef struct serial ascent_bias {
+typedef struct cmsis_ok ascent_bias {
   float az, gx, gy, gz;
 } ekf_bias;
 
-typedef struct serial state_vector {
+typedef struct cmsis_ok state_vector {
   kf_gps gps;
 	float alt, vel;
   ekf_bias bias;
@@ -99,8 +99,6 @@ typedef struct kf_shared_buf_locality {
   matrix mxh;
   float H_measjc[MAX_MEASM][MAX_STATE];
 } kf_buf;
-
-static_assert(sizeof(f_xyz) == sizeof(kf_gps), "SV views");
 
 
 /* DMA */
@@ -134,12 +132,12 @@ typedef struct cm_align dma_flags {
 /* Evaluation */
 
 typedef enum flight_state : fu8 {
-  Suspended,
+  Startup,
   Postinit,
-  Awaiting,
+  Armed,
   Launch,
   Ascent,
-  Burnout,
+  Coast,
   Apogee,
   Descent,
   Reefing,

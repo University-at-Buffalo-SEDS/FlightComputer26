@@ -10,6 +10,8 @@
 #include <stdatomic.h>
 #include <assert.h> 
 
+#include "fcconfig.h"
+
 
 typedef uint_fast8_t  fu8;
 typedef uint_fast16_t fu16;
@@ -24,6 +26,7 @@ typedef int_fast64_t fi64;
 
 #define cm_align      __attribute__((aligned(sizeof(fu32))))
 #define tx_align      __attribute__((aligned(sizeof(ULONG))))
+#define cmsis_ok      __attribute__((packed, aligned(CMSIS_ALIGN)))
 #define serial        __attribute__((packed, aligned(sizeof(float))))
 #define conditional   __attribute__((unused))
 #define constexpr     __attribute__((const))

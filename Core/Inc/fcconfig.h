@@ -22,6 +22,7 @@
 
 #define ALLOC_MAX 	8192
 #define ALLOC_ALIGN	8
+#define CMSIS_ALIGN 8
 #define ALLOC_MAGIC (greedy_hdr *)(0xFEE1DEAD)
 
 

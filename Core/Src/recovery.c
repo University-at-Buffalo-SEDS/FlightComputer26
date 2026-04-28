@@ -143,7 +143,7 @@ static inline void abortion_due_failures(void)
   smon.gps_delay = 0;
   smon.gps_malform = 0;
 
-  if (beyond(Awaiting) ||
+  if (beyond(Armed) ||
       g_conf & option(Lost_GroundStation))
   {
     smon.to_abort = TO_ABORT * 10;
@@ -329,7 +329,7 @@ static inline void rollback_to_idle(void)
   g_conf &= ~option(Launch_Requested);
   g_conf &= ~option(Measm_Reports);
 
-  sm.flight = Suspended;
+  sm.flight = Startup;
 
   log_msg(id "rolled back to pre-init");
 }
@@ -396,7 +396,7 @@ static inline void process_action(fc_msg cmd, bool internal)
       break;
 
     case Rewind_State:
-      satur_decr(sm.flight, Suspended);
+      satur_decr(sm.flight, Startup);
       break;
 
     default: break;

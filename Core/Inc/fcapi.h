@@ -188,12 +188,12 @@ static inline bool beyond(state bound)
 static inline gnd_state *to_global_state(state local)
 {
   switch (local) {
-    case Suspended: sm.global_state = G_Startup;    break;
+    case Startup: sm.global_state = G_Startup;    break;
     case Postinit:  sm.global_state = G_Postinit;   break;
-    case Awaiting:  sm.global_state = G_Armed;      break;
+    case Armed:  sm.global_state = G_Armed;      break;
     case Launch:    sm.global_state = G_Launch;     break;
     case Ascent:    sm.global_state = G_Ascent;     break;
-    case Burnout:   sm.global_state = G_Coast;      break;
+    case Coast:   sm.global_state = G_Coast;      break;
     case Apogee:    sm.global_state = G_Apogee;     break;
     case Descent:   sm.global_state = G_Descent;    break;
     case Reefing:   sm.global_state = G_Reefing;    break;

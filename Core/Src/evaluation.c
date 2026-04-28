@@ -18,7 +18,7 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 void tx_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {};
-sv_meta sm = {Suspended, G_Startup, 1, 0, 0};
+sv_meta sm = {Startup, G_Startup, 1, 0, 0};
 
 
 /* FSM helpers */
@@ -166,7 +166,7 @@ static inline void detect_ascent(fu32 mode)
   else detect_spurious(mode);
 }
 
-static inline void detect_burnout(fu32 mode)
+static inline void detect_coast(fu32 mode)
 {
   if (svec(0).vel >= BURNOUT_MIN_VEL    then
       svec(0).alt > svec(1).alt         then
@@ -174,7 +174,7 @@ static inline void detect_burnout(fu32 mode)
       svec(1).vel < svec(2).vel         then
       ++sm.samp >= MIN_SAMP_BURNOUT)
   {
-    flight_advance(Burnout);
+    flight_advance(Coast);
   }
   else detect_spurious(mode);
 }
@@ -293,16 +293,16 @@ void evaluate_rocket_state(fu32 conf)
 
   switch (curr)
   {
-  case Awaiting:
+  case Armed:
     detect_launch();
     break;
   case Launch:
     detect_ascent(conf);
     break;
   case Ascent:
-    detect_burnout(conf);
+    detect_coast(conf);
     break;
-  case Burnout:
+  case Coast:
     detect_apogee();
     break;
   case Apogee:
@@ -337,9 +337,9 @@ static inline void enter_flight_mode(fu32 conf)
     ascent_initialize(conf);
     log_critical(id "received launch signal");
 
-    if (fetch_add(&sm.flight, 1, Acq) != Awaiting - 1)
+    if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
     {
-      store(&sm.flight, Awaiting, Rlx);
+      store(&sm.flight, Armed, Rlx);
       log_err(id "unusual startup sequence");
     }
     
