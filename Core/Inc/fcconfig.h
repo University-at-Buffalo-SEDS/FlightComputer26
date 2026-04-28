@@ -20,10 +20,15 @@
 
 #define IGNITION_COMMAND 14
 
-#define ALLOC_MAX 	8192
-#define ALLOC_ALIGN	8
-#define CMSIS_ALIGN 8
-#define ALLOC_MAGIC (greedy_hdr *)(0xFEE1DEAD)
+#define EXCESS_ALIGN 8
+#define MSP_STACK_MARGIN 8192
+#define TELEMETRY_HEAP 131072
+#define POOL_RETRIES 3
+
+#define LOG_RATE_SD	 			1
+#define LOG_RATE_GND 			7
+#define LOG_RATE_SD_LTD  	2
+#define LOG_RATE_GND_LTD	15
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */

@@ -8,6 +8,7 @@
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
+#include "simulation.h"
 #include "sweetbench.h"
 
 #define id "RE "
@@ -20,6 +21,8 @@ TX_TIMER monotonic_checks;
 TX_BYTE_POOL *tx_app_shared;
 
 volatile fu32 local_time[Time_Users] = {0};
+
+volatile log_rates rates = {LOG_RATE_SD, LOG_RATE_GND};
 
 const led_gpio light[Leds] = {
   [Green] = {LED1_PORT, LED1_PIN},
@@ -55,7 +58,7 @@ static const conf_dict confmap[] = {
   { Consecutive_Samples, "consectuive-samples" },
   { Eval_Focus_Flag,     "eval-focus" },
   { Reset_Failures,      "reset-failures" },
-  { Measm_Reports,   "report-bad-measms" },
+  { Measm_Reports,       "report-bad-measms" },
 };
 
 
@@ -389,7 +392,7 @@ static inline void process_action(fc_msg cmd, bool internal)
       g_conf |= option(Eval_Abort_Flag);
       tx_thread_terminate(&evaluation_task);
       tx_thread_reset(&evaluation_task);
-      return;
+      break;
 
     case Advance_State:
       satur_incr(sm.flight, Landed);
@@ -397,6 +400,23 @@ static inline void process_action(fc_msg cmd, bool internal)
 
     case Rewind_State:
       satur_decr(sm.flight, Startup);
+      break;
+
+    case Log_Rate_Limit:
+      rates.sd = LOG_RATE_SD_LTD;
+      rates.gnd = LOG_RATE_GND_LTD;
+      log_err(id "WARNING: using reserve heap");
+      break;
+
+    case Log_Restrict:
+      rates.sd = LOG_RATE_SD_LTD * 2;
+      rates.gnd = 0;
+      log_err(id "WARNING: using shared stack pool");
+      break;
+
+    case Log_Terminate:
+      rates.sd = 0;
+      tx_thread_terminate(&telemetry_task);
       break;
 
     default: break;
@@ -673,6 +693,8 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
 
 void recovery_entry(ULONG st)
 {
+  try_allocate_reserve_pool();
+
   st = tx_thread_entry_exit_notify(&distribution_task,
                                    grace_reset_distribution);
 

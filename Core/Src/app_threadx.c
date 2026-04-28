@@ -77,7 +77,7 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 #endif
 
 #ifdef TELEMETRY_ENABLED
-  if (create_telemetry_task() != TX_SUCCESS)
+  if (create_telemetry_task(memory_ptr) != TX_SUCCESS)
   {
     Error_Handler();
   }

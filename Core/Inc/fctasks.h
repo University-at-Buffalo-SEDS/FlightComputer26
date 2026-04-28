@@ -20,8 +20,8 @@ extern TX_THREAD telemetry_task;
 extern TX_MUTEX telemetry_mu;
 extern TX_BYTE_POOL telemetry_pool;
 
-void telemetry_task_entry(ULONG);
-UINT create_telemetry_task(void);
+void telemetry_entry(ULONG);
+UINT create_telemetry_task(TX_BYTE_POOL *);
 
 #endif /* TELEMETRY_ENABLED */
 

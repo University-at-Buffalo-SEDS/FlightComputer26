@@ -3,9 +3,11 @@
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
+#include "fccommon.h"
 #include "fctasks.h"
 #include "fcapi.h"
 #include "fcconfig.h"
+#include "simulation.h"
 
 
 static volatile fu32 lock_fails = 0;
@@ -15,7 +17,7 @@ static volatile fu32 alloc_fails = 0;
 static volatile conditional bool mem_hint = 0;
 static volatile conditional bool mu_hint = 0;
 
-static greedy_hdr *reserve = NULL;
+static TX_BYTE_POOL reserve;
 
 #ifdef EXPORT_SPINLOCK
 static spinlock external_lock = {0};
@@ -160,108 +162,126 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
 }
 
 
-/* Small fault-tolerant allocator */
+/* Fault-tolerant allocator wrapper */
 
-static inline void *seds_alloc(size_t size, size_t walk_depth)
+static inline void *reserve_alloc(size_t size, size_t timeout)
 {
-  if (size > ALLOC_MAX - sizeof(greedy_hdr))
+  static bool restricted = false;
+
+  void *ptr;
+  UINT st = tx_byte_allocate(&reserve, &ptr, size, timeout);
+
+  if (st == TX_SUCCESS)
   {
+    return ptr;
+  }
+  else if (!restricted)
+  {
+    restricted = true;
+    fc_msg cmd = fc_mask(Log_Restrict);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  }
+
+  st = tx_byte_allocate(tx_app_shared, &ptr, size, timeout);
+
+  if (st != TX_SUCCESS)
+  {
+    fc_msg cmd = fc_mask(Log_Terminate);
+    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+
+    /* Assert unreachable */
+
     ++alloc_fails;
     return NULL;
   }
 
-  greedy_hdr *node = reserve;
-  greedy_hdr *prev = NULL;
-
-  for (size_t k = 0; node && k <= walk_depth; ++k)
-  {
-    if (node->size >= size)
-    {
-      if (prev != NULL)
-      {
-        prev->next = node->next;
-      }
-      else reserve = node->next;
-
-      node->next = ALLOC_MAGIC;
-      return (void *)(node + 1); 
-    }
-
-    prev = node;
-    node = node->next;
-  }
-
-  void *ptr = _sbrk(sizeof(greedy_hdr) + size);
-
-  if (ptr == (void *)-1)
-  {
-    ptr = NULL;
-    if (tx_byte_allocate(tx_app_shared, &ptr, size,
-                          walk_depth) != TX_SUCCESS)
-    {
-      ++alloc_fails;
-      return NULL;
-    }
-    else return ptr;
-  }
-
-  ((greedy_hdr *)ptr)->size = size;
-  ((greedy_hdr *)ptr)->next = ALLOC_MAGIC;
-
-  return (void *)((greedy_hdr *)ptr + 1);
-}
-
-static inline bool seds_free(void *ptr)
-{
-  greedy_hdr *head = ((greedy_hdr *)ptr) - 1;
-
-  if (head->next != ALLOC_MAGIC)
-  {
-    return false;
-  }
-
-  head->next = reserve;
-  reserve = head;
-  return true;
+  return ptr;
 }
 
 static inline conditional void *
 fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 {
+  static bool rate_limited = false;
+
   if (size == 0)
   {
-    size = ALLOC_ALIGN;
+    size = EXCESS_ALIGN;
   }
-  else if (size & (ALLOC_ALIGN - 1))
+  else if (size & ALIGN_MASK)
   {
-    size = (size + (ALLOC_ALIGN - 1)) & ~(ALLOC_ALIGN - 1);
+    size = (size + ALIGN_MASK) & ~ALIGN_MASK;
   }
 
   if (bp == NULL)
   {
-    return seds_alloc(size, timeout);
+    return reserve_alloc(size, timeout);
   }
 
   void *ptr;
+  UINT st;
+  
+  for (fu8 k = 0; k < POOL_RETRIES; ++k)
+  {
+    st = tx_byte_allocate(bp, &ptr, size, timeout);
 
-  if (tx_byte_allocate(bp, &ptr, size, timeout) == TX_SUCCESS)
+    if (st == TX_SUCCESS)
+    {
+      break;
+    }
+  }
+
+  if (st == TX_SUCCESS)
   {
     return ptr;
   }
+  else if (!rate_limited)
+  {
+    rate_limited = true;
+    fc_msg cmd = fc_mask(Log_Rate_Limit);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  }
 
-  return seds_alloc(size, timeout);
+  return reserve_alloc(size, timeout);
 }
 
 static inline conditional void fchook_free(void *ptr)
 {
-  if (ptr == NULL)
+  tx_byte_release(ptr);  
+}
+
+void try_allocate_reserve_pool(void)
+{
+  extern uint8_t _end[];
+  extern uint8_t _estack[];
+  static uint8_t *curr_heap = NULL;
+
+  if (curr_heap == NULL)
   {
+    uintptr_t aligned_end = ((uintptr_t)_end + 3) & ~3;
+    curr_heap = (uint8_t *)aligned_end;
+  }
+
+  uintptr_t stack_top = (uintptr_t)_estack;
+  uintptr_t heap_limit = stack_top - MSP_STACK_MARGIN;
+
+  heap_limit &= ~3;
+
+  if ((uintptr_t)curr_heap >= heap_limit)
+  {
+    blink(Green, false, 2);
+    blink(Blue, true, 4);
     return;
   }
-  if (!seds_free(ptr))
+
+  size_t psize = (size_t)(heap_limit - (uintptr_t)curr_heap);
+
+  if (tx_byte_pool_create(&reserve, "RES",
+                          curr_heap, psize) != TX_SUCCESS)
   {
-    tx_byte_release(ptr);
+    Error_Handler(); 
   }
+
+  curr_heap = (uint8_t *)heap_limit;
 }
 
 

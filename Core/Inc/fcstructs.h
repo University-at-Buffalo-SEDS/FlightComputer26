@@ -42,11 +42,6 @@ typedef struct led_gpio {
   uint16_t pin;
 } led_gpio;
 
-typedef struct hungry_alloc_hdr {
-  size_t size;
-  struct hungry_alloc_hdr *next;
-} greedy_hdr;
-
 
 /* Kalman filter */
 
@@ -197,6 +192,7 @@ typedef enum flight_message : fu32 {
   Postinit_Signal  = Actionable_Decrees + 1,
   Launch_Signal    = Actionable_Decrees + 2,
   Rollback_Signal  = Actionable_Decrees + 3,
+
   Deploy_Parachute = Actionable_Decrees + 4,
   Expand_Parachute = Actionable_Decrees + 5,
   Reinit_Sensors   = Actionable_Decrees + 6,
@@ -208,6 +204,10 @@ typedef enum flight_message : fu32 {
   Evaluation_Abort = Actionable_Decrees + 12,
   Advance_State    = Actionable_Decrees + 13,
   Rewind_State     = Actionable_Decrees + 14,
+
+  Log_Rate_Limit   = Actionable_Decrees + 15,
+  Log_Restrict     = Actionable_Decrees + 16,
+  Log_Terminate    = Actionable_Decrees + 17,
 
   GPS_Data_Code = (1u << 18),
 
@@ -270,6 +270,10 @@ typedef struct cm_align system_monitor {
   volatile fu16 failures;
   volatile fu8 triggers;
 } sysmon;
+
+typedef struct telemetry_log_rates {
+  fu32 sd, gnd;
+} log_rates;
 
 typedef enum sensor_init_mask : fu8 {
   Baro_Mask = (1u << 0),

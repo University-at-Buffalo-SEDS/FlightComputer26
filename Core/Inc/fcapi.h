@@ -77,6 +77,10 @@ extern atomic_uint_fast32_t g_conf;
 
 extern TX_BYTE_POOL *tx_app_shared;
 
+extern volatile log_rates rates;
+
+void try_allocate_reserve_pool(void);
+
 static inline void clear_spi1_irq(void)
 {
   irq_off(SPI1_GLOBAL_IRQ);

@@ -13,7 +13,7 @@ Usage:  `python build.py [PRESET] [OPTIONS]`
 PRESET: debug   - default, with debug symbols (O0 or Og)
 	release	- strips debug symbols (O3 or O3 + LTO)
 
-OPTIONS: (any option not specified -> opposite is true)
+OPTIONS: (option not specified -> opposite is true)
 
 	flash-dfu       Download executable to eabi target.
                         Prereq: dfu-utils.
@@ -72,7 +72,7 @@ OPTIONS: (any option not specified -> opposite is true)
         manualconfirm   Prompt the user to confirm critical actions
                         within a specified timeout. Recommended.
 
-        exspin          For linked libraries, use wakeyield spinlock
+        exspinlock      For linked libraries, use wakeyield spinlock
                         instead of TX mutex. Experimental.
 """
 
@@ -113,7 +113,7 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "lunatic",
                         "simulation",
                         "manualconfirm",
-                        "exspin",
+                        "exspinlock",
                 }
 
 # Repo constants
@@ -240,7 +240,7 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["manualconfirm"]:
                 manualconfirm   = "-DMANUAL_CONFIRM=ON"
 
-        if options["exspin"]:
+        if options["exspinlock"]:
                 exspin = "-DEXPORT_SPINLOCK=ON"
 
         cmake_args = [

@@ -5,6 +5,7 @@
 #include "fcapi.h"
 #include "fctasks.h"
 #include "can_bus.h"
+#include "simulation.h"
 
 #define id "TE "
 
@@ -640,9 +641,9 @@ TX_THREAD telemetry_task;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
 
-static tx_align CHAR static_pool[TLMT_STACK_BYTES * 7];
+static tx_align CHAR static_pool[TELEMETRY_HEAP];
 
-void telemetry_task_entry(ULONG _)
+void telemetry_entry(ULONG _)
 {
   can_bus_init(&hfdcan1);
 
@@ -660,20 +661,20 @@ void telemetry_task_entry(ULONG _)
   }
 }
 
-UINT create_telemetry_task(void)
+UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
 {
   UINT st;
   CHAR *ptr;
 
   st = tx_byte_pool_create(&telemetry_pool, id "bp",
-                           static_pool, TLMT_STACK_BYTES * 7);
+                           static_pool, TELEMETRY_HEAP);
 
   if (st != TX_SUCCESS)
   {
     return TX_POOL_ERROR;
   }
 
-  st = tx_byte_allocate(&telemetry_pool, (VOID**) &ptr,
+  st = tx_byte_allocate(shared_pool, (VOID**) &ptr,
                         TLMT_STACK_BYTES, TX_NO_WAIT);
 
   if (st != TX_SUCCESS)
@@ -683,7 +684,7 @@ UINT create_telemetry_task(void)
 
   st = tx_thread_create(&telemetry_task,
                         "Telemetry Task",
-                        telemetry_task_entry,
+                        telemetry_entry,
                         TLMT_INPUT,
                         ptr,
                         TLMT_STACK_BYTES,
