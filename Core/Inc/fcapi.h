@@ -175,6 +175,17 @@ static inline fu32 timer_fetch(timer u)
   return now_ms() - local_time[u];
 }
 
+static inline bool timer_probe(timer u, fu32 timeout)
+{
+  if (timer_fetch(u) >= timeout)
+  {
+    timer_update(u);
+    return true;
+  }
+  
+  return false;
+}
+
 
 /* Flight state helpers */
 
@@ -261,17 +272,23 @@ static inline bool expand_parachute(void)
 
 /* Spinlock */
 
-static inline void fc_lock(spinlock *object)
+static inline bool fc_lock(spinlock *object, bool suspend)
 {
   fu8 unlocked = 0;
 
   while (!cas_strong(&object->lock, &unlocked, 1, Acq, Rlx))
   {
+    if (!suspend)
+    {
+      return false;
+    }
     unlocked = 0;
     fetch_add(&object->waiters, 1, Rel);
     tx_thread_relinquish();
     fetch_sub(&object->waiters, 1, Rlx);
   }
+
+  return true;
 }
 
 static inline void fc_unlock(spinlock *object, bool yield)

@@ -409,14 +409,16 @@ static inline void process_action(fc_msg cmd, bool internal)
       break;
 
     case Log_Restrict:
-      rates.sd = LOG_RATE_SD_LTD * 2;
-      rates.gnd = 0;
+      rates.sd = LOG_RATE_SD_LTD * 4;
+      rates.gnd = UINT_FAST32_MAX;
       log_err(id "WARNING: using shared stack pool");
       break;
 
     case Log_Terminate:
-      rates.sd = 0;
+      rates.sd = UINT_FAST32_MAX;
+#ifdef TELEMETRY_ENABLED
       tx_thread_terminate(&telemetry_task);
+#endif
       break;
 
     default: break;
@@ -681,7 +683,7 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
     {
       g_conf &= ~option(Rollback_Requested);
       sensor_init_supervised(Wild_Mask);
-      timer_update(FillSequence);
+      timer_update(GPSWatchdog);
       tx_thread_resume(&distribution_task);
     }
   }

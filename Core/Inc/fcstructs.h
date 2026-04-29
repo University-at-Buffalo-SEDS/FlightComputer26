@@ -17,11 +17,17 @@ typedef enum relative_timer : fu8 {
   HeartbeatGND,
   AssertCO2,
   AssertREEF,
-  FillSequence,
+  GPSWatchdog,
   Auxiliary,
   PostinitCmd,
   LaunchCmd,
   RollbackCmd,
+  BaroGround,
+  BaroLog,
+  IMUGround,
+  IMULog,
+  KFGround,
+  KFLog,
 
   Time_Users
 } timer;
@@ -164,6 +170,12 @@ typedef enum global_state : uint8_t {
   Global_States
 } gnd_state;
 
+typedef enum logging_endpoint_type : fu8 {
+  None,
+  Local,
+  Remote,
+} log_ep;
+
 typedef struct cm_align state_metadata {
   atomic_uint_fast8_t flight;
   uint8_t global_state;
@@ -268,7 +280,7 @@ typedef struct cm_align system_monitor {
   fu16 to_abort, to_reinit;
   fu16 gps_delay, gps_malform;
   volatile fu16 failures;
-  volatile fu8 triggers;
+  volatile fu16 triggers;
 } sysmon;
 
 typedef struct telemetry_log_rates {

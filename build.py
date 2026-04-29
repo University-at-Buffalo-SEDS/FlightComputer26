@@ -74,6 +74,8 @@ OPTIONS: (option not specified -> opposite is true)
 
         exspinlock      For linked libraries, use wakeyield spinlock
                         instead of TX mutex. Experimental.
+
+        alloctest       Test exported allocator in Core/Src/fchooks.c.
 """
 
 from __future__ import annotations
@@ -114,6 +116,7 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "simulation",
                         "manualconfirm",
                         "exspinlock",
+                        "alloctest",
                 }
 
 # Repo constants
@@ -196,6 +199,7 @@ def configure(buildir: Path, preset: str, options: dict):
         simul           = "-DSWAP_CONFIG=OFF"
         manualconfirm   = "-DMANUAL_CONFIRM=OFF"
         exspin          = "-DEXPORT_SPINLOCK=OFF"
+        alloctest       = "-DALLOC_TEST=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -209,6 +213,8 @@ def configure(buildir: Path, preset: str, options: dict):
                         gps = "-DEXTERNAL_GPS=OFF"
                 if options["nosd"]:
                         sd = "-DONBOARD_SD=OFF"
+                if options["alloctest"]:
+                        alloctest = "-DALLOC_TEST=ON"
 
         if options["nousb"]:
                         usb = "-DUSB_ENUM=OFF"
@@ -263,6 +269,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 simul,
                 manualconfirm,
                 exspin,
+                alloctest,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

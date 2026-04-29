@@ -144,6 +144,7 @@ option(DEBUG_MATH       "Report failures of math fns"   OFF)
 option(IGNORE_STATES    "Disable recovery state checks" OFF)
 option(SWAP_CONFIG      "Use simulation user config"    OFF)
 option(EXPORT_SPINLOCK  "Use spinlock in hooked libs"   OFF)
+option(ALLOC_TEST       "Test exported allocator."      OFF)
 
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
 message(STATUS "External GPS:           ${EXTERNAL_GPS}")
@@ -159,6 +160,7 @@ message(STATUS "Math debugging:         ${DEBUG_MATH}")
 message(STATUS "Ignore states:          ${IGNORE_STATES}")
 message(STATUS "Simulation:             ${SWAP_CONFIG}")
 message(STATUS "Export spinlock:        ${EXPORT_SPINLOCK}")
+message(STATUS "Test allocator:         ${ALLOC_TEST}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
@@ -216,6 +218,10 @@ endif()
 
 if (EXPORT_SPINLOCK)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE EXPORT_SPINLOCK)
+endif()
+
+if (ALLOC_TEST)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_ALLOC)
 endif()
 
 if (CUSTOM_FLAGS)

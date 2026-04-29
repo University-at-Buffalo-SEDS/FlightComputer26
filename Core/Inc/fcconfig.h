@@ -26,9 +26,9 @@
 #define POOL_RETRIES 3
 
 #define LOG_RATE_SD	 			1
-#define LOG_RATE_GND 			7
-#define LOG_RATE_SD_LTD  	2
-#define LOG_RATE_GND_LTD	15
+#define LOG_RATE_GND 			40
+#define LOG_RATE_SD_LTD  	20
+#define LOG_RATE_GND_LTD	400
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */

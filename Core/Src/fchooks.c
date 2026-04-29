@@ -19,6 +19,8 @@ static volatile conditional bool mu_hint = 0;
 
 static TX_BYTE_POOL reserve;
 
+static spinlock alloc_lock = {0};
+
 #ifdef EXPORT_SPINLOCK
 static spinlock external_lock = {0};
 #endif
@@ -173,6 +175,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
   if (st == TX_SUCCESS)
   {
+    fc_unlock(&alloc_lock, false);
     return ptr;
   }
   else if (!restricted)
@@ -198,6 +201,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
     return NULL;
   }
 
+  fc_unlock(&alloc_lock, false);
   return ptr;
 }
 
@@ -205,6 +209,8 @@ static inline conditional void *
 fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 {
   static bool rate_limited = false;
+
+  fc_lock(&alloc_lock, true);
 
   if (size == 0)
   {
@@ -231,10 +237,18 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
     {
       break;
     }
+#ifdef TEST_ALLOC
+    else
+    {
+      blink(Green, false, st);
+      blink(Blue, false, 1);
+    }
+#endif
   }
 
   if (st == TX_SUCCESS)
   {
+    fc_unlock(&alloc_lock, false);
     return ptr;
   }
   else if (!rate_limited)
@@ -249,7 +263,9 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 
 static inline conditional void fchook_free(void *ptr)
 {
+  fc_lock(&alloc_lock, true);
   tx_byte_release(ptr);  
+  fc_unlock(&alloc_lock, false);
 }
 
 void try_allocate_reserve_pool(void)

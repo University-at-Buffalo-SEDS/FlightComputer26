@@ -375,7 +375,7 @@ void ascent_initialize(fu32 conf)
 
 void ascent_predict(const float dt, fu32 conf)
 {
-  fc_lock(&meas_locks[0]);
+  fc_lock(&meas_locks[0], true);
 
   f_xyz w = meas.gyro;
   f_xyz a = meas.accl;
@@ -458,7 +458,7 @@ void ascent_predict(const float dt, fu32 conf)
 
 void ascent_update(void)
 {
-  fc_lock(&meas_locks[1]);
+  fc_lock(&meas_locks[1], true);
 
   const float baroz_innv = meas.baro.alt - imedsv.alt;
 
@@ -520,4 +520,6 @@ void ascent_update(void)
   memcpy(v_sv1.pData, &kf.P_stacov, fbyte(EKF_STATE_SQ));
 
   mx_mul(&v_sv0, &v_sv1, &kf.mxp);
+
+  kffree(start);
 }

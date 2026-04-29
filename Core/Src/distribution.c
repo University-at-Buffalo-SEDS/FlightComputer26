@@ -216,7 +216,7 @@ watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
   if (conf & option(GPS_Available) &&
       fetch_gps_data(&meas.gps))
   {
-    *acc += fsec(timer_exchange(FillSequence));
+    *acc += fsec(timer_exchange(GPSWatchdog));
 
     rail = meas.gps;
 
@@ -544,7 +544,7 @@ static inline void for_ascent_update(fu32 conf)
   if (try_fetch_baro(&baro_suspect) &&
       validate_baro(&baro_suspect, conf))
   {
-    fc_lock(&meas_locks[1]);
+    fc_lock(&meas_locks[1], true);
     meas.baro = baro_suspect;
     fc_unlock(&meas_locks[1], true);
   }
@@ -590,7 +590,7 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
     return;
   }
 
-  fc_lock(&meas_locks[0]);
+  fc_lock(&meas_locks[0], true);
 
   meas.gyro = accum_gyro;
   meas.accl = accum_accl;

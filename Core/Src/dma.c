@@ -27,9 +27,9 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
   [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
 };
 
-static volatile uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
+static volatile cm_align uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
 
-static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
+static cm_align uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
 static spinlock dma_locks[Sensors] = {0};
 
@@ -53,7 +53,7 @@ bool try_fetch_baro(baro *buf)
 
   sweetbench_catch(0);
 
-  fc_lock(&dma_locks[Sensor_Baro]);
+  fc_lock(&dma_locks[Sensor_Baro], true);
 
   pres = U24(taskrx[Sensor_Baro][0],
              taskrx[Sensor_Baro][1],
@@ -87,7 +87,7 @@ bool try_fetch_gyro(f_xyz *buf)
 
   sweetbench_catch(1);
 
-  fc_lock(&dma_locks[Sensor_Gyro]);
+  fc_lock(&dma_locks[Sensor_Gyro], true);
 
   gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
   gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
@@ -117,7 +117,7 @@ bool try_fetch_accl(f_xyz *buf)
 
   sweetbench_catch(2);
 
-  fc_lock(&dma_locks[Sensor_Accl]);
+  fc_lock(&dma_locks[Sensor_Accl], true);
 
   ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
   ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
@@ -162,7 +162,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
 static inline void propagate_rx(void)
 {
-  fc_lock(&dma_locks[select.next]);
+  fc_lock(&dma_locks[select.next], true);
 
   memcpy(taskrx[select.next],
          (uint8_t *)(dmarx + gpio.offset[select.next]),
