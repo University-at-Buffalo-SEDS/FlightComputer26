@@ -125,17 +125,18 @@
 #define fc_mask(message)   ((message) | FlightComputer_Mask)
 #define fc_unmask(message) ((message) & ~FlightComputer_Mask)
 
+#define maxd(a, b) ((a) > (b) ? (a) : (b))
+#define mind(a, b) ((a) < (b) ? (a) : (b))
+#define maxq(a, b, c, d) maxd(maxd(a, b), maxd(c, d))
+
 #define msmcode(code) (fu32)((code) & ~Sensor_Measm_Code)
 
 #define option(opt) ((opt) & ~Runtime_Configuration)
 #define revoke(opt) ((opt) | Revoke_Option)
 
-#define threshold(raw) ((raw) & MAX_THRESHOLD)
+#define threshold(raw) mind((raw), MAX_THRESHOLD)
 
 #define namecount(arr) (sizeof(arr) / sizeof(conf_dict))
-
-#define maxd(a, b) ((a) > (b) ? (a) : (b))
-#define maxq(a, b, c, d) maxd(maxd(a, b), maxd(c, d))
 
 #define fsec(ms) ((float)(ms) * 0.001f)
 #define fbyte(f) ((f) * sizeof(float))

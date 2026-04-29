@@ -272,6 +272,7 @@ void descent_update(void)
   {
     /* Dead reckon from Predict */
     memcpy(dkf_view(&svec(0)), dkf_view(&imedsv), fbyte(DKF_STATE));
+    kffree(start);
     return;
   }
 
