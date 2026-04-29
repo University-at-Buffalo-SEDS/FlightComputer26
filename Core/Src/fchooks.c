@@ -272,35 +272,27 @@ void try_allocate_reserve_pool(void)
 {
   extern uint8_t _end[];
   extern uint8_t _estack[];
-  static uint8_t *curr_heap = NULL;
 
-  if (curr_heap == NULL)
+  uintptr_t brk = ((uintptr_t)_end + ALIGN_MASK) & ~ALIGN_MASK;
+  uintptr_t lim = ((uintptr_t)_estack - MSP_STACK_MARGIN);
+
+  if (brk >= lim)
   {
-    uintptr_t aligned_end = ((uintptr_t)_end + 3) & ~3;
-    curr_heap = (uint8_t *)aligned_end;
-  }
-
-  uintptr_t stack_top = (uintptr_t)_estack;
-  uintptr_t heap_limit = stack_top - MSP_STACK_MARGIN;
-
-  heap_limit &= ~3;
-
-  if ((uintptr_t)curr_heap >= heap_limit)
-  {
-    blink(Green, false, 2);
-    blink(Blue, true, 4);
     return;
   }
 
-  size_t psize = (size_t)(heap_limit - (uintptr_t)curr_heap);
+  size_t psize = (size_t)(lim - brk);
 
-  if (tx_byte_pool_create(&reserve, "RES",
-                          curr_heap, psize) != TX_SUCCESS)
+  void *checkout = _sbrk(psize);
+
+  if (checkout == (void *)-1)
   {
-    Error_Handler(); 
+    if (tx_byte_pool_create(&reserve, "RES", 
+                            checkout, psize) != TX_SUCCESS)
+    {
+      Error_Handler();
+    }
   }
-
-  curr_heap = (uint8_t *)heap_limit;
 }
 
 
