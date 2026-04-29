@@ -136,10 +136,10 @@ static inline void euler_to_quat(eul *ang)
   float init_quat[EKF_STATE];
 
   *((quat *)init_quat) = qv;
-  init_quat[EKF_STATE - 2] = 0.0f; /* Fake alt, vel */
+  init_quat[EKF_STATE - 2] = 0.0f;
   init_quat[EKF_STATE - 1] = 0.0f;
 
-  log_ascent_state(init_quat);
+  log_f(SEDS_DT_ASCENT_STATE, EKF_STATE, init_quat);
 }
 
 void accel_to_quaternion(const f_xyz *accl)
@@ -155,7 +155,7 @@ void accel_to_quaternion(const f_xyz *accl)
   rep_in_deg.theta = deg(ang.theta);
   rep_in_deg.psi = deg(ang.psi);
 
-  log_euler_angles(&rep_in_deg);
+  log_f(SEDS_DT_EULER_ANGLES, 3, &rep_in_deg);
 
   euler_to_quat(&ang);
 }

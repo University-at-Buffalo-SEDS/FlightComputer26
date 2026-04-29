@@ -82,6 +82,7 @@ static inline fc_msg decode_cmd(const uint8_t *k)
 
 #endif /* TELEMETRY_CMD_COMPAT */
 
+
 /* GPS coordinates handling */
 
 static inline void enqueue_raw_coords(const uint8_t *buf)
@@ -207,7 +208,7 @@ static inline void to_relative_coords(kf_gps *buf)
 #endif
 }
 
-static inline fu32
+static inline void
 watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
 {
 #ifdef GPS_AVAILABLE
@@ -225,12 +226,12 @@ watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
       log_err(id "new GPS reference "
                  "LAT: %f, LON: %f", rail.lat, rail.lon);
     }
+
+    if (*++ctr % GPS_DELAY_MS)
+    {
+      log_metric(id "GPS interval", *acc / *ctr, false);
+    }
   }
-
-  return ++*ctr;
-
-#else
-  return 0;
 
 #endif /* GPS_AVAILABLE */
 }
@@ -431,12 +432,39 @@ validate_all(const measm *buf, fu32 conf)
 }
 
 
+/* Measurement logging */
+
+static inline bool maybe_log_measm(devid dev, const void *buf)
+{
+  static const log_lookup mems[MEMS_Devices] = {
+    [IMU]  = {IMULocal, IMURemote, 6, 0 /* TODO */, 0 /* TODO */},
+    [Baro] = {BaroLocal, BaroRemote, 3, 0 /* TODO */, SEDS_DT_BAROMETER_DATA},
+  };
+
+  bool recorded = false;
+
+  if (timer_probe(mems[dev].tim_sd, rates.sd))
+  {
+    log_f(mems[dev].kind_sd, mems[dev].size, buf);
+    recorded = true;
+  }
+
+  if (timer_probe(mems[dev].tim_gnd, rates.gnd))
+  {
+    log_f(mems[dev].kind_gnd, mems[dev].size, buf);
+    recorded = true;
+  }
+
+  return recorded;
+}
+
+
 /* Stage 0 of fill sequence */
 
 static inline void data_streaming_mode(void)
 {
   float acc_baro = 0.0f, acc_gps = 0.0f;
-  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0;
+  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0, imu = 0;
 
   task_loop (conf & option(Postinit_Requested) ||
              conf & option(Rollback_Requested))
@@ -445,26 +473,26 @@ static inline void data_streaming_mode(void)
 
     if (try_fetch_gyro(&meas.gyro))
     {
+      imu |= Gyro_Mask;
       code |= validate_gyro(&meas.gyro, conf) ? 0
                                               : Gyro_Mask;
-      log_measm(SEDS_DT_GYRO_DATA, &meas.gyro);
     }
 
     if (try_fetch_accl(&meas.accl))
     {
+      imu |= Accl_Mask;
       code |= validate_accl(&meas.accl, conf) ? 0
                                               : Accl_Mask;
-      log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
     }
 
     if (try_fetch_baro(&meas.baro))
     {
       acc_baro += fsec(timer_exchange(Auxiliary));
-      log_metric(id "Baro interval", acc_baro / ++ctr_baro, false);
+      ++ctr_baro;
 
       code |= validate_baro(&meas.baro, conf) ? 0
                                               : Baro_Mask;
-      log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
+      maybe_log_measm(Baro, &meas.baro);
     }
 
     if (code != 0)
@@ -472,10 +500,18 @@ static inline void data_streaming_mode(void)
       log_err(id "malformed measm: %u", code);
     }
 
-    if (watch_for_gps_packets(conf, &acc_gps, &ctr_gps) > 0)
+    if ((imu & (Accl_Mask | Gyro_Mask))
+        && maybe_log_measm(IMU, &meas.accl))
     {
-      log_metric(id "GPS interval", acc_gps / ctr_gps, false);
+      imu = 0;
     }
+
+    if (ctr_baro % 61 /* Golang! */)
+    {
+      log_metric(id "Baro interval", acc_baro / ctr_baro, false);
+    }
+
+    watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
 
     tx_thread_relinquish();
 
@@ -489,8 +525,8 @@ static inline void data_streaming_mode(void)
 static inline void post_initialization(void)
 {
   f_xyz accl_acc = {0};
-  float acc_gps = 0.0f;
-  fu32 ctr_gps = 0, ctr_accl = 0;
+  fu32 accl_ctr = 0, gps_ctr = 0;
+  float gps_acc;
 
   fc_msg cmd = option(Reinit_Sensors);
   tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
@@ -503,32 +539,30 @@ static inline void post_initialization(void)
   {
     if (try_fetch_accl(&meas.accl))
     {
-      log_measm(SEDS_DT_ACCEL_DATA, &meas.accl);
+      if (timer_probe(IMURemote, rates.gnd))
+      {
+        log_f(SEDS_DT_ACCEL_DATA, 3, &meas.accl);
+      }
 
       if (validate_accl(&meas.accl, conf))
       {
         accl_acc.x += meas.accl.x;
         accl_acc.y += meas.accl.y;
         accl_acc.z += meas.accl.z;
-        ++ctr_accl;
+        ++accl_ctr;
       }
     }
 
-    (void) watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
+    watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
 
     tx_thread_relinquish();
 
     conf = load(&g_conf, Acq);
   }
 
-  if (ctr_gps > 0)
-  {
-    log_metric(id "Avg GPS (sec)", acc_gps / ctr_gps, true);
-  }
-
-  accl_acc.x /= ctr_accl;
-  accl_acc.y /= ctr_accl;
-  accl_acc.z /= ctr_accl;
+  accl_acc.x /= accl_ctr;
+  accl_acc.y /= accl_ctr;
+  accl_acc.z /= accl_ctr;
 
   accel_to_quaternion(&accl_acc);
 }
@@ -551,7 +585,7 @@ static inline void for_ascent_update(fu32 conf)
 
   tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
 
-  log_measm(SEDS_DT_BAROMETER_DATA, &baro_suspect);
+  maybe_log_measm(Baro, &meas.baro);
 
   sweetbench_catch(8);
 
@@ -591,8 +625,8 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   fc_lock(&meas_locks[IMU]);
 
-  meas.gyro = accum_gyro;
   meas.accl = accum_accl;
+  meas.gyro = accum_gyro;
 
   fc_concede(&meas_locks[IMU]);
 
@@ -600,8 +634,7 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   *imu &= ~(Gyro_Mask | Accl_Mask);
 
-  log_measm(SEDS_DT_GYRO_DATA, &suspect_gyro);
-  log_measm(SEDS_DT_ACCEL_DATA, &suspect_accl);
+  maybe_log_measm(IMU, &meas.accl);
 
   if (conf & option(Eval_Focus_Flag))
   {
@@ -627,7 +660,7 @@ static inline void descent_full_cycle(fu32 conf)
   {
     descent_update();
     stage = EVALUATION_STAGED;
-    log_measm(SEDS_DT_BAROMETER_DATA, &meas.baro);
+    maybe_log_measm(Baro, &meas.baro);
   }
 
   if ((conf & option(GPS_Available)) &&

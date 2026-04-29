@@ -8,7 +8,6 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdatomic.h>
-#include <assert.h> 
 
 #include "fcconfig.h"
 

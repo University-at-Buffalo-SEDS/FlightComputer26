@@ -73,7 +73,7 @@ typedef arm_matrix_instance_f32 matrix;
 
 #define task_loop(exit_predicate) while (!(exit_predicate))
 
-#define popcount(mask) (fu16)__builtin_popcount((unsigned)(mask))
+#define popcount(mask) (fu8)__builtin_popcount((unsigned)(mask))
 
 extern void *_sbrk(ptrdiff_t);
 
@@ -209,9 +209,6 @@ extern FDCAN_HandleTypeDef hfdcan1;
 #include <sedsprintf.h> // IWYU pragma: export
 #include "telemetry.h"  // IWYU pragma: export
 
-extern void telemetry_set_byte_pool(TX_BYTE_POOL *pool);
-extern void telemetry_init_lock(void);
-
 #define log_msg_sync(msg, size)                               \
   log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,             \
                             (msg), (size), sizeof(char))
@@ -233,20 +230,9 @@ extern void telemetry_init_lock(void);
                              (const void *)(state),           \
                              1, sizeof(uint8_t))              \
 
-#define log_measm(k, buf)                                     \
-  log_telemetry_asynchronous((k), (buf), 3, sizeof(float))
-
-#define log_ascent_state(buf)                                 \
-  log_telemetry_asynchronous(SEDS_DT_ASCENT_STATE, (buf),     \
-                             EKF_STATE, sizeof(float))
-
-#define log_descent_state(buf)                                \
-  log_telemetry_asynchronous(SEDS_DT_DESCENT_STATE, (buf),    \
-                             DKF_STATE, sizeof(float))
-
-#define log_euler_angles(buf)                                 \
-  log_telemetry_asynchronous(SEDS_DT_EULER_ANGLES, (buf),     \
-                             3, sizeof(float))
+#define log_f(type, amount, buf)                              \
+  log_telemetry_asynchronous((type), (buf), (amount),         \
+                             sizeof(float))
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
@@ -292,31 +278,10 @@ extern void telemetry_init_lock(void);
 #define log_flight_state(state)                               \
   printf("Flight state propagated to %u\n", *(state))
 
-#define log_measm(type, buf)                                  \
+#define log_f(type, amount, buf)                              \
   do {                                                        \
-    printf("Measurement: %s\n", #type);                       \
-    fwrite((buf), sizeof(float), 3, stdout);                  \
-    putchar('\n');                                            \
-  } while (0)
-
-#define log_ascent_state(buf)                                 \
-  do {                                                        \
-    printf("Ascent state:\n");                                \
-    fwrite((buf), sizeof(float), EKF_STATE, stdout);          \
-    putchar('\n');                                            \
-  } while (0)
-
-#define log_descent_state(buf)                                \
-  do {                                                        \
-    printf("Descent state:\n");                               \
-    fwrite((buf), sizeof(float), DKF_STATE, stdout);          \
-    putchar('\n');                                            \
-  } while (0)
-
-#define log_euler_angles(buf)                                 \
-  do {                                                        \
-    printf("Euler angles:\n");                                \
-    fwrite((buf), sizeof(float), 3, stdout);                  \
+    printf("%s: ", #type);                                    \
+    fwrite((buf), sizeof(float), (amount), stdout);           \
     putchar('\n');                                            \
   } while (0)
 
@@ -360,12 +325,7 @@ extern void telemetry_init_lock(void);
 
 #define log_flight_state(state)
 
-#define log_measm(type, buf) 
-
-#define log_ascent_state(buf) 
-#define log_descent_state(buf) 
-
-#define log_euler_angles(buf) ((void)(buf))
+#define log_f(type, buf) 
 
 #define log_err_sync(fmt, ...) 
 #define log_die(fmt, ...) Error_Handler()

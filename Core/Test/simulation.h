@@ -3,6 +3,8 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#ifdef SIMULATION_CONFIG
+
 
 /* IREC 2026 */
 
@@ -148,4 +150,5 @@
 #define LED_BLINKS_ON_REEF 20
 
 
+#endif /* SIMULATION_CONFIG */
 #endif /* SIMULATION_H */

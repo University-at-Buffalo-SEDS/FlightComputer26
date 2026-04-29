@@ -129,7 +129,7 @@ static inline void crew_send_coords(fu32 mode)
     return;
   }
 
-  log_measm(SEDS_DT_GPS_DATA, &meas.gps);
+  log_f(SEDS_DT_GPS_DATA, 3, &meas.gps);
 
   tx_thread_sleep(LANDED_GPS_INTERVAL);
 
@@ -267,17 +267,38 @@ static inline void stabilize(fu32 steps)
 
 static inline void propel_kalman_state(fu32 conf)
 {
+  fu16 kind_sd, kind_gnd, elements;
+  float tmp[MAX_STATE];
+
   if (conf & option(Using_Ascent_KF))
   {
-    float tmp[EKF_STATE];
-
     *((quat *)tmp) = qv;
-    tmp[EKF_STATE - 2] = svec(0).alt;
-    tmp[EKF_STATE - 1] = svec(0).vel;
-
-    log_ascent_state(tmp);
+    tmp[4] = svec(0).alt;
+    tmp[5] = svec(0).vel;
+    kind_sd = 0; // FIXME
+    kind_gnd = SEDS_DT_ASCENT_STATE;
+    elements = EKF_STATE;
   }
-  else log_descent_state(dkf_view(&svec(0)));
+  else
+  {
+    tmp[0] = svec(0).gps.lon;
+    tmp[1] = svec(0).gps.lat;
+    tmp[2] = svec(0).alt;
+    tmp[3] = svec(0).vel;
+    kind_sd = 0; // FIXME
+    kind_gnd = SEDS_DT_DESCENT_STATE;
+    elements = DKF_STATE;
+  }
+
+  if (timer_probe(KFLocal, rates.sd))
+  {
+    log_f(kind_sd, elements, tmp);
+  }
+
+  if (timer_probe(KFLocal, rates.gnd))
+  {
+    log_f(kind_gnd, elements, tmp);
+  }
 
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }

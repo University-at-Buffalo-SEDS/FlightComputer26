@@ -22,12 +22,12 @@ typedef enum relative_timer : fu8 {
   PostinitCmd,
   LaunchCmd,
   RollbackCmd,
-  BaroGround,
-  BaroLog,
-  IMUGround,
-  IMULog,
-  KFGround,
-  KFLog,
+  BaroLocal,
+  BaroRemote,
+  IMULocal,
+  IMURemote,
+  KFLocal,
+  KFRemote,
 
   Time_Users
 } timer;
@@ -58,6 +58,11 @@ typedef enum logger_bound_mask : fu8 {
 typedef struct telemetry_log_rates {
   fu32 sd, gnd;
 } log_rates;
+
+typedef struct bounded_logger_lookup {
+  fu8 tim_sd, tim_gnd, size;
+  fu16 kind_sd, kind_gnd;
+} log_lookup;
 
 
 /* Kalman filter */
