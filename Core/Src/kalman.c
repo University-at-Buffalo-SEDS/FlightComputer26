@@ -376,12 +376,12 @@ void ascent_initialize(fu32 conf)
 
 void ascent_predict(const float dt, fu32 conf)
 {
-  fc_lock(&meas_locks[0], true);
+  fc_lock(&meas_locks[IMU]);
 
   f_xyz w = meas.gyro;
   f_xyz a = meas.accl;
 
-  fc_unlock(&meas_locks[0], false);
+  fc_unlock(&meas_locks[IMU]);
 
   w.x = rad(w.x) - svec(1).bias.gx;
   w.y = rad(w.y) - svec(1).bias.gy;
@@ -459,11 +459,11 @@ void ascent_predict(const float dt, fu32 conf)
 
 void ascent_update(void)
 {
-  fc_lock(&meas_locks[1], true);
+  fc_lock(&meas_locks[Baro]);
 
   const float baroz_innv = meas.baro.alt - imedsv.alt;
 
-  fc_unlock(&meas_locks[1], false);
+  fc_unlock(&meas_locks[Baro]);
 
   float *start = kfalloc(EKF_UPDATE_BYTES);
   

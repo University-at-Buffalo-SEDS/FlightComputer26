@@ -16,7 +16,7 @@ TX_THREAD distribution_task;
 
 measm meas = {0};
 
-spinlock meas_locks[Sensors - 1] = {0};
+spinlock meas_locks[MEMS_Devices] = {0};
 
 #ifdef GPS_AVAILABLE
 
@@ -543,9 +543,9 @@ static inline void for_ascent_update(fu32 conf)
   if (try_fetch_baro(&baro_suspect) &&
       validate_baro(&baro_suspect, conf))
   {
-    fc_lock(&meas_locks[1], true);
+    fc_lock(&meas_locks[Baro]);
     meas.baro = baro_suspect;
-    fc_unlock(&meas_locks[1], true);
+    fc_concede(&meas_locks[Baro]);
   }
   else return;
 
@@ -589,12 +589,12 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
     return;
   }
 
-  fc_lock(&meas_locks[0], true);
+  fc_lock(&meas_locks[IMU]);
 
   meas.gyro = accum_gyro;
   meas.accl = accum_accl;
 
-  fc_unlock(&meas_locks[0], true);
+  fc_concede(&meas_locks[IMU]);
 
   tx_event_flags_set(&eval_stage, Gyro_Mask | Accl_Mask, TX_OR);
 

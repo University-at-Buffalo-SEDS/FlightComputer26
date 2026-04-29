@@ -270,35 +270,37 @@ static inline bool expand_parachute(void)
 }
 
 
-/* Spinlock */
+/* Single-threaded spinlock */
 
-static inline bool fc_lock(spinlock *object, bool suspend)
+static inline void fc_lock(spinlock *object)
 {
   fu8 unlocked = 0;
 
-  while (!cas_strong(&object->lock, &unlocked, 1, Acq, Rlx))
+  while (!cas_weak(&object->lock, &unlocked, 1, Acq, Rlx))
   {
-    if (!suspend)
-    {
-      return false;
-    }
     unlocked = 0;
     fetch_add(&object->waiters, 1, Rel);
     tx_thread_relinquish();
     fetch_sub(&object->waiters, 1, Rlx);
   }
-
-  return true;
 }
 
-static inline void fc_unlock(spinlock *object, bool yield)
+static inline bool fc_trylock(spinlock *object)
+{
+  fu8 unlocked = 0;
+  return cas_strong(&object->lock, &unlocked, 1, Acq, Rlx);
+}
+
+static inline void fc_unlock(spinlock *object)
 {
   store(&object->lock, 0, Rel);
+}
 
-  /* Wakeyield: for single-core, signle data cache,
-                with a FIFO queue for scheduler threadpool */
+static inline void fc_concede(spinlock *object)
+{
+  fc_unlock(object);
 
-  if (yield && load(&object->waiters, Acq) > 0)
+  if (load(&object->waiters, Acq) > 0)
   {
     tx_thread_relinquish();
   }

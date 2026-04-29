@@ -12,7 +12,7 @@
 
 static volatile fu32 lock_fails = 0;
 static volatile fu32 unlock_fails = 0;
-static volatile fu32 alloc_fails = 0;
+static volatile fu32 alloc_leaks = 0;
 
 static volatile conditional bool mem_hint = 0;
 static volatile conditional bool mu_hint = 0;
@@ -168,19 +168,26 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
 
 static inline void *reserve_alloc(size_t size, size_t timeout)
 {
-  static bool restricted = false;
+  static fu8 log_state = Log_User_Bound;
+
+  if (log_state < Log_Rate_Bound)
+  {
+    log_state = Log_Rate_Bound;
+    fc_msg cmd = fc_mask(Log_Rate_Limit);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  }
 
   void *ptr;
   UINT st = tx_byte_allocate(&reserve, &ptr, size, timeout);
 
   if (st == TX_SUCCESS)
   {
-    fc_unlock(&alloc_lock, false);
+    fc_unlock(&alloc_lock);
     return ptr;
   }
-  else if (!restricted)
+  else if (log_state < Log_Local_Bound)
   {
-    restricted = true;
+    log_state = Log_Local_Bound;
     fc_msg cmd = fc_mask(Log_Restrict);
     tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
@@ -189,6 +196,8 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
   while (st != TX_SUCCESS)
   {
+    ++alloc_leaks;
+
     do {
       fc_msg cmd = fc_mask(Log_Terminate);
       st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
@@ -197,20 +206,17 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
     /* Assert unreachable */
 
-    ++alloc_fails;
     return NULL;
   }
 
-  fc_unlock(&alloc_lock, false);
+  fc_unlock(&alloc_lock);
   return ptr;
 }
 
 static inline conditional void *
 fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 {
-  static bool rate_limited = false;
-
-  fc_lock(&alloc_lock, true);
+  fc_lock(&alloc_lock);
 
   if (size == 0)
   {
@@ -248,14 +254,8 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 
   if (st == TX_SUCCESS)
   {
-    fc_unlock(&alloc_lock, false);
+    fc_unlock(&alloc_lock);
     return ptr;
-  }
-  else if (!rate_limited)
-  {
-    rate_limited = true;
-    fc_msg cmd = fc_mask(Log_Rate_Limit);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 
   return reserve_alloc(size, timeout);
@@ -263,9 +263,9 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 
 static inline conditional void fchook_free(void *ptr)
 {
-  fc_lock(&alloc_lock, true);
+  fc_lock(&alloc_lock);
   tx_byte_release(ptr);  
-  fc_unlock(&alloc_lock, false);
+  fc_unlock(&alloc_lock);
 }
 
 void try_allocate_reserve_pool(void)
@@ -278,7 +278,7 @@ void try_allocate_reserve_pool(void)
 
   if (brk >= lim)
   {
-    return;
+    goto no_reserve_exit;
   }
 
   size_t psize = (size_t)(lim - brk);
@@ -287,12 +287,16 @@ void try_allocate_reserve_pool(void)
 
   if (checkout == (void *)-1)
   {
-    if (tx_byte_pool_create(&reserve, "RES", 
-                            checkout, psize) != TX_SUCCESS)
-    {
-      Error_Handler();
-    }
+    Error_Handler();
   }
+  else if (tx_byte_pool_create(&reserve, "RES", 
+                               checkout, psize) == TX_SUCCESS)
+  {
+    return;
+  }
+
+no_reserve_exit:
+  log_critical("WARNING: insufficient memory for reserve pool");
 }
 
 
@@ -337,7 +341,7 @@ void telemetryFree(void *pv)
 
 void telemetry_panic_hook(const char *str, size_t len)
 {
-  if (panics_for(str, len, "alloc") || alloc_fails)
+  if (panics_for(str, len, "alloc") || alloc_leaks)
   {
     panic_alloc();
   }

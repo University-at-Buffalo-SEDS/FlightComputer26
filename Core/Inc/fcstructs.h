@@ -36,7 +36,7 @@ typedef struct wakeyield_spinlock {
   atomic_uint_fast8_t lock, waiters;
 } spinlock;
 
-typedef enum led_kind {
+typedef enum led_kind : fu8 {
   Green,
   Blue,
 
@@ -47,6 +47,17 @@ typedef struct led_gpio {
   GPIO_TypeDef *port;
   uint16_t pin;
 } led_gpio;
+
+typedef enum logger_bound_mask : fu8 {
+  Log_User_Bound = 0x0,
+  Log_Rate_Bound = 0x1,
+  Log_Local_Bound = 0x2,
+  Log_Shutdown = 0x4,
+} log_mask;
+
+typedef struct telemetry_log_rates {
+  fu32 sd, gnd;
+} log_rates;
 
 
 /* Kalman filter */
@@ -128,6 +139,13 @@ typedef struct cm_align dma_flags {
   atomic_uint_fast16_t drdy;
   atomic_uint_fast16_t relv;
 } fdma;
+
+typedef enum mems_device_id : fu8 {
+  IMU,
+  Baro,
+
+  MEMS_Devices
+} devid;
 
 
 /* Evaluation */
@@ -282,10 +300,6 @@ typedef struct cm_align system_monitor {
   volatile fu16 failures;
   volatile fu16 triggers;
 } sysmon;
-
-typedef struct telemetry_log_rates {
-  fu32 sd, gnd;
-} log_rates;
 
 typedef enum sensor_init_mask : fu8 {
   Baro_Mask = (1u << 0),

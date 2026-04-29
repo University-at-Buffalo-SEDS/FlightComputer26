@@ -54,7 +54,7 @@ bool try_fetch_baro(baro *buf)
 
   sweetbench_catch(0);
 
-  fc_lock(&dma_locks[Sensor_Baro], true);
+  fc_lock(&dma_locks[Sensor_Baro]);
 
   pres = U24(taskrx[Sensor_Baro][0],
              taskrx[Sensor_Baro][1],
@@ -64,7 +64,7 @@ bool try_fetch_baro(baro *buf)
              taskrx[Sensor_Baro][4],
              taskrx[Sensor_Baro][5]);
 
-  fc_unlock(&dma_locks[Sensor_Baro], false);
+  fc_unlock(&dma_locks[Sensor_Baro]);
 
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
@@ -88,13 +88,13 @@ bool try_fetch_gyro(f_xyz *buf)
 
   sweetbench_catch(1);
 
-  fc_lock(&dma_locks[Sensor_Gyro], true);
+  fc_lock(&dma_locks[Sensor_Gyro]);
 
   gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
   gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
   gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
   
-  fc_unlock(&dma_locks[Sensor_Gyro], false);
+  fc_unlock(&dma_locks[Sensor_Gyro]);
 
   buf->x = gz * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
@@ -118,13 +118,13 @@ bool try_fetch_accl(f_xyz *buf)
 
   sweetbench_catch(2);
 
-  fc_lock(&dma_locks[Sensor_Accl], true);
+  fc_lock(&dma_locks[Sensor_Accl]);
 
   ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
   ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
   az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
   
-  fc_unlock(&dma_locks[Sensor_Accl], false);
+  fc_unlock(&dma_locks[Sensor_Accl]);
 
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
@@ -162,13 +162,13 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
 static inline void propagate_rx(void)
 {
-  fc_lock(&dma_locks[select.next], true);
+  fc_lock(&dma_locks[select.next]);
 
   memcpy(taskrx[select.next],
          (uint8_t *)(dmarx + gpio.offset[select.next]),
          sizeof taskrx / 3);
 
-  fc_unlock(&dma_locks[select.next], true);
+  fc_concede(&dma_locks[select.next]);
 
   fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
 }
