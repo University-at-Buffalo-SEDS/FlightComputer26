@@ -260,13 +260,27 @@ extern FDCAN_HandleTypeDef hfdcan1;
 
 #else /* !TELEMETRY_ENABLED */
 
-#define SEDS_OK  0
-#define SEDS_ERR 1
+typedef enum SedsResult_Debug {
+  SEDS_OK,
+  SEDS_ERR,
+  SEDS_HANDLER_ERROR,
+} SedsResult;
 
-#define SEDS_DT_ASCENT_BIASES  2
-#define SEDS_DT_BAROMETER_DATA "Barometer"
-#define SEDS_DT_GYRO_DATA      "Gyroscope"
-#define SEDS_DT_ACCEL_DATA     "Accelerometer"
+typedef enum SedsDataType_Debug {
+  SEDS_DT_BAROMETER_DATA,
+  SEDS_DT_GYRO_DATA,
+  SEDS_DT_ACCEL_DATA,
+  SEDS_DT_IMU_DATA,
+  SEDS_DT_BAROMETER_LOCAL,
+  SEDS_DT_GYRO_LOCAL,
+  SEDS_DT_ACCL_LOCAL,
+  SEDS_DT_IMU_LOCAL,
+  SEDS_DT_ASCENT_STATE,
+  SEDS_DT_DESCENT_STATE,
+  SEDS_DT_ASCENT_LOCAL,
+  SEDS_DT_DESCENT_LOCAL,
+  SEDS_DT_EULER_ANGLES,
+} SedsDataType;
 
 #ifdef USB_ENUMERATES
 
@@ -276,11 +290,11 @@ extern FDCAN_HandleTypeDef hfdcan1;
   ( (void)( printf("Valve cmd sent: %u\n", cmd) ), SEDS_OK )
 
 #define log_flight_state(state)                               \
-  printf("Flight state propagated to %u\n", *(state))
+  printf("New flight state: %s\n", debug_g_state(*(state)))
 
 #define log_f(type, amount, buf)                              \
   do {                                                        \
-    printf("%s: ", #type);                                    \
+    printf("%s: ", debug_descriptor(type));                   \
     fwrite((buf), sizeof(float), (amount), stdout);           \
     putchar('\n');                                            \
   } while (0)

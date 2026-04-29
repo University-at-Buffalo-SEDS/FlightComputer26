@@ -306,4 +306,55 @@ static inline void fc_concede(spinlock *object)
 }
 
 
+/* Debug type descriptors */
+
+#if !defined(TELEMETRY_ENABLED) && defined(USB_ENUMERATES)
+
+static inline char *debug_descriptor(SedsDataType logged)
+{
+  switch (logged) {
+    case SEDS_DT_BAROMETER_DATA:  return "BaroRemote";
+    case SEDS_DT_GYRO_DATA:       return "GyroRemote";
+    case SEDS_DT_ACCEL_DATA:      return "AccelRemote";
+    case SEDS_DT_IMU_DATA:        return "IMURemote";
+    case SEDS_DT_BAROMETER_LOCAL: return "BaroLocal";
+    case SEDS_DT_GYRO_LOCAL:      return "GyroLocal";
+    case SEDS_DT_ACCL_LOCAL:      return "AccelLocal";
+    case SEDS_DT_IMU_LOCAL:       return "IMULocal";
+    case SEDS_DT_ASCENT_STATE:    return "AscentRemote";
+    case SEDS_DT_DESCENT_STATE:   return "DescentRemote";
+    case SEDS_DT_ASCENT_LOCAL:    return "AscentLocal";
+    case SEDS_DT_DESCENT_LOCAL:   return "DescentLocal";
+    case SEDS_DT_EULER_ANGLES:    return "EulerAngles";
+    default:                      return "SomeRandomData";
+  }
+}
+
+static inline char *debug_g_state(gnd_state state)
+{
+  switch (state) {
+    case G_Startup:       return "Startup";
+    case G_Idle:          return "Idle";
+    case G_PreFill:       return "PreFill";
+    case G_FillTest:      return "FillTest";
+    case G_NitrogenFill:  return "NitrogenFill";
+    case G_NitrousFill:   return "NitrousFill";
+    case G_Postinit:      return "Postinit";
+    case G_Armed:         return "Armed";
+    case G_Launch:        return "Launch";
+    case G_Ascent:        return "Ascent";
+    case G_Coast:         return "Coast";
+    case G_Apogee:        return "Apogee";
+    case G_Descent:       return "Descent";
+    case G_Reefing:       return "Reefing";
+    case G_Landed:        return "Landed";
+    case G_Recovery:      return "Recovery";
+    case G_Aborted:       return "Aborted";
+    default:              return "Unknown";
+  }
+}
+
+#endif /* !TELEMETRY_ENABLED && USB_ENUMERATES */
+
+
 #endif /* FC_API */

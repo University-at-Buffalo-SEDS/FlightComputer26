@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
+#include "fcapi.h"
 #include "testing.h"
 
 
