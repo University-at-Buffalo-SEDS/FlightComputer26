@@ -27,7 +27,11 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
   [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
 };
 
-static volatile cm_align uint8_t dmarx[SENSOR_BUF_SIZE] = {0};
+
+volatile uint8_t dmarx[SENSOR_BUF_SIZE]
+__attribute__((used, section("DMA_NO_CACHE"))) 
+__attribute__((aligned(32)));
+
 
 static cm_align uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
@@ -140,7 +144,6 @@ bool try_fetch_accl(f_xyz *buf)
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
 	gpio_cs_high(select.next);
-  invalidate_dcache_addr_int(dmarx, sizeof dmarx);
   select.valid = 1;
 	tx_thread_wait_abort(&dma_task);
 }

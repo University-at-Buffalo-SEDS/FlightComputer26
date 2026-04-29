@@ -39,8 +39,9 @@ ENTRY(Reset_Handler)
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 272K
+  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 278016
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 512K
+  DMA    (xrw)    : ORIGIN = 0x20043E00,   LENGTH = 512
 }
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
@@ -51,6 +52,13 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 /* Sections */
 SECTIONS
 {
+  DMA_NO_CACHE (NOLOAD) :
+  {
+    . = ALIGN(32);
+    KEEP(*(DMA_NO_CACHE))
+    . = ALIGN(32);
+  } >DMA
+
   /* The startup code into "FLASH" Rom type memory */
   .isr_vector :
   {

@@ -81,6 +81,7 @@ set(STM32_Drivers_Src
 
 
 set(FileX_Src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/drivers/fx_stm32_sd_driver.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fx_directory_attributes_read.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fx_directory_attributes_set.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fx_directory_create.c
@@ -313,7 +314,6 @@ set(FileX_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fxe_unicode_name_get_extended.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fxe_unicode_short_name_get.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/src/fxe_unicode_short_name_get_extended.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/filex/common/drivers/fx_stm32_sd_driver.c
 )
 set(ThreadX_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/threadx/ports/cortex_m33/gnu/src/tx_thread_context_restore.S
