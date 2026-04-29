@@ -10,13 +10,12 @@
 #include "sweetbench.h"
 
 #define id "DI "
-#define pilot "PI "
-#define telid "TE "
 
 
 TX_THREAD distribution_task;
 
 measm meas = {0};
+
 spinlock meas_locks[Sensors - 1] = {0};
 
 #ifdef GPS_AVAILABLE
@@ -297,7 +296,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 
   if (load(&g_conf, Acq) & option(Launch_Requested))
   {
-    log_err(telid "biases rejected mid-flight");
+    log_err(id "biases rejected mid-flight");
     return SEDS_ERR;
   }
 
@@ -461,7 +460,7 @@ static inline void data_streaming_mode(void)
     if (try_fetch_baro(&meas.baro))
     {
       acc_baro += fsec(timer_exchange(Auxiliary));
-      log_metric(pilot "Baro interval", acc_baro / ++ctr_baro, false);
+      log_metric(id "Baro interval", acc_baro / ++ctr_baro, false);
 
       code |= validate_baro(&meas.baro, conf) ? 0
                                               : Baro_Mask;
@@ -470,12 +469,12 @@ static inline void data_streaming_mode(void)
 
     if (code != 0)
     {
-      log_err(pilot "malformed measm: %u", code);
+      log_err(id "malformed measm: %u", code);
     }
 
     if (watch_for_gps_packets(conf, &acc_gps, &ctr_gps) > 0)
     {
-      log_metric(pilot "GPS interval", acc_gps / ctr_gps, false);
+      log_metric(id "GPS interval", acc_gps / ctr_gps, false);
     }
 
     tx_thread_relinquish();
@@ -524,7 +523,7 @@ static inline void post_initialization(void)
 
   if (ctr_gps > 0)
   {
-    log_metric(pilot "Avg GPS (sec)", acc_gps / ctr_gps, true);
+    log_metric(id "Avg GPS (sec)", acc_gps / ctr_gps, true);
   }
 
   accl_acc.x /= ctr_accl;
@@ -707,10 +706,14 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
   UINT st;
   CHAR *pointer;
 
-  if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                       DIST_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
+  const char *critical = "creation failure:";
+
+  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
+                        DIST_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
   {
-    return TX_POOL_ERROR;
+    log_die(id "stack %s %u", critical, st);
   }
 
   st = tx_thread_create(&distribution_task,
@@ -727,7 +730,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "task creation failure: %u", st);
+    log_die(id "task %s %u", critical, st);
   }
 
   return TX_SUCCESS;

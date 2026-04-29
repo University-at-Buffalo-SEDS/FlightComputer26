@@ -28,6 +28,7 @@ typedef int_fast64_t fi64;
 #define tx_align      __attribute__((aligned(sizeof(ULONG))))
 #define cmsis_ok      __attribute__((packed, aligned(EXCESS_ALIGN)))
 #define serial        __attribute__((packed, aligned(sizeof(float))))
+#define uncached      __attribute__((used, aligned(32), section("DMA_NO_CACHE")))
 #define conditional   __attribute__((unused))
 #define constexpr     __attribute__((const))
 #define pure          __attribute__((pure))

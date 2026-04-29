@@ -1,6 +1,5 @@
 /* Core/Src/recovery.c */
 
-#include "barometer.h"
 #include "platform.h"
 #include "fctypes.h"
 #include "fcstructs.h"
@@ -8,7 +7,6 @@
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
-#include "simulation.h"
 #include "sweetbench.h"
 
 #define id "RE "
@@ -742,12 +740,14 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   CHAR *pointer;
 
   tx_app_shared = byte_pool;
+  const char *critical = "creation failure:";
 
-  /* Allocate the stack for test  */
-  if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                       RECV_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
+  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
+                        RECV_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
   {
-    return TX_POOL_ERROR;
+    log_die(id "stack %s %u", critical, st);
   }
   
   st = tx_thread_create(&recovery_task,
@@ -761,8 +761,6 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
                         RECV_PRIORITY,
                         TX_NO_TIME_SLICE,
                         TX_AUTO_START);
-
-  const char *critical = "creation failure:";
 
   if (st != TX_SUCCESS)
   {

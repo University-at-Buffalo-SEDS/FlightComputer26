@@ -401,10 +401,14 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   UINT st;
   CHAR *pointer;
 
-  if (tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                       EVAL_STACK_BYTES, TX_NO_WAIT) != TX_SUCCESS)
+  const char *critical = "creation failure:";
+
+  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
+                        EVAL_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
   {
-    return TX_POOL_ERROR;
+    log_die(id "stack %s %u", critical, st);
   }
 
   st = tx_thread_create(&evaluation_task,
@@ -417,8 +421,6 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
                         EVAL_PREEMPT_THRESHOLD,
                         EVAL_TIME_SLICE,
                         TX_DONT_START);
-
-  const char *critical = "creation failure:";
 
   if (st != TX_SUCCESS)
   {

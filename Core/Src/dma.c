@@ -28,12 +28,9 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
 };
 
 
-volatile uint8_t dmarx[SENSOR_BUF_SIZE]
-__attribute__((used, section("DMA_NO_CACHE"))) 
-__attribute__((aligned(32)));
+volatile uncached uint8_t dmarx[SENSOR_BUF_SIZE];
 
-
-static cm_align uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
+static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
 static spinlock dma_locks[Sensors] = {0};
 
@@ -232,7 +229,7 @@ void dma_entry(ULONG _)
       bool re_a = relv_snapshot & DMA_ACCL_MASK;
 
       /* The selector is defined as a QMC-minimized
-       * expression 3 data-ready and 3 relevance flags.
+       * expression of 3 data-ready and 3 relevance flags.
        */
       if (dr_g && ((!dr_b && (re_g || !dr_a)) ||
                    (!re_g && (!dr_a || re_a || re_b))))
@@ -272,7 +269,7 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "pool %s %u", critical, st);
+    log_die(id "stack %s %u", critical, st);
   }
 
   st = tx_thread_create(&dma_task,
