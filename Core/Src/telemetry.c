@@ -5,6 +5,7 @@
 #include "fcapi.h"
 #include "fctasks.h"
 #include "can_bus.h"
+#include "sd_card.h"
 #include "simulation.h"
 
 #define id "TE "
@@ -641,7 +642,7 @@ TX_THREAD telemetry_task;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
 
-static tx_align CHAR static_pool[TELEMETRY_HEAP];
+static cm_align CHAR static_pool[TELEMETRY_HEAP];
 
 void telemetry_entry(ULONG _)
 {
@@ -649,6 +650,8 @@ void telemetry_entry(ULONG _)
 
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
+
+  tx_thread_resume(&g_sd_log_thread);
 
   task_loop (DO_NOT_EXIT)
   {

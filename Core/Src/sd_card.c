@@ -44,9 +44,6 @@ static UINT g_media_open = 0;
 static UINT g_file_open = 0;
 static UINT g_sd_logger_up = 0;
 
-/* FileX requires a media buffer */
-static UCHAR g_fx_media_buffer[4096];
-
 /* Config provided by user */
 static const CHAR *g_filename = "seds_log.txt";
 static SdFxDriverEntry g_driver_entry = 0;
@@ -93,25 +90,6 @@ static UINT ensure_fx_ready(void) {
   return FX_SUCCESS;
 }
 
-
-static UINT ensure_media_open(void) {
-  if (g_media_open)
-    return FX_SUCCESS;
-  if (!g_driver_entry)
-    return FX_PTR_ERROR;
-
-  UINT st = ensure_fx_ready();
-  if (st != FX_SUCCESS)
-    return st;
-
-  st = fx_media_open(&g_sd_media, "SD", g_driver_entry, g_driver_info,
-                     g_fx_media_buffer, sizeof(g_fx_media_buffer));
-  if (st != FX_SUCCESS)
-    return st;
-
-  g_media_open = 1;
-  return FX_SUCCESS;
-}
 
 static UINT sd_drop_oldest(UINT n) {
   UINT dropped = 0;
@@ -196,7 +174,7 @@ static VOID sd_log_thread_entry(ULONG arg) {
     if (!line)
       continue;
 
-    UINT st = ensure_media_open();
+    UINT st = ensure_fx_ready();
     if (st != FX_SUCCESS) {
       sd_close_all();
       sd_pool_free(line);
