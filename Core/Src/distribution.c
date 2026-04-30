@@ -437,8 +437,16 @@ validate_all(const measm *buf, fu32 conf)
 static inline bool maybe_log_measm(devid dev, const void *buf)
 {
   static const log_lookup mems[MEMS_Devices] = {
-    [IMU]  = {IMULocal, IMURemote, 6, 0 /* TODO */, 0 /* TODO */},
-    [Baro] = {BaroLocal, BaroRemote, 3, 0 /* TODO */, SEDS_DT_BAROMETER_DATA},
+    [IMU]  = {  .tim_sd = IMULocal, 
+                .tim_gnd = IMURemote,
+                .size = 6,
+                .kind_sd = SEDS_DT_IMU_LOCAL,
+                .kind_gnd = SEDS_DT_IMU_DATA  },
+    [Baro] = {  .tim_sd = BaroLocal,
+                .tim_gnd = BaroRemote,
+                .size = 3,
+                .kind_sd = SEDS_DT_BAROMETER_LOCAL,
+                .kind_gnd = SEDS_DT_BAROMETER_DATA  },
   };
 
   bool recorded = false;

@@ -275,7 +275,7 @@ static inline void propel_kalman_state(fu32 conf)
     *((quat *)tmp) = qv;
     tmp[4] = svec(0).alt;
     tmp[5] = svec(0).vel;
-    kind_sd = 0; // FIXME
+    kind_sd = SEDS_DT_ASCENT_LOCAL;
     kind_gnd = SEDS_DT_ASCENT_STATE;
     elements = EKF_STATE;
   }
@@ -285,7 +285,7 @@ static inline void propel_kalman_state(fu32 conf)
     tmp[1] = svec(0).gps.lat;
     tmp[2] = svec(0).alt;
     tmp[3] = svec(0).vel;
-    kind_sd = 0; // FIXME
+    kind_sd = SEDS_DT_DESCENT_LOCAL;
     kind_gnd = SEDS_DT_DESCENT_STATE;
     elements = DKF_STATE;
   }
@@ -295,7 +295,7 @@ static inline void propel_kalman_state(fu32 conf)
     log_f(kind_sd, elements, tmp);
   }
 
-  if (timer_probe(KFLocal, rates.gnd))
+  if (timer_probe(KFRemote, rates.gnd))
   {
     log_f(kind_gnd, elements, tmp);
   }
