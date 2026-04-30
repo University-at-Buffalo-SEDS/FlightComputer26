@@ -539,6 +539,8 @@ static inline void post_initialization(void)
   fc_msg cmd = option(Reinit_Sensors);
   tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
 
+  log_critical(id "reinitialized all sensors");
+
   fu32 conf = load(&g_conf, Acq);
 
   timer_update(Auxiliary);
@@ -706,8 +708,11 @@ void distribution_entry(ULONG _)
     conf = load(&g_conf, Acq);
     check_rollback_request(conf);
 
+    log_critical(id "left streaming mode");
+
     /* Assert: state is Postinit */
     log_flight_state(to_global_state(current()));
+
     post_initialization();
 
     conf = load(&g_conf, Acq);

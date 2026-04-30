@@ -332,7 +332,7 @@ static inline void rollback_to_idle(void)
 
   sm.flight = Startup;
 
-  log_msg(id "rolled back to pre-init");
+  log_critical(id "rolled back to pre-init");
 }
 
 

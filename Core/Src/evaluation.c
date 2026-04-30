@@ -352,6 +352,7 @@ static inline void enter_flight_mode(fu32 conf)
   if (conf & option(Launch_Requested))
   {
     sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
+    log_critical(id "re-entered flight mode");
   }
   else
   {
@@ -371,7 +372,7 @@ static inline void enter_flight_mode(fu32 conf)
 
 /* Task */
 
-void evaluation_entry(ULONG st)
+void evaluation_entry(ULONG _)
 {
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
@@ -384,9 +385,9 @@ void evaluation_entry(ULONG st)
                                 ? Baro_Mask
                                 : Gyro_Mask | Accl_Mask;
 
-    if ((st = tx_event_flags_get(&eval_stage, request,
-                                 TX_OR_CLEAR, &done,
-                                 TX_WAIT_FOREVER)) != TX_SUCCESS)
+    if (tx_event_flags_get(&eval_stage, request,
+                           TX_OR_CLEAR, &done,
+                           TX_WAIT_FOREVER) != TX_SUCCESS)
     { continue; }
 
     accum |= done;
@@ -404,7 +405,7 @@ void evaluation_entry(ULONG st)
       evaluate_rocket_state(conf);
       sweetbench_start(3, 50, true);
     }
-    else if (accum & (Gyro_Mask | Accl_Mask))
+    else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
     {
       accum |= EVALUATION_STAGED;
       accum &= ~(Gyro_Mask | Accl_Mask);
