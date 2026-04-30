@@ -45,15 +45,13 @@ static inline float *kfalloc(size_t size)
 
   request: do
   {
-    st = tx_byte_allocate(&kfpool, &ptr, size, TX_WAIT_FOREVER);
+    st = tx_byte_allocate(&kfpool, &ptr, size, 5);
   }
   while (st == TX_WAIT_ABORTED);
 
   if (st != TX_SUCCESS)
   {
-    TX_THREAD *curr = tx_thread_identify();
-
-    if (!curr)
+    if (tx_thread_identify() == TX_NULL)
     {
       return NULL; /* Friendliness has its limits */
     }
@@ -81,6 +79,16 @@ static inline void kffree(float *ptr)
   return;
 
 #endif /* PARALLEL_PREDICT_UPDATE */
+}
+
+static inline void clear_shared_buffers(void)
+{
+  memset(&imedsv, 0, sizeof imedsv);
+  memset(kf.P_stacov, 0, sizeof kf.P_stacov);
+  memset(kf.Q_procno, 0, sizeof kf.Q_procno);
+  memset(kf.A_genpur, 0, sizeof kf.A_genpur);
+  memset(kf.R_measno, 0, sizeof kf.R_measno);
+  memset(kf.H_measjc, 0, sizeof kf.H_measjc);
 }
 
 
@@ -179,7 +187,7 @@ static inline pure float *mxoff(const matrix *prev)
 
 void descent_initialize(void)
 {
-  kf_clear_shared_buffers();
+  clear_shared_buffers();
 
   for (fu8 i = 0; i < DKF_MEASM; ++i)
   {
@@ -323,7 +331,7 @@ void descent_update(void)
 
 void ascent_initialize(fu32 conf) 
 {
-  kf_clear_shared_buffers();
+  clear_shared_buffers();
 
   for (fu8 i = 0; i < EKF_STATE; ++i)
   {

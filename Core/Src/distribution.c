@@ -213,8 +213,7 @@ watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
 {
 #ifdef GPS_AVAILABLE
 
-  if (conf & option(GPS_Available) &&
-      fetch_gps_data(&meas.gps))
+  if (conf & option(GPS_Available) && fetch_gps_data(&meas.gps))
   {
     *acc += fsec(timer_exchange(GPSWatchdog));
 
@@ -361,9 +360,8 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
     st |= Bad_Attitude_Z;
   }
 
-  if (conf & option(Measm_Reports) &&
-      (conf & option(Reset_Failures) ||
-       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
+                                       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
@@ -389,9 +387,8 @@ validate_accl(const f_xyz *accl, fu32 conf)
     st |= Bad_Accel_Z;
   }
 
-  if (conf & option(Measm_Reports) &&
-      (conf & option(Reset_Failures) ||
-       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
+                                       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
@@ -413,9 +410,8 @@ validate_baro(const baro *baro, fu32 conf)
     st |= Bad_Altitude;
   }
 
-  if (conf & option(Measm_Reports) &&
-      (conf & option(Reset_Failures) ||
-       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
+                                       st != fc_mask(Sensor_Measm_Code)))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
@@ -467,125 +463,13 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
 }
 
 
-/* Stage 0 of fill sequence */
-
-static inline void data_streaming_mode(void)
-{
-  float acc_baro = 0.0f, acc_gps = 0.0f;
-  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0, imu = 0;
-
-  task_loop (conf & option(Postinit_Requested) ||
-             conf & option(Rollback_Requested))
-  {
-    fu32 code = 0;
-
-    if (try_fetch_gyro(&meas.gyro))
-    {
-      imu |= Gyro_Mask;
-      code |= validate_gyro(&meas.gyro, conf) ? 0
-                                              : Gyro_Mask;
-    }
-
-    if (try_fetch_accl(&meas.accl))
-    {
-      imu |= Accl_Mask;
-      code |= validate_accl(&meas.accl, conf) ? 0
-                                              : Accl_Mask;
-    }
-
-    if (try_fetch_baro(&meas.baro))
-    {
-      acc_baro += fsec(timer_exchange(Auxiliary));
-      ++ctr_baro;
-
-      code |= validate_baro(&meas.baro, conf) ? 0
-                                              : Baro_Mask;
-      maybe_log_measm(Baro, &meas.baro);
-    }
-
-    if (code != 0)
-    {
-      log_err(id "malformed measm: %u", code);
-    }
-
-    if ((imu & (Accl_Mask | Gyro_Mask))
-        && maybe_log_measm(IMU, &meas.accl))
-    {
-      imu = 0;
-    }
-
-    if (ctr_baro % 61 /* Golang! */)
-    {
-      log_metric(id "Baro interval", acc_baro / ctr_baro, false);
-    }
-
-    watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
-
-    tx_thread_relinquish();
-
-    conf = load(&g_conf, Acq);
-  }
-}
-
-
-/* Stage 1 of fill sequence */
-
-static inline void post_initialization(void)
-{
-  f_xyz accl_acc = {0};
-  fu32 accl_ctr = 0, gps_ctr = 0;
-  float gps_acc;
-
-  fc_msg cmd = option(Reinit_Sensors);
-  tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
-
-  log_critical(id "reinitialized all sensors");
-
-  fu32 conf = load(&g_conf, Acq);
-
-  timer_update(Auxiliary);
-
-  task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
-  {
-    if (try_fetch_accl(&meas.accl))
-    {
-      if (timer_probe(IMURemote, rates.gnd))
-      {
-        log_f(SEDS_DT_ACCEL_DATA, 3, &meas.accl);
-      }
-
-      if (validate_accl(&meas.accl, conf))
-      {
-        accl_acc.x += meas.accl.x;
-        accl_acc.y += meas.accl.y;
-        accl_acc.z += meas.accl.z;
-        ++accl_ctr;
-      }
-    }
-
-    watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
-
-    tx_thread_relinquish();
-
-    conf = load(&g_conf, Acq);
-  }
-
-  accl_acc.x /= accl_ctr;
-  accl_acc.y /= accl_ctr;
-  accl_acc.z /= accl_ctr;
-
-  accel_to_quaternion(&accl_acc);
-}
-
-
 /* Distribution for Ascent */
 
 static inline void for_ascent_update(fu32 conf)
 {
   baro baro_suspect;
 
-  if (try_fetch_baro(&baro_suspect) &&
-      validate_baro(&baro_suspect, conf))
+  if (try_fetch_baro(&baro_suspect) && validate_baro(&baro_suspect, conf))
   {
     fc_lock(&meas_locks[Baro]);
     meas.baro = baro_suspect;
@@ -613,15 +497,13 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   sweetbench_start(8);
 
-  if (try_fetch_gyro(&suspect_gyro) && 
-      validate_gyro(&suspect_gyro, conf))
+  if (try_fetch_gyro(&suspect_gyro) && validate_gyro(&suspect_gyro, conf))
   {
     accum_gyro = suspect_gyro;
     *imu |= Gyro_Mask;
   }
 
-  if (try_fetch_accl(&suspect_accl) &&
-      validate_accl(&suspect_accl, conf))
+  if (try_fetch_accl(&suspect_accl) && validate_accl(&suspect_accl, conf))
   {
     accum_accl = suspect_accl;
     *imu |= Accl_Mask;
@@ -665,16 +547,14 @@ static inline void descent_full_cycle(fu32 conf)
 
   descent_predict(dt);
 
-  if (try_fetch_baro(&meas.baro) &&
-      validate_baro(&meas.baro, conf))
+  if (try_fetch_baro(&meas.baro) && validate_baro(&meas.baro, conf))
   {
     descent_update();
     stage = EVALUATION_STAGED;
     maybe_log_measm(Baro, &meas.baro);
   }
 
-  if ((conf & option(GPS_Available)) &&
-      fetch_gps_data(&meas.gps))
+  if ((conf & option(GPS_Available)) && fetch_gps_data(&meas.gps))
   {
     to_relative_coords(&meas.gps);
     descent_update();
@@ -694,48 +574,182 @@ static inline void descent_full_cycle(fu32 conf)
 }
 
 
+/* Stage 0 of fill sequence */
+
+static inline void data_streaming_mode(void)
+{
+  float acc_baro = 0.0f, acc_gps = 0.0f;
+  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0, imu = 0;
+
+  task_loop (conf & option(Postinit_Requested) ||
+             conf & option(Rollback_Requested))
+  {
+    fu32 code = 0;
+
+    if (try_fetch_gyro(&meas.gyro))
+    {
+      imu |= Gyro_Mask;
+      code |= validate_gyro(&meas.gyro, conf) ? 0
+                                              : Gyro_Mask;
+    }
+    if (try_fetch_accl(&meas.accl))
+    {
+      imu |= Accl_Mask;
+      code |= validate_accl(&meas.accl, conf) ? 0
+                                              : Accl_Mask;
+    }
+    if (try_fetch_baro(&meas.baro))
+    {
+      acc_baro += fsec(timer_exchange(Auxiliary));
+      ++ctr_baro;
+
+      code |= validate_baro(&meas.baro, conf) ? 0
+                                              : Baro_Mask;
+      maybe_log_measm(Baro, &meas.baro);
+    }
+
+    if (code != 0)
+    {
+      log_err(id "malformed measm: %u", code);
+    }
+    if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
+    {
+      imu = 0;
+    }
+    if (ctr_baro % 61 /* Golang! */)
+    {
+      log_metric(id "Baro interval", acc_baro / ctr_baro, false);
+    }
+
+    watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
+
+    tx_thread_relinquish();
+
+    conf = load(&g_conf, Acq);
+  }
+}
+
+
+/* Stage 1 of fill sequence */
+
+static inline void post_initialization(void)
+{
+  f_xyz accl_acc = {0};
+  fu32 accl_ctr = 0, gps_ctr = 0;
+  float gps_acc;
+
+  fu32 conf = load(&g_conf, Acq);
+  fc_msg cmd = fc_mask(Reinit_Sensors);
+  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+
+  log_flight_state(to_global_state(current()));
+  timer_update(Auxiliary);
+
+  task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
+  {
+    if (try_fetch_accl(&meas.accl))
+    {
+      if (timer_probe(IMURemote, rates.gnd))
+      {
+        log_f(SEDS_DT_ACCEL_DATA, 3, &meas.accl);
+      }
+
+      if (validate_accl(&meas.accl, conf))
+      {
+        accl_acc.x += meas.accl.x;
+        accl_acc.y += meas.accl.y;
+        accl_acc.z += meas.accl.z;
+        ++accl_ctr;
+      }
+    }
+
+    watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
+
+    tx_thread_relinquish();
+
+    conf = load(&g_conf, Acq);
+  }
+
+  accl_acc.x /= accl_ctr;
+  accl_acc.y /= accl_ctr;
+  accl_acc.z /= accl_ctr;
+
+  accel_to_quaternion(&accl_acc);
+
+  if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
+  {
+    store(&sm.flight, Armed, Rlx);
+    log_err(id "unusual startup sequence");
+  }
+
+  fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
+  log_critical(id "armed, awaiting launch signal");
+}
+
+
 /* Task */
+
+static inline bool fill_sequence_states(fu32 conf)
+{
+  fc_msg cmd = fc_mask(Reinit_Sensors);
+  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+
+  data_streaming_mode();
+  log_critical(id "left streaming mode");
+
+  if ((conf = load(&g_conf, Acq)) & option(Rollback_Requested))
+  {
+    return true;
+  }
+  else if (conf & option(Postinit_Requested))
+  {
+    post_initialization();
+  }
+
+  task_loop (conf & option(Launch_Requested))
+  {
+    tx_thread_sleep(POSTINIT_INTERVAL);
+    conf = load(&g_conf, Acq);
+
+    if (conf & option(Rollback_Requested))
+    {
+      return true;
+    }
+    else if (conf & option(Postinit_Requested))
+    {
+      post_initialization();
+    }
+  }
+
+  task_loop (request_ignition() == SEDS_OK)
+    ;
+  log_critical(id "ignition requested, in flight mode");
+
+  return false;
+}
 
 void distribution_entry(ULONG _)
 {
   fu8 imu = 0;
   fu32 conf = load(&g_conf, Acq);
 
-  if (!(conf & option(Launch_Requested)))
+  if (!(conf & option(Launch_Requested)) && fill_sequence_states(conf))
   {
-    data_streaming_mode();
-
-    conf = load(&g_conf, Acq);
-    check_rollback_request(conf);
-
-    log_critical(id "left streaming mode");
-
-    /* Assert: state is Postinit */
-    log_flight_state(to_global_state(current()));
-
-    post_initialization();
-
-    conf = load(&g_conf, Acq);
-    check_rollback_request(conf);
-
-    log_critical(id "complete, awaiting launch signal");
-
-    task_loop (conf & option(Launch_Requested))
-    {
-      tx_thread_sleep(POSTINIT_INTERVAL);
-      conf = load(&g_conf, Acq);
-      check_rollback_request(conf);
-    }
-
-    task_loop (request_ignition() == SEDS_OK)
-      ;
-    log_critical(id "ignition requested, in flight mode");
+    return;
   }
 
   task_loop (DO_NOT_EXIT)
   {
     conf = load(&g_conf, Acq);
-    check_rollback_request(conf);
+
+#ifdef USER_CONFIRMATION
+
+    if ((conf) & option(Rollback_Requested))
+    {
+      return;
+    }
+
+#endif
 
     if (conf & option(Using_Ascent_KF))
     {

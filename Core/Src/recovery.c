@@ -239,9 +239,9 @@ static inline void manual_deployment(bool apogee, bool force)
 
 static inline void enter_postinit(bool noconfirm)
 {
-  if (beyond(Launch))
+  if (g_conf & option(Postinit_Requested) || beyond(Armed))
   {
-    log_err(id "rejected postinit mid-flight");
+    log_err(id "cannot perform Postinit (already in progress?)");
     return;
   }
 
@@ -268,6 +268,12 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
+  if (!beyond(Postinit))
+  {
+    log_err(id "rejected Launch before Postinit");
+    return;
+  }
+
 #ifdef USER_CONFIRMATION
 
   if (!noconfirm &&
@@ -297,6 +303,8 @@ static inline void enter_launch(bool noconfirm)
   smon.failures = 0;
   baro_conf.rezero = 0;
   g_conf &= ~option(Eval_Abort_Flag);
+  g_conf &= ~option(Postinit_Requested);
+  g_conf &= ~option(Rollback_Requested);
 
   tx_thread_resume(&evaluation_task);
 }
@@ -320,19 +328,18 @@ static inline void rollback_to_idle(void)
 
   if (g_conf & option(Launch_Requested))
   {
-    log_critical(id "WARNING: rollback after launch");
+    log_critical(id "WARNING: rollback after Launch");
   }
 
 #endif
 
-  g_conf |= option(Rollback_Requested);
   g_conf &= ~option(Postinit_Requested);
   g_conf &= ~option(Launch_Requested);
-  g_conf &= ~option(Measm_Reports);
+  g_conf |= option(Rollback_Requested);
 
   sm.flight = Startup;
 
-  log_critical(id "rolled back to pre-init");
+  log_critical(id "rolled back to Startup");
 }
 
 
@@ -702,8 +709,6 @@ void recovery_entry(ULONG st)
   {
     log_die(id "notification %u", (fu32) st);
   }
-
-  sensor_init_supervised(Wild_Mask);
 
   for (timer k = 0; k < Time_Users; ++k)
   {

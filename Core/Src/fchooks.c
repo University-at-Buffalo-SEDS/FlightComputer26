@@ -7,7 +7,6 @@
 #include "fctasks.h"
 #include "fcapi.h"
 #include "fcconfig.h"
-#include "simulation.h"
 
 
 static volatile fu32 lock_fails = 0;

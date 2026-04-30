@@ -358,12 +358,6 @@ static inline void enter_flight_mode(fu32 conf)
   {
     ascent_initialize(conf);
     log_critical(id "received launch signal");
-
-    if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
-    {
-      store(&sm.flight, Armed, Rlx);
-      log_err(id "unusual startup sequence");
-    }
     
     fetch_or(&g_conf, option(Launch_Requested), Rel);
   }

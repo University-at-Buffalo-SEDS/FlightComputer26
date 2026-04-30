@@ -164,14 +164,6 @@
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 
-#define check_rollback_request(k)             \
-  do {                                        \
-    if ((k) & option(Rollback_Requested))     \
-    {                                         \
-      return;                                 \
-    }                                         \
-  } while (0)
-
 #define satur_incr(_n, _th)                   \
   ((_n) + 1 <= (_th) ? ++(_n) : (_th))
 
@@ -190,29 +182,19 @@
     }                                         \
   } while (0)
 
-#define kf_clear_shared_buffers()                   \
-  do {                                              \
-    memset(&imedsv, 0, sizeof imedsv);              \
-    memset(kf.P_stacov, 0, sizeof kf.P_stacov);     \
-    memset(kf.Q_procno, 0, sizeof kf.Q_procno);     \
-    memset(kf.A_genpur, 0, sizeof kf.A_genpur);     \
-    memset(kf.R_measno, 0, sizeof kf.R_measno);     \
-    memset(kf.H_measjc, 0, sizeof kf.H_measjc);     \
-  } while (0)
-
-#define mx_scale(src, scl, dst)                     \
+#define mx_scale(src, scl, dst)               \
   math_call(matrix_scl, src, scl, dst)
-#define mx_chol_l(src, dst)                         \
+#define mx_chol_l(src, dst)                   \
   math_call(chol_lotri, src, dst)
-#define mx_inverse(src, dst)                        \
+#define mx_inverse(src, dst)                  \
   math_call(matrix_inv, src, dst)
-#define mx_transpose(src, dst)                      \
+#define mx_transpose(src, dst)                \
   math_call(mtranspose, src, dst)
-#define mx_mul(srca, srcb, dst)                     \
+#define mx_mul(srca, srcb, dst)               \
   math_call(matrix_mul, srca, srcb, dst)
-#define mx_add(srca, srcb, dst)                     \
+#define mx_add(srca, srcb, dst)               \
   math_call(matrix_add, srca, srcb, dst)
-#define mx_sub(srca, srcb, dst)                     \
+#define mx_sub(srca, srcb, dst)               \
   math_call(matrix_sub, srca, srcb, dst)
 
 
