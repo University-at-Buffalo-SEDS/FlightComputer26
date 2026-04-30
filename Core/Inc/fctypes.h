@@ -23,7 +23,7 @@ typedef int_fast32_t fi32;
 typedef int_fast64_t fi64;
 
 
-#define cm_align      __attribute__((aligned(sizeof(fu32))))
+#define cm_align      __attribute__((aligned(EXCESS_ALIGN)))
 #define tx_align      __attribute__((aligned(sizeof(ULONG))))
 #define cmsis_ok      __attribute__((packed, aligned(EXCESS_ALIGN)))
 #define serial        __attribute__((packed, aligned(sizeof(float))))

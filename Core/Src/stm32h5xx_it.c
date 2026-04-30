@@ -53,21 +53,35 @@
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void reg_dump(unsigned int *sp, unsigned int reg)
+void reg_dump(unsigned int *sp, unsigned int lr)
 {
+  volatile conditional unsigned int cfsr = *((volatile unsigned int *)(0xE000ED28));
+  volatile conditional unsigned int mmfar = *((volatile unsigned int *)(0xE000ED34));
+
+  unsigned int psp_val    = __get_PSP();
+  unsigned int psplim_val = __get_PSPLIM();
+  unsigned int exc_ret = sp[5];
+
+  unsigned int regs[3] = {psp_val, psplim_val, exc_ret};
+
   while (1)
   {
-    blink(Green, false, 3);
-
-    for (int i = 31; i >= 0; i--)
+    for (int r = 0; r < 3; r++)
     {
-      blink(Blue, (reg >> i) & 1, 1);
-    } 
+      blink(Green, false, 3);
+
+      for (int i = 31; i >= 0; i--)
+      {
+        blink(Blue, (regs[r] >> i) & 1, 1);
+      }
+    }
+
+    blink(Green, false, 7);
   }
 }
 
 /* When dumping registers in release mode, change this
- * to Hardfault_Handler and comment out CubeMX one. */
+ * to HardFault_Handler and comment out CubeMX one. */
 
 __attribute__((naked)) void DarkSouls_Handler(void)
 {
