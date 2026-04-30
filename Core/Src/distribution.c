@@ -616,7 +616,7 @@ static inline void data_streaming_mode(void)
     {
       imu = 0;
     }
-    if (ctr_baro % 61 /* Golang! */)
+    if (ctr_baro > 0 && ctr_baro % 61 /* Golang! */)
     {
       log_metric(id "Baro interval", acc_baro / ctr_baro, false);
     }

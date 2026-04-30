@@ -215,6 +215,13 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 static inline conditional void *
 fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 {
+#ifdef TEST_ALLOC
+  if (tx_thread_identify() == TX_NULL)
+  {
+    while (1) blink(Blue, false, 1);
+  }
+#endif
+
   fc_lock(&alloc_lock);
 
   if (size == 0)
@@ -262,6 +269,13 @@ fchook_alloc(TX_BYTE_POOL *bp, size_t size, size_t timeout)
 
 static inline conditional void fchook_free(void *ptr)
 {
+#ifdef TEST_ALLOC
+  if (tx_thread_identify() == TX_NULL)
+  {
+    while (1) blink(Green, false, 1);
+  }
+#endif
+
   fc_lock(&alloc_lock);
   tx_byte_release(ptr);  
   fc_unlock(&alloc_lock);

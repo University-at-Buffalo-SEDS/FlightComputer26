@@ -53,6 +53,34 @@
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void reg_dump(unsigned int *sp, unsigned int reg)
+{
+  while (1)
+  {
+    blink(Green, false, 3);
+
+    for (int i = 31; i >= 0; i--)
+    {
+      blink(Blue, (reg >> i) & 1, 1);
+    } 
+  }
+}
+
+/* When dumping registers in release mode, change this
+ * to Hardfault_Handler and comment out CubeMX one. */
+
+__attribute__((naked)) void DarkSouls_Handler(void)
+{
+  __asm volatile (
+      "tst lr, #4                    \n"
+      "ite eq                        \n"
+      "mrseq r0, msp                 \n"
+      "mrsne r0, psp                 \n"
+      "ldr r1, [r0, #20]             \n" // LR
+      "b reg_dump                    \n"
+  );
+}
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
