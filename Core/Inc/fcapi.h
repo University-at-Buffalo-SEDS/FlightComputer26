@@ -59,8 +59,7 @@ log_metric(const char *msg, float metric, bool critical)
 {
   char buf[MAX_METRIC_REPORT_SIZE];
   
-  sprintf(buf, "%s: %.*g\n", msg,
-          FLOAT_LOG_PRECISION, metric);
+  sprintf(buf, "%s: %d\n", msg, (fi32) metric);
 
   if (critical)
   {
@@ -233,7 +232,7 @@ static inline bool release_parachute(void)
   }
 
   co2_high();
-  log_metric("PD exact altitude", svec(0).alt, true);
+  log_metric("PD approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
 
@@ -258,7 +257,7 @@ static inline bool expand_parachute(void)
   }
 
   reef_high();
-  log_metric("PR exact altitude", svec(0).alt, true);
+  log_metric("PR approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
 

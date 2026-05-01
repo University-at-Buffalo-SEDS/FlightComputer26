@@ -168,7 +168,7 @@ static inline void propagate_rx(void)
          (uint8_t *)(dmarx + gpio.offset[select.next]),
          sizeof taskrx / 3);
 
-  fc_concede(&dma_locks[select.next]);
+  fc_unlock(&dma_locks[select.next]);
 
   fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
 }

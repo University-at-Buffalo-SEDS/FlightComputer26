@@ -66,8 +66,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
 
-  TX_BYTE_POOL *shared_pool = (TX_BYTE_POOL *)memory_ptr;
-
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
@@ -83,10 +81,10 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   }
 #endif
 
-  create_recovery_task(shared_pool);
-  create_dma_task(shared_pool);
-  create_evaluation_task(shared_pool);
-  create_distribution_task(shared_pool);
+  create_recovery_task(memory_ptr);
+  create_dma_task(memory_ptr);
+  create_evaluation_task(memory_ptr);
+  create_distribution_task(memory_ptr);
 
   /* USER CODE END App_ThreadX_Init */
 
