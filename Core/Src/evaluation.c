@@ -15,7 +15,7 @@
 TX_THREAD evaluation_task;
 TX_EVENT_FLAGS_GROUP eval_stage;
 
-void tx_align *kfpool_buf = NULL;
+void cm_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {};
 sv_meta sm = {Startup, G_Startup, 1, 0, 0};
@@ -32,8 +32,8 @@ static inline void detect_spurious(fu32 mode)
 
   char buf[MAX_SPURIOUS_REPORT_SIZE];
 
-  sprintf(buf, id "confirm broke at %d, state %u",
-                           sm.ev_step, current());
+  sprintf(buf, id "state fluctuation: %u %u %d", current(),
+                                      sm.samp, sm.ev_step);
 
   log_msg(buf);
 
@@ -75,8 +75,8 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
     last = meas.baro.alt;
   }
 
-  if (!beyond(Launch) || last > svec(1).alt
-                      || svec(1).alt > svec(2).alt)
+  if (!beyond(Armed) || last > svec(1).alt
+                     || svec(1).alt > svec(2).alt)
   {
     if (mode & option(Consecutive_Samples) &&
         mode & option(Confirm_Altitude))
@@ -87,14 +87,12 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
     return;
   }
 
-  if (last <= REEF_TARGET_ALT &&
-      !(mode & option(Parachute_Expanded)))
+  if (last <= REEF_TARGET_ALT && !(mode & option(Parachute_Expanded)))
   {
     /* We fell below reefing altitude. Depeding on
      * how much we missed, peform the deployments. */
 
-    if (mode & option(Parachute_Deployed)
-        && expand_parachute(false))
+    if (mode & option(Parachute_Deployed) && expand_parachute(false))
     {
       flight_advance(Reefing);
     }
@@ -113,8 +111,7 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
   {
     fetch_or(&g_conf, option(Confirm_Altitude), Rlx);
   }
-  else if (!(mode & option(Parachute_Deployed))
-           && release_parachute(false))
+  else if (!(mode & option(Parachute_Deployed)) && release_parachute(false))
   {
     flight_advance(Descent);
     descent_initialize();
@@ -249,14 +246,14 @@ static inline void detect_landed(fu32 mode)
   else detect_spurious(mode);
 }
 
-static inline void stabilize(fu32 steps)
+static inline void stabilize(fu32 conf)
 {
   float dh = svec(0).alt - svec(1).alt;
   float dv = svec(0).vel - svec(1).vel;
 
   if (fabsf(dh) <= ALT_TOLER            then
       fabsf(dv) <= VEL_TOLER            then
-      ++sm.samp >= steps)
+      ++sm.samp >= STABILIZATION_STEPS)
   {
     flight_advance(Recovery);
   }
@@ -314,34 +311,17 @@ void evaluate_rocket_state(fu32 conf)
 
   switch (curr)
   {
-  case Armed:
-    detect_launch();
-    break;
-  case Launch:
-    detect_ascent(conf);
-    break;
-  case Ascent:
-    detect_coast(conf);
-    break;
-  case Coast:
-    detect_apogee();
-    break;
-  case Apogee:
-    detect_descent(conf);
-    break;
-  case Descent:
-    detect_reef(conf);
-    break;
-  case Reefing:
-    detect_landed(conf);
-    break;
-  case Landed:
-    stabilize(STABILIZATION_STEPS);
-    break;
-  case Recovery:
-    crew_send_coords(conf);
-    break;
-  default: break;
+    case Armed:     detect_launch();          break;
+    case Launch:    detect_ascent(conf);      break;
+    case Ascent:    detect_coast(conf);       break;
+    case Coast:     detect_apogee();          break;
+    case Apogee:    detect_descent(conf);     break;
+    case Descent:   detect_reef(conf);        break;
+    case Reefing:   detect_landed(conf);      break;
+    case Landed:    stabilize(conf);          break;
+    case Recovery:  crew_send_coords(conf);   break;
+    default:
+      log_err(id "state %u cannot be evaluated", curr);
   }
 
   propel_kalman_state(conf);

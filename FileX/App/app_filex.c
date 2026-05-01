@@ -24,6 +24,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "fcapi.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* Main thread stack size */
-#define FX_APP_THREAD_STACK_SIZE         8192
+#define FX_APP_THREAD_STACK_SIZE         8184
 /* Main thread priority */
 #define FX_APP_THREAD_PRIO               5
 /* USER CODE BEGIN PD */
@@ -140,7 +142,11 @@ UINT MX_FileX_Init(VOID *memory_ptr)
   if (sd_status != FX_SUCCESS)
   {
      /* USER CODE BEGIN SD DRIVER get info error */
-    while(1);
+    while (1)
+    {
+      blink(Blue, true, 1);
+      blink(Blue, false, 1);
+    }
     /* USER CODE END SD DRIVER get info error */
   }
 

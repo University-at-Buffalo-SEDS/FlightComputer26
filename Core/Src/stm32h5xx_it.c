@@ -124,6 +124,8 @@ void NMI_Handler(void)
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
    while (1)
   {
+    blink(Green, false, 6);
+    blink(Blue, false, 6);
   }
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
@@ -139,7 +141,7 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    blink(Green, true, 1);
+    blink(Green, false, 1);
     blink(Blue, false, 1);
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
@@ -156,6 +158,8 @@ void MemManage_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
+    blink(Green, false, 2);
+    blink(Blue, false, 2);
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
@@ -171,6 +175,8 @@ void BusFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
+    blink(Green, false, 3);
+    blink(Blue, false, 3);
     /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }
@@ -186,6 +192,8 @@ void UsageFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
+    blink(Green, false, 4);
+    blink(Blue, false, 4);
     /* USER CODE END W1_UsageFault_IRQn 0 */
   }
 }
@@ -196,7 +204,8 @@ void UsageFault_Handler(void)
 void DebugMon_Handler(void)
 {
   /* USER CODE BEGIN DebugMonitor_IRQn 0 */
-
+  blink(Green, false, 5);
+  blink(Blue, false, 5);
   /* USER CODE END DebugMonitor_IRQn 0 */
   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 

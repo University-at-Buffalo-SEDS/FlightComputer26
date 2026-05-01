@@ -201,6 +201,9 @@ extern FDCAN_HandleTypeDef hfdcan1;
 #define led_on(port, pin)                                       \
   HAL_GPIO_WritePin((port), (pin), GPIO_PIN_SET)
 
+#define led_toggle(port, pin)                                   \
+  HAL_GPIO_TogglePin((port), (pin))
+
   
 /* Telemetry */
 
