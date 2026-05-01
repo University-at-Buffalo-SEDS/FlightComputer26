@@ -94,11 +94,11 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
      * how much we missed, peform the deployments. */
 
     if (mode & option(Parachute_Deployed)
-        && expand_parachute())
+        && expand_parachute(false))
     {
       flight_advance(Reefing);
     }
-    else if (release_parachute())
+    else if (release_parachute(false))
     {
       flight_advance(Descent);
 
@@ -106,7 +106,7 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
       tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
 
       flight_advance(Reefing);      
-      expand_parachute();
+      expand_parachute(false);
     }
   }
   else if (!(mode & option(Confirm_Altitude)))
@@ -114,7 +114,7 @@ static inline void vigilant_evaluate_altitude(fu32 mode)
     fetch_or(&g_conf, option(Confirm_Altitude), Rlx);
   }
   else if (!(mode & option(Parachute_Deployed))
-           && release_parachute())
+           && release_parachute(false))
   {
     flight_advance(Descent);
     descent_initialize();
@@ -216,7 +216,7 @@ static inline void detect_descent(fu32 mode)
       absvel[1] > absvel[2]             then
       ++sm.samp >= MIN_SAMP_DESCENT)
   {
-    release_parachute();
+    release_parachute(false);
     flight_advance(Descent);
   }
   else detect_spurious(mode);
@@ -228,7 +228,7 @@ static inline void detect_reef(fu32 mode)
       svec(0).alt < svec(1).alt         then
       ++sm.samp >= MIN_SAMP_REEF)
   {
-    expand_parachute();
+    expand_parachute(false);
     flight_advance(Reefing);
   }
   else detect_spurious(mode);

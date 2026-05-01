@@ -223,9 +223,9 @@ static inline gnd_state *to_global_state(state local)
 
 /* Deployment routines */
 
-static inline bool release_parachute(void)
+static inline bool release_parachute(bool force)
 {
-  if (!beyond(Launch))
+  if (!force && !beyond(Launch))
   {
     log_err("PD drogue blocked, state %u", current());
     return false;
@@ -242,9 +242,9 @@ static inline bool release_parachute(void)
   return true;
 }
 
-static inline bool expand_parachute(void)
+static inline bool expand_parachute(bool force)
 {
-  if (!beyond(Launch))
+  if (!force && !beyond(Launch))
   {
     log_err("PR reef expansion, state %u", current());
     return false;
