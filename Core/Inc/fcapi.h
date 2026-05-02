@@ -59,7 +59,7 @@ log_metric(const char *msg, float metric, bool critical)
 {
   char buf[MAX_METRIC_REPORT_SIZE];
   
-  sprintf(buf, "%s: %d\n", msg, (fi32) metric);
+  snprintf(buf, sizeof buf, "%s: %d\n", msg, (fi32) metric);
 
   if (critical)
   {
@@ -225,7 +225,7 @@ static inline gnd_state *to_global_state(state local)
 
 static inline bool release_parachute(bool force)
 {
-  if (!force && !beyond(Launch))
+  if (!force && !beyond(Armed))
   {
     log_err("PD drogue blocked, state %u", current());
     return false;

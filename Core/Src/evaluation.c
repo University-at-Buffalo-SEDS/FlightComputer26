@@ -18,132 +18,58 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 void cm_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {};
-sv_meta sm = {Startup, G_Startup, 1, 0, 0};
+sv_meta sm = {Startup, G_Startup, 0, 0, 0};
 
 
 /* FSM helpers */
 
-static inline void detect_spurious(fu32 mode)
+static inline void handle_spurious(fu32 mode, const char *cond)
 {
-  if (sm.samp <= SPURIOUS_THRESHOLD || sm.ev_step <= 0)
+  if (sm.confidence >= SPURIOUS_THRESHOLD)
   {
-    return;
+    ++sm.spilled_milk;
+
+    char buf[MAX_SPURIOUS_REPORT_SIZE];
+    snprintf(buf, sizeof buf, id "fluc: %u, failed %s",
+                                      current(), cond);
+    log_msg(buf);
   }
-
-  char buf[MAX_SPURIOUS_REPORT_SIZE];
-
-  sprintf(buf, id "state fluctuation: %u %u %d", current(),
-                                      sm.samp, sm.ev_step);
-
-  log_msg(buf);
 
   if (mode & option(Consecutive_Samples))
   {
-    sm.samp = sm.ev_step = 0;
+    sm.confidence = 0;
   }
-}
-
-/* Step through in state evaluation. Reduces branching.
- */
-static inline forceinline bool forward(void)
-{
-  return ++sm.ev_step > 0;
+  else if (sm.confidence > 0)
+  {
+    sm.confidence -= mind(sm.confidence, SPURIOUS_PENALTY);
+  }
 }
 
 static inline void flight_advance(state promotion)
 {
-  sm.samp = sm.ev_step = 0;
+  sm.confidence = 0;
 
   if (fetch_add(&sm.flight, 1, Acq) != promotion - 1)
   {
     store(&sm.flight, promotion, Rlx);
-    log_critical(id "vigilant mode deployment:");
+    log_critical(id "vigilant mode transition");
   }
 
   log_flight_state(to_global_state(promotion));
 }
 
 
-/* Evaluation routines */
-
-static inline void vigilant_evaluate_altitude(fu32 mode)
-{
-  float last = svec(0).alt;
-
-  if (last > VIGILANT_MAX_ALT || last < VIGILANT_MIN_ALT)
-  {
-    last = meas.baro.alt;
-  }
-
-  if (!beyond(Armed) || last > svec(1).alt
-                     || svec(1).alt > svec(2).alt)
-  {
-    if (mode & option(Consecutive_Samples) &&
-        mode & option(Confirm_Altitude))
-    {
-      fetch_and(&g_conf, ~option(Confirm_Altitude), Rlx);
-    }
-
-    return;
-  }
-
-  if (last <= REEF_TARGET_ALT && !(mode & option(Parachute_Expanded)))
-  {
-    /* We fell below reefing altitude. Depeding on
-     * how much we missed, peform the deployments. */
-
-    if (mode & option(Parachute_Deployed) && expand_parachute(false))
-    {
-      flight_advance(Reefing);
-    }
-    else if (release_parachute(false))
-    {
-      flight_advance(Descent);
-
-      descent_initialize();
-      tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
-
-      flight_advance(Reefing);      
-      expand_parachute(false);
-    }
-  }
-  else if (!(mode & option(Confirm_Altitude)))
-  {
-    fetch_or(&g_conf, option(Confirm_Altitude), Rlx);
-  }
-  else if (!(mode & option(Parachute_Deployed)) && release_parachute(false))
-  {
-    flight_advance(Descent);
-    descent_initialize();
-  }
-}
-
-static inline void crew_send_coords(fu32 mode)
-{
-#ifdef GPS_AVAILABLE
-  if (!(mode & option(GPS_Available)))
-  {
-    return;
-  }
-
-  log_f(SEDS_DT_GPS_DATA, 3, &meas.gps);
-
-  tx_thread_sleep(LANDED_GPS_INTERVAL);
-
-#else
-  return;
-
-#endif /* GPS_AVAILABLE */
-}
-
-
 /* State transitions */
 
-static inline void detect_launch(void)
+static inline void detect_boost(fu32 mode)
 {
-  if (svec(0).vel >= LAUNCH_MIN_VEL     then
-      svec(0).vel > svec(1).vel         then
-      svec(1).vel > svec(2).vel)
+  Require(svec(0).vel >= LAUNCH_MIN_VEL);
+  Require(svec(0).vel > svec(2).vel);
+  Require(svec(2).vel > svec(4).vel);
+
+  sm.confidence += 1;
+
+  if (sm.confidence >= MIN_SAMP_LAUNCH)
   {
     flight_advance(Launch);
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
@@ -152,110 +78,165 @@ static inline void detect_launch(void)
 
 static inline void detect_ascent(fu32 mode)
 {
-  if (svec(0).vel > svec(1).vel         then
-      svec(1).vel > svec(2).vel         then
-      svec(0).alt > svec(1).alt         then
-      svec(1).alt > svec(2).alt         then
-      ++sm.samp >= MIN_SAMP_ASCENT)
+  Require(svec(0).vel >= ASCENT_MIN_VEL);
+  Require(svec(0).vel > svec(3).vel);
+  Require(svec(0).alt > svec(2).alt);
+  Require(svec(2).alt > svec(4).alt);
+
+  sm.confidence += 1;
+
+  if (sm.confidence >= MIN_SAMP_ASCENT)
   {
     flight_advance(Ascent);
   }
-  else detect_spurious(mode);
 }
 
 static inline void detect_coast(fu32 mode)
 {
-  if (svec(0).vel >= BURNOUT_MIN_VEL    then
-      svec(0).alt > svec(1).alt         then
-      svec(0).vel < svec(1).vel         then
-      svec(1).vel < svec(2).vel         then
-      ++sm.samp >= MIN_SAMP_BURNOUT)
+  Require(svec(0).alt > svec(2).alt);
+  Require(svec(0).vel > COAST_MIN_VEL);
+  Require(svec(0).vel < svec(5).vel);
+
+  sm.confidence += 1;
+
+  if (sm.confidence >= MIN_SAMP_COAST)
   {
     flight_advance(Coast);
   }
-  else detect_spurious(mode);
 }
 
-static inline void detect_apogee(void)
+static inline void detect_apogee(fu32 mode)
 {
-  const fu8 eval_depth = 4;
-  float absvel[eval_depth];
+  Require(within(svec(2).vel, APOGEE_MAX_VEL));
+  Require(within(svec(0).vel, APOGEE_MAX_VEL));
 
-  for (fu8 k = 0; k < eval_depth; ++k)
-  {
-    absvel[k] = fabsf(svec(k).vel);
-  }
+  sm.confidence += 1;
 
-  if (absvel[0] <= APOGEE_MAX_VEL       then
-      absvel[0] < absvel[1]             then
-      absvel[1] < absvel[2]             then
-      absvel[2] < absvel[3])
+  if (sm.confidence >= MIN_SAMP_APOGEE)
   {
-    flight_advance(Apogee);
     descent_initialize();
+    flight_advance(Apogee);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
 
 static inline void detect_descent(fu32 mode)
 {
-  const fu8 eval_depth = 3;
-  float absvel[eval_depth];
+  Require(svec(0).vel <= -DESCENT_MIN_VEL);
+  Require(svec(0).alt < svec(2).alt);
+  Require(svec(2).alt < svec(4).alt);
 
-  for (fu8 k = 0; k < eval_depth; ++k)
-  {
-    absvel[k] = fabsf(svec(k).vel);
-  }
+  sm.confidence += 1;
 
-  if (svec(0).alt < svec(1).alt         then
-      svec(1).alt < svec(2).alt         then
-      absvel[0] > absvel[1]             then
-      absvel[1] > absvel[2]             then
-      ++sm.samp >= MIN_SAMP_DESCENT)
+  if (sm.confidence >= MIN_SAMP_DESCENT)
   {
     release_parachute(false);
     flight_advance(Descent);
   }
-  else detect_spurious(mode);
 }
 
-static inline void detect_reef(fu32 mode)
+static inline void detect_reefing(fu32 mode)
 {
-  if (svec(0).alt <= REEF_TARGET_ALT    then
-      svec(0).alt < svec(1).alt         then
-      ++sm.samp >= MIN_SAMP_REEF)
+  Require(svec(0).alt <= REEF_TARGET_ALT);
+  Require(svec(0).alt < svec(2).alt);
+  Require(svec(2).alt < svec(4).alt);
+
+  sm.confidence += 1;
+
+  if (sm.confidence >= MIN_SAMP_REEF)
   {
     expand_parachute(false);
     flight_advance(Reefing);
   }
-  else detect_spurious(mode);
 }
 
 static inline void detect_landed(fu32 mode)
 {
-  float dh = svec(0).alt - svec(1).alt;
-  float dv = svec(0).vel - svec(1).vel;
+  float dh_1 = svec(0).alt - svec(1).alt;
+  float dv_1 = svec(0).vel - svec(1).vel;
+  float dh_4 = svec(2).alt - svec(6).alt;
+  float dv_4 = svec(2).vel - svec(6).vel;
 
-  if (fabsf(dh) <= ALT_TOLER            then
-      fabsf(dv) <= VEL_TOLER            then
-      ++sm.samp >= MIN_SAMP_LANDED)
+  Require(within(dh_1, ALT_TOLER));
+  Require(within(dh_4, ALT_TOLER));
+  Require(within(dv_1, VEL_TOLER));
+  Require(within(dv_4, VEL_TOLER));
+
+  sm.confidence += 1;
+
+  if (sm.confidence >= MIN_SAMP_LANDED)
   {
     flight_advance(Landed);
-    sm.ev_step = -STABILIZATION_PAD;
+    tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
   }
-  else detect_spurious(mode);
 }
 
-static inline void stabilize(fu32 conf)
+static inline void announce_recovery(fu32 mode)
 {
-  float dh = svec(0).alt - svec(1).alt;
-  float dv = svec(0).vel - svec(1).vel;
+  flight_advance(Recovery);
+  log_critical(id "announcing recovery");
+  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
+}
 
-  if (fabsf(dh) <= ALT_TOLER            then
-      fabsf(dv) <= VEL_TOLER            then
-      ++sm.samp >= STABILIZATION_STEPS)
+static inline void report_lowpass_gps(fu32 mode)
+{
+#ifdef GPS_AVAILABLE
+
+  if (mode & option(GPS_Available))
   {
-    flight_advance(Recovery);
+    f_xyz lowpass = {
+      svec(0).gps.lat, svec(0).gps.lon, meas.gps.sea
+    };
+
+    log_f(SEDS_DT_GPS_DATA, 3, &lowpass);
+  }
+
+  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY / 100);
+
+#endif
+}
+
+
+/* Vigilant mode */
+
+static inline bool maybe_force(fu32 mode, float alt)
+{
+  return !beyond(Armed) && alt >= FLYING_ALTITUDE
+                        && !within(alt - svec(3).alt, ALT_TOLER);
+}
+
+static inline void vigilant_watchdog(fu32 mode, state now)
+{
+  float alt = svec(0).alt;
+  float vel = svec(0).vel;
+
+  if (sm.spilled_milk > ALEX_THRESHOLD || alt > VIGILANT_MAX_ALT
+                                       || alt < VIGILANT_MIN_ALT)
+  {
+    alt = meas.baro.alt;
+  }
+
+  if (now < Descent && vel < -VIGILANT_MIN_VEL && alt < svec(7).alt)
+  {
+    release_parachute(maybe_force(mode, alt));
+    descent_initialize();
+    flight_advance(Descent);
+  }
+  else if (now < Reefing && alt <= REEF_TARGET_ALT
+                         && (vel < 0.0f || alt < svec(4).alt))
+  {
+    if (now < Descent)
+    {
+      release_parachute(maybe_force(mode, alt));
+      descent_initialize();
+      flight_advance(Descent);
+      tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
+    }
+
+    if (expand_parachute(false))
+    {
+      flight_advance(Reefing);
+    }
   }
 }
 
@@ -306,22 +287,23 @@ void evaluate_rocket_state(fu32 conf)
 
   if (curr < Reefing && (conf & option(Monitor_Altitude)))
   {
-    vigilant_evaluate_altitude(conf);
+    vigilant_watchdog(conf, curr);
   }
 
   switch (curr)
   {
-    case Armed:     detect_launch();          break;
-    case Launch:    detect_ascent(conf);      break;
-    case Ascent:    detect_coast(conf);       break;
-    case Coast:     detect_apogee();          break;
-    case Apogee:    detect_descent(conf);     break;
-    case Descent:   detect_reef(conf);        break;
-    case Reefing:   detect_landed(conf);      break;
-    case Landed:    stabilize(conf);          break;
-    case Recovery:  crew_send_coords(conf);   break;
+    case Armed:     detect_boost(conf);         break;
+    case Launch:    detect_ascent(conf);        break;
+    case Ascent:    detect_coast(conf);         break;
+    case Coast:     detect_apogee(conf);        break;
+    case Apogee:    detect_descent(conf);       break;
+    case Descent:   detect_reefing(conf);       break;
+    case Reefing:   detect_landed(conf);        break;
+    case Landed:    announce_recovery(conf);    break;
+    case Recovery:  report_lowpass_gps(conf);   break;
     default:
       log_err(id "state %u cannot be evaluated", curr);
+      return;
   }
 
   propel_kalman_state(conf);

@@ -15,7 +15,7 @@ void drop_math_class(const char *msg, const char *file,
 	log_err("%s:%d: %s: %d", file, line, msg, code);
 
 #ifndef NDEBUG
-	sprintf(buf, "%s:%d: %s: %d", file, line, msg, code);
+	snprintf(buf, sizeof buf, "%s:%d: %s: %d", file, line, msg, code);
 	__BKPT(0);
 #endif
 }

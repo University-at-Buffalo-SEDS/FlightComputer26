@@ -256,7 +256,7 @@ static inline void enter_postinit(bool noconfirm)
 
 #endif
 
-  if (satur_incr(sm.flight, Landed) != Postinit)
+  if (++sm.flight != Postinit)
   {
     sm.flight = Postinit;
     log_err(id "unusual sequence at postinit");
@@ -400,11 +400,11 @@ static inline void process_action(fc_msg cmd, bool internal)
       break;
 
     case Advance_State:
-      satur_incr(sm.flight, Landed);
+      saturating_incr(sm.flight, Recovery);
       break;
 
     case Rewind_State:
-      satur_decr(sm.flight, Startup);
+      saturating_decr(sm.flight, Startup);
       break;
 
     case Log_Rate_Limit:

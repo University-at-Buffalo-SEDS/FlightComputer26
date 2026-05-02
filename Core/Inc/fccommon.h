@@ -120,8 +120,6 @@
 
 #define mlen(len) (len + sizeof(id))
 
-#define then && forward() &&
-
 #define fc_mask(message)   ((message) | FlightComputer_Mask)
 #define fc_unmask(message) ((message) & ~FlightComputer_Mask)
 
@@ -151,24 +149,32 @@
 #define inorm4(w, x, y, z) isqrtf_quake((w)*(w) + (x)*(x) + \
                                         (y)*(y) + (z)*(z))
 
-#define within(expr, bound)                                 \
+#define saturating_incr(_n, _th)              \
+  ((_n) + 1 <= (_th) ? ++(_n) : (_th))
+
+#define saturating_decr(_n, _th)              \
+  ((_n) - 1 >= (_th) ? --(_n) : (_th))
+
+#define within(expr, bound)                   \
   (fabsf((float)(expr)) <= (bound))
 
-#define proxim_lat(k)                                       \
+#define proxim_lat(k)                         \
   within((k) - LAUNCH_SITE_LAT, GPS_TOLER)
 
-#define proxim_lon(k)                                       \
+#define proxim_lon(k)                         \
   within((k) - LAUNCH_SITE_LON, GPS_TOLER)
 
 /* Go 'k' state vectors back, 0 to get the current vector.
  */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
 
-#define satur_incr(_n, _th)                   \
-  ((_n) + 1 <= (_th) ? ++(_n) : (_th))
-
-#define satur_decr(_n, _th)                   \
-  ((_n) - 1 >= (_th) ? --(_n) : (_th))
+#define Require(cond)                         \
+  do {                                        \
+    if (!(cond)) {                            \
+      handle_spurious(mode, #cond);           \
+      return;                                 \
+    }                                         \
+  } while (0)
 
 #define try_init_sensor(_fn, _ctr, _sn)       \
   do {                                        \

@@ -40,7 +40,7 @@ static inline void _sb_log(fu16 idx)
 
 	/* Buffer is sufficiently large.
 	 */
-	sprintf(buf, str, idx, _sb_meta[idx].min_ms);
+	snprintf(buf, sizeof buf, str, idx, _sb_meta[idx].min_ms);
 	log_msg(buf);
 }
 

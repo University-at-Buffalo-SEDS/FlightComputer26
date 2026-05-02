@@ -46,19 +46,34 @@
 
 /* Evaluation */
 
-#define SPURIOUS_THRESHOLD 1
+#define SPURIOUS_THRESHOLD	2
+#define SPURIOUS_PENALTY	 	1
 
+#define MIN_SAMP_LAUNCH		2
 #define MIN_SAMP_ASCENT   3
-#define MIN_SAMP_BURNOUT  5
+#define MIN_SAMP_COAST  	5
+#define MIN_SAMP_APOGEE		4
 #define MIN_SAMP_DESCENT  4
-#define MIN_SAMP_REEF     2
-#define MIN_SAMP_LANDED   6
+#define MIN_SAMP_REEF     4
+#define MIN_SAMP_LANDED   36
+
+#define LAUNCH_MIN_VEL  	24.0f
+#define ASCENT_MIN_VEL		18.0f
+#define COAST_MIN_VEL 		12.0f
+#define APOGEE_MAX_VEL 		3.0f
+#define DESCENT_MIN_VEL		4.0f
+#define REEF_TARGET_ALT 	457.2f
+#define FLYING_ALTITUDE		100.0f
 
 #define LAUNCH_CONFIRM_DELAY 30
 #define APOGEE_CONFIRM_DELAY 80
-#define LANDED_GPS_INTERVAL  1000
+#define RECOVERY_ANNOUNCE_DELAY 5000
+#define URGENT_DEPLOYMENT_DELAY 750
 
-#define URGENT_DEPLOYMENT_DELAY 200
+#define ALEX_THRESHOLD 	 80
+#define VIGILANT_MAX_ALT 3657.6f
+#define VIGILANT_MIN_ALT -2.0f
+#define VIGILANT_MIN_VEL 10.0f
 
 /* Altitude         ALT     meters  
  * Pressure         PRS     pascals
@@ -70,8 +85,8 @@
 
 #define MAX_ALT 4572.0f
 #define MAX_PRS 110000.0f
-#define MAX_DPS 360.0f
-#define MAX_ACC (GRAVITY_SI * 18.0f)
+#define MAX_DPS 2000.0f
+#define MAX_ACC (GRAVITY_SI * 24.0f)
 #define MAX_LAT (LAUNCH_SITE_LAT + 1.0f)
 #define MAX_LON (LAUNCH_SITE_LON + 1.0f)
 #define MAX_SEA (LAUNCH_SITE_SEA + MAX_ALT)
@@ -93,12 +108,6 @@
 #define VEL_TOLER 1.5f
 #define GPS_TOLER 1.41f
 #define GPS_RAIL_TOLER 0.05f
-
-#define VIGILANT_MAX_ALT 3657.6f
-#define VIGILANT_MIN_ALT -2.0f
-
-#define STABILIZATION_PAD 60
-#define STABILIZATION_STEPS 20
 
 
 /* Kalman */
@@ -143,7 +152,6 @@
 #define REEF_ASSERT_INTERVAL 500
 
 #define USER_OPTIONS ( (fc_msg) (0                   			\
-											| option(Consecutive_Samples)       \
 											| option(Eval_Focus_Flag)           \
 											| option(Reset_Failures)            \
 											| option(Measm_Reports)    					\

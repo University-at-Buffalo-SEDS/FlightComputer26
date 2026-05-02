@@ -203,8 +203,8 @@ typedef struct cm_align state_metadata {
   atomic_uint_fast8_t flight;
   uint8_t global_state;
   fu16 idx;
-  fu16 samp;
-  fi16 ev_step;
+  fi16 confidence;
+  fi16 spilled_milk;
 } sv_meta;
 
 
@@ -281,11 +281,10 @@ typedef enum flight_message : fu32 {
   Init_Failure_Record = Runtime_Configuration | (1u << 16),
   In_Aborted_State    = Runtime_Configuration | (1u << 17),
   Graceful_Reset      = Runtime_Configuration | (1u << 18),
-  Confirm_Altitude    = Runtime_Configuration | (1u << 19),
-  Manual_Biases       = Runtime_Configuration | (1u << 20),
-  Ascent_KF_Staged    = Runtime_Configuration | (1u << 21),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 22),
-  Defer_Baro_Fallback = Runtime_Configuration | (1u << 23),
+  Manual_Biases       = Runtime_Configuration | (1u << 19),
+  Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 21),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
   Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
