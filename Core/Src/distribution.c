@@ -226,7 +226,7 @@ watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
                  "LAT: %f, LON: %f", rail.lat, rail.lon);
     }
 
-    if (*++ctr % GPS_DELAY_MS)
+    if (++*ctr % GPS_DELAY_MS)
     {
       log_metric(id "GPS interval", *acc / *ctr, false);
     }
