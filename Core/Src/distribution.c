@@ -21,10 +21,11 @@ spinlock meas_locks[MEMS_Devices] = {0};
 #ifdef GPS_AVAILABLE
 
 static kf_gps rail = {0};
-static f_xyz gps_ring[GPS_RING_SIZE] = {0};
-static atomic_uint_fast16_t gps_mask = 0xFF00u;
+static f_xyz gps_buf = {0};
+static spinlock gps_lock = {0};
+static bool updated_gps = false;
 
-#endif /* GPS_AVAILABLE */
+#endif
 
 
 #ifdef TELEMETRY_ENABLED
@@ -81,63 +82,35 @@ static inline fc_msg decode_cmd(const uint8_t *k)
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
+#endif /* TELEMETRY_ENABLED */
 
 
 /* GPS coordinates handling */
 
-static inline void enqueue_raw_coords(const uint8_t *buf)
+static inline bool fetch_gps_data(kf_gps *buf)
 {
 #ifdef GPS_AVAILABLE
 
-  static fu8 idx = 0;
-
-  fu8 i = idx;
-  gps_ring[i] = *(f_xyz *)buf;
-
-  i = (i + 1) & GPS_RING_SIZE_MASK;
-  fu8 cons = load(&gps_mask, Acq) >> 8;
-
-  if (i != cons)
+  fc_lock(&gps_lock);
+  
+  if (!updated_gps)
   {
-    fetch_add(&gps_mask, 1, Rel);
-    idx = i;
+    fc_unlock(&gps_lock);
+    return false;
   }
-
-#endif /* GPS_AVAILABLE */
-}
-
-#endif /* TELEMETRY_ENABLED */
-
-static inline fu8 fetch_gps_data(kf_gps *buf)
-{
-#ifdef GPS_AVAILABLE
-
-  static fu8 idx = UINT_FAST8_MAX;
-
-  fu16 i = idx;
-  fu8 n = (fu8) swap(&gps_mask, i << 8, AcqRel);
-
-  if (n == 0)
-  {
-    fetch_or(&gps_mask, CLEAR_IDX, Rlx);
-    return 0;
-  }
-
-  i = (i + n) & GPS_RING_SIZE_MASK;
-  idx = i;
 
   /* Reordering: RF streams XYZ, KF expects [Z]YX */
-  buf->sea = gps_ring[i].z;
-  buf->lon = gps_ring[i].y;
-  buf->lat = gps_ring[i].x;
+  buf->sea = gps_buf.z;
+  buf->lon = gps_buf.y;
+  buf->lat = gps_buf.x;
 
-  fetch_or(&gps_mask, CLEAR_IDX, Rlx);
-  return n;
+  fc_unlock(&gps_lock);
+  return true;
 
 #else
-  return 0;
+  return false;
 
-#endif /* GPS_AVAILABLE */
+#endif
 }
 
 #ifdef TELEMETRY_ENABLED
@@ -189,7 +162,10 @@ process_gps_packet(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
-  enqueue_raw_coords(data);
+  fc_lock(&gps_lock);
+  gps_buf = *(f_xyz *)data;
+  updated_gps = true;
+  fc_concede(&gps_lock);
 
   sweetbench_start(10, 50);
 
