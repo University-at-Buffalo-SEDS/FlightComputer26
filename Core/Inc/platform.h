@@ -90,6 +90,7 @@ extern void *_sbrk(ptrdiff_t);
 
 /* HAL */
 
+extern SD_HandleTypeDef hsd1;
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 extern FDCAN_HandleTypeDef hfdcan1;
@@ -363,7 +364,7 @@ typedef enum SedsDataType_Debug {
 #include "sd_card.h"            // IWYU pragma: export
 #include "fx_stm32_sd_driver.h" // IWYU pragma: export
 
-#endif /* SD_AVAILABLE */
+#endif
 
 
 #endif /* PLATFORM_H */

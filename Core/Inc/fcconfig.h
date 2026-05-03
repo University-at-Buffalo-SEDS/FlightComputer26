@@ -25,10 +25,10 @@
 #define TELEMETRY_HEAP 65536
 #define POOL_RETRIES 3
 
-#define LOG_RATE_SD	 			1
-#define LOG_RATE_GND 			40
-#define LOG_RATE_SD_LTD  	20
-#define LOG_RATE_GND_LTD	400
+#define LOG_RATE_SD	 			10
+#define LOG_RATE_GND 			500
+#define LOG_RATE_SD_LTD  	30
+#define LOG_RATE_GND_LTD	1000
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */
@@ -41,7 +41,7 @@
 /* Ring data structures capacity */
 
 #define GPS_RING_SIZE 4
-#define STATE_HISTORY 4
+#define STATE_HISTORY 8
 
 
 /* Evaluation */

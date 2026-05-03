@@ -55,11 +55,11 @@ SedsResult on_fc_packet(const SedsPacketView *, void *);
 #endif
 
 static inline void
-log_metric(const char *msg, float metric, bool critical)
+log_metric(const char *msg, fi32 metric, bool critical)
 {
   char buf[MAX_METRIC_REPORT_SIZE];
   
-  snprintf(buf, sizeof buf, "%s: %d\n", msg, (fi32) metric);
+  snprintf(buf, sizeof buf, "%s: %d\n", msg, metric);
 
   if (critical)
   {

@@ -39,9 +39,9 @@ ENTRY(Reset_Handler)
 /* Memories definition */
 MEMORY
 {
-  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 278016
+  RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 253952
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 512K
-  DMA    (xrw)    : ORIGIN = 0x20043E00,   LENGTH = 512
+  DMA    (xrw)    : ORIGIN = 0x2003E000,   LENGTH = 24576
 }
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */

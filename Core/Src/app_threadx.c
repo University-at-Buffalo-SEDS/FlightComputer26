@@ -70,10 +70,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_Init */
 
-#ifdef SD_AVAILABLE
-  sd_logger_init("sedsfc.txt", fx_stm32_sd_driver, NULL);
-#endif
-
 #ifdef TELEMETRY_ENABLED
   if (create_telemetry_task(memory_ptr) != TX_SUCCESS)
   {

@@ -4,15 +4,13 @@
 
 #include "platform.h"
 #include "fctypes.h"
+#include "fcapi.h"
 #include "sd_card.h"
 
 
 /* =========================
    ThreadX objects
    ========================= */
-
-TX_THREAD g_sd_log_thread;
-static tx_align ULONG g_sd_log_thread_stack[LOGGER_STACK_ULONG];
 
 static TX_QUEUE g_sd_log_queue;
 /* Queue stores pointers (ULONG per message) */
@@ -29,23 +27,22 @@ typedef struct {
   uint8_t in_use;
 } sd_line_t;
 
-static sd_line_t g_line_pool[SD_LOG_QUEUE_DEPTH];
+static uncached sd_line_t g_line_pool[SD_LOG_QUEUE_DEPTH] = {0};
 
 
 /* =========================
    FileX objects/state
    ========================= */
 
-static FX_MEDIA g_sd_media;
+static FX_MEDIA *g_sd_media;
 static FX_FILE g_sd_file;
 
 static UINT g_fx_inited = 0;
-static UINT g_media_open = 0;
 static UINT g_file_open = 0;
 static UINT g_sd_logger_up = 0;
 
 /* Config provided by user */
-static const CHAR *g_filename = "seds_log.txt";
+static const CHAR *g_filename = "sedsfc.txt";
 static SdFxDriverEntry g_driver_entry = 0;
 static VOID *g_driver_info = 0;
 
@@ -115,15 +112,15 @@ static UINT ensure_file_open(void) {
   if (g_file_open)
     return FX_SUCCESS;
 
-  UINT st = fx_file_open(&g_sd_media, &g_sd_file, (CHAR *)g_filename,
+  UINT st = fx_file_open(g_sd_media, &g_sd_file, (CHAR *)g_filename,
                          FX_OPEN_FOR_WRITE);
 
   if (st == FX_NOT_FOUND) {
-    st = fx_file_create(&g_sd_media, (CHAR *)g_filename);
+    st = fx_file_create(g_sd_media, (CHAR *)g_filename);
     if (st != FX_SUCCESS && st != FX_ALREADY_CREATED)
       return st;
 
-    st = fx_file_open(&g_sd_media, &g_sd_file, (CHAR *)g_filename,
+    st = fx_file_open(g_sd_media, &g_sd_file, (CHAR *)g_filename,
                       FX_OPEN_FOR_WRITE);
   }
 
@@ -146,10 +143,6 @@ static VOID sd_close_all(void) {
     fx_file_close(&g_sd_file);
     g_file_open = 0;
   }
-  if (g_media_open) {
-    fx_media_close(&g_sd_media);
-    g_media_open = 0;
-  }
 }
 
 
@@ -157,7 +150,7 @@ static VOID sd_close_all(void) {
    SD writer thread
    ========================= */
 
-static VOID sd_log_thread_entry(ULONG arg) {
+VOID sd_log_thread_entry(ULONG arg) {
   (void)arg;
 
   const UINT flush_every_n = 10;
@@ -188,7 +181,7 @@ static VOID sd_log_thread_entry(ULONG arg) {
       continue;
     }
 
-    st = fx_file_write(&g_sd_file, line->buf, line->len);
+    st = fx_file_write(&g_sd_file, line->buf, line->len); // IO error
     if (st != FX_SUCCESS) {
       sd_close_all(); /* force reopen next time */
       sd_pool_free(line);
@@ -198,7 +191,7 @@ static VOID sd_log_thread_entry(ULONG arg) {
     /* periodic flush + user-request flush */
     flush_ctr++;
     if (g_flush_requested || flush_ctr >= flush_every_n) {
-      (void)fx_media_flush(&g_sd_media);
+      (void)fx_media_flush(g_sd_media);
       flush_ctr = 0;
       g_flush_requested = 0;
     }
@@ -213,13 +206,16 @@ static VOID sd_log_thread_entry(ULONG arg) {
    ========================= */
 
 UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry,
-                    VOID *driver_info) {
+                    VOID *driver_info, FX_MEDIA *media) {
   if (g_sd_logger_up) {
     return FX_ALREADY_CREATED;
   }
   if (!filename || !driver_entry)
     return FX_PTR_ERROR;
 
+  memset(g_line_pool, 0, sizeof g_line_pool);
+
+  g_sd_media = media;
   g_filename = filename;
   g_driver_entry = driver_entry;
   g_driver_info = driver_info;
@@ -228,10 +224,6 @@ UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry,
 
   tx_queue_create(&g_sd_log_queue, "sd_log_queue", TX_1_ULONG,
                   g_sd_log_queue_storage, sizeof(g_sd_log_queue_storage));
-
-  tx_thread_create(&g_sd_log_thread, "sd_log_thread", sd_log_thread_entry, 0,
-                   g_sd_log_thread_stack, LOGGER_STACK_BYTES, LOGGER_PRIORITY,
-                   LOGGER_PRIORITY, LOGGER_TIME_SLICE, TX_DONT_START);
 
   g_sd_logger_up = 1;
   return FX_SUCCESS;
@@ -295,3 +287,21 @@ UINT sd_logger_request_flush(void) {
   g_flush_requested = 1;
   return FX_SUCCESS;
 }
+
+#ifdef SD_AVAILABLE
+
+SedsResult on_sd_packet(const SedsPacketView *pkt, void *_)
+{
+  if (!pkt || !pkt->sender || !pkt->sender_len ||
+      !pkt->payload || !pkt->payload_len)
+  {
+    return SEDS_HANDLER_ERROR;
+  }
+
+  return sd_logger_enqueue_line((char *)pkt->payload,
+                                pkt->payload_len) == FX_SUCCESS
+                                                  ? SEDS_OK
+                                                  : SEDS_ERR;
+}
+
+#endif

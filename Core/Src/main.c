@@ -582,7 +582,7 @@ void MPU_Config(void)
   /** Initializes and configures the Region 1 and the memory to be protected
   */
   MPU_InitStruct.Number = MPU_REGION_NUMBER1;
-  MPU_InitStruct.BaseAddress = 0x20043E00;
+  MPU_InitStruct.BaseAddress = 0x2003E000;
   MPU_InitStruct.LimitAddress = 0x20044000;
   MPU_InitStruct.AttributesIndex = MPU_ATTRIBUTES_NUMBER1;
   MPU_InitStruct.AccessPermission = MPU_REGION_ALL_RW;

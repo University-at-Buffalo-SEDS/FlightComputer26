@@ -641,6 +641,7 @@ void die(const char *fmt, ...) {
 TX_THREAD telemetry_task;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
+extern TX_THREAD fx_app_thread;
 
 static cm_align CHAR static_pool[TELEMETRY_HEAP];
 
@@ -651,13 +652,18 @@ void telemetry_entry(ULONG _)
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
 
-  tx_thread_resume(&g_sd_log_thread);
-
   task_loop (DO_NOT_EXIT)
   {
     can_bus_process_rx();
     (void)telemetry_poll_discovery();
-    (void)process_all_queues_timeout(50);
+    SedsResult k = process_all_queues_timeout(50);
+
+    if (k != SEDS_OK)
+    {
+      blink(Blue, false, k);
+      blink(Green, true, 1);
+    }
+
     (void)telemetry_poll_timesync();
 
     tx_thread_relinquish();

@@ -24,13 +24,14 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "platform.h"
 #include "fcapi.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+#ifdef SD_AVAILABLE
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -55,7 +56,6 @@ TX_THREAD       fx_app_thread;
 ALIGN_32BYTES (uint32_t fx_sd_media_memory[FX_STM32_SD_DEFAULT_SECTOR_SIZE / sizeof(uint32_t)]);
 /* Define FileX global data structures.  */
 FX_MEDIA        sdio_disk;
-HAL_SD_CardInfoTypeDef *pCardInfoSD;
 
 /* USER CODE BEGIN PV */
 
@@ -117,6 +117,8 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN MX_FileX_Init 1*/
 
+  sd_logger_init("sedsfc.txt", fx_stm32_sd_driver, NULL, &sdio_disk);
+
 /* USER CODE END MX_FileX_Init 1*/
 
   return ret;
@@ -136,30 +138,6 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE END fx_app_thread_entry 0*/
 
-/* Format the SD memory as FAT */
-  sd_status =  fx_media_format(&sdio_disk,                          // SD_Disk pointer
-                               fx_stm32_sd_driver,                  // Driver entry
-                               (VOID *)FX_NULL,                     // Device info pointer
-                               (UCHAR *) fx_sd_media_memory,        // Media buffer pointer
-                               sizeof(fx_sd_media_memory),          // Media buffer size
-                               FX_SD_VOLUME_NAME,                   // Volume Name
-                               FX_SD_NUMBER_OF_FATS,                // Number of FATs
-                               32,                                  // Directory Entries
-                               FX_SD_HIDDEN_SECTORS,                // Hidden sectors
-                               pCardInfoSD->BlockNbr,                 // Total sectors
-                               FX_STM32_SD_DEFAULT_SECTOR_SIZE,     // Sector size
-                               8,                                   // Sectors per cluster
-                               1,                                   // Heads
-                               1);                                  // Sectors per track
-
-/* Check the format sd_status */
-  if (sd_status != FX_SUCCESS)
-  {
-     /* USER CODE BEGIN SD MEDIA get info error */
-    while(1);
-    /* USER CODE END SD MEDIA get info error */
-  }
-
 /* Open the SD disk driver */
   sd_status =  fx_media_open(&sdio_disk, FX_SD_VOLUME_NAME, fx_stm32_sd_driver, (VOID *)FX_NULL, (VOID *) fx_sd_media_memory, sizeof(fx_sd_media_memory));
 
@@ -177,9 +155,11 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN fx_app_thread_entry 1*/
 
+  sd_log_thread_entry(0);
+
 /* USER CODE END fx_app_thread_entry 1*/
   }
 
 /* USER CODE BEGIN 1 */
-
+#endif
 /* USER CODE END 1 */

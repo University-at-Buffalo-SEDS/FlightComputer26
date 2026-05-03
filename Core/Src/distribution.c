@@ -185,13 +185,13 @@ static inline void to_relative_coords(kf_gps *buf)
 }
 
 static inline void
-watch_for_gps_packets(fu32 conf, float *acc, fu32 *ctr)
+watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
 {
 #ifdef GPS_AVAILABLE
 
   if (conf & option(GPS_Available) && fetch_gps_data(&meas.gps))
   {
-    *acc += fsec(timer_exchange(GPSWatchdog));
+    *acc += timer_exchange(GPSWatchdog);
 
     rail = meas.gps;
 
@@ -292,6 +292,8 @@ update_ascent_biases(const uint8_t *data, size_t len)
 
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 {
+    led_toggle(LED1_PORT, LED1_PIN);
+
   if (!pkt || !pkt->sender || !pkt->sender_len ||
       !pkt->payload || !pkt->payload_len)
   {
@@ -554,8 +556,10 @@ static inline void descent_full_cycle(fu32 conf)
 
 static inline void data_streaming_mode(void)
 {
-  float acc_baro = 0.0f, acc_gps = 0.0f;
+  fu32 acc_baro = 0.0f, acc_gps = 0.0f;
   fu32 ctr_baro = 0, ctr_gps = 0, conf = 0, imu = 0;
+
+  timer_update(Auxiliary);
 
   task_loop (conf & option(Postinit_Requested) ||
              conf & option(Rollback_Requested))
@@ -576,7 +580,7 @@ static inline void data_streaming_mode(void)
     }
     if (try_fetch_baro(&meas.baro))
     {
-      acc_baro += fsec(timer_exchange(Auxiliary));
+      acc_baro += timer_exchange(Auxiliary);
       ++ctr_baro;
 
       code |= validate_baro(&meas.baro, conf) ? 0
@@ -611,8 +615,7 @@ static inline void data_streaming_mode(void)
 static inline void post_initialization(void)
 {
   f_xyz accl_acc = {0};
-  fu32 accl_ctr = 0, gps_ctr = 0;
-  float gps_acc;
+  fu32 accl_ctr = 0, gps_ctr = 0, gps_acc = 0;
 
   fu32 conf = load(&g_conf, Acq);
   fc_msg cmd = fc_mask(Reinit_Sensors);

@@ -44,7 +44,10 @@ typedef VOID (*SdFxDriverEntry)(FX_MEDIA *media);
  *
  * Safe to call multiple times; only first call creates thread/queue.
  */
-UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry, VOID *driver_info);
+UINT sd_logger_init(const CHAR *filename, SdFxDriverEntry driver_entry, VOID *driver_info, FX_MEDIA *media);
+
+/* Thread entry */
+VOID sd_log_thread_entry(ULONG arg);
 
 /**
  * Enqueue a line to be appended (non-blocking).
