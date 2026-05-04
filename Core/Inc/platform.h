@@ -361,8 +361,10 @@ typedef enum SedsDataType_Debug {
 
 #ifdef SD_AVAILABLE
 
-#include "sd_card.h"            // IWYU pragma: export
+#include "fx_api.h"             // IWYU pragma: export
 #include "fx_stm32_sd_driver.h" // IWYU pragma: export
+
+extern FX_MEDIA sdio_disk;
 
 #endif
 

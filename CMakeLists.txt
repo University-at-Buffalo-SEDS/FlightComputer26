@@ -54,7 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/sd_card.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
 

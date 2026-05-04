@@ -31,7 +31,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#ifdef SD_AVAILABLE
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -117,7 +117,7 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN MX_FileX_Init 1*/
 
-  sd_logger_init("sedsfc.txt", fx_stm32_sd_driver, NULL, &sdio_disk);
+  sd_pipeline_init("ubseds26.log");
 
 /* USER CODE END MX_FileX_Init 1*/
 
@@ -155,11 +155,11 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN fx_app_thread_entry 1*/
 
-  sd_log_thread_entry(0);
+  sd_pipeline_task();
 
 /* USER CODE END fx_app_thread_entry 1*/
   }
 
 /* USER CODE BEGIN 1 */
-#endif
+
 /* USER CODE END 1 */

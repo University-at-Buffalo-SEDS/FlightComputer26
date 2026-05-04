@@ -30,6 +30,10 @@
 #define LOG_RATE_SD_LTD  	30
 #define LOG_RATE_GND_LTD	1000
 
+#define SD_BUFFER_SIZE		8192
+#define SD_FLUSH_INTERVAL 20000
+#define SD_POST_MARGIN		(SD_BUFFER_SIZE - 128)
+
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */
 

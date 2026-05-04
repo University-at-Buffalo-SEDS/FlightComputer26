@@ -116,6 +116,12 @@
                     ) )
 
 
+/* SD */
+
+#define F32_TO_STR_MAX_SIZE 72
+#define F32_SCALE           1e4f
+
+
 /* Common macros */
 
 #define mlen(len) (len + sizeof(id))

@@ -28,6 +28,7 @@ typedef enum relative_timer : fu8 {
   IMURemote,
   KFLocal,
   KFRemote,
+  SDFlush,
 
   Time_Users
 } timer;
@@ -354,6 +355,21 @@ typedef enum remote_cmd_compat : uint8_t
 
   Compat_Messages
 } compat;
+
+
+/* SD */
+
+#ifdef SD_AVAILABLE
+
+typedef struct sd_buffer_metadata {
+  TX_SEMAPHORE full;
+  TX_SEMAPHORE free;
+  fu16 off[2];
+  spinlock lock;
+  fu8 cur;
+} sd_meta;
+
+#endif
 
 
 #endif /* FC_DATA_STRUCTURES */

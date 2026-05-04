@@ -268,6 +268,12 @@ static inline bool expand_parachute(bool force)
 }
 
 
+/* FileX SD */
+
+void sd_pipeline_init(const char *);
+void sd_pipeline_task(void);
+
+
 /* Single-threaded spinlock */
 
 static inline void fc_lock(spinlock *object)
