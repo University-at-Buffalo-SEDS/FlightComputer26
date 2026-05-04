@@ -29,7 +29,7 @@ static spinlock external_lock = {0};
 
 static conditional noreturn void panic_memory(void)
 {
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     /* 2 fast blue, 1 slow green */
 
@@ -40,7 +40,7 @@ static conditional noreturn void panic_memory(void)
 
 static conditional noreturn void panic_lock(void)
 {
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     /* 2 fast green, 1 slow blue */
 
@@ -51,7 +51,7 @@ static conditional noreturn void panic_lock(void)
 
 static conditional noreturn void panic_alloc(void)
 {
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     /* 2 fast blue, 3 slow green */
 
@@ -62,7 +62,7 @@ static conditional noreturn void panic_alloc(void)
 
 static conditional noreturn void panic_unknown(void)
 {
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     /* 3 fast blue, 3 fast green */
 

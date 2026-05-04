@@ -175,6 +175,7 @@ static inline void announce_recovery(fu32 mode)
 {
   flight_advance(Recovery);
   log_critical(id "announcing recovery");
+  fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
   tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
 }
 
@@ -188,7 +189,7 @@ static inline void report_lowpass_gps(fu32 mode)
       svec(0).gps.lat, svec(0).gps.lon, meas.gps.sea
     };
 
-    log_f(SEDS_DT_GPS_DATA, 3, &lowpass);
+    log_f32(SEDS_DT_GPS_DATA, 3, &lowpass);
   }
 
   tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY / 100);
@@ -270,12 +271,12 @@ static inline void propel_kalman_state(fu32 conf)
 
   if (timer_probe(KFLocal, rates.sd))
   {
-    log_f(kind_sd, elements, tmp);
+    sd_append_f32(kind_sd, tmp, elements);
   }
 
   if (timer_probe(KFRemote, rates.gnd))
   {
-    log_f(kind_gnd, elements, tmp);
+    log_f32(kind_gnd, elements, tmp);
   }
 
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
@@ -335,7 +336,7 @@ void evaluation_entry(ULONG _)
 
   enter_flight_mode(conf);
 
-  task_loop (conf & option(Eval_Abort_Flag))
+  MrAnalog (conf & option(Eval_Abort_Flag))
   {
     ULONG done, request = accum & EVALUATION_STAGED
                                 ? Baro_Mask

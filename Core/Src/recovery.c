@@ -723,7 +723,7 @@ void recovery_entry(ULONG st)
 
   log_flight_state(to_global_state(sm.flight));
 
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     fc_msg msg;
 

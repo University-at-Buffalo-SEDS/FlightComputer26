@@ -652,7 +652,7 @@ void telemetry_entry(ULONG _)
   // Ensure router exists early (so we can send requests immediately)
   (void)init_telemetry_router();
 
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     can_bus_process_rx();
     (void)telemetry_poll_discovery();

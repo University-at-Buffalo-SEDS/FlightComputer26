@@ -69,9 +69,9 @@ typedef arm_matrix_instance_f32 matrix;
 
 /* Misc utilities */
 
-#define DO_NOT_EXIT 0
+#define WE_ARE_SO_BACK 0
 
-#define task_loop(exit_predicate) while (!(exit_predicate))
+#define MrAnalog(exit_predicate) while (!(exit_predicate))
 
 #define popcount(mask) (fu8)__builtin_popcount((unsigned)(mask))
 
@@ -213,37 +213,43 @@ extern FDCAN_HandleTypeDef hfdcan1;
 #include <sedsprintf.h> // IWYU pragma: export
 #include "telemetry.h"  // IWYU pragma: export
 
-#define log_msg_sync(msg, size)                               \
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA,             \
-                            (msg), (size), sizeof(char))
+#define log_msg_sync(msg, size)                                 \
+  do {                                                          \
+    sd_append_string(SEDS_DT_MESSAGE_DATA, (msg));              \
+    log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,     \
+                                      (msg));                   \
+  } while (0)
 
-#define log_msg(msg)                                          \
-  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,     \
+#define log_msg(msg)                                            \
+  log_telemetry_string_asynchronous(SEDS_DT_MESSAGE_DATA,       \
                                     (msg))
 
-#define log_critical(msg)                                     \
-  log_telemetry_string_asynchronous(SEDS_DT_ORDERED_MESSAGE,  \
-                                    (msg))
+#define log_critical(msg)                                       \
+  do {                                                          \
+    sd_append_string(SEDS_DT_ORDERED_MESSAGE, (msg));           \
+    log_telemetry_string_asynchronous(SEDS_DT_ORDERED_MESSAGE,  \
+                                      (msg));                   \
+  } while (0)
 
-#define log_valve_board_command(cmd)                          \
-  log_telemetry_asynchronous(SEDS_DT_VALVE_COMMAND,           \
-                             &(cmd), 1, sizeof(uint8_t))      \
+#define log_valve_board_command(cmd)                            \
+  log_telemetry_asynchronous(SEDS_DT_VALVE_COMMAND,             \
+                             &(cmd), 1, sizeof(uint8_t))        \
 
-#define log_flight_state(state)                               \
-  log_telemetry_asynchronous(SEDS_DT_FLIGHT_STATE,            \
-                             (const void *)(state),           \
-                             1, sizeof(uint8_t))              \
+#define log_flight_state(state)                                 \
+  log_telemetry_asynchronous(SEDS_DT_FLIGHT_STATE,              \
+                             (const void *)(state),             \
+                             1, sizeof(uint8_t))                \
 
-#define log_f(type, amount, buf)                              \
-  log_telemetry_asynchronous((type), (buf), (amount),         \
+#define log_f32(type, amount, buf)                              \
+  log_telemetry_asynchronous((type), (buf), (amount),           \
                              sizeof(float))
 
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
-#define log_err_sync(fmt, ...)                                \
+#define log_err_sync(fmt, ...)                                  \
   log_error_synchronous(fmt __VA_OPT__(,) __VA_ARGS__)
                            
-#define log_err(fmt, ...)                                     \
+#define log_err(fmt, ...)                                       \
   log_error_asynchronous(fmt __VA_OPT__(,) __VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt __VA_OPT__(,) __VA_ARGS__)
@@ -251,10 +257,10 @@ extern FDCAN_HandleTypeDef hfdcan1;
 #else /* !C 23 */
 #ifdef __GNUC__
 
-#define log_err_sync(fmt, ...)                                \
+#define log_err_sync(fmt, ...)                                  \
   log_error_synchronous(fmt, ##__VA_ARGS__)
 
-#define log_err(fmt, ...)                                     \
+#define log_err(fmt, ...)                                       \
   log_error_asynchronous(fmt, ##__VA_ARGS__)
 
 #define log_die(fmt, ...) die(fmt, ##__VA_ARGS__)
@@ -296,7 +302,7 @@ typedef enum SedsDataType_Debug {
 #define log_flight_state(state)                               \
   printf("New flight state: %s\n", debug_g_state(*(state)))
 
-#define log_f(type, amount, buf)                              \
+#define log_f32(type, amount, buf)                              \
   do {                                                        \
     printf("%s: ", debug_descriptor(type));                   \
     fwrite((buf), sizeof(float), (amount), stdout);           \
@@ -343,7 +349,7 @@ typedef enum SedsDataType_Debug {
 
 #define log_flight_state(state)
 
-#define log_f(type, buf) 
+#define log_f32(type, buf) 
 
 #define log_err_sync(fmt, ...) 
 #define log_die(fmt, ...) Error_Handler()

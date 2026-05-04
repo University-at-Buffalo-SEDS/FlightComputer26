@@ -70,14 +70,17 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 		if (line.off[line.cur] >= SD_POST_MARGIN)
 		{
 			line.cur = !line.cur;
-			fc_unlock(&line.lock);
 
-			if (tx_semaphore_get(&line.free, TX_NO_WAIT) == TX_SUCCESS)
+			if (line.free)
 			{
+				line.free = false;
+				fc_unlock(&line.lock);
 				tx_semaphore_put(&line.full);
+				return;
 			}
 			/* Else nowhere to write -> drop the line */
 
+			fc_unlock(&line.lock);
 			return;
 		}
 	}
@@ -85,11 +88,38 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 }
 
 
+static inline constexpr char *seds_msg(SedsDataType ty)
+{
+	switch (ty) {
+		case SEDS_DT_MESSAGE_DATA:		return "MessageData";
+		case SEDS_DT_ORDERED_MESSAGE:	return "OrderedMessage";
+		case SEDS_DT_GENERIC_ERROR:		return "GenericError";
+		default:											return "DefaultMsg";
+	}
+}
+
+
+static inline constexpr char *seds_f32(SedsDataType ty)
+{
+	switch (ty) {
+		case SEDS_DT_IMU_LOCAL:				return "IMULocal";
+		case SEDS_DT_BAROMETER_LOCAL:	return "BaroLocal";
+		case SEDS_DT_ACCEL_LOCAL:			return "AccelLocal";
+		case SEDS_DT_GYRO_LOCAL:			return "GyroLocal";
+		case SEDS_DT_ASCENT_LOCAL:    return "AscentLocal";
+    case SEDS_DT_DESCENT_LOCAL:   return "DescentLocal";
+    case SEDS_DT_EULER_ANGLES:    return "EulerAngles";
+		default:											return "DefaultData";
+	}
+}
+
+
 /* API */
 
-void sd_append_f32(const char *ty, const float *val, fu8 count)
+void sd_append_f32(SedsDataType ty, const float *val, fu8 count)
 {
 	fu32 relative_ts = now_ms();
+
 	char buf[F32_TO_STR_MAX_SIZE];
 	ftoa(buf, val, count);
 
@@ -99,13 +129,13 @@ void sd_append_f32(const char *ty, const float *val, fu8 count)
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 
 	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-														relative_ts, ty, buf);
+													relative_ts, seds_f32(ty), buf);
 
 	sd_release_notify(written, rem);
 }
 
 
-void sd_append_string(const char *ty, const char *str)
+void sd_append_string(SedsDataType ty, const char *str)
 {
 	fu32 relative_ts = now_ms();
 
@@ -115,7 +145,7 @@ void sd_append_string(const char *ty, const char *str)
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 
 	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-													 	relative_ts, ty, str);
+													relative_ts, seds_msg(ty), str);
 
 	sd_release_notify(written, rem);
 }
@@ -131,6 +161,8 @@ static inline bool sd_try_write_line(void)
 	fu16 write_len = line.off[local];
 	fc_unlock(&line.lock);
 
+	sweetbench_start(12);
+
 	UINT st = fx_file_seek(&file,
 												 file.fx_file_current_file_size);
 	if (st == FX_SUCCESS)
@@ -138,14 +170,30 @@ static inline bool sd_try_write_line(void)
 		st = fx_file_write(&file, sdbuf[local], write_len);
 	}
 
+	sweetbench_catch(12);
+
 	fc_lock(&line.lock);
 	line.off[local] = 0;
+	line.free = true;
 	fc_unlock(&line.lock);
 
 	local = !local;
-	tx_semaphore_put(&line.free);
-
 	return st == FX_SUCCESS;
+}
+
+
+static inline void sd_pipeline_shutdown(const char *failed)
+{
+	UINT st;
+
+	if ((st = fx_file_close(&file)) != FX_SUCCESS)
+	{
+		log_err(id "fclose %s %u", failed, st);
+	}
+	else if ((st = fx_media_close(&sdio_disk)) != FX_SUCCESS)
+	{
+		log_err(id "mclose %s %u", failed, st);
+	}
 }
 
 
@@ -160,7 +208,9 @@ void sd_pipeline_task(void)
     log_die(id "fopen %s %u", failed, st);
   }
 
-	task_loop (DO_NOT_EXIT)
+	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rel);
+
+	MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
 	{
 		if ((st = tx_semaphore_get(&line.full, TX_WAIT_FOREVER))
 																							!= TX_SUCCESS)
@@ -177,10 +227,7 @@ void sd_pipeline_task(void)
 		else log_err(id "fwrite %s %u", failed, st);
 	}
 
-	if ((st = fx_file_close(&file)) != FX_SUCCESS)
-	{
-		log_err(id "fclose %s %u", failed, st);
-	}
+	sd_pipeline_shutdown(failed);
 }
 
 

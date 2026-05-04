@@ -206,7 +206,7 @@ void dma_entry(ULONG _)
   fu16 drdy_snapshot;
   fu16 relv_snapshot;
 
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     drdy_snapshot = load(&flags.drdy, Acq);
 

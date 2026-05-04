@@ -292,13 +292,13 @@ update_ascent_biases(const uint8_t *data, size_t len)
 
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 {
-    led_toggle(LED1_PORT, LED1_PIN);
-
   if (!pkt || !pkt->sender || !pkt->sender_len ||
       !pkt->payload || !pkt->payload_len)
   {
     return SEDS_HANDLER_ERROR;
   }
+
+  led_toggle(LED1_PORT, LED1_PIN);
 
   switch (pkt->ty)
   {
@@ -427,13 +427,13 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
 
   if (timer_probe(mems[dev].tim_sd, rates.sd))
   {
-    log_f(mems[dev].kind_sd, mems[dev].size, buf);
+    sd_append_f32(mems[dev].kind_sd, buf, mems[dev].size);
     recorded = true;
   }
 
   if (timer_probe(mems[dev].tim_gnd, rates.gnd))
   {
-    log_f(mems[dev].kind_gnd, mems[dev].size, buf);
+    log_f32(mems[dev].kind_gnd, mems[dev].size, buf);
     recorded = true;
   }
 
@@ -561,8 +561,8 @@ static inline void data_streaming_mode(void)
 
   timer_update(Auxiliary);
 
-  task_loop (conf & option(Postinit_Requested) ||
-             conf & option(Rollback_Requested))
+  MrAnalog (conf & option(Postinit_Requested) ||
+            conf & option(Rollback_Requested))
   {
     fu32 code = 0;
 
@@ -624,14 +624,11 @@ static inline void post_initialization(void)
   log_flight_state(to_global_state(current()));
   timer_update(Auxiliary);
 
-  task_loop (timer_fetch(Auxiliary) > POSTINIT_DURATION)
+  MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
     if (try_fetch_accl(&meas.accl))
     {
-      if (timer_probe(IMURemote, rates.gnd))
-      {
-        log_f(SEDS_DT_ACCEL_DATA, 3, &meas.accl);
-      }
+      maybe_log_measm(IMU, &meas.gyro);
 
       if (validate_accl(&meas.accl, conf))
       {
@@ -685,7 +682,7 @@ static inline bool fill_sequence_states(fu32 conf)
     post_initialization();
   }
 
-  task_loop (conf & option(Launch_Requested))
+  MrAnalog (conf & option(Launch_Requested))
   {
     tx_thread_sleep(POSTINIT_INTERVAL);
     conf = load(&g_conf, Acq);
@@ -700,7 +697,7 @@ static inline bool fill_sequence_states(fu32 conf)
     }
   }
 
-  task_loop (request_ignition() == SEDS_OK)
+  MrAnalog (request_ignition() == SEDS_OK)
     ;
   log_critical(id "ignition requested, in flight mode");
 
@@ -717,7 +714,7 @@ void distribution_entry(ULONG _)
     return;
   }
 
-  task_loop (DO_NOT_EXIT)
+  MrAnalog (WE_ARE_SO_BACK)
   {
     conf = load(&g_conf, Acq);
 

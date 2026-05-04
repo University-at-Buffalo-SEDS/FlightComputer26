@@ -286,6 +286,7 @@ typedef enum flight_message : fu32 {
   Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
   Using_Ascent_KF     = Runtime_Configuration | (1u << 21),
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
+  SD_Pipeline_Reset   = Runtime_Configuration | (1u << 23),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
   Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
@@ -363,10 +364,9 @@ typedef enum remote_cmd_compat : uint8_t
 
 typedef struct sd_buffer_metadata {
   TX_SEMAPHORE full;
-  TX_SEMAPHORE free;
   fu16 off[2];
   spinlock lock;
-  fu8 cur;
+  bool cur, free;
 } sd_meta;
 
 #endif

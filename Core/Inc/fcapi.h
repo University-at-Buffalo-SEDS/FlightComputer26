@@ -18,6 +18,14 @@ bool try_fetch_gyro(f_xyz *);
 bool try_fetch_accl(f_xyz *);
 
 
+/* SD pipeline */
+
+void sd_pipeline_init(const char *);
+void sd_pipeline_task(void);
+void sd_append_f32(SedsDataType, const float *, fu8);
+void sd_append_string(SedsDataType, const char *);
+
+
 /* Kalman filter */
 
 #ifdef PARALLEL_PREDICT_UPDATE
@@ -266,12 +274,6 @@ static inline bool expand_parachute(bool force)
 
   return true;
 }
-
-
-/* FileX SD */
-
-void sd_pipeline_init(const char *);
-void sd_pipeline_task(void);
 
 
 /* Single-threaded spinlock */
