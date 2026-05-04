@@ -117,8 +117,6 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN MX_FileX_Init 1*/
 
-  sd_pipeline_init("ubseds26.log");
-
 /* USER CODE END MX_FileX_Init 1*/
 
   return ret;
@@ -155,7 +153,7 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN fx_app_thread_entry 1*/
 
-  sd_pipeline_task();
+  sd_pipeline_task("sweet_flight_data.log");
 
 /* USER CODE END fx_app_thread_entry 1*/
   }

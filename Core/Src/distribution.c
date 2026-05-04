@@ -338,8 +338,7 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
     st |= Bad_Attitude_Z;
   }
 
-  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
-                                       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
@@ -365,8 +364,7 @@ validate_accl(const f_xyz *accl, fu32 conf)
     st |= Bad_Accel_Z;
   }
 
-  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
-                                       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }
@@ -388,8 +386,7 @@ validate_baro(const baro *baro, fu32 conf)
     st |= Bad_Altitude;
   }
 
-  if (conf & option(Measm_Reports) && (conf & option(Reset_Failures) ||
-                                       st != fc_mask(Sensor_Measm_Code)))
+  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
   {
     tx_queue_send(&shared, &st, TX_NO_WAIT);
   }

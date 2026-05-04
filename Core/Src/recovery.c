@@ -268,7 +268,7 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
-  if (!beyond(Postinit))
+  if (!beyond(Startup))
   {
     log_err(id "rejected Launch before Postinit");
     return;

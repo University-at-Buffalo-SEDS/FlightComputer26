@@ -182,33 +182,53 @@ static inline bool sd_try_write_line(void)
 }
 
 
-static inline void sd_pipeline_shutdown(const char *failed)
+static inline void sd_pipeline_shutdown(const char *unluck)
 {
 	UINT st;
 
 	if ((st = fx_file_close(&file)) != FX_SUCCESS)
 	{
-		log_err(id "fclose %s %u", failed, st);
+		log_err(id "fclose %s %u", unluck, st);
 	}
 	else if ((st = fx_media_close(&sdio_disk)) != FX_SUCCESS)
 	{
-		log_err(id "mclose %s %u", failed, st);
+		log_err(id "mclose %s %u", unluck, st);
 	}
 }
 
 
-void sd_pipeline_task(void)
+static inline void sd_pipeline_init(const char *name)
 {
-	const char *failed = "failed:";
-
-	UINT st = fx_file_open(&sdio_disk, &file, file.fx_file_name,
-																					 FX_OPEN_FOR_WRITE);
-	if (st != FX_SUCCESS)
-	{
-    log_die(id "fopen %s %u", failed, st);
-  }
+	const char *failed = "failed";
+	file.fx_file_name = (CHAR *)name;
 
 	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rel);
+
+	if (fx_file_create(&sdio_disk, (CHAR *)name) != FX_SUCCESS)
+	{
+		log_die(id "fcreate %s", failed);
+	}
+
+	if (tx_semaphore_create(&line.full, id "L", 0) != TX_SUCCESS ||
+		 	tx_semaphore_create(&line.full, id "E", 0) != TX_SUCCESS)
+	{
+		log_die(id "sema %s", failed);
+	}
+																					 ;
+	if (fx_file_open(&sdio_disk, &file, file.fx_file_name,
+															FX_OPEN_FOR_WRITE) != FX_SUCCESS)
+	{
+    log_die(id "fopen %s", failed);
+  }
+}
+
+
+void sd_pipeline_task(const char *name)
+{
+	UINT st;
+	const char *unluck = "unsuccessful:";
+
+	sd_pipeline_init(name);
 
 	MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
 	{
@@ -221,29 +241,11 @@ void sd_pipeline_task(void)
 			if (timer_probe(SDFlush, SD_FLUSH_INTERVAL) &&
 					(st = fx_media_flush(&sdio_disk)) != FX_SUCCESS)
 			{
-				log_err(id "flush %s %u", failed, st);
+				log_err(id "flush %s %u", unluck, st);
 			}
 		}
-		else log_err(id "fwrite %s %u", failed, st);
+		else log_err(id "fwrite %s %u", unluck, st);
 	}
 
-	sd_pipeline_shutdown(failed);
-}
-
-
-void sd_pipeline_init(const char *name)
-{
-	const char *critical = "creation failure:";
-	file.fx_file_name = (CHAR *)name;
-	
-	if (fx_file_create(&sdio_disk, (CHAR *)name) != FX_SUCCESS)
-	{
-		log_die(id "file %s", critical);
-	}
-
-	if (tx_semaphore_create(&line.full, id "L", 0) != TX_SUCCESS ||
-		 	tx_semaphore_create(&line.full, id "E", 0) != TX_SUCCESS)
-	{
-		log_die(id "sema %s", critical);
-	}
+	sd_pipeline_shutdown(unluck);
 }

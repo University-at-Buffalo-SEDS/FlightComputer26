@@ -20,8 +20,7 @@ bool try_fetch_accl(f_xyz *);
 
 /* SD pipeline */
 
-void sd_pipeline_init(const char *);
-void sd_pipeline_task(void);
+void sd_pipeline_task(const char *);
 void sd_append_f32(SedsDataType, const float *, fu8);
 void sd_append_string(SedsDataType, const char *);
 
