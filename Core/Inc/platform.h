@@ -277,13 +277,16 @@ typedef enum SedsDataType_Debug {
   SEDS_DT_IMU_DATA,
   SEDS_DT_BAROMETER_LOCAL,
   SEDS_DT_GYRO_LOCAL,
-  SEDS_DT_ACCL_LOCAL,
+  SEDS_DT_ACCEL_LOCAL,
   SEDS_DT_IMU_LOCAL,
   SEDS_DT_ASCENT_STATE,
   SEDS_DT_DESCENT_STATE,
   SEDS_DT_ASCENT_LOCAL,
   SEDS_DT_DESCENT_LOCAL,
   SEDS_DT_EULER_ANGLES,
+  SEDS_DT_MESSAGE_DATA,
+  SEDS_DT_ORDERED_MESSAGE,
+  SEDS_DT_GENERIC_ERROR,
 } SedsDataType;
 
 #ifdef USB_ENUMERATES
@@ -343,7 +346,7 @@ typedef enum SedsDataType_Debug {
 
 #define log_flight_state(state)
 
-#define log_f32(type, buf) 
+#define log_f32(type, amount, buf) 
 
 #define log_err_sync(fmt, ...) 
 #define log_die(fmt, ...) Error_Handler()

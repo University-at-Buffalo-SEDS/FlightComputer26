@@ -246,7 +246,7 @@ static inline void vigilant_watchdog(fu32 mode, state now)
 
 static inline void propel_kalman_state(fu32 conf)
 {
-  fu16 kind_sd, kind_gnd, elements;
+  conditional fu16 kind_sd, kind_gnd, elements;
   float tmp[MAX_STATE];
 
   if (conf & option(Using_Ascent_KF))
@@ -269,10 +269,12 @@ static inline void propel_kalman_state(fu32 conf)
     elements = DKF_STATE;
   }
 
+#ifdef SD_AVAILABLE
   if (timer_probe(KFLocal, rates.sd))
   {
     sd_append_f32(kind_sd, tmp, elements);
   }
+#endif
 
   if (timer_probe(KFRemote, rates.gnd))
   {

@@ -204,7 +204,6 @@ def configure(buildir: Path, preset: str, options: dict):
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
                 gps = "-DEXTERNAL_GPS=OFF"
-                sd = "-DONBOARD_SD=OFF"
 
                 if options["sensortest"]:
                         sensortest = "-DSENSOR_TESTS=ON"

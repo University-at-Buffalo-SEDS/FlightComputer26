@@ -54,7 +54,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
 
@@ -184,6 +183,9 @@ endif()
 
 if (ONBOARD_SD)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c
+    )
 endif()
 
 if (FC_BENCH)

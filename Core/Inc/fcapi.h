@@ -256,9 +256,9 @@ static inline void fc_concede(spinlock *object)
 
 static inline void message(const char *msg, bool critical)
 {
+#ifdef SD_AVAILABLE
   SedsDataType ty = critical ? SEDS_DT_ORDERED_MESSAGE
                              : SEDS_DT_MESSAGE_DATA;
-#ifdef SD_AVAILABLE
   sd_append_string(ty, msg);
 #endif
 
@@ -347,13 +347,16 @@ static inline char *debug_descriptor(SedsDataType logged)
     case SEDS_DT_IMU_DATA:        return "IMURemote";
     case SEDS_DT_BAROMETER_LOCAL: return "BaroLocal";
     case SEDS_DT_GYRO_LOCAL:      return "GyroLocal";
-    case SEDS_DT_ACCL_LOCAL:      return "AccelLocal";
+    case SEDS_DT_ACCEL_LOCAL:     return "AccelLocal";
     case SEDS_DT_IMU_LOCAL:       return "IMULocal";
     case SEDS_DT_ASCENT_STATE:    return "AscentRemote";
     case SEDS_DT_DESCENT_STATE:   return "DescentRemote";
     case SEDS_DT_ASCENT_LOCAL:    return "AscentLocal";
     case SEDS_DT_DESCENT_LOCAL:   return "DescentLocal";
     case SEDS_DT_EULER_ANGLES:    return "EulerAngles";
+    case SEDS_DT_MESSAGE_DATA:    return "MessageData";
+    case SEDS_DT_ORDERED_MESSAGE: return "OrderedMessage";
+    case SEDS_DT_GENERIC_ERROR:   return "GenericError";
     default:                      return "SomeRandomData";
   }
 }

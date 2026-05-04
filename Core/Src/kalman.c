@@ -147,13 +147,15 @@ static inline void euler_to_quat(eul *ang)
   init_quat[EKF_STATE - 2] = 0.0f;
   init_quat[EKF_STATE - 1] = 0.0f;
 
+#ifdef SD_AVAILABLE
   sd_append_f32(SEDS_DT_ASCENT_STATE, init_quat, EKF_STATE);
+#endif
   log_f32(SEDS_DT_ASCENT_STATE, EKF_STATE, init_quat);
 }
 
 void accel_to_quaternion(const f_xyz *accl)
 {
-  eul ang, rep_in_deg;
+  conditional eul ang, rep_in_deg;
 
   fatan2(accl->y, accl->z, &ang.phi);
   vnorm2(accl->y, accl->z, &ang.psi);
@@ -164,7 +166,9 @@ void accel_to_quaternion(const f_xyz *accl)
   rep_in_deg.theta = deg(ang.theta);
   rep_in_deg.psi = deg(ang.psi);
 
+#ifdef SD_AVAILABLE
   sd_append_f32(SEDS_DT_EULER_ANGLES, (float *)&rep_in_deg, 3);
+#endif
   log_f32(SEDS_DT_EULER_ANGLES, 3, &rep_in_deg);
 
   euler_to_quat(&ang);

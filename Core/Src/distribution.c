@@ -425,11 +425,13 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
 
   bool recorded = false;
 
+#ifdef SD_AVAILABLE
   if (timer_probe(mems[dev].tim_sd, rates.sd))
   {
     sd_append_f32(mems[dev].kind_sd, buf, mems[dev].size);
     recorded = true;
   }
+#endif
 
   if (timer_probe(mems[dev].tim_gnd, rates.gnd))
   {
