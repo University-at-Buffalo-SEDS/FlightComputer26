@@ -13,6 +13,7 @@
 
 #include "platform.h"
 #include "fctypes.h"
+#include "fcapi.h"
 
 #define _SB_ID		"SB "
 #define _SB_MAX		32
@@ -41,7 +42,7 @@ static inline void _sb_log(fu16 idx)
 	/* Buffer is sufficiently large.
 	 */
 	snprintf(buf, sizeof buf, str, idx, _sb_meta[idx].min_ms);
-	log_msg(buf);
+	message(buf, false);
 }
 
 static inline void

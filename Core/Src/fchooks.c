@@ -309,7 +309,7 @@ void try_allocate_reserve_pool(void)
   }
 
 no_reserve_exit:
-  log_critical("WARNING: insufficient memory for reserve pool");
+  message("WARNING: insufficient memory for reserve pool", true);
 }
 
 

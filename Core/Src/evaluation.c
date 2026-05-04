@@ -32,7 +32,7 @@ static inline void handle_spurious(fu32 mode, const char *cond)
     char buf[MAX_SPURIOUS_REPORT_SIZE];
     snprintf(buf, sizeof buf, id "fluc: %u, failed %s",
                                       current(), cond);
-    log_msg(buf);
+    message(buf, false);
   }
 
   if (mode & option(Consecutive_Samples))
@@ -52,7 +52,7 @@ static inline void flight_advance(state promotion)
   if (fetch_add(&sm.flight, 1, Acq) != promotion - 1)
   {
     store(&sm.flight, promotion, Rlx);
-    log_critical(id "vigilant mode transition");
+    message(id "vigilant mode transition", false);
   }
 
   log_flight_state(to_global_state(promotion));
@@ -174,7 +174,7 @@ static inline void detect_landed(fu32 mode)
 static inline void announce_recovery(fu32 mode)
 {
   flight_advance(Recovery);
-  log_critical(id "announcing recovery");
+  message(id "announcing recovery", true);
   fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
   tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
 }
@@ -315,12 +315,12 @@ static inline void enter_flight_mode(fu32 conf)
   if (conf & option(Launch_Requested))
   {
     sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
-    log_critical(id "re-entered flight mode");
+    message(id "re-entered flight mode", true);
   }
   else
   {
     ascent_initialize(conf);
-    log_critical(id "received launch signal");
+    message(id "received launch signal", true);
     
     fetch_or(&g_conf, option(Launch_Requested), Rel);
   }

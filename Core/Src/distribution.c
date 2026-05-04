@@ -659,7 +659,7 @@ static inline void post_initialization(void)
   }
 
   fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
-  log_critical(id "armed, awaiting launch signal");
+  message(id "armed, awaiting launch signal", true);
 }
 
 
@@ -671,7 +671,7 @@ static inline bool fill_sequence_states(fu32 conf)
   tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
   data_streaming_mode();
-  log_critical(id "left streaming mode");
+  message(id "left streaming mode", true);
 
   if ((conf = load(&g_conf, Acq)) & option(Rollback_Requested))
   {
@@ -699,7 +699,7 @@ static inline bool fill_sequence_states(fu32 conf)
 
   MrAnalog (request_ignition() == SEDS_OK)
     ;
-  log_critical(id "ignition requested, in flight mode");
+  message(id "ignition requested, in flight mode", true);
 
   return false;
 }

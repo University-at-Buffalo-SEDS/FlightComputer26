@@ -155,7 +155,7 @@ static inline void abortion_due_failures(void)
   else
   {
     g_conf |= option(In_Aborted_State);
-    log_critical(id "aborted, expecting commands");
+    message(id "aborted, expecting commands", true);
   }
 }
 
@@ -177,7 +177,7 @@ static inline void barometer_fallback_vigilant(void)
 
   g_conf |= option(Monitor_Altitude);
   g_conf |= option(Measm_Reports);
-  log_msg(id "entered vigilant mode");
+  message(id "entered vigilant mode", false);
 }
 
 
@@ -191,7 +191,7 @@ static inline void evaluation_configure(bool focus)
   {
     g_conf &= ~option(Eval_Abort_Flag);
     tx_thread_resume(&evaluation_task);
-    log_msg(id "restored evaluation");
+    message(id "restored evaluation", false);
   }
 
   if (focus)
@@ -250,7 +250,7 @@ static inline void enter_postinit(bool noconfirm)
   if (!noconfirm &&
       timer_exchange(PostinitCmd) > CONFIRMATION_TIMEOUT)
   {
-    log_critical(id "please confirm postinit");
+    message(id "please confirm postinit");
     return;
   }
 
@@ -279,7 +279,7 @@ static inline void enter_launch(bool noconfirm)
   if (!noconfirm &&
       timer_exchange(LaunchCmd) > CONFIRMATION_TIMEOUT)
   {
-    log_critical(id "please confirm launch");
+    message(id "please confirm launch");
     return;
   }
 
@@ -320,7 +320,7 @@ static inline void rollback_to_idle(void)
       log_err(id "looks like we're flying. ARE YOU SURE?");
     }
 
-    log_critical(id "please confirm rollback");
+    message(id "please confirm rollback");
     return;
   }
 
@@ -328,7 +328,8 @@ static inline void rollback_to_idle(void)
 
   if (g_conf & option(Launch_Requested))
   {
-    log_critical(id "WARNING: rollback after Launch");
+    message(id "rejected rollback after Launch", true);
+    return;
   }
 
 #endif
@@ -339,7 +340,7 @@ static inline void rollback_to_idle(void)
 
   sm.flight = Startup;
 
-  log_critical(id "rolled back to Startup");
+  message(id "rolled back to Startup", true);
 }
 
 
@@ -478,7 +479,7 @@ static inline void update_global_config(fc_msg incoming)
     }
   }
 
-  log_msg(buf);
+  message(buf, false);
 }
 
 
@@ -692,7 +693,7 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
       tx_thread_resume(&distribution_task);
     }
   }
-  else log_msg(id "(re)started distribution");
+  else message(id "(re)started distribution", false);
 }
 
 

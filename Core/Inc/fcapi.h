@@ -62,20 +62,6 @@ void evaluate_rocket_state(fu32);
 SedsResult on_fc_packet(const SedsPacketView *, void *);
 #endif
 
-static inline void
-log_metric(const char *msg, fi32 metric, bool critical)
-{
-  char buf[MAX_METRIC_REPORT_SIZE];
-  
-  snprintf(buf, sizeof buf, "%s: %d\n", msg, metric);
-
-  if (critical)
-  {
-    log_critical(buf);
-  }
-  else log_msg(buf);
-}
-
 
 /* Recovery */
 
@@ -229,6 +215,78 @@ static inline gnd_state *to_global_state(state local)
 }
 
 
+/* Single-threaded spinlock */
+
+static inline void fc_lock(spinlock *object)
+{
+  fu8 unlocked = 0;
+
+  while (!cas_weak(&object->lock, &unlocked, 1, Acq, Rlx))
+  {
+    unlocked = 0;
+    fetch_add(&object->waiters, 1, Rel);
+    tx_thread_relinquish();
+    fetch_sub(&object->waiters, 1, Rlx);
+  }
+}
+
+static inline bool fc_trylock(spinlock *object)
+{
+  fu8 unlocked = 0;
+  return cas_strong(&object->lock, &unlocked, 1, Acq, Rlx);
+}
+
+static inline void fc_unlock(spinlock *object)
+{
+  store(&object->lock, 0, Rel);
+}
+
+static inline void fc_concede(spinlock *object)
+{
+  fc_unlock(object);
+
+  if (load(&object->waiters, Acq) > 0)
+  {
+    tx_thread_relinquish();
+  }
+}
+
+
+/* Logging wrappers */
+
+static inline void message(const char *msg, bool critical)
+{
+  SedsDataType ty = critical ? SEDS_DT_ORDERED_MESSAGE
+                             : SEDS_DT_MESSAGE_DATA;
+#ifdef SD_AVAILABLE
+  sd_append_string(ty, msg);
+#endif
+
+  if (critical)
+  {
+    log_critical(msg);
+  }
+  else if (timer_probe(MessageData, rates.gnd))
+  {
+    log_msg(msg);
+  }
+}
+
+/* TODO logging errors without double vsnprintf */
+
+static inline void
+log_metric(const char *msg, fi32 metric, bool critical)
+{
+  char buf[MAX_METRIC_REPORT_SIZE];
+  int n = snprintf(buf, sizeof buf, "%s: %d\n", msg, metric);
+
+  if (n > 0 && n < sizeof buf)
+  {
+    message(buf, critical);
+  }
+}
+
+
 /* Deployment routines */
 
 static inline bool release_parachute(bool force)
@@ -273,43 +331,6 @@ static inline bool expand_parachute(bool force)
   fetch_or(&g_conf, option(Parachute_Expanded | REEF_Asserted), Rel);
 
   return true;
-}
-
-
-/* Single-threaded spinlock */
-
-static inline void fc_lock(spinlock *object)
-{
-  fu8 unlocked = 0;
-
-  while (!cas_weak(&object->lock, &unlocked, 1, Acq, Rlx))
-  {
-    unlocked = 0;
-    fetch_add(&object->waiters, 1, Rel);
-    tx_thread_relinquish();
-    fetch_sub(&object->waiters, 1, Rlx);
-  }
-}
-
-static inline bool fc_trylock(spinlock *object)
-{
-  fu8 unlocked = 0;
-  return cas_strong(&object->lock, &unlocked, 1, Acq, Rlx);
-}
-
-static inline void fc_unlock(spinlock *object)
-{
-  store(&object->lock, 0, Rel);
-}
-
-static inline void fc_concede(spinlock *object)
-{
-  fc_unlock(object);
-
-  if (load(&object->waiters, Acq) > 0)
-  {
-    tx_thread_relinquish();
-  }
 }
 
 

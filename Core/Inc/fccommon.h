@@ -118,8 +118,9 @@
 
 /* SD */
 
-#define F32_TO_STR_MAX_SIZE 72
-#define F32_SCALE           1e4f
+#define F32_TO_STR_MAX_SIZE   72
+#define F32_SCALE             1e4f
+#define MAX_VARIADIC_ERR_SIZE 96
 
 
 /* Common macros */

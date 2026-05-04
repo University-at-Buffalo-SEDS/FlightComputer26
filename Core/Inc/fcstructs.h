@@ -29,6 +29,7 @@ typedef enum relative_timer : fu8 {
   KFLocal,
   KFRemote,
   SDFlush,
+  MessageData,
 
   Time_Users
 } timer;
