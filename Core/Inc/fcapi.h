@@ -256,16 +256,19 @@ static inline void fc_concede(spinlock *object)
 static inline void message(const char *msg, bool critical)
 {
 #ifdef SD_AVAILABLE
-  SedsDataType ty = critical ? SEDS_DT_ORDERED_MESSAGE
-                             : SEDS_DT_MESSAGE_DATA;
-  sd_append_string(ty, msg);
+  if (critical || timer_probe(MessageLocal, rates.sd))
+  {
+    SedsDataType ty = critical ? SEDS_DT_ORDERED_MESSAGE
+                               : SEDS_DT_MESSAGE_DATA;
+    sd_append_string(ty, msg);
+  }
 #endif
 
   if (critical)
   {
     log_critical(msg);
   }
-  else if (timer_probe(MessageData, rates.gnd))
+  else if (timer_probe(MessageRomote, rates.gnd))
   {
     log_msg(msg);
   }

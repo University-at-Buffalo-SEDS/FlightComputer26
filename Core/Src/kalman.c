@@ -40,6 +40,7 @@ static inline float *kfalloc(size_t size)
     size = LARGEST_POOL;
   }
 
+  TX_THREAD *curr;
   UINT st, old_pt;
   void *ptr;
 
@@ -51,7 +52,7 @@ static inline float *kfalloc(size_t size)
 
   if (st != TX_SUCCESS)
   {
-    if (tx_thread_identify() == TX_NULL)
+    if ((curr = tx_thread_identify()) == TX_NULL)
     {
       return NULL; /* Friendliness has its limits */
     }
