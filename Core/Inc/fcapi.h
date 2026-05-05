@@ -37,7 +37,7 @@ extern void *kfpool_buf;
 
 void descent_predict(const float);
 void descent_update(void);
-void descent_initialize(void);
+void descent_initialize(fu32);
 
 void ascent_predict(const float, fu32);
 void ascent_update(void);

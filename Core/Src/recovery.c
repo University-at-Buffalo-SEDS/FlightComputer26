@@ -230,7 +230,7 @@ static inline void manual_deployment(bool apogee, bool force)
   if (g_conf & option(Using_Ascent_KF))
   {
     g_conf &= ~option(Using_Ascent_KF);
-    descent_initialize();
+    descent_initialize(g_conf);
   }
 }
 

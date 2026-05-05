@@ -17,19 +17,19 @@ TX_BYTE_POOL kfpool;
 
 quat qv = {0};
 kf_svec imedsv = {0};
+static kf_matrix kf = {0};
 
-static kf_buf kf = {
-  .mxp = {.numRows = 0, .numCols = 0, .pData = &kf.P_stacov[0][0]},
-  .P_stacov = {{0}},
-  .mxq = {.numRows = 0, .numCols = 0, .pData = &kf.Q_procno[0][0]},
-  .Q_procno = {{0}},
-  .mxa = {.numRows = 0, .numCols = 0, .pData = &kf.A_genpur[0][0]},
-  .A_genpur = {{0}},
-  .mxr = {.numRows = 0, .numCols = 0, .pData = &kf.R_measno[0][0]},
-  .R_measno = {{0}},
-  .mxh = {.numRows = 0, .numCols = 0, .pData = &kf.H_measjc[0][0]},
-  .H_measjc = {{0}}
-};
+static float EKF_P[EKF_STATE][EKF_STATE] = {0};
+static float EKF_Q[EKF_STATE][EKF_STATE] = {0};
+static float EKF_O[EKF_OMEGA][EKF_OMEGA] = {0};
+static float EKF_F[EKF_STATE][EKF_STATE] = {0};
+static float EKF_H[1][EKF_MEASM] = {0};
+
+static float DKF_P[DKF_STATE][DKF_STATE] = {0};
+static float DKF_Q[DKF_STATE][DKF_STATE] = {0};
+static float DKF_A[DKF_STATE][DKF_STATE] = {0};
+static float DKF_R[DKF_MEASM][DKF_MEASM] = {0};
+static float DKF_H[DKF_MEASM][DKF_STATE] = {0};
 
 
 static inline float *kfalloc(size_t size)
@@ -81,14 +81,26 @@ static inline void kffree(float *ptr)
 #endif /* PARALLEL_PREDICT_UPDATE */
 }
 
-static inline void clear_shared_buffers(void)
+static inline void clear_shared_buffers(bool ascent)
 {
   memset(&imedsv, 0, sizeof imedsv);
-  memset(kf.P_stacov, 0, sizeof kf.P_stacov);
-  memset(kf.Q_procno, 0, sizeof kf.Q_procno);
-  memset(kf.A_genpur, 0, sizeof kf.A_genpur);
-  memset(kf.R_measno, 0, sizeof kf.R_measno);
-  memset(kf.H_measjc, 0, sizeof kf.H_measjc);
+
+  if (ascent)
+  {
+    memset(EKF_P, 0, sizeof EKF_P);
+    memset(EKF_Q, 0, sizeof EKF_Q);
+    memset(EKF_O, 0, sizeof EKF_O);
+    memset(EKF_F, 0, sizeof EKF_F);
+    memset(EKF_H, 0, sizeof EKF_H);
+  }
+  else
+  {
+    memset(DKF_P, 0, sizeof DKF_P);
+    memset(DKF_Q, 0, sizeof DKF_Q);
+    memset(DKF_A, 0, sizeof DKF_A);
+    memset(DKF_R, 0, sizeof DKF_R);
+    memset(DKF_H, 0, sizeof DKF_H);
+  }
 }
 
 
@@ -191,23 +203,27 @@ static inline pure float *mxoff(const matrix *prev)
  *    5. Prerequisites for Update:  Barometer or GPS.     */
 
 
-void descent_initialize(void)
+void descent_initialize(fu32 conf)
 {
-  clear_shared_buffers();
+  clear_shared_buffers(false);
 
   for (fu8 i = 0; i < DKF_MEASM; ++i)
   {
-    kf.H_measjc[i][i] = 1.0f;
+    DKF_H[i][i] = 1.0f;
   }
   for (fu8 i = 0; i < DKF_STATE; ++i)
   {
-    kf.A_genpur[i][i] = 1.0f;
+    DKF_A[i][i] = 1.0f;
   }
 
-  kf.Q_procno[0][0] = kf.Q_procno[1][1] = TOLERANCE;
-  kf.Q_procno[2][2] = kf.Q_procno[3][3] = DKF_TOLER;
-  kf.R_measno[0][0] = kf.R_measno[1][1] = DKF_GPS_TRUST;
-  kf.R_measno[2][2] = DKF_BARO_TRUST;
+  DKF_P[0][0] = DKF_P[1][1] = DKF_TOLER;
+  DKF_P[2][2] = DKF_P[3][3] = 1.0f;
+
+  DKF_Q[0][0] = DKF_Q[1][1] = TOLERANCE;
+  DKF_Q[2][2] = DKF_Q[3][3] = DKF_TOLER;
+
+  DKF_R[0][0] = DKF_R[1][1] = DKF_GPS_TRUST;
+  DKF_R[2][2] = DKF_BARO_TRUST;
 
   kf.mxp.numRows = kf.mxp.numCols = DKF_STATE;
   kf.mxq.numRows = kf.mxq.numCols = DKF_STATE;
@@ -216,33 +232,33 @@ void descent_initialize(void)
   kf.mxh.numRows = DKF_MEASM;
   kf.mxh.numCols = DKF_STATE;
 
-  irq_off(Gyro_EXTI_1);
-/*irq_off(Gyro_EXTI_2);   not used for IREC 2026 */
-  irq_off(Accl_EXTI_1);
-/*irq_off(Accl_EXTI_2);   not used for IREC 2026 */
+  kf.mxp.pData = (float *)DKF_P;
+  kf.mxq.pData = (float *)DKF_Q;
+  kf.mxa.pData = (float *)DKF_A;
+  kf.mxr.pData = (float *)DKF_R;
+  kf.mxh.pData = (float *)DKF_H;
 
-  fu32 conf = load(&g_conf, Acq);
   fc_msg toggle = Using_Ascent_KF;
+  fc_msg cmd = fc_mask(Disable_IMU);
+  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
   if (conf & option(Defer_Baro_Fallback))
   {
     toggle |= Defer_Baro_Fallback;
     conf = Monitor_Altitude | Measm_Reports;
+    cmd = fc_mask(Reinit_Barometer);
 
     fetch_or(&g_conf, option(conf), Rlx);
-
-    fc_msg cmd = fc_mask(Reinit_Barometer);
-    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
   }
 
   timer_update(DescentKF);
-
   fetch_and(&g_conf, ~option(toggle), Rel);
 }
 
 void descent_predict(const float dt)
 {
-  kf.A_genpur[DKF_MEASM -  1][DKF_STATE - 1] = dt;
+  DKF_A[DKF_MEASM -  1][DKF_STATE - 1] = dt;
 
   float *start = kfalloc(DKF_PREDICT_BYTES);
 
@@ -280,6 +296,7 @@ void descent_update(void)
   mx_mul(&m_hp, &m_ht, &m_hpht);
   mx_add(&m_hpht, &kf.mxr, &m_s);
 
+#ifndef MATH_FN_DEBUG
   math_status maybe_singular = mx_inverse(&m_s, &m_hpht);
 
   if (maybe_singular != ARM_MATH_SUCCESS)
@@ -289,6 +306,9 @@ void descent_update(void)
     kffree(start);
     return;
   }
+#else
+  mx_inverse(&m_s, &m_hpht);
+#endif
 
   mx_mul(&kf.mxp, &m_ht, &m_pht);
   mx_mul(&m_pht, &m_hpht, &m_ht);
@@ -337,19 +357,18 @@ void descent_update(void)
 
 void ascent_initialize(fu32 conf) 
 {
-  clear_shared_buffers();
+  clear_shared_buffers(true);
 
   for (fu8 i = 0; i < EKF_STATE; ++i)
   {
-    kf.R_measno[i][i] = 1.0f;
+    EKF_F[i][i] = 1.0f;
   }
 
-  kf.H_measjc[0][0] = 1.0f;
-
-  kf.Q_procno[0][0] = 1e-2;
-  kf.Q_procno[1][1] = 1e-2;
-  kf.Q_procno[2][2] = 1e-7f;
-  kf.Q_procno[3][3] = kf.Q_procno[4][4] = kf.Q_procno[5][5] = 1e-10f;
+  EKF_H[0][0] = 1.0f;
+  EKF_Q[0][0] = 1e-2;
+  EKF_Q[1][1] = 1e-2;
+  EKF_Q[2][2] = 1e-7f;
+  EKF_Q[3][3] = EKF_Q[4][4] = EKF_Q[5][5] = 1e-10f;
 
   kf.mxp.numRows = kf.mxp.numCols = EKF_STATE;
   kf.mxq.numRows = kf.mxq.numCols = EKF_STATE;
@@ -357,6 +376,12 @@ void ascent_initialize(fu32 conf)
   kf.mxr.numCols = kf.mxr.numRows = EKF_STATE;
   kf.mxh.numRows = 1;
   kf.mxh.numCols = EKF_MEASM;
+
+  kf.mxp.pData = (float *)EKF_P;
+  kf.mxq.pData = (float *)EKF_Q;
+  kf.mxa.pData = (float *)EKF_O;
+  kf.mxr.pData = (float *)EKF_F;
+  kf.mxh.pData = (float *)EKF_H;
 
   if (!(conf & option(Manual_Biases)))
   {
@@ -384,7 +409,6 @@ void ascent_initialize(fu32 conf)
   }
 
   timer_update(AscentKF);
-
   fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
 
@@ -401,17 +425,17 @@ void ascent_predict(const float dt, fu32 conf)
   w.y = rad(w.y) - svec(1).bias.gy;
   w.z = rad(w.z) - svec(1).bias.gz;
 
-  kf.A_genpur[0][1] = kf.A_genpur[3][2] = -w.x;
-  kf.A_genpur[1][0] = kf.A_genpur[2][3] = w.x;
-  kf.A_genpur[0][2] = kf.A_genpur[1][3] = -w.y;
-  kf.A_genpur[2][0] = kf.A_genpur[3][1] = w.y;
-  kf.A_genpur[2][1] = kf.A_genpur[0][3] = -w.z;
-  kf.A_genpur[1][2] = kf.A_genpur[3][0] = w.z;
+  EKF_O[0][1] = EKF_O[3][2] = -w.x;
+  EKF_O[1][0] = EKF_O[2][3] = w.x;
+  EKF_O[0][2] = EKF_O[1][3] = -w.y;
+  EKF_O[2][0] = EKF_O[3][1] = w.y;
+  EKF_O[2][1] = EKF_O[0][3] = -w.z;
+  EKF_O[1][2] = EKF_O[3][0] = w.z;
 
   float *start = kfalloc(EKF_PREDICT_BYTES);
   const float qmid_scale = 0.5f * dt;
 
-  kf.R_measno[0][1] = dt;
+  EKF_F[0][1] = dt;
 
   matrix v_quat = {EKF_OMEGA, 1, &qv.q0};
   matrix v_qmid = {EKF_OMEGA, 1, start};
@@ -522,7 +546,7 @@ void ascent_update(void)
   v_sv1.numCols = v_sv0.numCols = EKF_STATE;
   v_sv1.pData = mxoff(&v_pht);
   v_sv0.pData = mxoff(&v_sv1);
-  kf.R_measno[0][1] = 0;
+  EKF_F[0][1] = 0;
 
   mxok(&v_sv1, EKF_STATE, EKF_STATE, "#3 m kh");
   mxok(&v_sv0, EKF_STATE, EKF_STATE, "#3 m i-kh");
@@ -532,7 +556,7 @@ void ascent_update(void)
   mx_mul(&v_pht, &kf.mxh, &v_sv1);
   mx_sub(&kf.mxr, &v_sv1, &v_sv0);
 
-  memcpy(v_sv1.pData, &kf.P_stacov, fbyte(EKF_STATE_SQ));
+  memcpy(v_sv1.pData, EKF_P, fbyte(EKF_STATE_SQ));
 
   mx_mul(&v_sv0, &v_sv1, &kf.mxp);
 

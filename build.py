@@ -210,13 +210,14 @@ def configure(buildir: Path, preset: str, options: dict):
         else:
                 if options["nogps"]:
                         gps = "-DEXTERNAL_GPS=OFF"
-                if options["nosd"]:
-                        sd = "-DONBOARD_SD=OFF"
                 if options["alloctest"]:
                         alloctest = "-DALLOC_TEST=ON"
 
         if options["nousb"]:
                         usb = "-DUSB_ENUM=OFF"
+
+        if options["nosd"]:
+                        sd = "-DONBOARD_SD=OFF"
 
         if options["fullcmd"]:
                 compat = "-DTELEMETRY_COMPAT=OFF"

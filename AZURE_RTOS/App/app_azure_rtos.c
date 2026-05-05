@@ -110,11 +110,10 @@ VOID tx_application_define(VOID *first_unused_memory)
       /* USER CODE END  App_ThreadX_Init_Error */
     }
     /* USER CODE BEGIN  App_ThreadX_Init_Success */
-
+#ifdef SD_AVAILABLE
     /* USER CODE END  App_ThreadX_Init_Success */
 
   }
-  #ifdef SD_AVAILABLE
   if (tx_byte_pool_create(&fx_app_byte_pool, "Fx App memory pool", fx_byte_pool_buffer, FX_APP_MEM_POOL_SIZE) != TX_SUCCESS)
   {
     /* USER CODE BEGIN FX_Byte_Pool_Error */
@@ -142,10 +141,9 @@ VOID tx_application_define(VOID *first_unused_memory)
       /* USER CODE END  MX_FileX_Init_Error */
     }
     /* USER CODE BEGIN  MX_FileX_Init_Success */
-
+#endif /* SD_AVAILABLE */
     /* USER CODE END  MX_FileX_Init_Success */
   }
-  #endif
 
 #else
 /*

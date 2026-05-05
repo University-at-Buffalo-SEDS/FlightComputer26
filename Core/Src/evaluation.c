@@ -17,8 +17,10 @@ TX_EVENT_FLAGS_GROUP eval_stage;
 
 void cm_align *kfpool_buf = NULL;
 
-kf_svec sv[STATE_HISTORY] = {};
+kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {Startup, G_Startup, 0, 0, 0};
+
+uncached volatile float kalt, kvel;
 
 
 /* FSM helpers */
@@ -114,7 +116,7 @@ static inline void detect_apogee(fu32 mode)
 
   if (sm.confidence >= MIN_SAMP_APOGEE)
   {
-    descent_initialize();
+    descent_initialize(mode);
     flight_advance(Apogee);
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
@@ -220,7 +222,7 @@ static inline void vigilant_watchdog(fu32 mode, state now)
   if (now < Descent && vel < -VIGILANT_MIN_VEL && alt < svec(7).alt)
   {
     release_parachute(maybe_force(mode, alt));
-    descent_initialize();
+    descent_initialize(mode);
     flight_advance(Descent);
   }
   else if (now < Reefing && alt <= REEF_TARGET_ALT
@@ -229,7 +231,7 @@ static inline void vigilant_watchdog(fu32 mode, state now)
     if (now < Descent)
     {
       release_parachute(maybe_force(mode, alt));
-      descent_initialize();
+      descent_initialize(mode);
       flight_advance(Descent);
       tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
     }
@@ -284,8 +286,13 @@ static inline void propel_kalman_state(fu32 conf)
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
+
+
 void evaluate_rocket_state(fu32 conf)
 {
+  kalt = svec(0).alt;
+  kvel = svec(0).vel;
+
   state curr = current();
 
   if (curr < Reefing && (conf & option(Monitor_Altitude)))
@@ -323,8 +330,13 @@ static inline void enter_flight_mode(fu32 conf)
   {
     ascent_initialize(conf);
     message(id "received launch signal", true);
-    
     fetch_or(&g_conf, option(Launch_Requested), Rel);
+
+#ifdef DESCENT_TEST
+    descent_initialize(conf);
+    store(&sm.flight, Apogee, Rel);
+    fetch_and(&g_conf, ~option(Using_Ascent_KF), Rel);
+#endif
   }
 }
 
