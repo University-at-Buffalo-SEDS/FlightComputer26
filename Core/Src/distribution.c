@@ -520,13 +520,8 @@ static inline void descent_full_cycle(fu32 conf)
 
   sweetbench_start(9);
 
-  const float dt = fsec(timer_exchange(DescentKF));
-
-  descent_predict(dt);
-
   if (try_fetch_baro(&meas.baro) && validate_baro(&meas.baro, conf))
   {
-    descent_update();
     stage = EVALUATION_STAGED;
     maybe_log_measm(Baro, &meas.baro);
   }
@@ -534,7 +529,6 @@ static inline void descent_full_cycle(fu32 conf)
   if ((conf & option(GPS_Available)) && fetch_gps_data(&meas.gps))
   {
     to_relative_coords(&meas.gps);
-    descent_update();
 
     if (!(conf & option(Monitor_Altitude)))
     {
@@ -544,6 +538,8 @@ static inline void descent_full_cycle(fu32 conf)
 
   if (stage == EVALUATION_STAGED)
   {
+    descent_predict(fsec(timer_exchange(DescentKF)));
+    descent_update();
     evaluate_rocket_state(conf);
     sweetbench_catch(9);
   }

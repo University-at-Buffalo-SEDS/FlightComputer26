@@ -281,7 +281,7 @@ void descent_update(void)
 {
   matrix v_sv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
   matrix v_sv1 = {DKF_STATE, 1, dkf_view(&imedsv)};
-  matrix v_msm = {DKF_MEASM, 1, (float *)&meas.gps};
+  matrix v_msm = {DKF_MEASM, 1, dkf_view(&meas.gps)};
 
   float *start = kfalloc(DKF_UPDATE_BYTES);
 
@@ -289,7 +289,7 @@ void descent_update(void)
   matrix m_hp   = {DKF_MEASM, DKF_STATE, mxoff(&m_ht)};
   matrix m_hpht = {DKF_MEASM, DKF_MEASM, mxoff(&m_hp)};
   matrix m_s    = {DKF_MEASM, DKF_MEASM, mxoff(&m_hpht)};
-  matrix m_pht  = {DKF_MEASM, DKF_STATE, mxoff(&m_s)};
+  matrix m_pht  = {DKF_STATE, DKF_MEASM, mxoff(&m_s)};
 
   mx_transpose(&kf.mxh, &m_ht);
   mx_mul(&kf.mxh, &kf.mxp, &m_hp);
@@ -317,7 +317,7 @@ void descent_update(void)
    * m_hp -> "m_kzhx"
    */
 
-  m_s.numCols = m_hp.numCols = 1;
+  m_s.numCols = m_hp.numCols = m_hpht.numCols = 1;
   m_hp.numRows = DKF_STATE;
 
   matvec_mul(&kf.mxh, v_sv1.pData, m_s.pData);
@@ -340,7 +340,7 @@ void descent_update(void)
 }
 
 
-/* Ascent (error state) KF.
+/* Ascent (extended) KF.
  * Implementer's notes:
  *    1. Uses mxa to store Omega (quaternion propagation)
  *    2. Uses mxr to store (in Predict) F (transition Jacobian)

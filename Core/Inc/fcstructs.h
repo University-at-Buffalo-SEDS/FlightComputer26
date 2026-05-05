@@ -73,7 +73,7 @@ typedef struct serial coords {
 	float x, y, z;
 } f_xyz;
 
-typedef struct cmsis_ok quaternion {
+typedef struct serial quaternion {
   float q0, rho1, rho2, rho3;
 } quat;
 
@@ -81,22 +81,22 @@ typedef struct serial barometer {
 	float alt, prs, tmp;
 } baro;
 
-typedef struct cmsis_ok gps_reversed {
+typedef struct serial gps_reversed {
   float sea, lon, lat;
 } kf_gps;
 
-typedef struct cmsis_ok measurement {
+typedef struct serial measurement {
   kf_gps gps;
 	baro baro;
   f_xyz accl;
   f_xyz gyro;
 } measm;
 
-typedef struct cmsis_ok ascent_bias {
+typedef struct serial ascent_bias {
   float az, gx, gy, gz;
 } ekf_bias;
 
-typedef struct cmsis_ok state_vector {
+typedef struct serial state_vector {
   kf_gps gps;
 	float alt, vel;
   ekf_bias bias;

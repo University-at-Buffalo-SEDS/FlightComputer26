@@ -286,8 +286,6 @@ static inline void propel_kalman_state(fu32 conf)
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
-
-
 void evaluate_rocket_state(fu32 conf)
 {
   kalt = svec(0).alt;
