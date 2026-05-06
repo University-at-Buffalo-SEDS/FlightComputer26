@@ -112,13 +112,13 @@ static inline constexpr char *seds_f32(SedsDataType ty)
 
 static inline char *unique_sorted_filename(void)
 {
-	static char fbuf[16 + sizeof SEDS_LOG_FILENAME];
+	static char fbuf[26 + sizeof SEDS_LOG_FILENAME];
 
 	tx_thread_sleep(now_ms() % 61);
 
 	fu32 time = now_ms();
 
-	snprintf(fbuf, sizeof fbuf, SEDS_LOG_FILENAME "-%u", time);
+	snprintf(fbuf, sizeof fbuf, SEDS_LOG_FILENAME "-%u.log", time);
 
 	return fbuf;
 }
@@ -206,9 +206,14 @@ static inline void sd_pipeline_shutdown(const char *unluck)
 
 static inline void sd_pipeline_init(const char *surprise)
 {
-	UINT st;
 	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rlx);
 
+	UINT st = tx_semaphore_create(&line.full, id "S", 0);
+
+	if (st != TX_SUCCESS)
+	{
+		log_die(id "sema %s %u", surprise, st);
+	}
 	do
 	{
 		file.fx_file_name = unique_sorted_filename();
@@ -219,13 +224,6 @@ static inline void sd_pipeline_init(const char *surprise)
 	if (st != FX_SUCCESS)
 	{
 		log_die(id "fcreate %s %u", surprise, st);
-	}
-
-	st = tx_semaphore_create(&line.full, id "S", 0);
-
-	if (st != TX_SUCCESS)
-	{
-		log_die(id "sema %s %u", surprise, st);
 	}
 
 	st = fx_file_open(&sdio_disk, &file, file.fx_file_name,

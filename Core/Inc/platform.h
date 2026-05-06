@@ -372,21 +372,21 @@ extern FX_MEDIA sdio_disk;
 
 #if defined(TEST_ALLOC) || defined(DESCENT_TEST) || defined(MATH_FN_DEBUG)
 
-#define SEDS_LOG_FILENAME "test-log"
+#define SEDS_LOG_FILENAME "test"
 
 #else /* TEST */
 #if defined(SIMULATION_CONFIG) || defined(LUNATIC_STATE) || defined(FC_BENCHMARK)
 
-#define SEDS_LOG_FILENAME "simu-log"
+#define SEDS_LOG_FILENAME "simu"
 
 #else /* SIMULATION */
 #if !defined(NDEBUG) || !defined(TELEMETRY_ENABLED) || !defined(GPS_AVAILABLE)
 
-#define SEDS_LOG_FILENAME "debg-log"
+#define SEDS_LOG_FILENAME "debg"
 
 #else /* DEBUG */
 
-#define SEDS_LOG_FILENAME "irec-log"
+#define SEDS_LOG_FILENAME "irec"
 
 #endif /* DEBUG */
 #endif /* SIMULATION */
