@@ -33,6 +33,8 @@ atomic_uint_fast32_t g_conf = FC_DEFAULTS | USER_OPTIONS;
 
 static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 
+atomic_uint_fast16_t *ufailctr_if = NULL;
+
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
     .osr_p = Baro_OSR_x8,
@@ -500,33 +502,29 @@ static inline void process_config_update(fc_msg code)
 
 static inline void process_sensor_report(fc_msg code)
 {
-  if (code != Sensor_Measm_Code)
+  bool bad_baro = (code & msmcode(Bad_Altitude)) ||
+                  (code & msmcode(Bad_Pressure));
+
+  bool maybe_gps = (g_conf & option(GPS_Available)) &&
+                    smon.gps_delayed < GPS_SUS_DELAYS &&
+                    smon.gps_malform < GPS_SUS_MALFORM;
+
+  log_metric(id "bad data report", msmcode(code), false);
+
+  if (!beyond(Apogee) || (bad_baro && !maybe_gps))
   {
-    bool bad_baro = (code & msmcode(Bad_Altitude)) ||
-                    (code & msmcode(Bad_Pressure));
-
-    bool maybe_gps = (g_conf & option(GPS_Available)) &&
-                      smon.gps_delayed < GPS_SUS_DELAYS &&
-                      smon.gps_malform < GPS_SUS_MALFORM;
-
-    log_metric(id "bad data report", msmcode(code), false);
-
-    if (!beyond(Apogee) || (bad_baro && !maybe_gps))
+    if (++smon.failures >= smon.to_abort)
     {
-      if (++smon.failures >= smon.to_abort)
-      {
-        abortion_due_failures();
-      }
-      else if (smon.failures >= smon.to_reinit)
-      {
-        /* Broad heuristic because Baro takes a while to init.
-         */
-        sensor_init_supervised(bad_baro ? Wild_Mask
-                                        : Gyro_Mask | Accl_Mask);
-      }
+      abortion_due_failures();
+    }
+    else if (smon.failures >= smon.to_reinit)
+    {
+      /* Broad heuristic because Baro takes a while to init.
+        */
+      sensor_init_supervised(bad_baro ? Wild_Mask
+                                      : Gyro_Mask | Accl_Mask);
     }
   }
-  else smon.failures = 0;
 }
 
 static inline void process_gps_code(fc_msg code)
@@ -701,11 +699,11 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
 
 void recovery_entry(ULONG st)
 {
+  ufailctr_if = &smon.failures;
   try_allocate_reserve_pool();
 
   st = tx_thread_entry_exit_notify(&distribution_task,
                                    grace_reset_distribution);
-
   if (st != TX_SUCCESS)
   {
     log_die(id "notification %u", (fu32) st);

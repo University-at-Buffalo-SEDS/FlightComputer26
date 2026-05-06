@@ -120,7 +120,7 @@ validate_coords(const f_xyz *gps, size_t len, fu32 conf)
 {
   if (len != sizeof(f_xyz))
   {
-    return fc_mask(GPS_Data_Code | GPS_Malformed);
+    return fc_mask(GPS_Malformed);
   }
 
   fc_msg st = fc_mask(GPS_Data_Code);
@@ -136,7 +136,8 @@ validate_coords(const f_xyz *gps, size_t len, fu32 conf)
   {
     st |= Bad_Longtitude;
   }
-  if (gps->z > MAX_SEA || gps->z < MIN_SEA)
+  if ((conf & option(Monitor_Altitude)) &&
+      (gps->z > MAX_SEA || gps->z < MIN_SEA))
   {
     st |= Bad_Sea_Level;
   }
@@ -320,78 +321,94 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 
 /* On-board sensor data validation */
 
+static inline void maybe_report_measm(fu32 conf, fc_msg code)
+{
+  extern atomic_uint_fast16_t *ufailctr_if;
+
+  if (!(conf & option(Using_Ascent_KF)) && code > Bad_Pressure)
+  {
+    return;
+  }
+  if (code == fc_mask(Sensor_Measm_Code))
+  {
+    if ((conf & option(Reset_Failures)) && ufailctr_if != NULL)
+    {
+      fu16 ctr = load(ufailctr_if, Rlx), obj = ctr;
+
+      /* Unsuccessful decrement discarded */
+      cas_strong(ufailctr_if, &obj, saturating_decr(ctr, 0),
+                                                  Acq, Rlx);
+    }
+  }
+  else if (conf & option(Measm_Reports))
+  {
+    tx_queue_send(&shared, &code, TX_NO_WAIT);
+  }
+}
+
 static inline bool
 validate_gyro(const f_xyz *gyro, fu32 conf)
 {
-  fc_msg st = fc_mask(Sensor_Measm_Code);
+  fc_msg code = fc_mask(Sensor_Measm_Code);
 
   if (gyro->x > MAX_DPS || gyro->x < MIN_DPS)
   {
-    st |= Bad_Attitude_X;
+    code |= Bad_Attitude_X;
   }
   if (gyro->y > MAX_DPS || gyro->y < MIN_DPS)
   {
-    st |= Bad_Attitude_Y;
+    code |= Bad_Attitude_Y;
   }
   if (gyro->z > MAX_DPS || gyro->z < MIN_DPS)
   {
-    st |= Bad_Attitude_Z;
+    code |= Bad_Attitude_Z;
   }
 
-  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-  }
+  maybe_report_measm(conf, code);
 
-  return st == fc_mask(Sensor_Measm_Code);
+  return code == fc_mask(Sensor_Measm_Code);
 }
 
 static inline bool
 validate_accl(const f_xyz *accl, fu32 conf)
 {
-  fc_msg st = fc_mask(Sensor_Measm_Code);
+  fc_msg code = fc_mask(Sensor_Measm_Code);
 
   if (accl->x > MAX_ACC || accl->x < MIN_ACC)
   {
-    st |= Bad_Accel_X;
+    code |= Bad_Accel_X;
   }
   if (accl->y > MAX_ACC || accl->y < MIN_ACC)
   {
-    st |= Bad_Accel_Y;
+    code |= Bad_Accel_Y;
   }
   if (accl->z > MAX_ACC || accl->z < MIN_ACC)
   {
-    st |= Bad_Accel_Z;
+    code |= Bad_Accel_Z;
   }
 
-  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-  }
+  maybe_report_measm(conf, code);
 
-  return st == fc_mask(Sensor_Measm_Code);
+  return code == fc_mask(Sensor_Measm_Code);
 }
 
 static inline bool
 validate_baro(const baro *baro, fu32 conf)
 {
-  fc_msg st = fc_mask(Sensor_Measm_Code);
+  fc_msg code = fc_mask(Sensor_Measm_Code);
 
   if (baro->prs > MAX_PRS || baro->prs < MIN_PRS)
   {
-    st |= Bad_Pressure;
+    code |= Bad_Pressure;
   }
   if (baro->alt > MAX_ALT || baro->alt < MIN_ALT)
   {
-    st |= Bad_Altitude;
+    code |= Bad_Altitude;
   }
 
-  if (conf & option(Measm_Reports) && st != fc_mask(Sensor_Measm_Code))
-  {
-    tx_queue_send(&shared, &st, TX_NO_WAIT);
-  }
+  maybe_report_measm(conf, code);
 
-  return st == fc_mask(Sensor_Measm_Code);
+  return code == fc_mask(Sensor_Measm_Code);
 }
 
 static inline conditional fu8
@@ -560,34 +577,25 @@ static inline void data_streaming_mode(void)
   MrAnalog (conf & option(Postinit_Requested) ||
             conf & option(Rollback_Requested))
   {
-    fu32 code = 0;
-
     if (try_fetch_gyro(&meas.gyro))
     {
       imu |= Gyro_Mask;
-      code |= validate_gyro(&meas.gyro, conf) ? 0
-                                              : Gyro_Mask;
+      validate_gyro(&meas.gyro, conf);
     }
     if (try_fetch_accl(&meas.accl))
     {
       imu |= Accl_Mask;
-      code |= validate_accl(&meas.accl, conf) ? 0
-                                              : Accl_Mask;
+      validate_accl(&meas.accl, conf);
     }
     if (try_fetch_baro(&meas.baro))
     {
       acc_baro += timer_exchange(Auxiliary);
       ++ctr_baro;
 
-      code |= validate_baro(&meas.baro, conf) ? 0
-                                              : Baro_Mask;
+      validate_baro(&meas.baro, conf);
       maybe_log_measm(Baro, &meas.baro);
     }
 
-    if (code != 0)
-    {
-      log_metric(id "malformed measm", code, false);
-    }
     if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
     {
       imu = 0;
