@@ -77,8 +77,11 @@
 
 #define ALEX_THRESHOLD 	 80
 #define VIGILANT_MAX_ALT 3657.6f
-#define VIGILANT_MIN_ALT -2.0f
-#define VIGILANT_MIN_VEL 10.0f
+#define VIGILANT_MIN_ALT -25.0f
+#define VIGILANT_MIN_APG 762.0f
+#define HYBRID_VEL_SPIKE -150.0f
+#define SVHIST_ALT_TREND 8.0f
+#define VIGILANT_MIN_VEL 7.5f
 
 /* Altitude         ALT     meters  
  * Pressure         PRS     pascals

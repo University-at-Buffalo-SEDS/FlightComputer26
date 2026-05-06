@@ -74,6 +74,9 @@
 #define ALEX_THRESHOLD 	 67
 #define VIGILANT_MAX_ALT 400.0f
 #define VIGILANT_MIN_ALT 2.0f
+#define VIGILANT_MIN_APG 16.0f
+#define HYBRID_VEL_SPIKE -0.1f /* Dummy, drone and L2 aren't transonic */
+#define SVHIST_ALT_TREND 1.0f
 #define VIGILANT_MIN_VEL 0.75f
 
 /* Altitude         ALT     meters  

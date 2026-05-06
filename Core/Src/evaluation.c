@@ -202,49 +202,63 @@ static inline void report_lowpass_gps(fu32 mode)
 
 /* Vigilant mode */
 
-static inline bool maybe_force(fu32 mode, float alt)
+static inline bool maybe_force(fu32 mode, float alt, state now)
 {
-  return !beyond(Armed) && alt >= FLYING_ALTITUDE
-                        && !within(alt - svec(3).alt, ALT_TOLER);
+  return now <= Armed && alt >= FLYING_ALTITUDE
+                      && !within(alt - svec(3).alt, ALT_TOLER);
+}
+
+static inline bool falling(float alt, float vel, float dt, fu8 degree)
+{
+  bool not_vel = vel > -VIGILANT_MIN_VEL;
+  bool altgain = alt > svec(degree).alt - SVHIST_ALT_TREND;
+  bool midgain = alt > svec(degree / 2).alt;
+
+  return !(not_vel || altgain || midgain);
+}
+
+static inline bool
+false_positive_risk(float alt, float vel, float dt, state now)
+{
+  bool on_pad = now <= Armed && alt < FLYING_ALTITUDE;
+  bool ascent = now < Apogee && alt < VIGILANT_MIN_APG;
+  bool vspike = now <= Ascent && vel < HYBRID_VEL_SPIKE;
+  bool raised = now < Apogee &&
+                alt > (svec(STATE_HISTORY - 1).alt + SVHIST_ALT_TREND);
+
+  return on_pad || ascent || vspike || raised;
 }
 
 static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 {
-  float alt = svec(0).alt;
-  float vel = svec(0).vel;
+  bool trust_kf = sm.spilled_milk <= ALEX_THRESHOLD
+                  && svec(0).alt <= VIGILANT_MAX_ALT
+                  && svec(0).alt >= VIGILANT_MIN_ALT;
 
-  if (sm.spilled_milk > ALEX_THRESHOLD || alt > VIGILANT_MAX_ALT
-                                       || alt < VIGILANT_MIN_ALT)
+  float alt = trust_kf ? svec(0).alt : meas.baro.alt;
+  float vel = trust_kf ? svec(0).vel : (alt - svec(7).alt) /
+                                       (dt * (float)(STATE_HISTORY - 1));
+
+  if (false_positive_risk(alt, vel, dt, now))
   {
-    alt = meas.baro.alt;
+    return;
   }
 
-  // if (false_positive_risk(alt, vel, dt, now))
-  // {
-  //   return; // TODO
-  // }
-
-  if (now < Descent && vel < -VIGILANT_MIN_VEL && alt < svec(7).alt)
+  if (now < Descent && falling(alt, vel, dt, STATE_HISTORY - 1))
   {
-    release_parachute(maybe_force(mode, alt));
+    release_parachute(maybe_force(mode, alt, now));
     descent_initialize(mode);
     flight_advance(Descent);
+    now = Descent;
   }
-  else if (now < Reefing && alt <= REEF_TARGET_ALT
-                         && (vel < 0.0f || alt < svec(4).alt))
-  {
-    if (now < Descent)
-    {
-      release_parachute(maybe_force(mode, alt));
-      descent_initialize(mode);
-      flight_advance(Descent);
-      tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
-    }
 
-    if (expand_parachute(false))
-    {
-      flight_advance(Reefing);
-    }
+  bool reef_window = now >= Descent && now < Reefing;
+  bool reef_prereq = alt <= REEF_TARGET_ALT &&
+                     (vel < 0.0f || alt < svec(4).alt);
+
+  if (reef_window && reef_prereq && expand_parachute(false))
+  {
+    flight_advance(Reefing);
   }
 }
 
