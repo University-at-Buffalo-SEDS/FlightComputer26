@@ -208,7 +208,7 @@ static inline bool maybe_force(fu32 mode, float alt)
                         && !within(alt - svec(3).alt, ALT_TOLER);
 }
 
-static inline void vigilant_watchdog(fu32 mode, state now)
+static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 {
   float alt = svec(0).alt;
   float vel = svec(0).vel;
@@ -218,6 +218,11 @@ static inline void vigilant_watchdog(fu32 mode, state now)
   {
     alt = meas.baro.alt;
   }
+
+  // if (false_positive_risk(alt, vel, dt, now))
+  // {
+  //   return; // TODO
+  // }
 
   if (now < Descent && vel < -VIGILANT_MIN_VEL && alt < svec(7).alt)
   {
@@ -286,7 +291,7 @@ static inline void propel_kalman_state(fu32 conf)
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
-void evaluate_rocket_state(fu32 conf)
+void evaluate_rocket_state(fu32 conf, float dt)
 {
   kalt = svec(0).alt;
   kvel = svec(0).vel;
@@ -295,7 +300,7 @@ void evaluate_rocket_state(fu32 conf)
 
   if (curr < Reefing && (conf & option(Monitor_Altitude)))
   {
-    vigilant_watchdog(conf, curr);
+    vigilant_watchdog(conf, curr, dt);
   }
 
   switch (curr)
@@ -310,7 +315,7 @@ void evaluate_rocket_state(fu32 conf)
     case Landed:    announce_recovery(conf);    break;
     case Recovery:  report_lowpass_gps(conf);   break;
     default:
-      log_err(id "state %u cannot be evaluated", curr);
+      log_metric(id "non-evaluatable state", curr, true);
       return;
   }
 
@@ -345,6 +350,7 @@ void evaluation_entry(ULONG _)
 {
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
+  float dt = 0;
 
   enter_flight_mode(conf);
 
@@ -371,7 +377,7 @@ void evaluation_entry(ULONG _)
                        ~option(Ascent_KF_Staged), AcqRel);
 
       sweetbench_catch(3);
-      evaluate_rocket_state(conf);
+      evaluate_rocket_state(conf, dt);
       sweetbench_start(3, 50, true);
     }
     else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
@@ -382,7 +388,8 @@ void evaluation_entry(ULONG _)
       conf = fetch_or(&g_conf,
                       option(Ascent_KF_Staged), AcqRel);
 
-      ascent_predict(fsec(timer_exchange(AscentKF)), conf);
+      dt = fsec(timer_exchange(AscentKF));
+      ascent_predict(dt, conf);
     }
   }
 }

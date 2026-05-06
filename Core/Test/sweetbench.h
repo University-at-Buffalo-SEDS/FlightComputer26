@@ -37,11 +37,10 @@ static void __attribute__((constructor)) _sb_init(void)
 static inline void _sb_log(fu16 idx)
 {
 	char buf[_SB_BUF];
+	
 	const char *str = _SB_ID "task %2u min: %u\n";
-
-	/* Buffer is sufficiently large.
-	 */
 	snprintf(buf, sizeof buf, str, idx, _sb_meta[idx].min_ms);
+
 	message(buf, false);
 }
 

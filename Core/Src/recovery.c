@@ -124,7 +124,7 @@ static inline void sensor_init_supervised(sens_init sn)
   if (fails != 0)
   {
     g_conf |= option(Init_Failure_Record);
-    log_err(id "observed init failures: %u", fails);
+    log_metric(id "observed init failures", fails, true);
   }
 
   sweetbench_catch(5);
@@ -141,7 +141,7 @@ static inline void abortion_due_failures(void)
   g_conf |= option(Graceful_Reset);
   g_conf &= ~option(Defer_Baro_Fallback);
 
-  smon.gps_delay = 0;
+  smon.gps_delayed = 0;
   smon.gps_malform = 0;
 
   if (beyond(Armed) ||
@@ -290,13 +290,13 @@ static inline void enter_launch(bool noconfirm)
     g_conf &= ~option(In_Aborted_State);
     tx_thread_resume(&distribution_task);
   }
-  else if (smon.gps_delay || smon.gps_malform)
+  else if (smon.gps_delayed || smon.gps_malform)
   {
     log_err(id "GPS: %u delayed and %u malformed "
                "during pre-launch, now reset.",
-            smon.gps_delay, smon.gps_malform);
+            smon.gps_delayed, smon.gps_malform);
 
-    smon.gps_delay = 0;
+    smon.gps_delayed = 0;
     smon.gps_malform = 0;
   }
 
@@ -506,10 +506,10 @@ static inline void process_sensor_report(fc_msg code)
                     (code & msmcode(Bad_Pressure));
 
     bool maybe_gps = (g_conf & option(GPS_Available)) &&
-                      smon.gps_delay < GPS_SUS_DELAYS &&
+                      smon.gps_delayed < GPS_SUS_DELAYS &&
                       smon.gps_malform < GPS_SUS_MALFORM;
 
-    log_err(id "bad data report: %u", msmcode(code));
+    log_metric(id "bad data report", msmcode(code), false);
 
     if (!beyond(Apogee) || (bad_baro && !maybe_gps))
     {
@@ -521,8 +521,8 @@ static inline void process_sensor_report(fc_msg code)
       {
         /* Broad heuristic because Baro takes a while to init.
          */
-        bad_baro ? sensor_init_supervised(Wild_Mask)
-                 : sensor_init_supervised(Gyro_Mask | Accl_Mask);
+        sensor_init_supervised(bad_baro ? Wild_Mask
+                                        : Gyro_Mask | Accl_Mask);
       }
     }
   }
@@ -534,11 +534,11 @@ static inline void process_gps_code(fc_msg code)
   switch (code)
   {
   case GPS_Delayed:
-    ++smon.gps_delay;
+    ++smon.gps_delayed;
 
     if (g_conf & option(Launch_Requested))
     {
-      log_err(id "delayed GPS packets: %u", smon.gps_delay);
+      log_metric(id "#delayed GPS", smon.gps_delayed, false);
     }
     break;
 
@@ -547,14 +547,14 @@ static inline void process_gps_code(fc_msg code)
 
     if (g_conf & option(Launch_Requested))
     {
-      log_err(id "malformed GPS packets: %u", smon.gps_malform);
+      log_metric(id "#malform GPS", smon.gps_malform, false);
     }
     break;
 
   default: return;
   }
 
-  if (smon.gps_delay >= GPS_MAX_DELAYS ||
+  if (smon.gps_delayed >= GPS_MAX_DELAYS ||
       smon.gps_malform >= GPS_MAX_MALFORM)
   {
     barometer_fallback_vigilant();

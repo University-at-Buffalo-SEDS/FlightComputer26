@@ -95,7 +95,8 @@ extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 extern FDCAN_HandleTypeDef hfdcan1;
 
-#define now_ms() HAL_GetTick()
+#define now_ms()      HAL_GetTick()
+#define delay_it(ms)  HAL_Delay(ms)
 
 #define irq_off(irq) HAL_NVIC_DisableIRQ(irq)
 #define irq_on(irq)  HAL_NVIC_EnableIRQ(irq)
@@ -369,7 +370,28 @@ typedef enum SedsDataType_Debug {
 
 extern FX_MEDIA sdio_disk;
 
-#endif
+#if defined(TEST_ALLOC) || defined(DESCENT_TEST) || defined(MATH_FN_DEBUG)
+
+#define SEDS_LOG_FILENAME "test-log"
+
+#else /* TEST */
+#if defined(SIMULATION_CONFIG) || defined(LUNATIC_STATE) || defined(FC_BENCHMARK)
+
+#define SEDS_LOG_FILENAME "simu-log"
+
+#else /* SIMULATION */
+#if !defined(NDEBUG) || !defined(TELEMETRY_ENABLED) || !defined(GPS_AVAILABLE)
+
+#define SEDS_LOG_FILENAME "debg-log"
+
+#else /* DEBUG */
+
+#define SEDS_LOG_FILENAME "irec-log"
+
+#endif /* DEBUG */
+#endif /* SIMULATION */
+#endif /* TEST */
+#endif /* SD_AVAILABLE */
 
 
 #endif /* PLATFORM_H */

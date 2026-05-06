@@ -538,9 +538,10 @@ static inline void descent_full_cycle(fu32 conf)
 
   if (stage == EVALUATION_STAGED)
   {
-    descent_predict(fsec(timer_exchange(DescentKF)));
+    float dt = fsec(timer_exchange(DescentKF));
+    descent_predict(dt);
     descent_update();
-    evaluate_rocket_state(conf);
+    evaluate_rocket_state(conf, dt);
     sweetbench_catch(9);
   }
   else tx_thread_relinquish();
@@ -585,13 +586,13 @@ static inline void data_streaming_mode(void)
 
     if (code != 0)
     {
-      log_err(id "malformed measm: %u", code);
+      log_metric(id "malformed measm", code, false);
     }
     if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
     {
       imu = 0;
     }
-    if (ctr_baro > 0 && ctr_baro % 61 /* Golang! */)
+    if (ctr_baro > 0 && ctr_baro % 661 /* Golang! */)
     {
       log_metric(id "Baro interval", acc_baro / ctr_baro, false);
     }
@@ -623,7 +624,7 @@ static inline void post_initialization(void)
   {
     if (try_fetch_accl(&meas.accl))
     {
-      maybe_log_measm(IMU, &meas.gyro);
+      maybe_log_measm(IMU, &meas.accl);
 
       if (validate_accl(&meas.accl, conf))
       {

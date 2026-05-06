@@ -20,7 +20,7 @@ bool try_fetch_accl(f_xyz *);
 
 /* SD pipeline */
 
-void sd_pipeline_task(const char *);
+void sd_pipeline_task(void);
 void sd_append_f32(SedsDataType, const float *, fu8);
 void sd_append_string(SedsDataType, const char *);
 
@@ -55,7 +55,7 @@ extern sv_meta sm;
 extern measm meas;
 extern spinlock meas_locks[];
 
-void evaluate_rocket_state(fu32);
+void evaluate_rocket_state(fu32, float);
 
 #ifdef TELEMETRY_ENABLED
 SedsResult on_fc_packet(const SedsPacketView *, void *);
@@ -268,7 +268,7 @@ static inline void message(const char *msg, bool critical)
   {
     log_critical(msg);
   }
-  else if (timer_probe(MessageRomote, rates.gnd))
+  else if (timer_probe(MessageRemote, rates.gnd))
   {
     log_msg(msg);
   }
@@ -280,7 +280,7 @@ static inline void
 log_metric(const char *msg, fi32 metric, bool critical)
 {
   char buf[MAX_METRIC_REPORT_SIZE];
-  int n = snprintf(buf, sizeof buf, "%s: %d\n", msg, metric);
+  int n = snprintf(buf, sizeof buf, "%s: %d", msg, metric);
 
   if (n > 0 && n < sizeof buf)
   {

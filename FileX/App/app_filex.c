@@ -153,7 +153,7 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE BEGIN fx_app_thread_entry 1*/
 
-  sd_pipeline_task("sweet_flight_data.log");
+  sd_pipeline_task();
 
 /* USER CODE END fx_app_thread_entry 1*/
   }

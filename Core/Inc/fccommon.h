@@ -118,9 +118,14 @@
 
 /* SD */
 
+#define EXCESS_ALIGN 8
+#define POOL_RETRIES 3
+
 #define F32_TO_STR_MAX_SIZE   72
 #define F32_SCALE             1e4f
 #define MAX_VARIADIC_ERR_SIZE 96
+
+#define SD_POST_MARGIN (SD_BUFFER_SIZE - SD_MAX_MSG_SIZE)
 
 
 /* Common macros */

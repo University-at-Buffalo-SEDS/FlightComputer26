@@ -13,7 +13,7 @@
 
 
 static FX_FILE file = {0};
-static sd_meta line = {0};
+static sd_meta line = {.free = true};
 
 uncached char sdbuf[2][SD_BUFFER_SIZE] = {0};
 
@@ -60,7 +60,6 @@ static inline fu16 ftoa(char *dst, const float *val, fu8 count)
   return (fu16)(p - dst);
 }
 
-
 static inline void sd_release_notify(fu16 written, fu16 rem)
 {
 	if (written > 0 && written < rem)
@@ -87,30 +86,41 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 	fc_concede(&line.lock);
 }
 
-
 static inline constexpr char *seds_msg(SedsDataType ty)
 {
 	switch (ty) {
-		case SEDS_DT_MESSAGE_DATA:		return "MessageData";
-		case SEDS_DT_ORDERED_MESSAGE:	return "OrderedMessage";
-		case SEDS_DT_GENERIC_ERROR:		return "GenericError";
-		default:											return "DefaultMsg";
+		case SEDS_DT_MESSAGE_DATA:		return "Message";
+		case SEDS_DT_ORDERED_MESSAGE:	return "Ordered";
+		case SEDS_DT_GENERIC_ERROR:		return "Error";
+		default:											return "Echo";
 	}
 }
-
 
 static inline constexpr char *seds_f32(SedsDataType ty)
 {
 	switch (ty) {
-		case SEDS_DT_IMU_LOCAL:				return "IMULocal";
-		case SEDS_DT_BAROMETER_LOCAL:	return "BaroLocal";
-		case SEDS_DT_ACCEL_LOCAL:			return "AccelLocal";
-		case SEDS_DT_GYRO_LOCAL:			return "GyroLocal";
-		case SEDS_DT_ASCENT_LOCAL:    return "AscentLocal";
-    case SEDS_DT_DESCENT_LOCAL:   return "DescentLocal";
-    case SEDS_DT_EULER_ANGLES:    return "EulerAngles";
-		default:											return "DefaultData";
+		case SEDS_DT_IMU_LOCAL:				return "IMU";
+		case SEDS_DT_BAROMETER_LOCAL:	return "BARO";
+		case SEDS_DT_ACCEL_LOCAL:			return "ACCL";
+		case SEDS_DT_GYRO_LOCAL:			return "GYRO";
+		case SEDS_DT_ASCENT_LOCAL:    return "EKF";
+    case SEDS_DT_DESCENT_LOCAL:   return "DKF";
+    case SEDS_DT_EULER_ANGLES:    return "EULER";
+		default:											return "QUAT";
 	}
+}
+
+static inline char *unique_sorted_filename(void)
+{
+	static char fbuf[16 + sizeof SEDS_LOG_FILENAME];
+
+	tx_thread_sleep(now_ms() % 61);
+
+	fu32 time = now_ms();
+
+	snprintf(fbuf, sizeof fbuf, SEDS_LOG_FILENAME "-%u", time);
+
+	return fbuf;
 }
 
 
@@ -133,7 +143,6 @@ void sd_append_f32(SedsDataType ty, const float *val, fu8 count)
 
 	sd_release_notify(written, rem);
 }
-
 
 void sd_append_string(SedsDataType ty, const char *str)
 {
@@ -181,7 +190,6 @@ static inline bool sd_try_write_line(void)
 	return st == FX_SUCCESS;
 }
 
-
 static inline void sd_pipeline_shutdown(const char *unluck)
 {
 	UINT st;
@@ -196,39 +204,44 @@ static inline void sd_pipeline_shutdown(const char *unluck)
 	}
 }
 
-
-static inline void sd_pipeline_init(const char *name)
+static inline void sd_pipeline_init(const char *surprise)
 {
-	const char *failed = "failed";
-	file.fx_file_name = (CHAR *)name;
+	UINT st;
+	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rlx);
 
-	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rel);
-
-	if (fx_file_create(&sdio_disk, (CHAR *)name) != FX_SUCCESS)
+	do
 	{
-		log_die(id "fcreate %s", failed);
+		file.fx_file_name = unique_sorted_filename();
+		st = fx_file_create(&sdio_disk, file.fx_file_name);
+	}
+	while (st == FX_ALREADY_CREATED);
+
+	if (st != FX_SUCCESS)
+	{
+		log_die(id "fcreate %s %u", surprise, st);
 	}
 
-	if (tx_semaphore_create(&line.full, id "L", 0) != TX_SUCCESS ||
-		 	tx_semaphore_create(&line.full, id "E", 0) != TX_SUCCESS)
+	st = tx_semaphore_create(&line.full, id "S", 0);
+
+	if (st != TX_SUCCESS)
 	{
-		log_die(id "sema %s", failed);
+		log_die(id "sema %s %u", surprise, st);
 	}
-																					 ;
-	if (fx_file_open(&sdio_disk, &file, file.fx_file_name,
-															FX_OPEN_FOR_WRITE) != FX_SUCCESS)
+
+	st = fx_file_open(&sdio_disk, &file, file.fx_file_name,
+																			FX_OPEN_FOR_WRITE);
+	if (st != FX_SUCCESS)
 	{
-    log_die(id "fopen %s", failed);
+    log_die(id "fopen %s %u", surprise, st);
   }
 }
 
-
-void sd_pipeline_task(const char *name)
+void sd_pipeline_task()
 {
 	UINT st;
-	const char *unluck = "unsuccessful:";
+	const char *surprise = "failed:";
 
-	sd_pipeline_init(name);
+	sd_pipeline_init(surprise);
 
 	MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
 	{
@@ -237,15 +250,15 @@ void sd_pipeline_task(const char *name)
 		{ continue; }
 
 		if (sd_try_write_line())
-		{
+ 		{
 			if (timer_probe(SDFlush, SD_FLUSH_INTERVAL) &&
 					(st = fx_media_flush(&sdio_disk)) != FX_SUCCESS)
 			{
-				log_err(id "flush %s %u", unluck, st);
+				log_err(id "flush %s %u", surprise, st);
 			}
 		}
-		else log_err(id "fwrite %s %u", unluck, st);
+		else log_err(id "fwrite %s %u", surprise, st);
 	}
 
-	sd_pipeline_shutdown(unluck);
+	sd_pipeline_shutdown(surprise);
 }

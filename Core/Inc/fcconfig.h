@@ -20,19 +20,20 @@
 
 #define IGNITION_COMMAND 14
 
-#define EXCESS_ALIGN 8
-#define MSP_STACK_MARGIN 32766
-#define TELEMETRY_HEAP 65536
-#define POOL_RETRIES 3
+
+/* Logging */
+
+#define MSP_STACK_MARGIN	32768
+#define TELEMETRY_HEAP 		65536
 
 #define LOG_RATE_SD	 			50
 #define LOG_RATE_GND 			1000
 #define LOG_RATE_SD_LTD  	150
 #define LOG_RATE_GND_LTD	2000
 
-#define SD_BUFFER_SIZE		8192
+#define SD_BUFFER_SIZE		32768
 #define SD_FLUSH_INTERVAL 30000
-#define SD_POST_MARGIN		(SD_BUFFER_SIZE - 128)
+#define SD_MAX_MSG_SIZE		256
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */
