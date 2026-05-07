@@ -202,7 +202,7 @@ typedef struct cm_align state_metadata {
   uint8_t global_state;
   fu16 idx;
   fi16 confidence;
-  fi16 spilled_milk;
+  fi16 kf_deviations;
 } sv_meta;
 
 
@@ -300,8 +300,8 @@ typedef struct config_description_map {
 typedef struct cm_align system_monitor {
   fu16 to_abort, to_reinit;
   fu16 gps_delayed, gps_malform;
-  atomic_uint_fast16_t failures;
-  volatile fu16 triggers;
+  fu16 failures;
+  fu16 triggers;
 } sysmon;
 
 typedef enum sensor_init_mask : fu8 {

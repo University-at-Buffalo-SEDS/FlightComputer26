@@ -321,28 +321,34 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 
 /* On-board sensor data validation */
 
-static inline void maybe_report_measm(fu32 conf, fc_msg code)
+static inline void
+maybe_report_measm(fu32 conf, fc_msg code, devid kind)
 {
-  extern atomic_uint_fast16_t *ufailctr_if;
+  extern atomic_uint_fast16_t devctr_if[];
 
-  if (!(conf & option(Using_Ascent_KF)) && code > Bad_Pressure)
+  if (!(conf & option(Using_Ascent_KF)) && kind == IMU)
   {
     return;
   }
+
+  fu16 ctr = load(&devctr_if[kind], Rlx);
+
   if (code == fc_mask(Sensor_Measm_Code))
   {
-    if ((conf & option(Reset_Failures)) && ufailctr_if != NULL)
+    if ((conf & option(Reset_Failures)) && ctr > 0
+        && fetch_sub(&devctr_if[kind], 1, Rel) == 0)
     {
-      fu16 ctr = load(ufailctr_if, Rlx), obj = ctr;
-
-      /* Unsuccessful decrement discarded */
-      cas_strong(ufailctr_if, &obj, saturating_decr(ctr, 0),
-                                                  Acq, Rlx);
+      store(&devctr_if[kind], 0, Rel);
     }
   }
-  else if (conf & option(Measm_Reports))
+  else if (ctr <= TO_ABORT)
   {
-    tx_queue_send(&shared, &code, TX_NO_WAIT);
+    fetch_add(&devctr_if[kind], 1, Rel);
+
+    if (conf & option(Measm_Reports))
+    {
+      tx_queue_send(&shared, &code, TX_NO_WAIT);
+    }
   }
 }
 
@@ -364,7 +370,7 @@ validate_gyro(const f_xyz *gyro, fu32 conf)
     code |= Bad_Attitude_Z;
   }
 
-  maybe_report_measm(conf, code);
+  maybe_report_measm(conf, code, IMU);
 
   return code == fc_mask(Sensor_Measm_Code);
 }
@@ -387,7 +393,7 @@ validate_accl(const f_xyz *accl, fu32 conf)
     code |= Bad_Accel_Z;
   }
 
-  maybe_report_measm(conf, code);
+  maybe_report_measm(conf, code, IMU);
 
   return code == fc_mask(Sensor_Measm_Code);
 }
@@ -406,7 +412,7 @@ validate_baro(const baro *baro, fu32 conf)
     code |= Bad_Altitude;
   }
 
-  maybe_report_measm(conf, code);
+  maybe_report_measm(conf, code, Baro);
 
   return code == fc_mask(Sensor_Measm_Code);
 }

@@ -29,7 +29,7 @@ static inline void handle_spurious(fu32 mode, const char *cond)
 {
   if (sm.confidence >= SPURIOUS_THRESHOLD)
   {
-    ++sm.spilled_milk;
+    ++sm.kf_deviations;
 
     char buf[MAX_SPURIOUS_REPORT_SIZE];
     snprintf(buf, sizeof buf, id "fluc: %u, failed %s",
@@ -231,7 +231,7 @@ false_positive_risk(float alt, float vel, float dt, state now)
 
 static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 {
-  bool trust_kf = sm.spilled_milk <= ALEX_THRESHOLD
+  bool trust_kf = sm.kf_deviations <= KF_FLUC_THRES
                   && svec(0).alt <= VIGILANT_MAX_ALT
                   && svec(0).alt >= VIGILANT_MIN_ALT;
 

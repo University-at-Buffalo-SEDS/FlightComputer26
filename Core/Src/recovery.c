@@ -33,7 +33,7 @@ atomic_uint_fast32_t g_conf = FC_DEFAULTS | USER_OPTIONS;
 
 static sysmon smon = {TO_ABORT, TO_REINIT, 0, 0, 0};
 
-atomic_uint_fast16_t *ufailctr_if = NULL;
+atomic_uint_fast16_t devctr_if[MEMS_Devices] = {0};
 
 static struct baro_config baro_conf = {
     .osr_t = Baro_OSR_x1,
@@ -303,6 +303,7 @@ static inline void enter_launch(bool noconfirm)
   }
 
   smon.failures = 0;
+  devctr_if[IMU] = devctr_if[Baro] = 0;
   baro_conf.rezero = 0;
   g_conf &= ~option(Eval_Abort_Flag);
   g_conf &= ~option(Postinit_Requested);
@@ -511,9 +512,11 @@ static inline void process_sensor_report(fc_msg code)
 
   log_metric(id "bad data report", msmcode(code), false);
 
+  smon.failures = devctr_if[IMU] + devctr_if[Baro];
+
   if (!beyond(Apogee) || (bad_baro && !maybe_gps))
   {
-    if (++smon.failures >= smon.to_abort)
+    if (smon.failures >= smon.to_abort)
     {
       abortion_due_failures();
     }
@@ -619,6 +622,7 @@ static void fc_timer_routine(ULONG _)
     g_conf |= option(Monitor_Altitude);
     g_conf |= option(Reset_Failures);
     smon.failures = 0;
+    devctr_if[IMU] = devctr_if[Baro] = 0;
 
     if (g_conf & option(In_Aborted_State))
     {
@@ -699,7 +703,6 @@ static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
 
 void recovery_entry(ULONG st)
 {
-  ufailctr_if = &smon.failures;
   try_allocate_reserve_pool();
 
   st = tx_thread_entry_exit_notify(&distribution_task,
