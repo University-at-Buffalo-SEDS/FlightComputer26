@@ -73,11 +73,11 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 			if (line.free)
 			{
 				line.free = false;
-				fc_unlock(&line.lock);
 				tx_semaphore_put(&line.full);
+				fc_unlock(&line.lock);
 				return;
 			}
-			/* Else nowhere to write -> drop the line */
+			/* Else nowhere to write -> drop current message */
 
 			fc_unlock(&line.lock);
 			return;
