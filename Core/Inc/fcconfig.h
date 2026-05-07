@@ -99,7 +99,7 @@
 #define MAX_LON (LAUNCH_SITE_LON + 1.0f)
 #define MAX_SEA (LAUNCH_SITE_SEA + MAX_ALT)
 
-#define MIN_ALT -5.0f
+#define MIN_ALT -30.0f
 #define MIN_PRS 57200.0f
 #define MIN_DPS -MAX_DPS
 #define MIN_ACC -MAX_ACC
