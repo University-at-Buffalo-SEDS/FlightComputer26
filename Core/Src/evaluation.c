@@ -20,7 +20,9 @@ void cm_align *kfpool_buf = NULL;
 kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {Startup, G_Startup, 0, 0, 0};
 
+#ifndef NDEBUG
 uncached volatile float kalt, kvel;
+#endif
 
 
 /* FSM helpers */
@@ -51,9 +53,9 @@ static inline void flight_advance(state promotion)
 {
   sm.confidence = 0;
 
-  if (fetch_add(&sm.flight, 1, Acq) != promotion - 1)
+  if (fetch_add(&sm.flight, 1, AcqRel) != promotion - 1)
   {
-    store(&sm.flight, promotion, Rlx);
+    store(&sm.flight, promotion, Rel);
     message(id "vigilant mode transition", false);
   }
 
@@ -307,8 +309,10 @@ static inline void propel_kalman_state(fu32 conf)
 
 void evaluate_rocket_state(fu32 conf, float dt)
 {
+#ifndef NDEBUG
   kalt = svec(0).alt;
   kvel = svec(0).vel;
+#endif
 
   state curr = current();
 
@@ -446,7 +450,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     log_die(id "evflags %s %u", critical, st);
   }
 
-  kfpool_buf = _sbrk(KF_POOL_SIZE);
+  kfpool_buf = _sbrk(16 + KF_POOL_SIZE);
 
   if (kfpool_buf == (void *)-1)
   {
