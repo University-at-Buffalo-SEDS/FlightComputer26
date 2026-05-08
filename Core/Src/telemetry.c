@@ -6,9 +6,11 @@
 #include "fctasks.h"
 #include "can_bus.h"
 #include "simulation.h"
+#include "testing.h"
 
 #define id "TE "
 
+#ifdef TELEMETRY_ENABLED
 
 #ifndef TELEMETRY_ENABLED
 static void print_data_no_telem(void *data, size_t len) {
@@ -634,6 +636,8 @@ void die(const char *fmt, ...) {
   }
 }
 
+#endif /* TELEMETRY_ENABLED */
+
 
 /* Thread */
 
@@ -646,6 +650,13 @@ static cm_align CHAR static_pool[TELEMETRY_HEAP];
 
 void telemetry_entry(ULONG _)
 {
+#ifdef FAKESTATION
+
+  tx_thread_sleep(TLMT_TIME_SLICE * 10);
+  return emulate_handler_caller();
+
+#else
+
   can_bus_init(&hfdcan1);
 
   // Ensure router exists early (so we can send requests immediately)
@@ -667,6 +678,8 @@ void telemetry_entry(ULONG _)
 
     tx_thread_relinquish();
   }
+
+#endif /* FAKESTATION */
 }
 
 UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)

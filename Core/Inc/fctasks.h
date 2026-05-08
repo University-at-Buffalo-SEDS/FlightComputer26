@@ -8,7 +8,7 @@
 
 /* Telemetry Task */
 
-#ifdef TELEMETRY_ENABLED
+#if defined TELEMETRY_ENABLED || defined(FAKESTATION)
 
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
@@ -23,7 +23,7 @@ extern TX_BYTE_POOL telemetry_pool;
 void telemetry_entry(ULONG);
 UINT create_telemetry_task(TX_BYTE_POOL *);
 
-#endif /* TELEMETRY_ENABLED */
+#endif /* TELEMETRY_ENABLED + FAKESTATION */
 
 
 /* Recovery Task */

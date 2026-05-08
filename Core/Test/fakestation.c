@@ -7,13 +7,26 @@
 #define id "FS "
 
 
-static void normal_launch(void)
+static conditional void rollback_after_hitl(void)
+{
+	store(&sm.flight, Startup, Rel);
+
+	fu32 conf = load(&g_conf, Acq);
+
+	if (!(conf & Using_Ascent_KF))
+	{
+		ascent_initialize(conf);
+	}
+}
+
+
+static conditional void normal_launch(void)
 {
 	uint8_t cmd;
 
 	SedsPacketView pkt = {
 		.sender = id,
-		.sender_len = sizeof id,
+		.sender_len = 4,
 		.ty = SEDS_DT_FLIGHT_COMMAND,
 		.payload = &cmd,
 		.payload_len = sizeof cmd,
@@ -22,30 +35,30 @@ static void normal_launch(void)
 	cmd = Compat_Postinit_Signal;
 	on_fc_packet(&pkt, NULL);
 
-	tx_thread_sleep(random_wait);
+	tx_thread_sleep(5050);
 
 	cmd = Compat_Rollback_Signal;
 	on_fc_packet(&pkt, NULL);
 
-	tx_thread_sleep(random_wait);
+	tx_thread_sleep(5050);
 
 	cmd = Compat_Postinit_Signal;
 	on_fc_packet(&pkt, NULL);
 
-	tx_thread_sleep(random_wait);
+	tx_thread_sleep(5050);
 
 	cmd = Compat_Launch_Signal;
 	on_fc_packet(&pkt, NULL);
 }
 
 
-static void set_options(void)
+static conditional void set_options(void)
 {
 	uint8_t cmd;
 
 	SedsPacketView pkt = {
 		.sender = id,
-		.sender_len = sizeof id,
+		.sender_len = 4,
 		.ty = SEDS_DT_FLIGHT_COMMAND,
 		.payload = &cmd,
 		.payload_len = sizeof cmd,
@@ -61,13 +74,13 @@ static void set_options(void)
 }
 
 
-static void stripped_groundstation_launch()
+static conditional void stripped_groundstation_launch()
 {
 	uint8_t cmd;
 
 	SedsPacketView pkt = {
 		.sender = id,
-		.sender_len = sizeof id,
+		.sender_len = 4,
 		.ty = SEDS_DT_FLIGHT_COMMAND,
 		.payload = &cmd,
 		.payload_len = sizeof cmd,
@@ -94,7 +107,7 @@ static void stripped_groundstation_launch()
 	for (fu8 k = 0; k < 4; ++k)
 	{
 		on_fc_packet(&pkt, NULL);
-		tx_thread_sleep(random_wait);
+		tx_thread_sleep(5050);
 	}
 }
 
@@ -104,7 +117,20 @@ void emulate_handler_caller(void)
 	srand(now_ms());
 	tx_thread_sleep(random_wait);
 
-	set_options();
-	normal_launch();
-	stripped_groundstation_launch();
+	const int scenario = 2;
+
+	if (scenario == 1)
+	{
+		set_options();
+	}
+	if (scenario == 2)
+	{
+		rollback_after_hitl();
+		normal_launch();
+	}
+	if (scenario == 4)
+	{
+		rollback_after_hitl();
+		stripped_groundstation_launch();
+	}
 }

@@ -357,7 +357,6 @@ static inline void enter_flight_mode(fu32 conf)
 #ifdef DESCENT_TEST
     descent_initialize(conf);
     store(&sm.flight, Apogee, Rel);
-    fetch_and(&g_conf, ~option(Using_Ascent_KF), Rel);
 #endif
   }
 }

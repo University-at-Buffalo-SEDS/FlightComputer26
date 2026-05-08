@@ -227,6 +227,7 @@ static inline void manual_deployment(bool apogee, bool force)
   }
   else return;
 
+  log_metric(id "manual flight state", sm.flight, true);
   log_flight_state(to_global_state(sm.flight));
 
   if (g_conf & option(Using_Ascent_KF))
@@ -266,6 +267,7 @@ static inline void enter_postinit(bool noconfirm)
 
   baro_conf.rezero = 1;
   g_conf |= option(Postinit_Requested);
+  message(id "triggered Postinit", true);
 }
 
 static inline void enter_launch(bool noconfirm)
@@ -314,6 +316,12 @@ static inline void enter_launch(bool noconfirm)
 
 static inline void rollback_to_idle(void)
 {
+  if (g_conf & option(Postinit_Requested))
+  {
+    message(id "please wait for Postinit to complete", true);
+    return;
+  }
+
 #ifdef USER_CONFIRMATION
 
   if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
@@ -337,7 +345,6 @@ static inline void rollback_to_idle(void)
 
 #endif
 
-  g_conf &= ~option(Postinit_Requested);
   g_conf &= ~option(Launch_Requested);
   g_conf |= option(Rollback_Requested);
 
@@ -476,10 +483,19 @@ static inline void update_global_config(fc_msg incoming)
   {
     if ((g_conf & confmap[k].val) == option(confmap[k].val))
     {
-      cursor += snprintf(buf + cursor,
-                         sizeof confmap[k].name,
-                         "%s ",
-                         confmap[k].name);
+      fu16 rem = sizeof buf - cursor;
+
+      if (rem == 0) break;
+
+      fu16 n = snprintf(buf + cursor, rem, "%s ", confmap[k].name);
+
+      if (n >= rem)
+      {
+        cursor = sizeof buf - 1;
+        break;
+      }
+
+      cursor += n;
     }
   }
 
@@ -491,13 +507,13 @@ static inline void update_global_config(fc_msg incoming)
 
 static inline void process_config_update(fc_msg code)
 {
-  if (code & Abortion_Thresholds)
+  if (code & option(Abortion_Thresholds))
   {
-    smon.to_abort = threshold(code & ~Abortion_Thresholds);
+    smon.to_abort = threshold(code & ~option(Abortion_Thresholds));
   }
-  else if (code & Reinit_Thresholds)
+  else if (code & option(Reinit_Thresholds))
   {
-    smon.to_reinit = threshold(code & ~Reinit_Thresholds);
+    smon.to_reinit = threshold(code & ~option(Reinit_Thresholds));
   }
   else update_global_config(option(code));
 }

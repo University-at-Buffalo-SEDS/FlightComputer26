@@ -141,11 +141,11 @@ option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
 option(DEBUG_MATH       "Report failures of math fns"   OFF)
 option(IGNORE_STATES    "Disable recovery state checks" OFF)
-option(SWAP_CONFIG      "Use simulation user config"    OFF)
+option(SWAP_CONFIG      "Use simulation user config"    ON)
 option(EXPORT_SPINLOCK  "Use spinlock in hooked libs"   OFF)
 option(ALLOC_TEST       "Test exported allocator."      OFF)
 option(TEST_DESCENT     "Start at Apogee."              OFF)
-option(FAKESTATION      "Emulate GS commands."          OFF)
+option(FAKESTATION      "Emulate GS commands."          ON)
 
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
 message(STATUS "External GPS:           ${EXTERNAL_GPS}")
@@ -237,6 +237,7 @@ endif()
 if (FAKESTATION)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FAKESTATION)
     target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
         ${CMAKE_SOURCE_DIR}/Core/Test/fakestation.c
     )
 endif()

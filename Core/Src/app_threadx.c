@@ -70,12 +70,10 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_Init */
 
-#ifdef TELEMETRY_ENABLED
   if (create_telemetry_task(memory_ptr) != TX_SUCCESS)
   {
     Error_Handler();
   }
-#endif
 
   create_recovery_task(memory_ptr);
   create_dma_task(memory_ptr);
