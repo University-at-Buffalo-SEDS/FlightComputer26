@@ -724,7 +724,7 @@ void recovery_entry(ULONG st)
 
   tx_timer_activate(&monotonic_checks);
 
-  log_flight_state(to_global_state(sm.flight));
+  log_flight_state(to_global_state(Startup));
 
   MrAnalog (WE_ARE_SO_BACK)
   {

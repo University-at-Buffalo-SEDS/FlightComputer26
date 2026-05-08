@@ -286,6 +286,22 @@ update_ascent_biases(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
+static inline SedsResult
+minimal_postinit_compat(const uint8_t *data, size_t len)
+{
+  if (len != sizeof(uint8_t))
+  {
+    return SEDS_ERR;
+  }
+  else if (*data == G_Armed)
+  {
+    fc_msg post = fc_mask(Postinit_Signal);
+    tx_queue_send(&shared, &post, TX_NO_WAIT);
+  }
+
+  return SEDS_OK;
+}
+
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 {
   if (!pkt || !pkt->sender || !pkt->sender_len ||
@@ -300,6 +316,8 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
   {
     case SEDS_DT_HEARTBEAT:
       return pulse_ground();
+    case SEDS_DT_FLIGHT_STATE:
+      return minimal_postinit_compat(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);
     case SEDS_DT_FLIGHT_COMMAND:
@@ -629,7 +647,6 @@ static inline void post_initialization(void)
   fc_msg cmd = fc_mask(Reinit_Sensors);
   tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
-  log_flight_state(to_global_state(current()));
   timer_update(Auxiliary);
 
   MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)

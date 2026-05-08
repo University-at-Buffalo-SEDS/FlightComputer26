@@ -195,7 +195,7 @@ static inline gnd_state *to_global_state(state local)
 {
   switch (local) {
     case Startup:   sm.global_state = G_Startup;    break;
-    case Postinit:  sm.global_state = G_Postinit;   break;
+    case Postinit:
     case Armed:     sm.global_state = G_Armed;      break;
     case Launch:    sm.global_state = G_Launch;     break;
     case Ascent:    sm.global_state = G_Ascent;     break;

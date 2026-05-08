@@ -186,7 +186,6 @@ typedef enum global_state : uint8_t {
   G_FillTest,
   G_NitrogenFill,
   G_NitrousFill,
-  G_Postinit,
   G_Armed,
   G_Launch,
   G_Ascent,
