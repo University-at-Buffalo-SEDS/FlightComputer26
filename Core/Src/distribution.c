@@ -19,12 +19,7 @@ measm meas = {0};
 spinlock meas_locks[MEMS_Devices] = {0};
 
 #ifdef GPS_AVAILABLE
-
-static kf_gps rail = {0};
-static f_xyz gps_buf = {0};
-static spinlock gps_lock = {0};
-static bool updated_gps = false;
-
+static rf_receiver rfboard = {0};
 #endif
 
 
@@ -91,20 +86,20 @@ static inline bool fetch_gps_data(kf_gps *buf)
 {
 #ifdef GPS_AVAILABLE
 
-  fc_lock(&gps_lock);
+  fc_lock(&rfboard.rflock);
   
-  if (!updated_gps)
+  if (!rfboard.updated)
   {
-    fc_unlock(&gps_lock);
+    fc_unlock(&rfboard.rflock);
     return false;
   }
 
   /* Reordering: RF streams XYZ, KF expects [Z]YX */
-  buf->sea = gps_buf.z;
-  buf->lon = gps_buf.y;
-  buf->lat = gps_buf.x;
+  buf->sea = rfboard.coords_buf.z;
+  buf->lon = rfboard.coords_buf.y;
+  buf->lat = rfboard.coords_buf.x;
 
-  fc_unlock(&gps_lock);
+  fc_unlock(&rfboard.rflock);
   return true;
 
 #else
@@ -163,10 +158,10 @@ process_gps_packet(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
-  fc_lock(&gps_lock);
-  gps_buf = *(f_xyz *)data;
-  updated_gps = true;
-  fc_concede(&gps_lock);
+  fc_lock(&rfboard.rflock);
+  rfboard.coords_buf = *(f_xyz *)data;
+  rfboard.updated = true;
+  fc_concede(&rfboard.rflock);
 
   sweetbench_start(10, 50);
 
@@ -180,8 +175,8 @@ process_gps_packet(const uint8_t *data, size_t len)
 static inline void to_relative_coords(kf_gps *buf)
 {
 #ifdef GPS_AVAILABLE
-  buf->lon = fabsf(buf->lon - rail.lon);
-  buf->lat = fabsf(buf->lat - rail.lat);
+  buf->lon = fabsf(buf->lon - rfboard.rail.lon);
+  buf->lat = fabsf(buf->lat - rfboard.rail.lat);
 #endif
 }
 
@@ -194,13 +189,13 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
   {
     *acc += timer_exchange(GPSWatchdog);
 
-    rail = meas.gps;
+    rfboard.rail = meas.gps;
 
-    if (!within(rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
-        !within(rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
+    if (!within(rfboard.rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
+        !within(rfboard.rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
     {
-      log_err(id "new GPS reference "
-                 "LAT: %f, LON: %f", rail.lat, rail.lon);
+      log_err(id "new GPS reference LAT: %f, LON: %f",
+                  rfboard.rail.lat, rfboard.rail.lon);
     }
 
     if (++*ctr % GPS_DELAY_MS)
@@ -273,7 +268,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 
   if (load(&g_conf, Acq) & option(Launch_Requested))
   {
-    log_err(id "biases rejected mid-flight");
+    message(id "biases blocked mid-flight", true);
     return SEDS_ERR;
   }
 
@@ -299,7 +294,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
     return SEDS_HANDLER_ERROR;
   }
 
-  led_toggle(LED1_PORT, LED1_PIN);
+  // led_toggle(LED1_PORT, LED1_PIN);
 
   switch (pkt->ty)
   {
@@ -576,7 +571,8 @@ static inline void descent_full_cycle(fu32 conf)
 static inline void data_streaming_mode(void)
 {
   fu32 acc_baro = 0.0f, acc_gps = 0.0f;
-  fu32 ctr_baro = 0, ctr_gps = 0, conf = 0, imu = 0;
+  fu32 ctr_baro = 0, ctr_gps = 0;
+  fu32 conf = 0, imu = 0;
 
   timer_update(Auxiliary);
 
@@ -588,27 +584,30 @@ static inline void data_streaming_mode(void)
       imu |= Gyro_Mask;
       validate_gyro(&meas.gyro, conf);
     }
+
     if (try_fetch_accl(&meas.accl))
     {
       imu |= Accl_Mask;
       validate_accl(&meas.accl, conf);
     }
+
     if (try_fetch_baro(&meas.baro))
     {
-      acc_baro += timer_exchange(Auxiliary);
-      ++ctr_baro;
-
       validate_baro(&meas.baro, conf);
       maybe_log_measm(Baro, &meas.baro);
+
+      acc_baro += timer_exchange(Auxiliary);
+
+      if (ctr_baro % 211)
+      {
+        float avg = (float)acc_baro / (float)++ctr_baro;
+        log_metric(id "Baro interval", (fi32) avg, false);
+      }
     }
 
     if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
     {
       imu = 0;
-    }
-    if (ctr_baro > 0 && ctr_baro % 661 /* Golang! */)
-    {
-      log_metric(id "Baro interval", acc_baro / ctr_baro, false);
     }
 
     watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
@@ -627,7 +626,6 @@ static inline void post_initialization(void)
   f_xyz accl_acc = {0};
   fu32 accl_ctr = 0, gps_ctr = 0, gps_acc = 0;
 
-  fu32 conf = load(&g_conf, Acq);
   fc_msg cmd = fc_mask(Reinit_Sensors);
   tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
@@ -636,6 +634,8 @@ static inline void post_initialization(void)
 
   MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
+    fu32 conf = load(&g_conf, Acq);
+
     if (try_fetch_accl(&meas.accl))
     {
       maybe_log_measm(IMU, &meas.accl);
@@ -652,8 +652,6 @@ static inline void post_initialization(void)
     watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
 
     tx_thread_relinquish();
-
-    conf = load(&g_conf, Acq);
   }
 
   accl_acc.x /= accl_ctr;
@@ -665,7 +663,7 @@ static inline void post_initialization(void)
   if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
   {
     store(&sm.flight, Armed, Rlx);
-    log_err(id "unusual startup sequence");
+    message(id "unusual startup sequence", true);
   }
 
   fetch_and(&g_conf, ~option(Postinit_Requested), Rel);

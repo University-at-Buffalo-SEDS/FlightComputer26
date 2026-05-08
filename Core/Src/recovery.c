@@ -243,7 +243,7 @@ static inline void enter_postinit(bool noconfirm)
 {
   if (g_conf & option(Postinit_Requested) || beyond(Armed))
   {
-    log_err(id "cannot perform Postinit (already in progress?)");
+    message(id "Postinit blocked mid-flight or during itself", true);
     return;
   }
 
@@ -261,7 +261,7 @@ static inline void enter_postinit(bool noconfirm)
   if (++sm.flight != Postinit)
   {
     sm.flight = Postinit;
-    log_err(id "unusual sequence at postinit");
+    message(id "unusual sequence at Postinit", true);
   }
 
   baro_conf.rezero = 1;
@@ -272,7 +272,7 @@ static inline void enter_launch(bool noconfirm)
 {
   if (!beyond(Startup))
   {
-    log_err(id "rejected Launch before Postinit");
+    message(id "blocked Launch before Postinit", true);
     return;
   }
 
@@ -320,10 +320,10 @@ static inline void rollback_to_idle(void)
   {
     if (g_conf & option(Launch_Requested))
     {
-      log_err(id "looks like we're flying. ARE YOU SURE?");
+      message(id "looks like we're flying. ARE YOU SURE?", true);
     }
 
-    message(id "please confirm rollback");
+    message(id "please confirm rollback", true);
     return;
   }
 
@@ -331,7 +331,7 @@ static inline void rollback_to_idle(void)
 
   if (g_conf & option(Launch_Requested))
   {
-    message(id "rejected rollback after Launch", true);
+    message(id "Rollback blocked after Launch", true);
     return;
   }
 
@@ -414,19 +414,20 @@ static inline void process_action(fc_msg cmd, bool internal)
     case Log_Rate_Limit:
       rates.sd = LOG_RATE_SD_LTD;
       rates.gnd = LOG_RATE_GND_LTD;
-      log_err(id "WARNING: using reserve heap");
+      message(id "WARNING: using reserve heap", true);
       break;
 
     case Log_Restrict:
       rates.sd = LOG_RATE_SD_LTD * 4;
       rates.gnd = UINT_FAST32_MAX;
-      log_err(id "WARNING: using shared stack pool");
+      message(id "WARNING: using shared stack pool", true);
       break;
 
     case Log_Terminate:
       rates.sd = UINT_FAST32_MAX;
 #ifdef TELEMETRY_ENABLED
       tx_thread_terminate(&telemetry_task);
+      message(id "stopped telemetry task", true);
 #endif
       break;
 
@@ -458,7 +459,7 @@ static inline void update_global_config(fc_msg incoming)
   if ((raw & valid) == 0 || (raw & ~valid) != 0 ||
       (raw & (raw - 1)) != 0)
   {
-    log_err(id "option ill-formed: %u", (unsigned)incoming);
+    log_metric(id "option ill-formed", (fu32) incoming, true);
     return;
   }
 

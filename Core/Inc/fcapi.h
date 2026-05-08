@@ -295,7 +295,7 @@ static inline bool release_parachute(bool force)
 {
   if (!force && !beyond(Armed))
   {
-    log_err("PD drogue blocked, state %u", current());
+    log_metric("PD drogue blocked, state", current(), true);
     return false;
   }
 
@@ -314,13 +314,13 @@ static inline bool expand_parachute(bool force)
 {
   if (!force && !beyond(Launch))
   {
-    log_err("PR reef expansion, state %u", current());
+    log_metric("PR reef blocked, state %u", current(), true);
     return false;
   }
   
   if (!(load(&g_conf, Acq) & option(Parachute_Deployed)))
   {
-    log_err("PR reef blocked: not drogue");
+    message("PR reef blocked: not drogue", true);
     return false;
   }
 

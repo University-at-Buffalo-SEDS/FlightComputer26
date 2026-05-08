@@ -5,7 +5,6 @@
 #include "fcapi.h"
 #include "fctasks.h"
 #include "can_bus.h"
-#include "sd_card.h"
 #include "simulation.h"
 
 #define id "TE "

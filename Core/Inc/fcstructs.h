@@ -8,7 +8,7 @@
 #include "fccommon.h"
 
 
-/* General */
+/* Internal API */
 
 typedef enum relative_timer : fu8 {
   AscentKF,
@@ -39,6 +39,9 @@ typedef struct wakeyield_spinlock {
   atomic_uint_fast8_t lock, waiters;
 } spinlock;
 
+
+/* Logging & reporting */
+
 typedef enum led_kind : fu8 {
   Green,
   Blue,
@@ -62,10 +65,21 @@ typedef struct telemetry_log_rates {
   fu32 sd, gnd;
 } log_rates;
 
-typedef struct bounded_logger_lookup {
+typedef struct rated_logger_lookup {
   fu8 tim_sd, tim_gnd, size;
   fu16 kind_sd, kind_gnd;
 } log_lookup;
+
+#ifdef SD_AVAILABLE
+
+typedef struct sd_buffer_metadata {
+  TX_SEMAPHORE full;
+  fu16 off[2];
+  spinlock lock;
+  bool cur, free;
+} sd_meta;
+
+#endif
 
 
 /* Kalman filter */
@@ -108,11 +122,7 @@ typedef struct serial euler_angles {
 } eul;
 
 typedef struct kf_matrix_objects {
-  matrix mxp;
-  matrix mxq;
-  matrix mxa;
-  matrix mxr;
-  matrix mxh;
+  matrix mxp, mxq, mxa, mxr, mxh;
 } kf_matrix;
 
 
@@ -191,12 +201,6 @@ typedef enum global_state : uint8_t {
   Global_States
 } gnd_state;
 
-typedef enum logging_endpoint_type : fu8 {
-  None,
-  Local,
-  Remote,
-} log_ep;
-
 typedef struct cm_align state_metadata {
   atomic_uint_fast8_t flight;
   uint8_t global_state;
@@ -204,6 +208,13 @@ typedef struct cm_align state_metadata {
   fi16 confidence;
   fi16 kf_deviations;
 } sv_meta;
+
+typedef struct rf_distribution_block {
+  kf_gps rail;
+  f_xyz coords_buf;
+  spinlock rflock;
+  bool updated;
+} rf_receiver;
 
 
 /* Recovery */
@@ -353,20 +364,6 @@ typedef enum remote_cmd_compat : uint8_t
 
   Compat_Messages
 } compat;
-
-
-/* SD */
-
-#ifdef SD_AVAILABLE
-
-typedef struct sd_buffer_metadata {
-  TX_SEMAPHORE full;
-  fu16 off[2];
-  spinlock lock;
-  bool cur, free;
-} sd_meta;
-
-#endif
 
 
 #endif /* FC_DATA_STRUCTURES */
