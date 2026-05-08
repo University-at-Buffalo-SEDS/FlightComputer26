@@ -233,8 +233,8 @@ typedef enum flight_message : fu32 {
   Actionable_Decrees = (1u << 17),
 
   Postinit_Signal  = Actionable_Decrees + 1,
-  Launch_Signal    = Actionable_Decrees + 2,
-  Rollback_Signal  = Actionable_Decrees + 3,
+  Rollback_Signal  = Actionable_Decrees + 2,
+  Launch_Signal    = Actionable_Decrees + 3,
 
   Deploy_Parachute = Actionable_Decrees + 4,
   Expand_Parachute = Actionable_Decrees + 5,
@@ -330,8 +330,8 @@ typedef enum sensor_init_mask : fu8 {
 typedef enum remote_cmd_compat : uint8_t
 {
   Compat_Postinit_Signal,
-  Compat_Launch_Signal,
   Compat_Rollback_Signal,
+  Compat_Launch_Signal,
 
   Compat_Monitor_Altitude,
   Revoke_Monitor_Altitude,

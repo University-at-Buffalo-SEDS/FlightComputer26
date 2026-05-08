@@ -57,7 +57,7 @@ extern spinlock meas_locks[];
 
 void evaluate_rocket_state(fu32, float);
 
-#ifdef TELEMETRY_ENABLED
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 SedsResult on_fc_packet(const SedsPacketView *, void *);
 #endif
 
@@ -359,6 +359,11 @@ static inline char *debug_descriptor(SedsDataType logged)
     case SEDS_DT_MESSAGE_DATA:    return "MessageData";
     case SEDS_DT_ORDERED_MESSAGE: return "OrderedMessage";
     case SEDS_DT_GENERIC_ERROR:   return "GenericError";
+    case SEDS_DT_FLIGHT_STATE:    return "GlobalState";
+    case SEDS_DT_FLIGHT_COMMAND:  return "FlightCommand";
+    case SEDS_DT_HEARTBEAT:       return "G_Heartbeat";
+    case SEDS_DT_GPS_DATA:        return "GPSData";
+    case SEDS_DT_ASCENT_BIASES:   return "AscentBiases";
     default:                      return "SomeRandomData";
   }
 }
@@ -372,7 +377,6 @@ static inline char *debug_g_state(gnd_state state)
     case G_FillTest:      return "FillTest";
     case G_NitrogenFill:  return "NitrogenFill";
     case G_NitrousFill:   return "NitrousFill";
-    case G_Postinit:      return "Postinit";
     case G_Armed:         return "Armed";
     case G_Launch:        return "Launch";
     case G_Ascent:        return "Ascent";

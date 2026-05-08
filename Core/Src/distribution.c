@@ -23,13 +23,13 @@ static rf_receiver rfboard = {0};
 #endif
 
 
-#ifdef TELEMETRY_ENABLED
+#if defined (TELEMETRY_ENABLED) || defined(FAKESTATION)
 #ifdef TELEMETRY_CMD_COMPAT
 
 static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
-    Launch_Signal,
     Rollback_Signal,
+    Launch_Signal,
 
     Monitor_Altitude,
     revoke(Monitor_Altitude),
@@ -77,7 +77,7 @@ static inline fc_msg decode_cmd(const uint8_t *k)
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
-#endif /* TELEMETRY_ENABLED */
+#endif /* TELEMETRY_ENABLED + FAKESTATION */
 
 
 /* GPS coordinates handling */
@@ -107,8 +107,6 @@ static inline bool fetch_gps_data(kf_gps *buf)
 
 #endif
 }
-
-#ifdef TELEMETRY_ENABLED
 
 static inline fu32
 validate_coords(const f_xyz *gps, size_t len, fu32 conf)
@@ -170,8 +168,6 @@ process_gps_packet(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
-#endif /* TELEMETRY_ENABLED */
-
 static inline void to_relative_coords(kf_gps *buf)
 {
 #ifdef GPS_AVAILABLE
@@ -185,7 +181,7 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
 {
 #ifdef GPS_AVAILABLE
 
-  if (conf & option(GPS_Available) && fetch_gps_data(&meas.gps))
+  if ((conf & option(GPS_Available)) && fetch_gps_data(&meas.gps))
   {
     *acc += timer_exchange(GPSWatchdog);
 
@@ -198,9 +194,10 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
                   rfboard.rail.lat, rfboard.rail.lon);
     }
 
-    if (++*ctr % GPS_DELAY_MS)
+    if (++*ctr % 61 == 0 /* Golang! */)
     {
-      log_metric(id "GPS interval", *acc / *ctr, false);
+      float avg = *(float *)acc / *(float *)ctr;
+      log_metric(id "GPS interval", (fi32) avg, false);
     }
   }
 
@@ -210,7 +207,7 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
 
 /* General packet handling */
 
-#ifdef TELEMETRY_ENABLED
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 
 static inline SedsResult
 dispatch_flight_cmd(const uint8_t *data, size_t len)
@@ -287,7 +284,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 }
 
 static inline SedsResult
-minimal_postinit_compat(const uint8_t *data, size_t len)
+stripped_groundstation_postinit(const uint8_t *data, size_t len)
 {
   if (len != sizeof(uint8_t))
   {
@@ -317,7 +314,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
     case SEDS_DT_HEARTBEAT:
       return pulse_ground();
     case SEDS_DT_FLIGHT_STATE:
-      return minimal_postinit_compat(pkt->payload, pkt->payload_len);
+      return stripped_groundstation_postinit(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);
     case SEDS_DT_FLIGHT_COMMAND:
@@ -329,7 +326,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
   return SEDS_HANDLER_ERROR;
 }
 
-#endif /* TELEMETRY_ENABLED */
+#endif /* TELEMETRY_ENABLED + FAKESTATION */
 
 
 /* On-board sensor data validation */
@@ -616,7 +613,7 @@ static inline void data_streaming_mode(void)
 
       acc_baro += timer_exchange(Auxiliary);
 
-      if (ctr_baro % 211)
+      if (ctr_baro % 211 == 0)
       {
         float avg = (float)acc_baro / (float)++ctr_baro;
         log_metric(id "Baro interval", (fi32) avg, false);

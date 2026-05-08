@@ -7,14 +7,14 @@
 #include "fctypes.h"
 
 
+#define MAX_WAIT_MS 300
 #define SENSOR_SYNC_STEPS 128
-#define MAX_FETCH_INTERVAL_MS 50
 #define MAX_CRIT_MSG_BYTES 256
 
 #define MAX_ISR_CYCLES 16
 #define MAX_SYNC_CYCLES 16
 
-#define random_wait HAL_Delay(rand() % MAX_FETCH_INTERVAL_MS);
+#define random_wait (rand() % MAX_WAIT_MS)
 
 void test_telemetry_alloc(void);
 
@@ -72,6 +72,21 @@ void offcheck(const matrix *c, const matrix *p, const char *name);
 #define offok(...)
 
 #endif /* MATH_FN_DEBUG */
+
+
+#if !defined(TELEMETRY_ENABLED) && defined(FAKESTATION)
+
+typedef struct sedspacket_testing {
+  char *sender;
+  void *payload;
+  fu16 sender_len;
+  fu16 payload_len;
+  fu8 ty;
+} SedsPacketView;
+
+void emulate_handler_caller(void);
+
+#endif
 
 
 #endif /* TESTING_H */

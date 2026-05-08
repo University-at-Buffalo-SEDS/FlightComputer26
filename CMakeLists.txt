@@ -145,6 +145,7 @@ option(SWAP_CONFIG      "Use simulation user config"    OFF)
 option(EXPORT_SPINLOCK  "Use spinlock in hooked libs"   OFF)
 option(ALLOC_TEST       "Test exported allocator."      OFF)
 option(TEST_DESCENT     "Start at Apogee."              OFF)
+option(FAKESTATION      "Emulate GS commands."          OFF)
 
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
 message(STATUS "External GPS:           ${EXTERNAL_GPS}")
@@ -162,6 +163,7 @@ message(STATUS "Simulation:             ${SWAP_CONFIG}")
 message(STATUS "Export spinlock:        ${EXPORT_SPINLOCK}")
 message(STATUS "Test allocator:         ${ALLOC_TEST}")
 message(STATUS "Start at Apogee:        ${TEST_DESCENT}")
+message(STATUS "Emulate GS commands:    ${FAKESTATION}")
 
 if (MESSAGE_BATCHING)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
@@ -230,6 +232,13 @@ endif()
 
 if (TEST_DESCENT)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DESCENT_TEST)
+endif()
+
+if (FAKESTATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FAKESTATION)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/fakestation.c
+    )
 endif()
 
 if (CUSTOM_FLAGS)

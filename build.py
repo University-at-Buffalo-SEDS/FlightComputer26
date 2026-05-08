@@ -117,6 +117,7 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "manualconfirm",
                         "exspinlock",
                         "alloctest",
+                        "fakestation",
                 }
 
 # Repo constants
@@ -200,6 +201,7 @@ def configure(buildir: Path, preset: str, options: dict):
         manualconfirm   = "-DMANUAL_CONFIRM=OFF"
         exspin          = "-DEXPORT_SPINLOCK=OFF"
         alloctest       = "-DALLOC_TEST=OFF"
+        fakestation     = "-DFAKESTATION=OFF"
 
         if options["notelemetry"] or preset == "Debug":
                 telem = "-DENABLE_TELEMETRY=OFF"
@@ -207,6 +209,8 @@ def configure(buildir: Path, preset: str, options: dict):
 
                 if options["sensortest"]:
                         sensortest = "-DSENSOR_TESTS=ON"
+                if options["fakestation"]:
+                        fakestation = "-DFAKESTATION=ON"
         else:
                 if options["nogps"]:
                         gps = "-DEXTERNAL_GPS=OFF"
@@ -270,6 +274,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 manualconfirm,
                 exspin,
                 alloctest,
+                fakestation,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", "Ninja",

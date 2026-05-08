@@ -59,6 +59,7 @@ static inline void flight_advance(state promotion)
     message(id "vigilant mode transition", false);
   }
 
+  log_metric(id "new flight state", promotion, true);
   log_flight_state(to_global_state(promotion));
 }
 
