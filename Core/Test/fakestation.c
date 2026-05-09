@@ -37,11 +37,6 @@ static conditional void normal_launch(void)
 
 	tx_thread_sleep(5050);
 
-	cmd = Compat_Rollback_Signal;
-	on_fc_packet(&pkt, NULL);
-
-	tx_thread_sleep(5050);
-
 	cmd = Compat_Postinit_Signal;
 	on_fc_packet(&pkt, NULL);
 
@@ -86,9 +81,6 @@ static conditional void stripped_groundstation_launch()
 		.payload_len = sizeof cmd,
 	};
 
-	cmd = Compat_Rollback_Signal;
-	on_fc_packet(&pkt, NULL);
-
 	tx_thread_sleep(random_wait);
 
 	pkt.ty = SEDS_DT_FLIGHT_STATE;
@@ -104,11 +96,18 @@ static conditional void stripped_groundstation_launch()
 
 	cmd = G_Armed;
 
-	for (fu8 k = 0; k < 4; ++k)
+	for (fu8 k = 0; k < 2; ++k)
 	{
 		on_fc_packet(&pkt, NULL);
 		tx_thread_sleep(5050);
+
+		on_fc_packet(&pkt, NULL);
+		tx_thread_sleep(2050);
 	}
+
+	pkt.ty = SEDS_DT_FLIGHT_COMMAND;
+	cmd = Compat_Launch_Signal;
+	on_fc_packet(&pkt, NULL);
 }
 
 
@@ -117,7 +116,7 @@ void emulate_handler_caller(void)
 	srand(now_ms());
 	tx_thread_sleep(random_wait);
 
-	const int scenario = 2;
+	const int scenario = 4;
 
 	if (scenario == 1)
 	{

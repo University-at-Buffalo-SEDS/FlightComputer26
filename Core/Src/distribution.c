@@ -28,7 +28,6 @@ static rf_receiver rfboard = {0};
 
 static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
-    Rollback_Signal,
     Launch_Signal,
 
     Monitor_Altitude,
@@ -591,21 +590,19 @@ static inline void data_streaming_mode(void)
 
   timer_update(Auxiliary);
 
-  MrAnalog (conf & option(Postinit_Requested) ||
-            conf & option(Rollback_Requested))
+  MrAnalog ((conf & option(Postinit_Requested)) ||
+            (conf & option(Launch_Requested)))
   {
     if (try_fetch_gyro(&meas.gyro))
     {
       imu |= Gyro_Mask;
       validate_gyro(&meas.gyro, conf);
     }
-
     if (try_fetch_accl(&meas.accl))
     {
       imu |= Accl_Mask;
       validate_accl(&meas.accl, conf);
     }
-
     if (try_fetch_baro(&meas.baro))
     {
       validate_baro(&meas.baro, conf);
@@ -619,12 +616,10 @@ static inline void data_streaming_mode(void)
         log_metric(id "Baro interval", (fi32) avg, false);
       }
     }
-
     if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
     {
       imu = 0;
     }
-
     watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
 
     tx_thread_relinquish();
@@ -640,9 +635,6 @@ static inline void post_initialization(void)
 {
   f_xyz accl_acc = {0};
   fu32 accl_ctr = 0, gps_ctr = 0, gps_acc = 0;
-
-  fc_msg cmd = fc_mask(Reinit_Sensors);
-  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
   timer_update(Auxiliary);
 
@@ -662,7 +654,6 @@ static inline void post_initialization(void)
         ++accl_ctr;
       }
     }
-
     watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
 
     tx_thread_relinquish();
@@ -687,37 +678,30 @@ static inline void post_initialization(void)
 
 /* Task */
 
-static inline bool fill_sequence_states(fu32 conf)
+static inline bool fill_sequence_states(void)
 {
+  fu32 conf;
   fc_msg cmd = fc_mask(Reinit_Sensors);
-  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
 
-  data_streaming_mode();
-  message(id "left streaming mode", true);
+  do
+  {
+    if (!beyond(Startup))
+    {
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    }
 
-  if ((conf = load(&g_conf, Acq)) & option(Rollback_Requested))
-  {
-    return true;
-  }
-  else if (conf & option(Postinit_Requested))
-  {
-    post_initialization();
-  }
+    data_streaming_mode();
+    message(id "left streaming mode", true);
 
-  MrAnalog (conf & option(Launch_Requested))
-  {
-    tx_thread_sleep(POSTINIT_INTERVAL);
     conf = load(&g_conf, Acq);
 
-    if (conf & option(Rollback_Requested))
+    if (conf & option(Postinit_Requested))
     {
-      return true;
-    }
-    else if (conf & option(Postinit_Requested))
-    {
+      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
       post_initialization();
     }
   }
+  MrAnalog (beyond(Startup) && (conf & option(Launch_Requested)));
 
   MrAnalog (request_ignition() == SEDS_OK)
     ;
@@ -729,25 +713,13 @@ static inline bool fill_sequence_states(fu32 conf)
 void distribution_entry(ULONG _)
 {
   fu8 imu = 0;
-  fu32 conf = load(&g_conf, Acq);
+  fu32 conf;
 
-  if (!(conf & option(Launch_Requested)) && fill_sequence_states(conf))
-  {
-    return;
-  }
+  fill_sequence_states();
 
   MrAnalog (WE_ARE_SO_BACK)
   {
     conf = load(&g_conf, Acq);
-
-#ifdef USER_CONFIRMATION
-
-    if ((conf) & option(Rollback_Requested))
-    {
-      return;
-    }
-
-#endif
 
     if (conf & option(Using_Ascent_KF))
     {

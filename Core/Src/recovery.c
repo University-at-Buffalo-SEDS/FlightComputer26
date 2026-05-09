@@ -309,48 +309,8 @@ static inline void enter_launch(bool noconfirm)
   baro_conf.rezero = 0;
   g_conf &= ~option(Eval_Abort_Flag);
   g_conf &= ~option(Postinit_Requested);
-  g_conf &= ~option(Rollback_Requested);
 
   tx_thread_resume(&evaluation_task);
-}
-
-static inline void rollback_to_idle(void)
-{
-  if (g_conf & option(Postinit_Requested))
-  {
-    message(id "please wait for Postinit to complete", true);
-    return;
-  }
-
-#ifdef USER_CONFIRMATION
-
-  if (timer_exchange(RollbackCmd) > CONFIRMATION_TIMEOUT)
-  {
-    if (g_conf & option(Launch_Requested))
-    {
-      message(id "looks like we're flying. ARE YOU SURE?", true);
-    }
-
-    message(id "please confirm rollback", true);
-    return;
-  }
-
-#else
-
-  if (g_conf & option(Launch_Requested))
-  {
-    message(id "Rollback blocked after Launch", true);
-    return;
-  }
-
-#endif
-
-  g_conf &= ~option(Launch_Requested);
-  g_conf |= option(Rollback_Requested);
-
-  sm.flight = Startup;
-
-  message(id "rolled back to Startup", true);
 }
 
 
@@ -364,9 +324,6 @@ static inline void process_action(fc_msg cmd, bool internal)
 
     case Launch_Signal:
       return enter_launch(internal);
-
-    case Rollback_Signal:
-      return rollback_to_idle();
 
 #ifdef LUNATIC_STATE
 
@@ -650,6 +607,7 @@ static void fc_timer_routine(ULONG _)
     }
 
 #else
+#ifndef FAKESTATION
     static fu8 test_stage = 0;
 
     if (test_stage < 2)
@@ -672,7 +630,7 @@ static void fc_timer_routine(ULONG _)
       fc_msg cmd = fc_mask(Launch_Signal);
       tx_queue_send(&shared, &cmd, TX_NO_WAIT);
     }
-
+#endif /* !FAKESTATION */
 #endif /* TELEMETRY_ENABLED */
   }
 
@@ -692,29 +650,6 @@ static void fc_timer_routine(ULONG _)
   sweetbench_start(6, 10);
 }
 
-static void grace_reset_distribution(TX_THREAD *ptr, UINT cond)
-{
-  if (ptr != &distribution_task ||
-      (g_conf & option(Graceful_Reset)) == 0)
-  {
-     return;
-  }
-
-  if (cond == TX_THREAD_EXIT)
-  {
-    tx_thread_reset(&distribution_task);
-
-    if (g_conf & option(Rollback_Requested))
-    {
-      g_conf &= ~option(Rollback_Requested);
-      sensor_init_supervised(Wild_Mask);
-      timer_update(GPSWatchdog);
-      tx_thread_resume(&distribution_task);
-    }
-  }
-  else message(id "(re)started distribution", false);
-}
-
 
 /* Task */
 
@@ -722,20 +657,12 @@ void recovery_entry(ULONG st)
 {
   try_allocate_reserve_pool();
 
-  st = tx_thread_entry_exit_notify(&distribution_task,
-                                   grace_reset_distribution);
-  if (st != TX_SUCCESS)
-  {
-    log_die(id "notification %u", (fu32) st);
-  }
-
   for (timer k = 0; k < Time_Users; ++k)
   {
     timer_update(k);
   }
 
   local_time[PostinitCmd] = UINT_FAST32_MAX;
-  local_time[RollbackCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
 
   tx_timer_activate(&monotonic_checks);
