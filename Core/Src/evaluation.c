@@ -7,7 +7,6 @@
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
-#include "simulation.h"
 #include "sweetbench.h"
 
 #define id "EV "
@@ -20,7 +19,8 @@ void cm_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {Startup, G_Startup, 0, 0, 0};
-stats extremes = {0};
+
+static stats extremes = {0};
 
 #ifndef NDEBUG
 uncached volatile float kalt, kvel;
@@ -240,7 +240,11 @@ static inline void announce_recovery(fu32 mode)
 {
   flight_advance(Recovery);
   message(id "announcing recovery", true);
-  fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
+
+#ifdef SD_AVAILABLE
+  sd_conclude();
+#endif
+
   tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
 }
 
@@ -312,6 +316,7 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
     release_parachute(maybe_force(mode, alt, now));
     descent_initialize(mode);
     flight_advance(Descent);
+    extremes.max_alt = maxd(alt, extremes.max_alt);
     now = Descent;
   }
 

@@ -135,6 +135,12 @@ void sd_append_f32(SedsDataType ty, const float *val, fu8 count)
 
 	fc_lock(&line.lock);
 
+	if (line.off[line.cur] > SD_BUFFER_SIZE)
+	{
+		fc_unlock(&line.lock);
+		return;
+	}
+
 	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 
@@ -150,6 +156,12 @@ void sd_append_string(SedsDataType ty, const char *str)
 
 	fc_lock(&line.lock);
 
+	if (line.off[line.cur] > SD_BUFFER_SIZE)
+	{
+		fc_unlock(&line.lock);
+		return;
+	}
+
 	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 
@@ -157,6 +169,19 @@ void sd_append_string(SedsDataType ty, const char *str)
 													relative_ts, seds_msg(ty), str);
 
 	sd_release_notify(written, rem);
+}
+
+void sd_conclude(void)
+{
+	fc_lock(&line.lock);
+	fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
+
+	line.free = false;
+	line.off[0] = line.off[1] = UINT_FAST32_MAX;
+
+	fc_unlock(&line.lock);
+
+	tx_semaphore_put(&line.full);
 }
 
 
@@ -207,6 +232,9 @@ static inline void sd_pipeline_shutdown(const char *unluck)
 static inline void sd_pipeline_init(const char *surprise)
 {
 	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rlx);
+
+	memset(&line, 0, sizeof line);
+	line.free = true;
 
 	UINT st = tx_semaphore_create(&line.full, id "S", 0);
 
