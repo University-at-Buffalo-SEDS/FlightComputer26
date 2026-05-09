@@ -615,9 +615,9 @@ static inline void data_streaming_mode(void)
 
       acc_baro += timer_exchange(Auxiliary);
 
-      if (ctr_baro % 211 == 0)
+      if (++ctr_baro % 61 == 0 /* Golang! */)
       {
-        float avg = (float)acc_baro / (float)++ctr_baro;
+        float avg = (float)acc_baro / (float)ctr_baro;
         log_metric(id "Baro interval", (fi32) avg, false);
       }
     }
