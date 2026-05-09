@@ -144,7 +144,7 @@ option(IGNORE_STATES    "Disable recovery state checks" OFF)
 option(SWAP_CONFIG      "Use simulation user config"    ON)
 option(EXPORT_SPINLOCK  "Use spinlock in hooked libs"   OFF)
 option(ALLOC_TEST       "Test exported allocator."      OFF)
-option(TEST_DESCENT     "Start at Apogee."              ON)
+option(TEST_DESCENT     "Start at Apogee."              OFF)
 option(FAKESTATION      "Emulate GS commands."          OFF)
 
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")

@@ -465,7 +465,7 @@ void ascent_predict(const float dt, fu32 conf)
   qv.rho2 *= inormq;
   qv.rho3 *= inormq;
 
-  float r13 = 2.0f * (qv.rho1*qv.rho3 + qv.q0*qv.rho2);
+  float r13 = 2.0f * (qv.rho1*qv.rho3 - qv.q0*qv.rho2);
   float r23 = 2.0f * (qv.rho2*qv.rho3 + qv.q0*qv.rho1);
   float r33 = 1.0f - 2.0f * (qv.rho1*qv.rho1 + qv.rho2*qv.rho2);
 

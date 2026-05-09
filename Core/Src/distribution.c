@@ -553,7 +553,7 @@ static inline void descent_full_cycle(fu32 conf)
 
   sweetbench_start(9);
 
-  if (try_fetch_baro(&meas.baro) && validate_baro(&meas.baro, conf))
+  if (try_fetch_baro(&meas.baro))
   {
     stage = EVALUATION_STAGED;
     maybe_log_measm(Baro, &meas.baro);
