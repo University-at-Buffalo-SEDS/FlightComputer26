@@ -7,6 +7,7 @@
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
+#include "simulation.h"
 #include "sweetbench.h"
 
 #define id "EV "
@@ -19,6 +20,7 @@ void cm_align *kfpool_buf = NULL;
 
 kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {Startup, G_Startup, 0, 0, 0};
+stats extremes = {0};
 
 #ifndef NDEBUG
 uncached volatile float kalt, kvel;
@@ -39,7 +41,7 @@ static inline void handle_spurious(fu32 mode, const char *cond)
     message(buf, false);
   }
 
-  if (mode & option(Consecutive_Samples))
+  if (mode & option(Eval_Successive))
   {
     sm.confidence = 0;
   }
@@ -68,23 +70,44 @@ static inline void flight_advance(state promotion)
 
 static inline void detect_boost(fu32 mode)
 {
-  Require(svec(0).vel >= LAUNCH_MIN_VEL);
-  Require(svec(0).vel > svec(2).vel);
-  Require(svec(2).vel > svec(4).vel);
+  if (mode & option(Velocity_Checks))
+  {
+    Require(svec(0).vel >= LAUNCH_MIN_VEL);
+    Require(svec(0).vel > svec(2).vel);
+    Require(svec(2).vel > svec(4).vel);
+  }
+  else
+  {
+    Require(svec(0).alt >= LAUNCH_MIN_ALT);
+    Require(svec(0).alt > svec(2).alt);
+    Require(svec(2).alt > svec(4).alt);
+  }
 
   sm.confidence += 1;
 
   if (sm.confidence >= MIN_SAMP_LAUNCH)
   {
     flight_advance(Launch);
+    timer_update(Auxiliary);
+    extremes.max_vel = svec(0).vel;
     tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
 
 static inline void detect_ascent(fu32 mode)
 {
-  Require(svec(0).vel >= ASCENT_MIN_VEL);
-  Require(svec(0).vel > svec(3).vel);
+  if (mode & option(Velocity_Checks))
+  {
+    Require(svec(0).vel >= ASCENT_MIN_VEL);
+    Require(svec(0).vel > svec(3).vel);
+  }
+  else
+  {
+    float dh_0_3 = svec(0).alt - svec(3).alt;
+    float dh_4_7 = svec(4).alt - svec(7).alt;
+    Require(dh_0_3 < dh_4_7);
+  }
+
   Require(svec(0).alt > svec(2).alt);
   Require(svec(2).alt > svec(4).alt);
 
@@ -93,27 +116,45 @@ static inline void detect_ascent(fu32 mode)
   if (sm.confidence >= MIN_SAMP_ASCENT)
   {
     flight_advance(Ascent);
+    extremes.max_vel = maxd(svec(0).vel, extremes.max_vel);
   }
 }
 
 static inline void detect_coast(fu32 mode)
 {
-  Require(svec(0).alt > svec(2).alt);
-  Require(svec(0).vel > COAST_MIN_VEL);
-  Require(svec(0).vel < svec(5).vel);
+  extremes.max_vel = maxd(svec(0).vel, extremes.max_vel);
 
-  sm.confidence += 1;
+  if (mode & option(Velocity_Checks))
+  {
+    Require(svec(0).vel < svec(6).vel);
+    sm.confidence += 1;
+  }
 
-  if (sm.confidence >= MIN_SAMP_COAST)
+  if (timer_fetch(Auxiliary) >= MOTOR_BURN_TIME &&
+      (!(mode & option(Velocity_Checks)) || sm.confidence >= MIN_SAMP_COAST))
   {
     flight_advance(Coast);
+    log_metric(id "maxvel guess", (fi32) extremes.max_vel, false);
   }
 }
 
 static inline void detect_apogee(fu32 mode)
 {
-  Require(within(svec(2).vel, APOGEE_MAX_VEL));
-  Require(within(svec(0).vel, APOGEE_MAX_VEL));
+  if (mode & option(Velocity_Checks))
+  {
+    Require(within(svec(2).vel, APOGEE_MAX_VEL));
+    Require(within(svec(0).vel, APOGEE_MAX_VEL));
+  }
+  else
+  {
+    Require(svec(0).alt > VIGILANT_MIN_APG);
+
+    float dh_0_2 = svec(0).alt - svec(2).alt;
+    float dh_2_4 = svec(2).alt - svec(4).alt;
+
+    Require(within(dh_0_2, ALT_TOLER * 2));
+    Require(within(dh_2_4, ALT_TOLER * 2));
+  }
 
   sm.confidence += 1;
 
@@ -121,22 +162,41 @@ static inline void detect_apogee(fu32 mode)
   {
     descent_initialize(mode);
     flight_advance(Apogee);
+    extremes.max_alt = svec(0).alt;
     tx_thread_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
 
 static inline void detect_descent(fu32 mode)
 {
-  Require(svec(0).vel <= -DESCENT_MIN_VEL);
-  Require(svec(0).alt < svec(2).alt);
-  Require(svec(2).alt < svec(4).alt);
+  if (mode & option(Velocity_Checks))
+  {
+    Require(svec(0).vel <= -DESCENT_MIN_VEL);
+    Require(svec(0).alt < svec(2).alt);
+  }
+  else
+  {
+    float dh_3_0 = svec(3).alt - svec(0).alt;
+    float dh_6_3 = svec(6).alt - svec(3).alt;
+    Require(dh_3_0 > dh_6_3);
+  }
+
+  Require(svec(1).alt < svec(5).alt);
+  Require(svec(4).alt < svec(7).alt);
 
   sm.confidence += 1;
+
+  if (sm.confidence == 1)
+  {
+    extremes.max_alt = maxd(svec(4).alt, extremes.max_alt);
+  }
 
   if (sm.confidence >= MIN_SAMP_DESCENT)
   {
     release_parachute(false);
     flight_advance(Descent);
+
+    log_metric(id "apogee guess", (fi32) extremes.max_alt, false);
   }
 }
 
@@ -191,7 +251,7 @@ static inline void report_lowpass_gps(fu32 mode)
   if (mode & option(GPS_Available))
   {
     f_xyz lowpass = {
-      svec(0).gps.lat, svec(0).gps.lon, meas.gps.sea
+      svec(0).gps.lat, svec(0).gps.lon, meas.gps.sea - LAUNCH_SITE_SEA
     };
 
     log_f32(SEDS_DT_GPS_DATA, 3, &lowpass);
@@ -317,7 +377,7 @@ void evaluate_rocket_state(fu32 conf, float dt)
 
   state curr = current();
 
-  if (curr < Reefing && (conf & option(Monitor_Altitude)))
+  if (curr < Reefing && (conf & option(Vigilant_Mode)))
   {
     vigilant_watchdog(conf, curr, dt);
   }

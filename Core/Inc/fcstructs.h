@@ -214,6 +214,10 @@ typedef struct rf_distribution_block {
   bool updated;
 } rf_receiver;
 
+typedef struct flight_statistics {
+  float max_alt, max_vel;
+} stats;
+
 
 /* Recovery */
 
@@ -265,32 +269,33 @@ typedef enum flight_message : fu32 {
   Revoke_Option = Runtime_Configuration | (1u << 28),
 
   /* User */
-  Monitor_Altitude    = Runtime_Configuration | 1u,
-  Consecutive_Samples = Runtime_Configuration | (1u << 1),
-  Eval_Focus_Flag     = Runtime_Configuration | (1u << 2),
+  Vigilant_Mode       = Runtime_Configuration | 1u,
+  Eval_Successive     = Runtime_Configuration | (1u << 1),
+  Eval_Focused        = Runtime_Configuration | (1u << 2),
   Eval_Abort_Flag     = Runtime_Configuration | (1u << 3),
   Reset_Failures      = Runtime_Configuration | (1u << 4),
   Measm_Reports       = Runtime_Configuration | (1u << 5),
+  Velocity_Checks     = Runtime_Configuration | (1u << 6),
 
-  User_Option_Bound   = Runtime_Configuration | (1u << 6), 
+  User_Option_Bound   = Runtime_Configuration | (1u << 7), 
 
   /* Internal */
-  Postinit_Requested  = Runtime_Configuration | (1u << 7),
-  Launch_Requested    = Runtime_Configuration | (1u << 8),
-  Parachute_Deployed  = Runtime_Configuration | (1u << 9),
-  Parachute_Expanded  = Runtime_Configuration | (1u << 10),
-  CO2_Asserted        = Runtime_Configuration | (1u << 11),
-  REEF_Asserted       = Runtime_Configuration | (1u << 12),
-  GPS_Available       = Runtime_Configuration | (1u << 13),
-  Lost_GroundStation  = Runtime_Configuration | (1u << 14),
-  Init_Failure_Record = Runtime_Configuration | (1u << 15),
-  In_Aborted_State    = Runtime_Configuration | (1u << 16),
-  Graceful_Reset      = Runtime_Configuration | (1u << 17),
-  Manual_Biases       = Runtime_Configuration | (1u << 18),
-  Ascent_KF_Staged    = Runtime_Configuration | (1u << 19),
-  Using_Ascent_KF     = Runtime_Configuration | (1u << 20),
-  Defer_Baro_Fallback = Runtime_Configuration | (1u << 21),
-  SD_Pipeline_Reset   = Runtime_Configuration | (1u << 22),
+  Postinit_Requested  = Runtime_Configuration | (1u << 8),
+  Launch_Requested    = Runtime_Configuration | (1u << 9),
+  Parachute_Deployed  = Runtime_Configuration | (1u << 10),
+  Parachute_Expanded  = Runtime_Configuration | (1u << 11),
+  CO2_Asserted        = Runtime_Configuration | (1u << 12),
+  REEF_Asserted       = Runtime_Configuration | (1u << 13),
+  GPS_Available       = Runtime_Configuration | (1u << 14),
+  Lost_GroundStation  = Runtime_Configuration | (1u << 15),
+  Init_Failure_Record = Runtime_Configuration | (1u << 16),
+  In_Aborted_State    = Runtime_Configuration | (1u << 17),
+  Graceful_Reset      = Runtime_Configuration | (1u << 18),
+  Manual_Biases       = Runtime_Configuration | (1u << 19),
+  Ascent_KF_Staged    = Runtime_Configuration | (1u << 20),
+  Using_Ascent_KF     = Runtime_Configuration | (1u << 21),
+  Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
+  SD_Pipeline_Reset   = Runtime_Configuration | (1u << 23),
 
   Abortion_Thresholds = Runtime_Configuration | (1u << 26),
   Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
@@ -329,14 +334,16 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Postinit_Signal,
   Compat_Launch_Signal,
 
-  Compat_Monitor_Altitude,
-  Revoke_Monitor_Altitude,
-  Compat_Consecutive_Samples,
-  Revoke_Consecutive_Samples,
+  Compat_Vigilant_Mode,
+  Revoke_Vigilant_Mode,
+  Compat_Eval_Successive,
+  Revoke_Eval_Successive,
   Compat_Reset_Failures,
   Revoke_Reset_Failures,
-  Compat_Report_Bad_Measms,
-  Revoke_Report_Bad_Measms,
+  Compat_Measm_Reports,
+  Revoke_Measm_Reports,
+  Compat_Velocity_Checks,
+  Revoke_Velocity_Checks,
 
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,

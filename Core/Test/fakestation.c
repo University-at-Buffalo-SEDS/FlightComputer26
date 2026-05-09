@@ -59,7 +59,7 @@ static conditional void set_options(void)
 		.payload_len = sizeof cmd,
 	};
 
-	fu8 k = Compat_Monitor_Altitude;
+	fu8 k = Compat_Vigilant_Mode;
 	for (; k < Compat_Messages; ++k)
 	{
 		cmd = k;

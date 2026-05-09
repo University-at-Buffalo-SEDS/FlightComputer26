@@ -241,16 +241,16 @@ void descent_initialize(fu32 conf)
 
   fc_msg toggle = Using_Ascent_KF;
   fc_msg cmd = fc_mask(Disable_IMU);
-  tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+  tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
 
   if (conf & option(Defer_Baro_Fallback))
   {
     toggle |= Defer_Baro_Fallback;
-    conf = Monitor_Altitude | Measm_Reports;
+    conf = Vigilant_Mode | Measm_Reports;
     cmd = fc_mask(Reinit_Barometer);
 
     fetch_or(&g_conf, option(conf), Rlx);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
   }
 
   timer_update(DescentKF);
@@ -406,7 +406,7 @@ void ascent_initialize(fu32 conf)
      * FC_DEFAULTS. */
 
     fc_msg cmd = fc_mask(Reinit_IMU);
-    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    tx_queue_send(&seds_syscall, &cmd, TX_WAIT_FOREVER);
   }
 
   timer_update(AscentKF);

@@ -13,7 +13,7 @@
 
 
 TX_THREAD recovery_task;
-TX_QUEUE shared;
+TX_QUEUE seds_syscall;
 TX_TIMER monotonic_checks;
 
 TX_BYTE_POOL *tx_app_shared;
@@ -54,11 +54,12 @@ static struct accl_config accl_conf = {
 };
 
 static const conf_dict confmap[] = {
-  { Monitor_Altitude,    "vigilant-mode" },
-  { Consecutive_Samples, "consectuive-samples" },
-  { Eval_Focus_Flag,     "eval-focus" },
-  { Reset_Failures,      "reset-failures" },
-  { Measm_Reports,       "report-bad-measms" },
+  { Vigilant_Mode,    "vigilant" },
+  { Eval_Successive,  "successive" },
+  { Eval_Focused,     "focused" },
+  { Reset_Failures,   "fail-reset" },
+  { Measm_Reports,    "measm-reports" },
+  { Velocity_Checks,  "velocity-checks"}
 };
 
 
@@ -152,7 +153,7 @@ static inline void abortion_due_failures(void)
     smon.to_abort = TO_ABORT * 10;
 
     fc_msg cmd = fc_mask(Launch_Signal);
-    tx_queue_send(&shared, &cmd, TX_WAIT_FOREVER);
+    tx_queue_send(&seds_syscall, &cmd, TX_WAIT_FOREVER);
   }
   else
   {
@@ -177,7 +178,7 @@ static inline void barometer_fallback_vigilant(void)
 
   sensor_init_supervised(Baro_Mask);
 
-  g_conf |= option(Monitor_Altitude);
+  g_conf |= option(Vigilant_Mode);
   g_conf |= option(Measm_Reports);
   message(id "entered vigilant mode", false);
 }
@@ -199,12 +200,12 @@ static inline void evaluation_configure(bool focus)
   if (focus)
   {
     eval_new_pt = EVAL_PREEMPT_THRESHOLD;
-    g_conf |= option(Eval_Focus_Flag);
+    g_conf |= option(Eval_Focused);
   }
   else
   {
     eval_new_pt = EVAL_PRIORITY;
-    g_conf &= ~option(Eval_Focus_Flag);
+    g_conf &= ~option(Eval_Focused);
   }
 
   tx_thread_preemption_change(&evaluation_task,
@@ -376,19 +377,16 @@ static inline void process_action(fc_msg cmd, bool internal)
       break;
 
     case Log_Rate_Limit:
-      rates.sd = LOG_RATE_SD_LTD;
-      rates.gnd = LOG_RATE_GND_LTD;
+      rates.gnd = LOG_RATE_LIMITED;
       message(id "WARNING: using reserve heap", true);
       break;
 
     case Log_Restrict:
-      rates.sd = LOG_RATE_SD_LTD * 4;
       rates.gnd = UINT_FAST32_MAX;
       message(id "WARNING: using shared stack pool", true);
       break;
 
     case Log_Terminate:
-      rates.sd = UINT_FAST32_MAX;
 #ifdef TELEMETRY_ENABLED
       tx_thread_terminate(&telemetry_task);
       message(id "stopped telemetry task", true);
@@ -593,17 +591,15 @@ static void fc_timer_routine(ULONG _)
   {
 #ifdef TELEMETRY_ENABLED
     g_conf |= option(Lost_GroundStation);
-    g_conf |= option(Monitor_Altitude);
+    g_conf |= option(Vigilant_Mode);
     g_conf |= option(Reset_Failures);
-    smon.failures = 0;
-    devctr_if[IMU] = devctr_if[Baro] = 0;
 
     if (g_conf & option(In_Aborted_State))
     {
       smon.to_abort = smon.to_abort * 10;
 
       fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
 
 #else
@@ -618,7 +614,7 @@ static void fc_timer_routine(ULONG _)
     {
       ++test_stage;
       fc_msg cmd = fc_mask(Postinit_Signal);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
     else if (test_stage < 4)
     {
@@ -628,7 +624,7 @@ static void fc_timer_routine(ULONG _)
     {
       ++test_stage;
       fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
 #endif /* !FAKESTATION */
 #endif /* TELEMETRY_ENABLED */
@@ -640,7 +636,7 @@ static void fc_timer_routine(ULONG _)
       gps_interval > GPS_DELAY_MS)
   {
     fc_msg cmd = fc_mask(GPS_Delayed);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
   }
   else if (gps_interval < TX_TIMER_TICKS)
   {
@@ -674,7 +670,7 @@ void recovery_entry(ULONG st)
     fc_msg msg;
 
     /* Thread suspension */
-    st = tx_queue_receive(&shared, &msg, TX_WAIT_FOREVER);
+    st = tx_queue_receive(&seds_syscall, &msg, TX_WAIT_FOREVER);
 
     if (st != TX_SUCCESS)
     {
@@ -718,7 +714,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
     log_die(id "task %s %u", critical, st);
   }
 
-  st = tx_queue_create(&shared, id "Q", 1, &recvq,
+  st = tx_queue_create(&seds_syscall, id "Q", 1, &recvq,
                        sizeof recvq);
 
   if (st != TX_SUCCESS)

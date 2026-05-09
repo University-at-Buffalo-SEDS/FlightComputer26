@@ -26,10 +26,9 @@
 #define MSP_STACK_MARGIN	32768
 #define TELEMETRY_HEAP 		65536
 
-#define LOG_RATE_SD	 			50
-#define LOG_RATE_GND 			1000
-#define LOG_RATE_SD_LTD  	150
-#define LOG_RATE_GND_LTD	2000
+#define LOG_RATE_SD	 			80
+#define LOG_RATE_GND 			2000
+#define LOG_RATE_LIMITED	5000
 
 #define SD_BUFFER_SIZE		32768
 #define SD_FLUSH_INTERVAL 30000
@@ -54,6 +53,8 @@
 #define SPURIOUS_THRESHOLD	2
 #define SPURIOUS_PENALTY	 	1
 
+#define VELOCITY_CHECKS		1
+
 #define MIN_SAMP_LAUNCH		2
 #define MIN_SAMP_ASCENT   3
 #define MIN_SAMP_COAST  	5
@@ -62,10 +63,11 @@
 #define MIN_SAMP_REEF     4
 #define MIN_SAMP_LANDED   36
 
-#define LAUNCH_MIN_VEL  	24.0f
-#define ASCENT_MIN_VEL		18.0f
+#define LAUNCH_MIN_VEL  	20.0f
+#define LAUNCH_MIN_ALT		10.0f
+#define ASCENT_MIN_VEL		15.0f
 #define COAST_MIN_VEL 		12.0f
-#define APOGEE_MAX_VEL 		3.0f
+#define APOGEE_MAX_VEL 		2.7f
 #define DESCENT_MIN_VEL		4.0f
 #define REEF_TARGET_ALT 	457.2f
 #define FLYING_ALTITUDE		100.0f
@@ -155,9 +157,10 @@
 #define REEF_ASSERT_INTERVAL 500
 
 #define USER_OPTIONS ( (fc_msg) (0                   			\
-                      | option(Eval_Focus_Flag)           \
+                      | option(Eval_Focused)              \
                       | option(Reset_Failures)            \
                       | option(Measm_Reports)    					\
+                      | option(Velocity_Checks)           \
                       ) )
 
 #define LED_BLOCKING_CYCLES 10000000

@@ -64,7 +64,7 @@ SedsResult on_fc_packet(const SedsPacketView *, void *);
 
 /* Recovery */
 
-extern TX_QUEUE shared;
+extern TX_QUEUE seds_syscall;
 extern atomic_uint_fast32_t g_conf;
 
 extern TX_BYTE_POOL *tx_app_shared;

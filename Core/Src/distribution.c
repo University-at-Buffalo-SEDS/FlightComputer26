@@ -30,14 +30,16 @@ static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
     Launch_Signal,
 
-    Monitor_Altitude,
-    revoke(Monitor_Altitude),
-    Consecutive_Samples,
-    revoke(Consecutive_Samples),
+    Vigilant_Mode,
+    revoke(Vigilant_Mode),
+    Eval_Successive,
+    revoke(Eval_Successive),
     Reset_Failures,
     revoke(Reset_Failures),
     Measm_Reports,
     revoke(Measm_Reports),
+    Velocity_Checks,
+    revoke(Velocity_Checks),
 
     Deploy_Parachute,
     Expand_Parachute,
@@ -128,7 +130,7 @@ validate_coords(const f_xyz *gps, size_t len, fu32 conf)
   {
     st |= Bad_Longtitude;
   }
-  if ((conf & option(Monitor_Altitude)) &&
+  if ((conf & option(Vigilant_Mode)) && !beyond(Landed) &&
       (gps->z > MAX_SEA || gps->z < MIN_SEA))
   {
     st |= Bad_Sea_Level;
@@ -151,7 +153,7 @@ process_gps_packet(const uint8_t *data, size_t len)
 
   if (rep != fc_mask(GPS_Data_Code))
   {
-    tx_queue_send(&shared, &rep, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &rep, TX_NO_WAIT);
     return SEDS_ERR;
   }
 
@@ -226,7 +228,7 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
     msg = decode_cmd(data + k);
 
     st += msg != Invalid_Message
-              ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
+              ? tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)
               : INVALID_MESSAGE_STATUS;
   }
 
@@ -238,7 +240,7 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   msg = decode_cmd(data);
 
   st = msg != Invalid_Message
-            ? tx_queue_send(&shared, &msg, TX_NO_WAIT)
+            ? tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)
             : INVALID_MESSAGE_STATUS;
 
 #endif /* MESSAGE_BATCHING_ENABLED */
@@ -283,7 +285,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 }
 
 static inline SedsResult
-stripped_groundstation_postinit(const uint8_t *data, size_t len)
+implicit_postinit(const uint8_t *data, size_t len)
 {
   if (len != sizeof(uint8_t))
   {
@@ -292,7 +294,7 @@ stripped_groundstation_postinit(const uint8_t *data, size_t len)
   else if (*data == G_Armed)
   {
     fc_msg post = fc_mask(Postinit_Signal);
-    tx_queue_send(&shared, &post, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &post, TX_NO_WAIT);
   }
 
   return SEDS_OK;
@@ -313,7 +315,7 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
     case SEDS_DT_HEARTBEAT:
       return pulse_ground();
     case SEDS_DT_FLIGHT_STATE:
-      return stripped_groundstation_postinit(pkt->payload, pkt->payload_len);
+      return implicit_postinit(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);
     case SEDS_DT_FLIGHT_COMMAND:
@@ -356,7 +358,7 @@ maybe_report_measm(fu32 conf, fc_msg code, devid kind)
 
     if (conf & option(Measm_Reports))
     {
-      tx_queue_send(&shared, &code, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &code, TX_NO_WAIT);
     }
   }
 }
@@ -492,7 +494,7 @@ static inline void for_ascent_update(fu32 conf)
 
   sweetbench_catch(8);
 
-  if (conf & Eval_Focus_Flag)
+  if (conf & Eval_Focused)
   {
     tx_thread_relinquish();
   }
@@ -537,7 +539,7 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   maybe_log_measm(IMU, &meas.accl);
 
-  if (conf & option(Eval_Focus_Flag))
+  if (conf & option(Eval_Focused))
   {
     tx_thread_relinquish();
   }
@@ -562,7 +564,7 @@ static inline void descent_full_cycle(fu32 conf)
   {
     to_relative_coords(&meas.gps);
 
-    if (!(conf & option(Monitor_Altitude)))
+    if (!(conf & option(Vigilant_Mode)))
     {
       stage = EVALUATION_STAGED;
     }
@@ -687,7 +689,7 @@ static inline bool fill_sequence_states(void)
   {
     if (!beyond(Startup))
     {
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
 
     data_streaming_mode();
@@ -697,7 +699,7 @@ static inline bool fill_sequence_states(void)
 
     if (conf & option(Postinit_Requested))
     {
-      tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
       post_initialization();
     }
   }

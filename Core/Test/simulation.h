@@ -22,10 +22,9 @@
 #define MSP_STACK_MARGIN	32768
 #define TELEMETRY_HEAP		65536
 
-#define LOG_RATE_SD	 			50
-#define LOG_RATE_GND 			1000
-#define LOG_RATE_SD_LTD  	150
-#define LOG_RATE_GND_LTD	2000
+#define LOG_RATE_SD	 			80
+#define LOG_RATE_GND 			2000
+#define LOG_RATE_LIMITED	5000
 
 #define SD_BUFFER_SIZE		32768
 #define SD_FLUSH_INTERVAL 30000
@@ -50,6 +49,9 @@
 #define SPURIOUS_THRESHOLD	2
 #define SPURIOUS_PENALTY		1
 
+#define VELOCITY_CHECKS		1
+#define MOTOR_BURN_TIME		6000
+
 #define MIN_SAMP_LAUNCH		2
 #define MIN_SAMP_ASCENT   3
 #define MIN_SAMP_COAST  	5
@@ -59,12 +61,13 @@
 #define MIN_SAMP_LANDED   20
 
 #define LAUNCH_MIN_VEL  	1.0f
+#define LAUNCH_MIN_ALT		2.2f
 #define ASCENT_MIN_VEL		0.8f
 #define COAST_MIN_VEL 		2.0f
 #define APOGEE_MAX_VEL 		0.5f
 #define DESCENT_MIN_VEL		0.6f
 #define REEF_TARGET_ALT 	10.0f
-#define FLYING_ALTITUDE		100.0f
+#define FLYING_ALTITUDE		5.0f
 
 #define LAUNCH_CONFIRM_DELAY 30
 #define APOGEE_CONFIRM_DELAY 80
@@ -75,7 +78,7 @@
 #define VIGILANT_MAX_ALT 400.0f
 #define VIGILANT_MIN_ALT 2.0f
 #define VIGILANT_MIN_APG 16.0f
-#define HYBRID_VEL_SPIKE -5.0f /* Dummy, drone and L2 aren't transonic */
+#define HYBRID_VEL_SPIKE -5.0f
 #define SVHIST_ALT_TREND 1.0f
 #define VIGILANT_MIN_VEL 0.75f
 
@@ -151,9 +154,10 @@
 #define REEF_ASSERT_INTERVAL 500
 
 #define USER_OPTIONS ( (fc_msg) (0                   			\
-											| option(Eval_Focus_Flag)           \
-											| option(Reset_Failures)            \
-											| option(Measm_Reports)    					\
+                      | option(Eval_Focused)           		\
+                      | option(Reset_Failures)            \
+                      | option(Measm_Reports)    					\
+                      | option(Velocity_Checks)           \
                       ) )
 
 #define LED_BLOCKING_CYCLES 10000000

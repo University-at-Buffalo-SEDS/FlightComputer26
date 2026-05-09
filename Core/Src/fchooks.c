@@ -173,7 +173,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
   {
     log_state = Log_Rate_Bound;
     fc_msg cmd = fc_mask(Log_Rate_Limit);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
   }
 
   void *ptr;
@@ -188,7 +188,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
   {
     log_state = Log_Local_Bound;
     fc_msg cmd = fc_mask(Log_Restrict);
-    tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
   }
 
   st = tx_byte_allocate(tx_app_shared, &ptr, size, timeout);
@@ -199,7 +199,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
     do {
       fc_msg cmd = fc_mask(Log_Terminate);
-      st = tx_queue_send(&shared, &cmd, TX_NO_WAIT);
+      st = tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
     while (st != TX_SUCCESS);
 

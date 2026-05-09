@@ -21,74 +21,74 @@
 #define _SB_BUF		48
 
 struct _sb_context {
-	size_t count;
-	fu32 setoff;
-	fu32 min_ms;
+  size_t count;
+  fu32 setoff;
+  fu32 min_ms;
 };
 
 static struct _sb_context *_sb_meta = NULL;
 
 static void __attribute__((constructor)) _sb_init(void)
 {
-	_sb_meta = _sbrk(_SB_MAX * sizeof(struct _sb_context));
-	memset(_sb_meta, 0, _SB_MAX * sizeof(struct _sb_context));
+  _sb_meta = _sbrk(_SB_MAX * sizeof(struct _sb_context));
+  memset(_sb_meta, 0, _SB_MAX * sizeof(struct _sb_context));
 }
 
 static inline void _sb_log(fu16 idx)
 {
-	char buf[_SB_BUF];
-	
-	const char *str = _SB_ID "task %2u min: %u\n";
-	snprintf(buf, sizeof buf, str, idx, _sb_meta[idx].min_ms);
+  char buf[_SB_BUF];
+  
+  const char *str = _SB_ID "task %2u min: %u\n";
+  snprintf(buf, sizeof buf, str, idx, _sb_meta[idx].min_ms);
 
-	message(buf, false);
+  message(buf, false);
 }
 
 static inline void
 _sb_setoff(fu16 idx, size_t count, bool flush)
 {
-	if (idx >= _SB_MAX)
-	{
-		log_err(_SB_ID "error in %u", idx);
-		return;
-	}
+  if (idx >= _SB_MAX)
+  {
+    log_err(_SB_ID "error in %u", idx);
+    return;
+  }
 
-	/* TODO multiple start */
+  /* TODO multiple start */
 
-	if (_sb_meta[idx].count == 0)
-	{
-		_sb_meta[idx].count = count;
-		_sb_meta[idx].min_ms = UINT_FAST32_MAX;
+  if (_sb_meta[idx].count == 0)
+  {
+    _sb_meta[idx].count = count;
+    _sb_meta[idx].min_ms = UINT_FAST32_MAX;
 
-		if (flush)
-		{
-			invalidate_dcache();
-		}
-	}
+    if (flush)
+    {
+      invalidate_dcache();
+    }
+  }
 
-	_sb_meta[idx].setoff = now_ms();
+  _sb_meta[idx].setoff = now_ms();
 }
 
 static inline void _sb_catch(fu16 idx)
 {
-	fu32 elapsed = now_ms() - _sb_meta[idx].setoff;
+  fu32 elapsed = now_ms() - _sb_meta[idx].setoff;
 
-	if (_sb_meta[idx].count == 0)
-	{
-		/* Catch before start is allowed for inverse benchmarking.
-		 */
-		return;
-	}
+  if (_sb_meta[idx].count == 0)
+  {
+    /* Catch before start is allowed for inverse benchmarking.
+     */
+    return;
+  }
 
-	_sb_meta[idx].min_ms = elapsed < _sb_meta[idx].min_ms
-															? elapsed
-															: _sb_meta[idx].min_ms;
+  _sb_meta[idx].min_ms = elapsed < _sb_meta[idx].min_ms
+                              ? elapsed
+                              : _sb_meta[idx].min_ms;
 
-	if (--_sb_meta[idx].count == 0)
-	{
-		_sb_meta[idx].setoff = 0;
-		_sb_log(idx);
-	}
+  if (--_sb_meta[idx].count == 0)
+  {
+    _sb_meta[idx].setoff = 0;
+    _sb_log(idx);
+  }
 }
 
 
@@ -102,7 +102,7 @@ static inline void _sb_catch(fu16 idx)
 #define _sb_so3(i, c, f) 	_sb_setoff((i), (c), (f))
 
 #define sweetbench_start(...)	\
-	_sb_slf(_sb_ovl(__VA_ARGS__, _sb_so3, _sb_so2, _sb_so1)(__VA_ARGS__))
+  _sb_slf(_sb_ovl(__VA_ARGS__, _sb_so3, _sb_so2, _sb_so1)(__VA_ARGS__))
 
 #define sweetbench_catch(idx) _sb_catch((idx))
 
