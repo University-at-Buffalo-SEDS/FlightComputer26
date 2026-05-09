@@ -186,14 +186,17 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
   {
     *acc += timer_exchange(GPSWatchdog);
 
-    rfboard.rail = meas.gps;
-
     if (!within(rfboard.rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
         !within(rfboard.rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
     {
-      log_err(id "new GPS reference LAT: %f, LON: %f",
-                  rfboard.rail.lat, rfboard.rail.lon);
+      const float rep[2] = {rfboard.rail.lat, rfboard.rail.lon};
+      char buf[MAX_METRIC_MESSAGE_SIZE] = id "new GPS reference: ";
+
+      seds_ftoa4(buf + strlen(buf) + 1, rep, 2);
+      message(buf, true);
     }
+
+    rfboard.rail = meas.gps;
 
     if (++*ctr % 61 == 0 /* Golang! */)
     {
@@ -745,7 +748,8 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "stack %s %u", critical, st);
+    log_err(id "stack %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_thread_create(&distribution_task,
@@ -762,7 +766,8 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "task %s %u", critical, st);
+    log_err(id "task %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   return TX_SUCCESS;

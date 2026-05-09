@@ -20,19 +20,24 @@ uncached char sdbuf[2][SD_BUFFER_SIZE] = {0};
 
 /* Helpers */
 
-static inline fu16 ftoa(char *dst, const float *val, fu8 count)
+fi16 seds_ftoa4(char *dst, const float *data, fu8 count)
 {
+	if (!dst || !data)
+	{
+		return -1;
+	}
+
   char *p = dst;
-  char reversed[12];
+  char reversed[16];
 
   for (fu8 k = 0; k < count; ++k)
   {
-    if (val[k] < 0.0f) *(p++) = '-';
+    if (data[k] < 0.0f) *(p++) = '-';
 
 		fi16 idx = 0;
-    fu32 scaled = (fu32)(fabsf(val[k]) * F32_SCALE + 0.5f);
-    fu32 int_part = scaled / (fu32)F32_SCALE;
-    fu32 flt_part = scaled % (fu32)F32_SCALE;
+    fu32 scaled = (fu32)(fabsf(data[k]) * F32_SCALE + 0.5f);
+    fu32 int_part = scaled / (fu32) F32_SCALE;
+    fu32 flt_part = scaled % (fu32) F32_SCALE;
     
     do
 		{
@@ -57,7 +62,7 @@ static inline fu16 ftoa(char *dst, const float *val, fu8 count)
   }
 
   *p = '\0';
-  return (fu16)(p - dst);
+  return (fi16)(p - dst);
 }
 
 static inline void sd_release_notify(fu16 written, fu16 rem)
@@ -110,9 +115,10 @@ static inline constexpr char *seds_f32(SedsDataType ty)
 	}
 }
 
-static inline char *unique_sorted_filename(void)
+static inline char *unique_sd_filename(void)
 {
 	static char fbuf[26 + sizeof SEDS_LOG_FILENAME];
+	static_assert(sizeof SEDS_LOG_FILENAME == strlen(SEDS_LOG_FILENAME) + 1, "");
 
 	tx_thread_sleep(now_ms() % 61);
 
@@ -126,47 +132,42 @@ static inline char *unique_sorted_filename(void)
 
 /* API */
 
-void sd_append_f32(SedsDataType ty, const float *val, fu8 count)
+void sd_append_f32(SedsDataType ty, const float *data, fu8 count)
 {
-	fu32 relative_ts = now_ms();
-
-	char buf[F32_TO_STR_MAX_SIZE];
-	ftoa(buf, val, count);
-
-	fc_lock(&line.lock);
-
-	if (line.off[line.cur] > SD_BUFFER_SIZE)
+	if (!data || count == 0 ||
+			(load(&g_conf, Acq) & option(SD_Pipeline_Reset)))
 	{
-		fc_unlock(&line.lock);
 		return;
 	}
 
-	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
+	char buf[F32_TO_STR_MAX_SIZE];
+	seds_ftoa4(buf, data, count);
+
+	fc_lock(&line.lock);
+
 	char *off = sdbuf[line.cur] + line.off[line.cur];
+	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
 	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-													relative_ts, seds_f32(ty), buf);
+													(fu32) now_ms(), seds_f32(ty), buf);
 
 	sd_release_notify(written, rem);
 }
 
 void sd_append_string(SedsDataType ty, const char *str)
 {
-	fu32 relative_ts = now_ms();
-
-	fc_lock(&line.lock);
-
-	if (line.off[line.cur] > SD_BUFFER_SIZE)
+	if (!str || (load(&g_conf, Acq) & option(SD_Pipeline_Reset)))
 	{
-		fc_unlock(&line.lock);
 		return;
 	}
 
-	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
+	fc_lock(&line.lock);
+
 	char *off = sdbuf[line.cur] + line.off[line.cur];
+	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
 	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-													relative_ts, seds_msg(ty), str);
+													(fu32) now_ms(), seds_msg(ty), str);
 
 	sd_release_notify(written, rem);
 }
@@ -177,7 +178,6 @@ void sd_conclude(void)
 	fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
 
 	line.free = false;
-	line.off[0] = line.off[1] = UINT_FAST32_MAX;
 
 	fc_unlock(&line.lock);
 
@@ -229,7 +229,7 @@ static inline void sd_pipeline_shutdown(const char *unluck)
 	}
 }
 
-static inline void sd_pipeline_init(const char *surprise)
+static inline int sd_pipeline_init(const char *surprise)
 {
 	fetch_and(&g_conf, ~option(SD_Pipeline_Reset), Rlx);
 
@@ -240,26 +240,31 @@ static inline void sd_pipeline_init(const char *surprise)
 
 	if (st != TX_SUCCESS)
 	{
-		log_die(id "sema %s %u", surprise, st);
+		log_err(id "sema %s %u", surprise, st);
+		return IT_IS_NOW_OVER;
 	}
 	do
 	{
-		file.fx_file_name = unique_sorted_filename();
+		file.fx_file_name = unique_sd_filename();
 		st = fx_file_create(&sdio_disk, file.fx_file_name);
 	}
 	while (st == FX_ALREADY_CREATED);
 
 	if (st != FX_SUCCESS)
 	{
-		log_die(id "fcreate %s %u", surprise, st);
+		log_err(id "fcreate %s %u", surprise, st);
+		return IT_IS_NOW_OVER;
 	}
 
 	st = fx_file_open(&sdio_disk, &file, file.fx_file_name,
 																			FX_OPEN_FOR_WRITE);
 	if (st != FX_SUCCESS)
 	{
-    log_die(id "fopen %s %u", surprise, st);
+    log_err(id "fopen %s %u", surprise, st);
+		return IT_IS_NOW_OVER;
   }
+
+	return WE_ARE_SO_BACK;
 }
 
 void sd_pipeline_task()
@@ -267,7 +272,10 @@ void sd_pipeline_task()
 	UINT st;
 	const char *surprise = "failed:";
 
-	sd_pipeline_init(surprise);
+	if (sd_pipeline_init(surprise) != WE_ARE_SO_BACK)
+	{
+		return;
+	}
 
 	MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
 	{

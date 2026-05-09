@@ -269,7 +269,8 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "stack %s %u", critical, st);
+    log_err(id "stack %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_thread_create(&dma_task,
@@ -286,7 +287,8 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 
 	if (st != TX_SUCCESS)
   {
-    log_die(id "task %s %u", critical, st);
+    log_err(id "task %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   return TX_SUCCESS;

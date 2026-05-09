@@ -297,12 +297,11 @@ static inline void enter_launch(bool noconfirm)
   }
   else if (smon.gps_delayed || smon.gps_malform)
   {
-    log_err(id "GPS: %u delayed and %u malformed "
-               "during pre-launch, now reset.",
-            smon.gps_delayed, smon.gps_malform);
-
+    fi32 total = smon.gps_delayed + smon.gps_malform;
     smon.gps_delayed = 0;
     smon.gps_malform = 0;
+
+    log_metric(id "total GPS errors (now reset)", total, true);
   }
 
   smon.failures = 0;
@@ -561,11 +560,39 @@ static inline void decode_flight_message(fc_msg msg)
     return process_config_update(msg);
   }
 
-  log_err(id "unrecognized option: %u", (fu32) msg);
+  log_metric(id "unrecognized option", (fi32) fc_unmask(msg), true);
 }
 
 
 /* Scheduler-managed routines */
+
+static inline conditional void autostart_on_timeout(void)
+{
+#ifndef FAKESTATION
+  static fu8 test_stage = 0;
+
+  if (test_stage < 2)
+  {
+    ++test_stage;
+  } 
+  else if (test_stage == 2)
+  {
+    ++test_stage;
+    fc_msg cmd = fc_mask(Postinit_Signal);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+  }
+  else if (test_stage < 4)
+  {
+    ++test_stage;
+  }
+  else if (test_stage == 4)
+  {
+    ++test_stage;
+    fc_msg cmd = fc_mask(Launch_Signal);
+    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+  }
+#endif
+}
 
 static void fc_timer_routine(ULONG _)
 {
@@ -596,47 +623,25 @@ static void fc_timer_routine(ULONG _)
 
     if (g_conf & option(In_Aborted_State))
     {
-      smon.to_abort = smon.to_abort * 10;
+      smon.to_abort *= 10;
 
       fc_msg cmd = fc_mask(Launch_Signal);
       tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
     }
-
 #else
-#ifndef FAKESTATION
-    static fu8 test_stage = 0;
-
-    if (test_stage < 2)
-    {
-      ++test_stage;
-    } 
-    else if (test_stage == 2)
-    {
-      ++test_stage;
-      fc_msg cmd = fc_mask(Postinit_Signal);
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
-    }
-    else if (test_stage < 4)
-    {
-      ++test_stage;
-    }
-    else if (test_stage == 4)
-    {
-      ++test_stage;
-      fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
-    }
-#endif /* !FAKESTATION */
-#endif /* TELEMETRY_ENABLED */
+    autostart_on_timeout();
+#endif
   }
 
   fu32 gps_interval = timer_fetch(HeartbeatRF);
 
-  if (g_conf & option(GPS_Available) &&
-      gps_interval > GPS_DELAY_MS)
+  if (g_conf & option(GPS_Available))
   {
-    fc_msg cmd = fc_mask(GPS_Delayed);
-    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    if (gps_interval > GPS_DELAY_MS)
+    {
+      fc_msg cmd = fc_mask(GPS_Delayed);
+      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    }
   }
   else if (gps_interval < TX_TIMER_TICKS)
   {
@@ -694,7 +699,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "stack %s %u", critical, st);
+    log_err(id "stack %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
   
   st = tx_thread_create(&recovery_task,
@@ -711,7 +717,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "task %s %u", critical, st);
+    log_err(id "task %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_queue_create(&seds_syscall, id "Q", 1, &recvq,
@@ -719,7 +726,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "queue %s %u", critical, st);
+    log_err(id "queue %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_timer_create(&monotonic_checks, id "T",
@@ -728,7 +736,8 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "timer %s %u", critical, st);
+    log_err(id "timer %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   return TX_SUCCESS;

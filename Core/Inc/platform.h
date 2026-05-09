@@ -70,6 +70,7 @@ typedef arm_matrix_instance_f32 matrix;
 /* Misc utilities */
 
 #define WE_ARE_SO_BACK 0
+#define IT_IS_NOW_OVER 1337
 
 #define MrAnalog(exit_predicate) while (!(exit_predicate))
 

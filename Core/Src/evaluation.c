@@ -489,7 +489,8 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "stack %s %u", critical, st);
+    log_err(id "stack %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_thread_create(&evaluation_task,
@@ -505,21 +506,24 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "task %s %u", critical, st);
+    log_err(id "task %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   st = tx_event_flags_create(&eval_stage, id "E");
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "evflags %s %u", critical, st);
+    log_err(id "evflags %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
   kfpool_buf = _sbrk(16 + KF_POOL_SIZE);
 
   if (kfpool_buf == (void *)-1)
   {
-    log_die(id "poolbuf %s %u", critical, st);
+    log_err(id "poolbuf %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
 #ifdef PARALLEL_PREDICT_UPDATE
@@ -528,7 +532,8 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
 
   if (st != TX_SUCCESS)
   {
-    log_die(id "pool %s %u", critical, st);
+    log_err(id "pool %s %u", critical, st);
+    return IT_IS_NOW_OVER;
   }
 
 #endif /* PARALLEL_PREDICT_UPDATE */
