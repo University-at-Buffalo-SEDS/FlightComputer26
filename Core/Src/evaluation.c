@@ -72,9 +72,9 @@ static inline void detect_boost(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(svec(0).vel >= LAUNCH_MIN_VEL);
-    Require(svec(0).vel > svec(2).vel);
-    Require(svec(2).vel > svec(4).vel);
+    Require(fabsf(svec(0).vel) >= LAUNCH_MIN_VEL);
+    Require(fabsf(svec(0).vel) > fabsf(svec(2).vel));
+    Require(fabsf(svec(2).vel) > fabsf(svec(4).vel));
   }
   else
   {
@@ -98,18 +98,18 @@ static inline void detect_ascent(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(svec(0).vel >= ASCENT_MIN_VEL);
-    Require(svec(0).vel > svec(3).vel);
+    Require(fabsf(svec(0).vel) >= ASCENT_MIN_VEL);
+    Require(fabsf(svec(0).vel) > fabsf(svec(3).vel));
   }
   else
   {
     float dh_0_3 = svec(0).alt - svec(3).alt;
     float dh_4_7 = svec(4).alt - svec(7).alt;
-    Require(dh_0_3 < dh_4_7);
+    Require(dh_0_3 > dh_4_7);
   }
 
-  Require(svec(0).alt > svec(2).alt);
-  Require(svec(2).alt > svec(4).alt);
+  Require(svec(0).alt > svec(3).alt);
+  Require(svec(3).alt > svec(6).alt);
 
   sm.confidence += 1;
 
@@ -152,8 +152,8 @@ static inline void detect_apogee(fu32 mode)
     float dh_0_2 = svec(0).alt - svec(2).alt;
     float dh_2_4 = svec(2).alt - svec(4).alt;
 
-    Require(within(dh_0_2, ALT_TOLER * 2));
-    Require(within(dh_2_4, ALT_TOLER * 2));
+    Require(within(dh_0_2, APOGEE_ALT_TLR));
+    Require(within(dh_2_4, APOGEE_ALT_TLR));
   }
 
   sm.confidence += 1;
@@ -178,7 +178,7 @@ static inline void detect_descent(fu32 mode)
   {
     float dh_3_0 = svec(3).alt - svec(0).alt;
     float dh_6_3 = svec(6).alt - svec(3).alt;
-    Require(dh_3_0 > dh_6_3);
+    Require(fabsf(dh_3_0) > fabsf(dh_6_3));
   }
 
   Require(svec(1).alt < svec(5).alt);
@@ -278,7 +278,7 @@ static inline bool maybe_force(fu32 mode, float alt, state now)
 static inline bool falling(float alt, float vel, float dt, fu8 degree)
 {
   bool not_vel = vel > -VIGILANT_MIN_VEL;
-  bool altgain = alt > svec(degree).alt - SVHIST_ALT_TREND;
+  bool altgain = alt > svec(degree).alt + SVHIST_ALT_TREND;
   bool midgain = alt > svec(degree / 2).alt;
 
   return !(not_vel || altgain || midgain);
@@ -288,12 +288,11 @@ static inline bool
 false_positive_risk(float alt, float vel, float dt, state now)
 {
   bool on_pad = now <= Armed && alt < FLYING_ALTITUDE;
-  bool ascent = now < Apogee && alt < VIGILANT_MIN_APG;
-  bool vspike = now <= Ascent && vel < HYBRID_VEL_SPIKE;
+  // bool ascent = now < Apogee && alt < 1750.0f;
   bool raised = now < Apogee &&
-                alt > (svec(STATE_HISTORY - 1).alt + SVHIST_ALT_TREND);
+                alt > svec(STATE_HISTORY - 1).alt + SVHIST_ALT_TREND;
 
-  return on_pad || ascent || vspike || raised;
+  return on_pad || raised;
 }
 
 static inline void vigilant_watchdog(fu32 mode, state now, float dt)
@@ -317,7 +316,9 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
     descent_initialize(mode);
     flight_advance(Descent);
     extremes.max_alt = maxd(alt, extremes.max_alt);
+
     now = Descent;
+    tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
   }
 
   bool reef_window = now >= Descent && now < Reefing;

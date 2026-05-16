@@ -64,6 +64,7 @@
 #define ASCENT_MIN_VEL		0.8f
 #define COAST_MIN_VEL 		2.0f
 #define APOGEE_MAX_VEL 		0.5f
+#define APOGEE_ALT_TLR    0.8f
 #define DESCENT_MIN_VEL		0.6f
 #define REEF_TARGET_ALT 	10.0f
 #define FLYING_ALTITUDE		5.0f

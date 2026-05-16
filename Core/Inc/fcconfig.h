@@ -55,22 +55,23 @@
 
 #define MOTOR_BURN_TIME		4500
 
-#define MIN_SAMP_LAUNCH		2
+#define MIN_SAMP_LAUNCH		3
 #define MIN_SAMP_ASCENT   3
-#define MIN_SAMP_COAST  	5
+#define MIN_SAMP_COAST  	3
 #define MIN_SAMP_APOGEE		4
 #define MIN_SAMP_DESCENT  4
-#define MIN_SAMP_REEF     4
+#define MIN_SAMP_REEF     3
 #define MIN_SAMP_LANDED   36
 
 #define LAUNCH_MIN_VEL  	20.0f
 #define LAUNCH_MIN_ALT		10.0f
-#define ASCENT_MIN_VEL		15.0f
-#define COAST_MIN_VEL 		12.0f
-#define APOGEE_MAX_VEL 		2.7f
-#define DESCENT_MIN_VEL		4.0f
+#define ASCENT_MIN_VEL		30.0f
+#define COAST_MIN_VEL 		100.0f
+#define APOGEE_MAX_VEL 		4.0f
+#define APOGEE_ALT_TLR    5.0f
+#define DESCENT_MIN_VEL		4.25f
 #define REEF_TARGET_ALT 	457.2f
-#define FLYING_ALTITUDE		100.0f
+#define FLYING_ALTITUDE		30.0f
 
 #define LAUNCH_CONFIRM_DELAY 30
 #define APOGEE_CONFIRM_DELAY 80
@@ -80,9 +81,9 @@
 #define KF_FLUC_THRES 	 80
 #define VIGILANT_MAX_ALT 3657.6f
 #define VIGILANT_MIN_ALT -25.0f
-#define VIGILANT_MIN_APG 1524.0f
+#define VIGILANT_MIN_APG 1250.0f
 #define HYBRID_VEL_SPIKE -110.0f
-#define SVHIST_ALT_TREND 8.0f
+#define SVHIST_ALT_TREND 4.0f
 #define VIGILANT_MIN_VEL 7.5f
 
 /* Altitude         ALT     meters  
