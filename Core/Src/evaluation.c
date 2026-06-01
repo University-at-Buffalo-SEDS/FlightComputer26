@@ -277,22 +277,50 @@ static inline bool maybe_force(fu32 mode, float alt, state now)
 
 static inline bool falling(float alt, float vel, float dt, fu8 degree)
 {
-  bool not_vel = vel > -VIGILANT_MIN_VEL;
-  bool altgain = alt > svec(degree).alt + SVHIST_ALT_TREND;
-  bool midgain = alt > svec(degree / 2).alt;
+  bool insufficient_vel = vel > -VIGILANT_MIN_VEL;
+  bool gained_altitude = alt > svec(degree).alt + SVHIST_ALT_TREND;
+  bool mid_gained_alt = alt > svec(degree / 2).alt;
 
-  return !(not_vel || altgain || midgain);
+  return !(insufficient_vel || gained_altitude || mid_gained_alt);
 }
 
 static inline bool
-false_positive_risk(float alt, float vel, float dt, state now)
+false_positive_risk(float alt, float vel, float dt, state now, fu32 mode)
 {
-  bool on_pad = now <= Armed && alt < FLYING_ALTITUDE;
-  // bool ascent = now < Apogee && alt < 1750.0f;
-  bool raised = now < Apogee &&
-                alt > svec(STATE_HISTORY - 1).alt + SVHIST_ALT_TREND;
+  bool insufficient_alt = alt < FLYING_ALTITUDE;
 
-  return on_pad || raised;
+  if (now >= Apogee)
+  {
+    return insufficient_alt;
+  }
+
+  float avg_new_alt = (alt + svec(1).alt + svec(2).alt + svec(3).alt) / 4.0f;
+  float avg_old_alt = (svec(4).alt + svec(5).alt + svec(6).alt + svec(7).alt) / 4.0f;
+
+  bool gained_altitude = avg_new_alt > (avg_old_alt + SVHIST_ALT_TREND);
+
+  fu8 ascent_samples = 0;
+  float avg_vel = 0.0f;
+
+  for (fu8 k = 1; k < STATE_HISTORY; ++k)
+  {
+    float frame_vel = mode & option(Velocity_Checks)
+                    ? svec(k - 1).vel
+                    : (svec(k - 1).alt - svec(k).alt) / dt;
+
+    avg_vel += frame_vel;
+
+    if (frame_vel > -VEL_TOLER)
+    {
+      ++ascent_samples;
+    }
+  }
+
+  avg_vel /= (float)(STATE_HISTORY - 1);
+
+  bool high_velocity = avg_vel > -DESCENT_MIN_VEL || ascent_samples >= 2;
+
+  return insufficient_alt || high_velocity || gained_altitude;
 }
 
 static inline void vigilant_watchdog(fu32 mode, state now, float dt)
@@ -303,9 +331,9 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 
   float alt = trust_kf ? svec(0).alt : meas.baro.alt;
   float vel = trust_kf ? svec(0).vel : (alt - svec(7).alt) /
-                                       (dt * (float)(STATE_HISTORY - 1));
+                                       (dt * (float)(STATE_HISTORY));
 
-  if (false_positive_risk(alt, vel, dt, now))
+  if (false_positive_risk(alt, vel, dt, now, mode))
   {
     return;
   }

@@ -83,7 +83,7 @@
 #define VIGILANT_MIN_ALT -25.0f
 #define VIGILANT_MIN_APG 1250.0f
 #define HYBRID_VEL_SPIKE -110.0f
-#define SVHIST_ALT_TREND 4.0f
+#define SVHIST_ALT_TREND 2.0f
 #define VIGILANT_MIN_VEL 7.5f
 
 /* Altitude         ALT     meters  
