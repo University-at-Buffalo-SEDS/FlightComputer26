@@ -618,7 +618,6 @@ static void fc_timer_routine(ULONG _)
   {
 #ifdef TELEMETRY_ENABLED
     g_conf |= option(Lost_GroundStation);
-    g_conf |= option(Vigilant_Mode);
     g_conf |= option(Reset_Failures);
 
     if (g_conf & option(In_Aborted_State))

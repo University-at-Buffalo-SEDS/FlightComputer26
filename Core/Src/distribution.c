@@ -467,7 +467,7 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
   }
 #endif
 
-  if (timer_probe(mems[dev].tim_gnd, rates.gnd))
+  if (timer_probe(mems[dev].tim_gnd, rates.gnd * 2)) /* Slow link */
   {
     log_f32(mems[dev].kind_gnd, mems[dev].size, buf);
     recorded = true;
