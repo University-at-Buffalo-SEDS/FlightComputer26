@@ -297,7 +297,7 @@ false_positive_risk(float alt, float vel, float dt, state now, fu32 mode)
   float avg_new_alt = (alt + svec(1).alt + svec(2).alt + svec(3).alt) / 4.0f;
   float avg_old_alt = (svec(4).alt + svec(5).alt + svec(6).alt + svec(7).alt) / 4.0f;
 
-  bool gained_altitude = avg_new_alt > (avg_old_alt + SVHIST_ALT_TREND);
+  bool gained_altitude = avg_new_alt > (avg_old_alt - SVHIST_ALT_TREND);
 
   fu8 ascent_samples = 0;
   float avg_vel = 0.0f;
