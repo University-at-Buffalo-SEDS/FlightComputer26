@@ -30,7 +30,7 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
 
 volatile uncached uint8_t dmarx[SENSOR_BUF_SIZE];
 
-static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
+static volatile uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
 static spinlock dma_locks[Sensors] = {0};
 
@@ -50,7 +50,7 @@ bool try_fetch_baro(baro *buf)
     return false;
   }
 
-  fu32 pres, temp;
+  fu32 pres, temp; // never gets here
 
   sweetbench_catch(0);
 
@@ -69,6 +69,8 @@ bool try_fetch_baro(baro *buf)
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
   buf->alt = baro_relative_alt(buf->prs);
+
+  // led_toggle(LED1_PORT, LED1_PIN);
 
   sweetbench_start(0, 150);
   
@@ -164,9 +166,11 @@ static inline void propagate_rx(void)
 {
   fc_lock(&dma_locks[select.next]);
 
-  memcpy(taskrx[select.next],
-         (uint8_t *)(dmarx + gpio.offset[select.next]),
-         sizeof taskrx / 3);
+  volatile uint8_t *src = (volatile uint8_t *)(dmarx + gpio.offset[select.next]);
+  volatile uint8_t *dst = taskrx[select.next];
+
+  size_t n = sizeof taskrx / Sensors;
+  for (size_t i = 0; i < n; ++i) dst[i] = src[i];
 
   fc_unlock(&dma_locks[select.next]);
 

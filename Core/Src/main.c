@@ -24,6 +24,8 @@
 /* USER CODE BEGIN Includes */
 #include "platform.h"
 #include "fcapi.h"
+#include "stm32h523xx.h"
+#include "stm32h5xx_hal_gpio.h"
 
 #ifdef TEST_SENSORS
   #include "testing.h"
@@ -137,6 +139,10 @@ int main(void)
 #ifdef TEST_SENSORS
   test_sensors_sync();
 #endif
+
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+  HAL_Delay(1000);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
 
   /* USER CODE END 2 */
 

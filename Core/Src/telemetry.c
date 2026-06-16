@@ -670,7 +670,7 @@ void telemetry_entry(ULONG _)
 
     if (k != SEDS_OK)
     {
-      blink(Blue, false, k);
+      blink(Blue, false, -k);
       blink(Green, true, 1);
     }
 
