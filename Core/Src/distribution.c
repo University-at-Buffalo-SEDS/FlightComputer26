@@ -100,6 +100,8 @@ static inline bool fetch_gps_data(kf_gps *buf)
   buf->lon = rfboard.coords_buf.y;
   buf->lat = rfboard.coords_buf.x;
 
+  rfboard.updated = false;
+
   fc_unlock(&rfboard.rflock);
   return true;
 
@@ -133,7 +135,8 @@ validate_coords(const f_xyz *gps, size_t len, fu32 conf)
   if ((conf & option(Vigilant_Mode)) && !beyond(Landed) &&
       (gps->z > MAX_SEA || gps->z < MIN_SEA))
   {
-    st |= Bad_Sea_Level;
+    // Allow for triangulation to gain enough satellites
+    // st |= Bad_Sea_Level;
   }
 
   return st;
@@ -189,10 +192,10 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
     if (!within(rfboard.rail.lat - meas.gps.lat, GPS_RAIL_TOLER) ||
         !within(rfboard.rail.lon - meas.gps.lon, GPS_RAIL_TOLER))
     {
-      const float rep[2] = {rfboard.rail.lat, rfboard.rail.lon};
+      const float rep[2] = {meas.gps.lat, meas.gps.lon};
       char buf[MAX_METRIC_MESSAGE_SIZE] = id "new GPS reference: ";
 
-      seds_ftoa4(buf + strlen(buf) + 1, rep, 2);
+      seds_ftoa4(buf + strlen(buf), rep, 2);
       message(buf, true);
     }
 

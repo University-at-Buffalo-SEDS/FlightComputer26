@@ -208,10 +208,10 @@ typedef struct cm_align state_metadata {
 } sv_meta;
 
 typedef struct rf_distribution_block {
-  kf_gps rail;
-  f_xyz coords_buf;
+  volatile kf_gps rail;
+  volatile f_xyz coords_buf;
   spinlock rflock;
-  bool updated;
+  volatile bool updated;
 } rf_receiver;
 
 typedef struct flight_statistics {
