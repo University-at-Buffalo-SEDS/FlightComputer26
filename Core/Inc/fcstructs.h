@@ -75,7 +75,7 @@ typedef struct sd_buffer_metadata {
   TX_SEMAPHORE full;
   fu32 off[2];
   spinlock lock;
-  bool cur, free;
+  volatile bool cur, free;
 } sd_meta;
 
 #endif

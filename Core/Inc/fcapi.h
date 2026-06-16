@@ -227,7 +227,9 @@ static inline void fc_lock(spinlock *object)
   {
     unlocked = 0;
     fetch_add(&object->waiters, 1, Rel);
+    __asm volatile("" ::: "memory");
     tx_thread_relinquish();
+    __asm volatile("" ::: "memory");
     fetch_sub(&object->waiters, 1, Rlx);
   }
 }
@@ -240,6 +242,7 @@ static inline bool fc_trylock(spinlock *object)
 
 static inline void fc_unlock(spinlock *object)
 {
+  __asm volatile("" ::: "memory");
   store(&object->lock, 0, Rel);
 }
 
@@ -249,7 +252,9 @@ static inline void fc_concede(spinlock *object)
 
   if (load(&object->waiters, Acq) > 0)
   {
+    __asm volatile("" ::: "memory");
     tx_thread_relinquish();
+    __asm volatile("" ::: "memory");
   }
 }
 

@@ -34,7 +34,7 @@ fi16 seds_ftoa4(char *dst, const float *data, fu8 count)
   {
     if (data[k] < 0.0f) *(p++) = '-';
 
-		fi16 idx = 0;
+	fi16 idx = 0;
     fu32 scaled = (fu32)(fabsf(data[k]) * F32_SCALE + 0.5f);
     fu32 int_part = scaled / (fu32) F32_SCALE;
     fu32 flt_part = scaled % (fu32) F32_SCALE;
@@ -97,21 +97,21 @@ static inline constexpr char *seds_msg(SedsDataType ty)
 		case SEDS_DT_MESSAGE_DATA:		return "Message";
 		case SEDS_DT_ORDERED_MESSAGE:	return "Ordered";
 		case SEDS_DT_GENERIC_ERROR:		return "Error";
-		default:											return "Echo";
+		default:						return "Echo";
 	}
 }
 
 static inline constexpr char *seds_f32(SedsDataType ty)
 {
 	switch (ty) {
-		case SEDS_DT_IMU_LOCAL:				return "IMU";
+		case SEDS_DT_IMU_LOCAL:			return "IMU";
 		case SEDS_DT_BAROMETER_LOCAL:	return "BARO";
-		case SEDS_DT_ACCEL_LOCAL:			return "ACCL";
-		case SEDS_DT_GYRO_LOCAL:			return "GYRO";
-		case SEDS_DT_ASCENT_LOCAL:    return "EKF";
-    case SEDS_DT_DESCENT_LOCAL:   return "DKF";
-    case SEDS_DT_EULER_ANGLES:    return "EULER";
-		default:											return "QUAT";
+		case SEDS_DT_ACCEL_LOCAL:		return "ACCL";
+		case SEDS_DT_GYRO_LOCAL:		return "GYRO";
+		case SEDS_DT_ASCENT_LOCAL:    	return "EKF";
+    	case SEDS_DT_DESCENT_LOCAL:   	return "DKF";
+    	case SEDS_DT_EULER_ANGLES:    	return "EULER";
+		default:						return "QUAT";
 	}
 }
 
@@ -148,8 +148,7 @@ void sd_append_f32(SedsDataType ty, const float *data, fu8 count)
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
-	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-													(fu32) now_ms(), seds_f32(ty), buf);
+	fu16 written = snprintf(off, rem, "%u %s: %s\n", (fu32) now_ms(), seds_f32(ty), buf);
 
 	sd_release_notify(written, rem);
 }
@@ -166,8 +165,7 @@ void sd_append_string(SedsDataType ty, const char *str)
 	char *off = sdbuf[line.cur] + line.off[line.cur];
 	fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
-	fu16 written = snprintf(off, rem, "%u %s: %s\n",
-													(fu32) now_ms(), seds_msg(ty), str);
+	fu16 written = snprintf(off, rem, "%u %s: %s\n", (fu32) now_ms(), seds_msg(ty), str);
 
 	sd_release_notify(written, rem);
 }
@@ -197,8 +195,8 @@ static inline bool sd_try_write_line(void)
 
 	sweetbench_start(12);
 
-	UINT st = fx_file_seek(&file,
-												 file.fx_file_current_file_size);
+	UINT st = fx_file_seek(&file, file.fx_file_current_file_size);
+
 	if (st == FX_SUCCESS)
 	{
 		st = fx_file_write(&file, sdbuf[local], write_len);
@@ -256,8 +254,7 @@ static inline int sd_pipeline_init(const char *surprise)
 		return IT_IS_NOW_OVER;
 	}
 
-	st = fx_file_open(&sdio_disk, &file, file.fx_file_name,
-																			FX_OPEN_FOR_WRITE);
+	st = fx_file_open(&sdio_disk, &file, file.fx_file_name, FX_OPEN_FOR_WRITE);
 	if (st != FX_SUCCESS)
 	{
     log_err(id "fopen %s %u", surprise, st);
@@ -280,7 +277,7 @@ void sd_pipeline_task()
 	MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
 	{
 		if ((st = tx_semaphore_get(&line.full, TX_WAIT_FOREVER))
-																							!= TX_SUCCESS)
+												!= TX_SUCCESS)
 		{ continue; }
 
 		if (sd_try_write_line())
