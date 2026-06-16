@@ -73,7 +73,7 @@ typedef struct rated_logger_lookup {
 
 typedef struct sd_buffer_metadata {
   TX_SEMAPHORE full;
-  fu32 off[2];
+  volatile fu32 off[2];
   spinlock lock;
   volatile bool cur, free;
 } sd_meta;
