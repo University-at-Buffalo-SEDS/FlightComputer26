@@ -82,6 +82,12 @@ void Error_Handler(void);
 #define BARO_EXTI_Pin GPIO_PIN_7
 #define BARO_EXTI_GPIO_Port GPIOC
 #define BARO_EXTI_EXTI_IRQn EXTI7_IRQn
+#define Buzzer_Pin GPIO_PIN_10
+#define Buzzer_GPIO_Port GPIOA
+#define CO2_Pin GPIO_PIN_5
+#define CO2_GPIO_Port GPIOB
+#define REEF_Pin GPIO_PIN_6
+#define REEF_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
