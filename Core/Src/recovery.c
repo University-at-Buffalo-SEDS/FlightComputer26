@@ -218,10 +218,10 @@ static inline void manual_deployment(bool apogee, bool force)
   if (apogee)
   {
     sm.flight = Descent;
-    release_parachute(false);
+    release_parachute(force);
     blink(Blue, false, 2);
   }
-  else if (expand_parachute(false))
+  else if (expand_parachute(force))
   {
     sm.flight = Reefing;
     blink(Blue, false, 4);
