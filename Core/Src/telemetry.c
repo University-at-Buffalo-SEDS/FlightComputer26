@@ -715,11 +715,16 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
                         TLMT_TIME_SLICE,
                         TX_AUTO_START);
 
-  tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
+  if (st != TX_SUCCESS)
+  {
+    return st;
+  }
+
+  st = tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
 
   if (st != TX_SUCCESS)
   {
-    return TX_MUTEX_ERROR;
+    return st;
   }
                                 
   return st;

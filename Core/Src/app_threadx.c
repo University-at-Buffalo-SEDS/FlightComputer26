@@ -71,16 +71,36 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE BEGIN App_ThreadX_Init */
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-  if (create_telemetry_task(memory_ptr) != TX_SUCCESS)
+  ret = create_telemetry_task(memory_ptr);
+  if (ret != TX_SUCCESS)
   {
-    Error_Handler();
+    return ret;
   }
 #endif
 
-  create_recovery_task(memory_ptr);
-  create_dma_task(memory_ptr);
-  create_evaluation_task(memory_ptr);
-  create_distribution_task(memory_ptr);
+  ret = create_recovery_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_dma_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_evaluation_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_distribution_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
 
   /* USER CODE END App_ThreadX_Init */
 

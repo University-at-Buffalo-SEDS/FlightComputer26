@@ -52,6 +52,7 @@ DCACHE_HandleTypeDef hdcache1;
 FDCAN_HandleTypeDef hfdcan1;
 
 SD_HandleTypeDef hsd1;
+uint8_t sdmmc_ready = 0;
 
 SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef handle_GPDMA1_Channel1;
@@ -122,7 +123,9 @@ int main(void)
   MX_GPDMA1_Init();
   MX_SPI1_Init();
   MX_FDCAN1_Init();
+#ifdef SD_AVAILABLE
   MX_SDMMC1_SD_Init();
+#endif
   MX_USB_PCD_Init();
   MX_ICACHE_Init();
   MX_DCACHE1_Init();
@@ -380,10 +383,12 @@ static void MX_SDMMC1_SD_Init(void)
   hsd1.Init.BusWide = SDMMC_BUS_WIDE_4B;
   hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
   hsd1.Init.ClockDiv = 0;
+  sdmmc_ready = 0;
   if (HAL_SD_Init(&hsd1) != HAL_OK)
   {
-    Error_Handler();
+    return;
   }
+  sdmmc_ready = 1;
   /* USER CODE BEGIN SDMMC1_Init 2 */
 
   /* USER CODE END SDMMC1_Init 2 */

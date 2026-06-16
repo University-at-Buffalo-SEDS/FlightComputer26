@@ -95,6 +95,7 @@ extern SD_HandleTypeDef hsd1;
 extern SPI_HandleTypeDef hspi1;
 extern DCACHE_HandleTypeDef hdcache1;
 extern FDCAN_HandleTypeDef hfdcan1;
+extern uint8_t sdmmc_ready;
 
 #define now_ms()      HAL_GetTick()
 #define delay_it(ms)  HAL_Delay(ms)

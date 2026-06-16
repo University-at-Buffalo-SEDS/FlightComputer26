@@ -205,6 +205,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
     /* Assert unreachable */
 
+    fc_unlock(&alloc_lock);
     return NULL;
   }
 
