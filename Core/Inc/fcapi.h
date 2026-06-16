@@ -127,7 +127,7 @@ static inline fu8 request_ignition(void)
 extern const led_gpio light[];
 
 static inline void blink(led kind, bool slow,
-                         volatile fu32 count)
+                         volatile fi32 count)
 {
   volatile fu32 cycles;
   const fu32 delay = slow
