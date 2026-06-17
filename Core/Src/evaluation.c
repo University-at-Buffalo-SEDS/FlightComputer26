@@ -261,7 +261,7 @@ static inline void report_lowpass_gps(fu32 mode)
     log_f32(SEDS_DT_GPS_DATA, 3, &lowpass);
   }
 
-  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY / 100);
+  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY / 1000);
 
 #endif
 }
@@ -269,7 +269,7 @@ static inline void report_lowpass_gps(fu32 mode)
 
 /* Vigilant mode */
 
-static inline bool maybe_force(fu32 mode, float alt, state now)
+static inline conditional bool maybe_force(fu32 mode, float alt, state now)
 {
   return now <= Armed && alt >= FLYING_ALTITUDE
                       && !within(alt - svec(3).alt, ALT_TOLER);
@@ -340,7 +340,9 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 
   if (now < Descent && falling(alt, vel, dt, STATE_HISTORY - 1))
   {
-    release_parachute(maybe_force(mode, alt, now));
+    /* Use vigilant for state correction only */
+    // release_parachute(maybe_force(mode, alt, now));
+
     descent_initialize(mode);
     flight_advance(Descent);
     extremes.max_alt = maxd(alt, extremes.max_alt);
@@ -353,8 +355,11 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
   bool reef_prereq = alt <= REEF_TARGET_ALT &&
                      (vel < 0.0f || alt < svec(4).alt);
 
-  if (reef_window && reef_prereq && expand_parachute(false))
+  if (reef_window && reef_prereq)
   {
+    /* Use vigilant for state correction only */
+    // expand_parachute(false);
+
     flight_advance(Reefing);
   }
 }
@@ -411,11 +416,6 @@ void evaluate_rocket_state(fu32 conf, float dt)
 
   state curr = current();
 
-  if (curr < Reefing && (conf & option(Vigilant_Mode)))
-  {
-    vigilant_watchdog(conf, curr, dt);
-  }
-
   switch (curr)
   {
     case Armed:     detect_boost(conf);         break;
@@ -430,6 +430,11 @@ void evaluate_rocket_state(fu32 conf, float dt)
     default:
       log_metric(id "non-evaluatable state", curr, true);
       return;
+  }
+
+  if (curr < Reefing && (conf & option(Vigilant_Mode)))
+  {
+    vigilant_watchdog(conf, curr, dt);
   }
 
   propel_kalman_state(conf);

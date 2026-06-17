@@ -84,7 +84,7 @@
 #define VIGILANT_MIN_APG 1250.0f
 #define HYBRID_VEL_SPIKE -110.0f
 #define SVHIST_ALT_TREND 2.0f
-#define VIGILANT_MIN_VEL 7.5f
+#define VIGILANT_MIN_VEL 4.0f
 
 /* Altitude         ALT     meters  
  * Pressure         PRS     pascals
@@ -162,6 +162,7 @@
                       | option(Reset_Failures)          \
                       | option(Measm_Reports)    		\
                       | option(Velocity_Checks)         \
+                      | option(Vigilant_Mode)           \
                       ) )
 
 #define LED_BLOCKING_CYCLES 10000000

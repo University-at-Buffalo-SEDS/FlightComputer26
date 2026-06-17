@@ -686,7 +686,7 @@ static inline void post_initialization(void)
 
 /* Task */
 
-static inline bool fill_sequence_states(void)
+static inline void fill_sequence_states(void)
 {
   fu32 conf;
   fc_msg cmd = fc_mask(Reinit_Sensors);
@@ -714,8 +714,6 @@ static inline bool fill_sequence_states(void)
   MrAnalog (request_ignition() == SEDS_OK)
     ;
   message(id "ignition requested, in flight mode", true);
-
-  return false;
 }
 
 void distribution_entry(ULONG _)
