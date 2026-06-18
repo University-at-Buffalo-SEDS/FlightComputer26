@@ -62,6 +62,7 @@ void evaluate_rocket_state(fu32, float);
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 SedsResult on_fc_packet(const SedsPacketView *, void *);
+SedsResult implicit_postinit(const SedsPacketView *pkt, void *_);
 #endif
 
 

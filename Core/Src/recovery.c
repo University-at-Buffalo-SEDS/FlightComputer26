@@ -273,11 +273,15 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
+#ifndef LUNATIC_STATE
+
   if (!beyond(Startup))
   {
     message(id "blocked Launch before Postinit", true);
     return;
   }
+
+#endif
 
 #ifdef USER_CONFIRMATION
 
@@ -399,7 +403,7 @@ static inline void process_action(fc_msg cmd, bool internal)
 
 /* Global config */
 
-static inline constexpr fc_msg user_options()
+static inline constexpr fc_msg user_options(void)
 {
   fc_msg options = 0;
   fu32 k = 1;
@@ -494,7 +498,7 @@ static inline void process_sensor_report(fc_msg code)
     else if (smon.failures >= smon.to_reinit)
     {
       /* Broad heuristic because Baro takes a while to init.
-        */
+       */
       sensor_init_supervised(bad_baro ? Wild_Mask
                                       : Gyro_Mask | Accl_Mask);
     }
@@ -667,7 +671,7 @@ void recovery_entry(ULONG st)
 
   tx_timer_activate(&monotonic_checks);
 
-  log_flight_state(to_global_state(Startup));
+  // log_flight_state(to_global_state(Startup));
 
   MrAnalog (WE_ARE_SO_BACK)
   {

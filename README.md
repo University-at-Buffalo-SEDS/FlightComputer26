@@ -4,23 +4,23 @@ This is the UB SEDS Flight Computer repository for IREC 2026.
 
 ## Functionality
 
-The Flight Computer is responsible for maintaining an accurate record of rocket states during flight and collecting data for post-mortem flight reconstruction. A state is described by the flight stage name (e.g., Burnout, Descent) and a history of last N state vectors, which record relative height, velocity, and position. An accurate finite state machine enables the rocket to take autonomous actions on state transitions. 
+The Flight Computer is responsible for maintaining an accurate record of rocket states during flight and collecting data for post-mortem flight reconstruction. A state is described by the current flight stage (e.g., Coast, Descent) and a history of last N state vectors, which record relative height and vertical velocity. An accurate finite state machine enables the rocket to take autonomous actions on state transitions, with an optional vigilant mode used for state correction.
 
 If telemetry is enabled, the Flight Computer is also responsible for logging flight events, reporting errors, and processing incoming messages. Otherwise, all logs will be redirected to a device behind `stdout`, with message processing limited to inter-thread communication.
 
 ## Structure
 
-The main logic resides in [Core/](/Core/) and is split across source, includes, and tests. The main logic is organized into tasks managed by the ThreadX scheduler. Each task comprises of application code that depends on common API, abstracted through platform and domain-specific headers, which in turn can be poisoned when necesasry (e.g., when testing or swapping hardware).
+The main logic resides in [Core/](/Core/) and is split across source, includes, and tests. The main logic is organized into tasks managed by the ThreadX scheduler. Each task comprises of application code that depends on common API, abstracted through platform and domain-specific headers. If necessary, platform header can be poisoned (e.g., when testing or swapping hardware).
 
-Domain-specific part of this year's Flight Computer relies on the following assumptions:
+Non-generic part of this year's Flight Computer relies on the following assumptions:
 
 * The board includes Bosch Sensortec BMP390 barometer and BMI088 inertial measurement unit, connected to a single SPI bus, with interrupt pins (at least 1 per sensor) being connected to free GPIO pins of the microcontroller.
 
-* GPS device measurements are delivered over CAN bus from an external board. If telemetry is disabled or the data becomes unavailable during flight, then BMP390 barometer will be used as fallback.
+* GPS device measurements are delivered over CAN bus from an external board. If telemetry is disabled or the data becomes unavailable during flight, then BMP390 barometer will be used solely as fallback.
 
-* The board includes optional SD card (connected via SDMMC and managed by USBX) and LEDs.
+* The board includes optional SD card and LEDs.
 
-* The Flight Computer is the single master on the board.
+* The Flight Computer is the only master on the board.
 
 ## Dependencies
 
@@ -37,7 +37,7 @@ Domain-specific part of this year's Flight Computer relies on the following assu
 
 (2) Both Eclipse ThreadX and Microsoft Azure RTOS can be used interchangeably.
 
-(3) If a different library is preferred, the new library must implement the API used in [telemetry.c](/Core/Src/telemetry.c), or telemetry can be disabled during compilation.
+(3) If a different library is preferred, the new library must implement the API in [telemetry.h](/Core/Src/telemetry.h), or telemetry can be disabled during compilation.
 
 ## Building
 

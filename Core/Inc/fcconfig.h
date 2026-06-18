@@ -27,7 +27,7 @@
 #define TELEMETRY_HEAP 		65536
 
 #define LOG_RATE_SD	 	    50
-#define LOG_RATE_GND 	    7500
+#define LOG_RATE_GND 	    1000
 #define LOG_RATE_LIMITED	15000
 
 #define SD_BUFFER_SIZE		32768
@@ -137,7 +137,7 @@
 
 #define SENSOR_REINIT_ATTEMPTS 3
 
-#define GPS_DELAY_MS 	200
+#define GPS_DELAY_MS 	1500
 #define GPS_MAX_DELAYS	40
 #define GPS_MAX_MALFORM 40
 #define GPS_SUS_DELAYS	(GPS_MAX_DELAYS / 2)

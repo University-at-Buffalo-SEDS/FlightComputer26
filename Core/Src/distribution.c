@@ -290,19 +290,24 @@ update_ascent_biases(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
-static inline SedsResult
-implicit_postinit(const uint8_t *data, size_t len)
+SedsResult implicit_postinit(const SedsPacketView *pkt, void *_)
 {
-  if (len != sizeof(uint8_t))
+  // blink(Green, true, 1);
+
+  if (pkt->payload_len != sizeof(uint8_t))
   {
+    // blink(Green, false, 1);
     return SEDS_ERR;
   }
-  else if (*data == G_Armed)
+  else if (*(pkt->payload) == G_Armed)
   {
+    // blink(Blue, true, 1);
     fc_msg post = fc_mask(Postinit_Signal);
     tx_queue_send(&seds_syscall, &post, TX_NO_WAIT);
+    // blink(Blue, true, 1);
   }
 
+  // blink(Blue, false, 1);
   return SEDS_OK;
 }
 
@@ -320,8 +325,6 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
   {
     case SEDS_DT_HEARTBEAT:
       return pulse_ground();
-    case SEDS_DT_FLIGHT_STATE:
-      return implicit_postinit(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);
     case SEDS_DT_FLIGHT_COMMAND:
@@ -646,6 +649,8 @@ static inline void post_initialization(void)
 
   timer_update(Auxiliary);
 
+  led_on(LED2_PORT, LED2_PIN);
+
   MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
     fu32 conf = load(&g_conf, Acq);
@@ -709,10 +714,14 @@ static inline void fill_sequence_states(void)
       post_initialization();
     }
   }
-  MrAnalog (beyond(Startup) && (conf & option(Launch_Requested)));
+  MrAnalog (conf & option(Launch_Requested));
 
-  MrAnalog (request_ignition() == SEDS_OK)
-    ;
+  tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+
+  post_initialization();
+
+  store(&sm.flight, Armed, Rel);
+
   message(id "ignition requested, in flight mode", true);
 }
 
@@ -722,6 +731,8 @@ void distribution_entry(ULONG _)
   fu32 conf;
 
   fill_sequence_states();
+
+  led_off(LED2_PORT, LED2_PIN);
 
   MrAnalog (WE_ARE_SO_BACK)
   {
