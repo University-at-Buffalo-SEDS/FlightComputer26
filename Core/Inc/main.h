@@ -36,7 +36,7 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
-
+void cdc_printf_init(void);
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -63,10 +63,31 @@ void Error_Handler(void);
 #define CS_ACCEL_GPIO_Port GPIOA
 #define CS_GYRO_Pin GPIO_PIN_3
 #define CS_GYRO_GPIO_Port GPIOA
-#define LED_Pin GPIO_PIN_12
-#define LED_GPIO_Port GPIOB
+#define ACCL_EXTI_1_Pin GPIO_PIN_4
+#define ACCL_EXTI_1_GPIO_Port GPIOC
+#define ACCL_EXTI_1_EXTI_IRQn EXTI4_IRQn
+#define ACCL_EXTI_2_Pin GPIO_PIN_5
+#define ACCL_EXTI_2_GPIO_Port GPIOC
+#define GYRO_EXTI_1_Pin GPIO_PIN_0
+#define GYRO_EXTI_1_GPIO_Port GPIOB
+#define GYRO_EXTI_1_EXTI_IRQn EXTI0_IRQn
+#define GYRO_EXTI_2_Pin GPIO_PIN_1
+#define GYRO_EXTI_2_GPIO_Port GPIOB
+#define GREEN_LED_Pin GPIO_PIN_12
+#define GREEN_LED_GPIO_Port GPIOB
 #define CONFIGURABLE_Pin GPIO_PIN_14
 #define CONFIGURABLE_GPIO_Port GPIOB
+#define BLUE_LED_Pin GPIO_PIN_6
+#define BLUE_LED_GPIO_Port GPIOC
+#define BARO_EXTI_Pin GPIO_PIN_7
+#define BARO_EXTI_GPIO_Port GPIOC
+#define BARO_EXTI_EXTI_IRQn EXTI7_IRQn
+#define Buzzer_Pin GPIO_PIN_10
+#define Buzzer_GPIO_Port GPIOA
+#define CO2_Pin GPIO_PIN_5
+#define CO2_GPIO_Port GPIOB
+#define REEF_Pin GPIO_PIN_6
+#define REEF_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

@@ -1,0 +1,299 @@
+/* Core/Src/dma.c */
+
+#include "platform.h"
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fctasks.h"
+#include "fccommon.h"
+#include "fcapi.h"
+#include "fcconfig.h"
+#include "sweetbench.h"
+
+#define id "DM "
+
+
+TX_THREAD dma_task;
+
+static const gpio_map gpio = {
+  .port   = {BARO_CS_PORT, GYRO_CS_PORT, ACCL_CS_PORT},
+  .pin    = {BARO_CS_PIN, GYRO_CS_PIN, ACCL_CS_PIN},
+  .drdy   = {DMA_BARO_MASK, DMA_GYRO_MASK, DMA_ACCL_MASK},
+  .offset = {DMA_BARO_OFFSET, DMA_GYRO_OFFSET, DMA_BARO_OFFSET}
+};
+
+static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
+  [0][0] = BARO_TX_BYTE, [0][1 ... 7] = 0x00,
+  [1][0] = GYRO_TX_BYTE, [1][1 ... 7] = 0x00,
+  [2][0] = ACCL_TX_BYTE, [2][1 ... 7] = 0x00,
+};
+
+
+volatile uncached uint8_t dmarx[SENSOR_BUF_SIZE];
+
+static volatile uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
+
+static spinlock dma_locks[Sensors] = {0};
+
+static dmasel select = {Sensors, 0};
+
+static fdma flags = {0, 0};
+
+
+/* Consumer */
+
+bool try_fetch_baro(baro *buf)
+{
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_BARO_MASK, Acq);
+
+  if (!(rxdone & DMA_BARO_MASK))
+  {
+    return false;
+  }
+
+  fu32 pres, temp; // never gets here
+
+  sweetbench_catch(0);
+
+  fc_lock(&dma_locks[Sensor_Baro]);
+
+  pres = U24(taskrx[Sensor_Baro][0],
+             taskrx[Sensor_Baro][1],
+             taskrx[Sensor_Baro][2]);
+
+  temp = U24(taskrx[Sensor_Baro][3],
+             taskrx[Sensor_Baro][4],
+             taskrx[Sensor_Baro][5]);
+
+  fc_unlock(&dma_locks[Sensor_Baro]);
+
+  buf->tmp = baro_compensate_temp(temp);
+  buf->prs = baro_compensate_pres(pres);
+  buf->alt = baro_relative_alt(buf->prs);
+
+  // led_toggle(LED1_PORT, LED1_PIN);
+
+  sweetbench_start(0, 150);
+  
+  return true;
+}
+
+bool try_fetch_gyro(f_xyz *buf)
+{
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_GYRO_MASK, Acq);
+
+  if (!(rxdone & DMA_GYRO_MASK))
+  {
+    return false;
+  }
+
+  fi16 gx, gy, gz;
+
+  sweetbench_catch(1);
+
+  fc_lock(&dma_locks[Sensor_Gyro]);
+
+  gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
+  gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
+  gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
+  
+  fc_unlock(&dma_locks[Sensor_Gyro]);
+
+  buf->x = gx * inv_sens[init_rng];
+  buf->y = gy * inv_sens[init_rng];
+  buf->z = gz * inv_sens[init_rng];
+
+  sweetbench_start(1, 150);
+
+  return true;
+}
+
+bool try_fetch_accl(f_xyz *buf)
+{
+  fu16 rxdone = fetch_and(&flags.relv, ~DMA_ACCL_MASK, Acq);
+
+  if (!(rxdone & DMA_ACCL_MASK))
+  {
+    return false;
+  }
+
+  fi16 ax, ay, az;
+
+  sweetbench_catch(2);
+
+  fc_lock(&dma_locks[Sensor_Accl]);
+
+  ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
+  ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
+  az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
+  
+  fc_unlock(&dma_locks[Sensor_Accl]);
+
+  buf->x = ax * lsb_to_g;
+  buf->y = ay * lsb_to_g;
+  buf->z = az * lsb_to_g;
+
+  sweetbench_start(2, 150);
+
+  return true;
+}
+
+
+/* Callbacks */
+
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	gpio_cs_high(select.next);
+  select.valid = 1;
+	tx_thread_wait_abort(&dma_task);
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+{
+	gpio_cs_high(select.next);
+  select.valid = 0;
+	tx_thread_wait_abort(&dma_task);
+}
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
+}
+
+
+/* DMA routine */
+
+static inline void propagate_rx(void)
+{
+  fc_lock(&dma_locks[select.next]);
+
+  volatile uint8_t *src = (volatile uint8_t *)(dmarx + gpio.offset[select.next]);
+  volatile uint8_t *dst = taskrx[select.next];
+
+  size_t n = sizeof taskrx / Sensors;
+  for (size_t i = 0; i < n; ++i) dst[i] = src[i];
+
+  fc_unlock(&dma_locks[select.next]);
+
+  fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
+}
+
+static inline void start_dma_transfer(void)
+{
+  HAL_StatusTypeDef st;
+
+  gpio_cs_low(select.next);
+
+  st = dma_spi_txrx(tx[select.next], (uint8_t *)dmarx,
+                                     SENSOR_BUF_SIZE);
+
+  if (st != HAL_OK)
+  {
+    gpio_cs_high(select.next);
+    return;
+  }
+
+  fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
+
+  st = tx_thread_sleep(DMA_TIMEOUT_MS);
+
+  if (st == TX_WAIT_ABORTED && select.valid)
+  {
+    propagate_rx();
+  }
+}
+
+
+/* Task */
+
+void dma_entry(ULONG _)
+{
+  fu16 drdy_snapshot;
+  fu16 relv_snapshot;
+
+  MrAnalog (WE_ARE_SO_BACK)
+  {
+    drdy_snapshot = load(&flags.drdy, Acq);
+
+    if (load(&g_conf, Acq) & option(Using_Ascent_KF))
+    {
+      if (drdy_snapshot == 0)
+      {
+        tx_thread_relinquish();
+        continue;
+      }
+
+      bool dr_b = drdy_snapshot & DMA_BARO_MASK;
+      bool dr_g = drdy_snapshot & DMA_GYRO_MASK;
+      bool dr_a = drdy_snapshot & DMA_ACCL_MASK;
+
+      relv_snapshot = load(&flags.relv, Acq);
+
+      bool re_b = relv_snapshot & DMA_BARO_MASK;
+      bool re_g = relv_snapshot & DMA_GYRO_MASK;
+      bool re_a = relv_snapshot & DMA_ACCL_MASK;
+
+      /* The selector is defined as a QMC-minimized
+       * expression of 3 data-ready and 3 relevance flags.
+       */
+      if (dr_g && ((!dr_b && (re_g || !dr_a)) ||
+                   (!re_g && (!dr_a || re_a || re_b))))
+      {
+        select.next = Sensor_Gyro;
+      }
+      else if (dr_a && (((!dr_g || re_g) && (!dr_b || !re_a))
+                                  || (dr_g && re_b && re_g)))
+      {
+        select.next = Sensor_Accl;
+      }
+      else select.next = Sensor_Baro;
+    }
+    else
+    {
+      if (!(drdy_snapshot & DMA_BARO_MASK))
+      {
+        tx_thread_relinquish();
+        continue;
+      }
+      else select.next = Sensor_Baro;
+    }
+    
+    start_dma_transfer();
+  }
+}
+
+UINT create_dma_task(TX_BYTE_POOL *byte_pool)
+{
+	UINT st;
+  CHAR *pointer;
+
+	const char *critical = "creation failure:";
+
+  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
+												DMA_STACK_BYTES, TX_NO_WAIT);
+
+  if (st != TX_SUCCESS)
+  {
+    log_err(id "stack %s %u", critical, st);
+    return IT_IS_NOW_OVER;
+  }
+
+  st = tx_thread_create(&dma_task,
+                        "DMA Task",
+                        dma_entry,
+                        DMA_INPUT,
+                        pointer,
+                        DMA_STACK_BYTES,
+                        DMA_PRIORITY,
+                        /* No preemption threshold */
+                        DMA_PRIORITY,
+                        TX_NO_TIME_SLICE,
+                        TX_AUTO_START);
+
+	if (st != TX_SUCCESS)
+  {
+    log_err(id "task %s %u", critical, st);
+    return IT_IS_NOW_OVER;
+  }
+
+  return TX_SUCCESS;
+}

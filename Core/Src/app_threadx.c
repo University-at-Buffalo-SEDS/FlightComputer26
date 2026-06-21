@@ -21,19 +21,18 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 #include "main.h"
-#include "sedsprintf.h"
-#include "telemetry.h"
-#include "FC-Threads.h"
-#include "tx_api.h"
+#include "platform.h"
+#include "fctasks.h"
+#include "fcapi.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -57,39 +56,64 @@
 /* USER CODE END PFP */
 
 /**
- * @brief  Application ThreadX Initialization.
- * @param memory_ptr: memory pointer
- * @retval int
- */
-UINT App_ThreadX_Init(VOID *memory_ptr) {
+  * @brief  Application ThreadX Initialization.
+  * @param memory_ptr: memory pointer
+  * @retval int
+  */
+UINT App_ThreadX_Init(VOID *memory_ptr)
+{
   UINT ret = TX_SUCCESS;
 
   /* USER CODE BEGIN App_ThreadX_MEM_POOL */
-  if (init_telemetry_router() != SEDS_OK) {
-    Error_Handler();
-  }
-  /* Log after router is initialized, before threads start */
-
-  char started_txt[] = "Starting Threadx Scheduler";
-  log_telemetry_synchronous(SEDS_DT_MESSAGE_DATA, started_txt,
-                                  sizeof(started_txt), 1);
 
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
-  create_telemetry_thread();
+
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
+  ret = create_telemetry_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+#endif
+
+  ret = create_recovery_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_dma_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_evaluation_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
+
+  ret = create_distribution_task(memory_ptr);
+  if (ret != TX_SUCCESS)
+  {
+    return ret;
+  }
 
   /* USER CODE END App_ThreadX_Init */
 
   return ret;
 }
 
-/**
- * @brief  Function that implements the kernel's initialization.
- * @param  None
- * @retval None
- */
-void MX_ThreadX_Init(void) {
+  /**
+  * @brief  Function that implements the kernel's initialization.
+  * @param  None
+  * @retval None
+  */
+void MX_ThreadX_Init(void)
+{
   /* USER CODE BEGIN Before_Kernel_Start */
   
   /* USER CODE END Before_Kernel_Start */

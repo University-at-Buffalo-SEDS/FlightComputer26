@@ -181,7 +181,7 @@
    enabled. If the application does not use notify callbacks, they may be disabled to reduce
    code size and improve performance.  */
 
-#define TX_DISABLE_NOTIFY_CALLBACKS
+/*#define TX_DISABLE_NOTIFY_CALLBACKS*/
 
 /* Defined, the basic parameter error checking is disabled. */
 
@@ -246,7 +246,7 @@
 
 /* Define the common timer tick reference for use by other middleware components. */
 
-/*#define TX_TIMER_TICKS_PER_SECOND                100*/
+#define TX_TIMER_TICKS_PER_SECOND                1000
 
 /* Determine if there is a FileX pointer in the thread control block.
    By default, the pointer is there for legacy/backwards compatibility.

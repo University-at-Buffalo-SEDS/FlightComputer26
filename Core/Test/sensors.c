@@ -1,0 +1,127 @@
+/* Core/Test/sensors.c */
+
+#include "platform.h"
+#include "fctypes.h"
+#include "fcstructs.h"
+#include "fcapi.h"
+#include "testing.h"
+
+
+extern SPI_HandleTypeDef hspi1;
+
+
+static struct baro_config baro_conf = {
+    .osr_t = Baro_OSR_x1,
+    .osr_p = Baro_OSR_x8,
+    .odr = Baro_ODR_100,
+    .iir_coef = Baro_IIR_Coef_3,
+		.rezero = 1,
+};
+
+static struct gyro_config gyro_conf = {
+    .rng = Gyro_Range_2000Dps,
+    .bw = Gyro_523Hz_ODR_2000Hz,
+};
+
+static struct accl_config accl_conf = {
+    .mode = Normal_1600Hz,
+    .rng = Accl_Range_24g,
+};
+
+
+void test_baro_sync(SPI_HandleTypeDef *hspi, bool precise)
+{
+	if (precise)
+	{
+		baro_conf.osr_p = Baro_OSR_x8;
+  	baro_conf.iir_coef = Baro_IIR_Coef_15;
+	}
+
+	assert(baro_init(&hspi1, &baro_conf) == HAL_OK);
+
+	HAL_StatusTypeDef st;
+	baro q = {0};
+
+	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
+	{
+		st = baro_fetch_all(hspi, &q.tmp, &q.prs, &q.alt);
+
+		if (st == HAL_OK)
+		{
+			log_f32(SEDS_DT_BAROMETER_DATA, 3, &q);
+		}
+		else
+		{
+			log_err("Baro: sync fetch failed: %d", st);
+		}
+	}
+}
+
+
+void test_gyro_sync(SPI_HandleTypeDef *hspi, bool lowpower)
+{
+	if (lowpower)
+	{
+		gyro_conf.bw = Gyro_47Hz_ODR_400Hz;
+	}
+
+	assert(gyro_init(&hspi1, &gyro_conf) == HAL_OK);
+
+	HAL_StatusTypeDef st;
+	f_xyz q = {0};
+
+	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
+	{
+		st = gyro_read(hspi, &q);
+
+		if (st == HAL_OK)
+		{
+			log_f32(SEDS_DT_GYRO_DATA, 3, &q);
+		}
+		else
+		{
+			log_err("Gyro: sync fetch failed: %d", st);
+		}
+	}
+}
+
+
+void test_accl_sync(SPI_HandleTypeDef *hspi, bool lowpower)
+{
+	if (lowpower)
+	{
+		accl_conf.mode = Normal_400Hz;
+	}
+
+	assert(accl_init(&hspi1, &accl_conf) == HAL_OK);
+
+	HAL_StatusTypeDef st;
+	f_xyz q = {0};
+
+	for (int k = 0; k < SENSOR_SYNC_STEPS; ++k)
+	{
+		st = accl_read(hspi, &q);
+
+		if (st == HAL_OK)
+		{
+			log_f32(SEDS_DT_ACCEL_DATA, 3, &q);
+		}
+		else
+		{
+			log_err("Accl: sync fetch failed: %d", st);
+		}
+	}
+}
+
+
+void noreturn test_sensors_sync(void)
+{
+	test_baro_sync(&hspi1, false);
+	test_baro_sync(&hspi1, true);
+	test_gyro_sync(&hspi1, false);
+	test_gyro_sync(&hspi1, true);
+	test_accl_sync(&hspi1, false);
+	test_accl_sync(&hspi1, true);
+
+	_Exit(0);
+}

@@ -12,7 +12,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
@@ -45,11 +44,38 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+
+    ${CMAKE_SOURCE_DIR}/Core/Src/main.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/gyroscope.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/accelerometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
+
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_atan2_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_cos_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_sin_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/CommonTables/arm_common_tables.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_cholesky_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_trans_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_mult_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_add_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_sub_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_inverse_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_scale_f32.c
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/MatrixFunctions/arm_mat_vec_mult_f32.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
+    ${CMAKE_SOURCE_DIR}/sedsprintf_rs/C-Headers
+    ${CMAKE_SOURCE_DIR}/Core/Test
 )
 
 # Add project symbols (macros)
@@ -67,23 +93,178 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # Add user defined libraries
 )
 
-#Telemetry library
-
-set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-
-set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE) # Set target for embedded systems
-add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
-target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
+# Telemetry library
 
 # Option defaults to ON
-option(ENABLE_TELEMETRY "Enable the telemetry subsystem" ON)
+option(ENABLE_TELEMETRY "Enable the telemetry subsystem" OFF)
 
 # Print its state for debugging
-message(STATUS "Telemetry enabled: ${ENABLE_TELEMETRY}")
+message(STATUS "Telemetry enabled:      ${ENABLE_TELEMETRY}")
 
-# Define or undefine the macro globally
-if(ENABLE_TELEMETRY)
-    add_compile_definitions(TELEMETRY_ENABLED)
-else()
-    # Not defined → disabled
+if (ENABLE_TELEMETRY)
+    # Define or undefine the macro globally
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
+
+    set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_MAX_QUEUE_SIZE "1024" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_MAX_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_STARTING_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
+    set(SEDSPRINTF_RS_FORCE_RELEASE ON CACHE BOOL "Build the Rust telemetry library in release mode even for Debug firmware builds" FORCE)
+
+    # Set target for embedded systems
+    set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
+
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+    )
+
+    add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
+    target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
+endif()
+
+
+# Flight Computer options
+
+option(TELEMETRY_COMPAT "Byte payload compatibility"    ON)
+option(EXTERNAL_GPS     "GPS board availability"        ON)
+option(ONBOARD_SD       "On-board logger storage"       ON)
+option(CUSTOM_FLAGS     "User-defined flags"            ON)
+option(FC_BENCH         "Project-wide benchmark"        OFF)
+option(PARALLEL_KF      "Predict does not wait Update"  OFF)
+option(MESSAGE_BATCHING "Handle batched messages"       OFF)
+option(MANUAL_CONFIRM   "Request confirm critical cmd"  OFF)
+option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
+option(USB_ENUM         "Assume USB for IO functions"   OFF)
+option(DEBUG_MATH       "Report failures of math fns"   OFF)
+option(IGNORE_STATES    "Disable recovery state checks" OFF)
+option(SWAP_CONFIG      "Use simulation user config"    OFF)
+option(EXPORT_SPINLOCK  "Use spinlock in hooked libs"   OFF)
+option(ALLOC_TEST       "Test exported allocator."      OFF)
+option(TEST_DESCENT     "Start at Apogee."              OFF)
+option(FAKESTATION      "Emulate GS commands."          OFF)
+
+message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
+message(STATUS "External GPS:           ${EXTERNAL_GPS}")
+message(STATUS "SD card:                ${ONBOARD_SD}")
+message(STATUS "Custom flags:           ${CUSTOM_FLAGS}")
+message(STATUS "Benchmarks:             ${FC_BENCH}")
+message(STATUS "Parallel Kalman:        ${PARALLEL_KF}")
+message(STATUS "Message batching:       ${MESSAGE_BATCHING}")
+message(STATUS "Manual confirms:        ${MANUAL_CONFIRM}")
+message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
+message(STATUS "USB enumeration:        ${USB_ENUM}")
+message(STATUS "Math debugging:         ${DEBUG_MATH}")
+message(STATUS "Ignore states:          ${IGNORE_STATES}")
+message(STATUS "Simulation:             ${SWAP_CONFIG}")
+message(STATUS "Export spinlock:        ${EXPORT_SPINLOCK}")
+message(STATUS "Test allocator:         ${ALLOC_TEST}")
+message(STATUS "Start at Apogee:        ${TEST_DESCENT}")
+message(STATUS "Emulate GS commands:    ${FAKESTATION}")
+
+if (MESSAGE_BATCHING)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MESSAGE_BATCHING_ENABLED)
+endif()
+
+if (TELEMETRY_COMPAT)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_CMD_COMPAT)
+endif()
+
+if (PARALLEL_KF)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PARALLEL_PREDICT_UPDATE)
+endif()
+
+if (MANUAL_CONFIRM)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USER_CONFIRMATION)
+endif()
+
+if (EXTERNAL_GPS)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GPS_AVAILABLE)
+endif()
+
+if (ONBOARD_SD)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c
+    )
+endif()
+
+if (FC_BENCH)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_BENCHMARK)
+endif()
+
+if (SENSOR_TESTS)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_SENSORS)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/sensors.c
+    )
+endif()
+
+if (USB_ENUM)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_ENUMERATES)
+endif()
+
+if (DEBUG_MATH)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE MATH_FN_DEBUG)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Test/kalmanpill.c
+    )
+endif()
+
+if (IGNORE_STATES)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE LUNATIC_STATE)
+endif()
+
+if (SWAP_CONFIG)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SIMULATION_CONFIG)
+endif()
+
+if (EXPORT_SPINLOCK)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE EXPORT_SPINLOCK)
+endif()
+
+if (ALLOC_TEST)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_ALLOC)
+endif()
+
+if (TEST_DESCENT)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DESCENT_TEST)
+endif()
+
+if (FAKESTATION)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FAKESTATION)
+    target_sources(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Test/fakestation.c
+    )
+endif()
+
+if (CUSTOM_FLAGS)
+    set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
+
+    set(COMP_DEBUG    "-Og" "-g")
+    set(COMP_RELEASE  "-O3" "-flto" "-ffast-math" "-funroll-loops" "-DNDEBUG" "-g0")
+
+    set(LINK_DEBUG    )
+    set(LINK_RELEASE  "-flto")
+
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
+        ${FC_COMMON}
+        $<$<CONFIG:Debug>:${COMP_DEBUG}>
+        $<$<CONFIG:Release>:${COMP_RELEASE}>
+    )
+
+    target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+        ${FC_COMMON}
+        $<$<CONFIG:Debug>:${LINK_DEBUG}>
+        $<$<CONFIG:Release>:${LINK_RELEASE}>
+    )
+
+    # Newlib is compiled without LTO; we must preserve this for syscall
+    # wrappers that CubeMX generated.
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
+                                PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()

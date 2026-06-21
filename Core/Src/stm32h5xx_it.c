@@ -22,6 +22,7 @@
 #include "stm32h5xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fcapi.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,11 +53,57 @@
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+void reg_dump(unsigned int *sp, unsigned int lr)
+{
+  volatile conditional unsigned int cfsr = *((volatile unsigned int *)(0xE000ED28));
+  volatile conditional unsigned int mmfar = *((volatile unsigned int *)(0xE000ED34));
+
+  unsigned int psp_val    = __get_PSP();
+  unsigned int psplim_val = __get_PSPLIM();
+  unsigned int exc_ret = sp[5];
+
+  unsigned int regs[3] = {psp_val, psplim_val, exc_ret};
+
+  while (1)
+  {
+    for (int r = 0; r < 3; r++)
+    {
+      blink(Green, false, 3);
+
+      for (int i = 31; i >= 0; i--)
+      {
+        blink(Blue, (regs[r] >> i) & 1, 1);
+      }
+    }
+
+    blink(Green, false, 7);
+  }
+}
+
+/* When dumping registers in release mode, change this
+ * to HardFault_Handler and comment out CubeMX one. */
+
+__attribute__((naked)) void DarkSouls_Handler(void)
+{
+  __asm volatile (
+      "tst lr, #4                    \n"
+      "ite eq                        \n"
+      "mrseq r0, msp                 \n"
+      "mrsne r0, psp                 \n"
+      "ldr r1, [r0, #20]             \n" // LR
+      "b reg_dump                    \n"
+  );
+}
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern FDCAN_HandleTypeDef hfdcan1;
 extern SD_HandleTypeDef hsd1;
+extern DMA_HandleTypeDef handle_GPDMA1_Channel1;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel0;
+extern SPI_HandleTypeDef hspi1;
+extern PCD_HandleTypeDef hpcd_USB_DRD_FS;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
@@ -77,6 +124,8 @@ void NMI_Handler(void)
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
    while (1)
   {
+    blink(Green, false, 6);
+    blink(Blue, false, 6);
   }
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
@@ -92,6 +141,8 @@ void HardFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_HardFault_IRQn 0 */
+    blink(Green, false, 1);
+    blink(Blue, false, 1);
     /* USER CODE END W1_HardFault_IRQn 0 */
   }
 }
@@ -107,6 +158,8 @@ void MemManage_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
+    blink(Green, false, 2);
+    blink(Blue, false, 2);
     /* USER CODE END W1_MemoryManagement_IRQn 0 */
   }
 }
@@ -122,6 +175,8 @@ void BusFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_BusFault_IRQn 0 */
+    blink(Green, false, 3);
+    blink(Blue, false, 3);
     /* USER CODE END W1_BusFault_IRQn 0 */
   }
 }
@@ -137,6 +192,8 @@ void UsageFault_Handler(void)
   while (1)
   {
     /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
+    blink(Green, false, 4);
+    blink(Blue, false, 4);
     /* USER CODE END W1_UsageFault_IRQn 0 */
   }
 }
@@ -147,7 +204,8 @@ void UsageFault_Handler(void)
 void DebugMon_Handler(void)
 {
   /* USER CODE BEGIN DebugMonitor_IRQn 0 */
-
+  blink(Green, false, 5);
+  blink(Blue, false, 5);
   /* USER CODE END DebugMonitor_IRQn 0 */
   /* USER CODE BEGIN DebugMonitor_IRQn 1 */
 
@@ -160,6 +218,48 @@ void DebugMon_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32h5xx.s).                    */
 /******************************************************************************/
+
+/**
+  * @brief This function handles EXTI Line0 interrupt.
+  */
+void EXTI0_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI0_IRQn 0 */
+
+  /* USER CODE END EXTI0_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(GYRO_EXTI_1_Pin);
+  /* USER CODE BEGIN EXTI0_IRQn 1 */
+
+  /* USER CODE END EXTI0_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI Line4 interrupt.
+  */
+void EXTI4_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI4_IRQn 0 */
+
+  /* USER CODE END EXTI4_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(ACCL_EXTI_1_Pin);
+  /* USER CODE BEGIN EXTI4_IRQn 1 */
+
+  /* USER CODE END EXTI4_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI Line7 interrupt.
+  */
+void EXTI7_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI7_IRQn 0 */
+
+  /* USER CODE END EXTI7_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(BARO_EXTI_Pin);
+  /* USER CODE BEGIN EXTI7_IRQn 1 */
+
+  /* USER CODE END EXTI7_IRQn 1 */
+}
 
 /**
   * @brief This function handles GPDMA1 Channel 0 global interrupt.
@@ -176,6 +276,48 @@ void GPDMA1_Channel0_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles GPDMA1 Channel 1 global interrupt.
+  */
+void GPDMA1_Channel1_IRQHandler(void)
+{
+  /* USER CODE BEGIN GPDMA1_Channel1_IRQn 0 */
+
+  /* USER CODE END GPDMA1_Channel1_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA1_Channel1);
+  /* USER CODE BEGIN GPDMA1_Channel1_IRQn 1 */
+
+  /* USER CODE END GPDMA1_Channel1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles FDCAN1 interrupt 0.
+  */
+void FDCAN1_IT0_IRQHandler(void)
+{
+  /* USER CODE BEGIN FDCAN1_IT0_IRQn 0 */
+
+  /* USER CODE END FDCAN1_IT0_IRQn 0 */
+  HAL_FDCAN_IRQHandler(&hfdcan1);
+  /* USER CODE BEGIN FDCAN1_IT0_IRQn 1 */
+
+  /* USER CODE END FDCAN1_IT0_IRQn 1 */
+}
+
+/**
+  * @brief This function handles FDCAN1 interrupt 1.
+  */
+void FDCAN1_IT1_IRQHandler(void)
+{
+  /* USER CODE BEGIN FDCAN1_IT1_IRQn 0 */
+
+  /* USER CODE END FDCAN1_IT1_IRQn 0 */
+  HAL_FDCAN_IRQHandler(&hfdcan1);
+  /* USER CODE BEGIN FDCAN1_IT1_IRQn 1 */
+
+  /* USER CODE END FDCAN1_IT1_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM6 global interrupt.
   */
 void TIM6_IRQHandler(void)
@@ -187,6 +329,34 @@ void TIM6_IRQHandler(void)
   /* USER CODE BEGIN TIM6_IRQn 1 */
 
   /* USER CODE END TIM6_IRQn 1 */
+}
+
+/**
+  * @brief This function handles SPI1 global interrupt.
+  */
+void SPI1_IRQHandler(void)
+{
+  /* USER CODE BEGIN SPI1_IRQn 0 */
+
+  /* USER CODE END SPI1_IRQn 0 */
+  HAL_SPI_IRQHandler(&hspi1);
+  /* USER CODE BEGIN SPI1_IRQn 1 */
+
+  /* USER CODE END SPI1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles USB FS global interrupt.
+  */
+void USB_DRD_FS_IRQHandler(void)
+{
+  /* USER CODE BEGIN USB_DRD_FS_IRQn 0 */
+
+  /* USER CODE END USB_DRD_FS_IRQn 0 */
+  HAL_PCD_IRQHandler(&hpcd_USB_DRD_FS);
+  /* USER CODE BEGIN USB_DRD_FS_IRQn 1 */
+
+  /* USER CODE END USB_DRD_FS_IRQn 1 */
 }
 
 /**
