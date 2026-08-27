@@ -32,6 +32,8 @@ enable_language(C ASM)
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -T "${CMAKE_SOURCE_DIR}/STM32H523xx_FLASH.ld")
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
@@ -74,7 +76,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Include
-    ${CMAKE_SOURCE_DIR}/sedsprintf_rs/C-Headers
     ${CMAKE_SOURCE_DIR}/Core/Test
 )
 
@@ -105,25 +106,20 @@ if (ENABLE_TELEMETRY)
     # Define or undefine the macro globally
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
 
-    set(SEDSPRINTF_RS_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_MAX_QUEUE_SIZE "1024" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_MAX_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_STARTING_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
-    set(SEDSPRINTF_RS_FORCE_RELEASE ON CACHE BOOL "Build the Rust telemetry library in release mode even for Debug firmware builds" FORCE)
-
-    # Set target for embedded systems
-    set(SEDSPRINTF_RS_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
+    set(SEDSNET_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
+    set(SEDSNET_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
+    set(SEDSNET_MAX_QUEUE_BUDGET "1024" CACHE STRING "" FORCE)
+    set(SEDSNET_MAX_RECENT_RX_IDS "32" CACHE STRING "" FORCE)
+    set(SEDSNET_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
+    set(SEDSNET_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
+    set(SEDSNET_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
+    set(SEDSNET_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
 
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
     )
 
-    add_subdirectory(${CMAKE_SOURCE_DIR}/sedsprintf_rs)
-    target_link_libraries(${CMAKE_PROJECT_NAME} sedsprintf_rs)
+    include(cmake/sedsnet_fetch.cmake)
 endif()
 
 
@@ -246,7 +242,7 @@ if (CUSTOM_FLAGS)
     set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
 
     set(COMP_DEBUG    "-Og" "-g")
-    set(COMP_RELEASE  "-O3" "-flto" "-ffast-math" "-funroll-loops" "-DNDEBUG" "-g0")
+    set(COMP_RELEASE  "-Os" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
 
     set(LINK_DEBUG    )
     set(LINK_RELEASE  "-flto")
@@ -268,3 +264,16 @@ if (CUSTOM_FLAGS)
     set_source_files_properties(${CMAKE_SOURCE_DIR}/Core/Src/syscalls.c
                                 PROPERTIES COMPILE_OPTIONS "-fno-lto")
 endif()
+
+set(LAUNCHCORE_DEVICE_DEFINE STM32H523xx)
+set(LAUNCHCORE_CMSIS_DEVICE_DIR "${CMAKE_SOURCE_DIR}/Drivers/CMSIS/Device/ST/STM32H5xx/Include")
+set(LAUNCHCORE_HAL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Inc")
+set(LAUNCHCORE_SYSTEM_SOURCE "${CMAKE_SOURCE_DIR}/Core/Src/system_stm32h5xx.c")
+set(LAUNCHCORE_STARTUP_SOURCE "${CMAKE_SOURCE_DIR}/startup_stm32h523xx.s")
+set(LAUNCHCORE_FLASH_SOURCES
+    "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_flash.c"
+    "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_flash_ex.c")
+set(LAUNCHCORE_APP_SLOT_BASE 0x08004000)
+set(LAUNCHCORE_APP_VECTOR_TABLE 0x08004100)
+set(LAUNCHCORE_METADATA0_BASE 0x08078000)
+include(cmake/launchcore_stm32.cmake)

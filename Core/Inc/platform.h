@@ -213,7 +213,7 @@ extern uint8_t sdmmc_ready;
 
 #ifdef TELEMETRY_ENABLED
 
-#include <sedsprintf.h> // IWYU pragma: export
+#include <sedsnet_config.h> // IWYU pragma: export
 #include "telemetry.h"  // IWYU pragma: export
 
 #define log_msg_sync(msg, size)                               \
