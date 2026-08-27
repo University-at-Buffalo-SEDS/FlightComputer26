@@ -41,6 +41,10 @@ set(_launchcore_core_sources
 )
 list(TRANSFORM _launchcore_core_sources
      PREPEND "${sedslaunchcore_SOURCE_DIR}/bootloader/src/")
+if(DEFINED LAUNCHCORE_HARDWARE_SHA256_SOURCE)
+    list(REMOVE_ITEM _launchcore_core_sources
+        "${sedslaunchcore_SOURCE_DIR}/bootloader/src/sha256.c")
+endif()
 
 set(LAUNCHCORE_BOOTLOADER_TARGET "${CMAKE_PROJECT_NAME}Bootloader")
 add_executable(${LAUNCHCORE_BOOTLOADER_TARGET}
@@ -50,6 +54,7 @@ add_executable(${LAUNCHCORE_BOOTLOADER_TARGET}
     "${CMAKE_SOURCE_DIR}/Bootloader/platform.c"
     "${CMAKE_SOURCE_DIR}/Bootloader/storage_dispatch.c"
     "${CMAKE_SOURCE_DIR}/Bootloader/storage_internal_flash.c"
+    ${LAUNCHCORE_HARDWARE_SHA256_SOURCE}
     "${LAUNCHCORE_SYSTEM_SOURCE}"
     ${LAUNCHCORE_FLASH_SOURCES}
     "${LAUNCHCORE_STARTUP_SOURCE}"
