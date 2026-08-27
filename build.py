@@ -26,7 +26,7 @@ OPTIONS: (option not specified -> opposite is true)
         factory         Build bootloader + packaged firmware (default).
         bootloader      Build only the bootloader.
         firmware        Build only the packaged Slot A firmware.
-        ota             Unsupported on this board: no delta partition.
+        ota             Build a full .seds image for bootloader recovery.
 
         stlink          Open STLink connection and exit.
                         Prereq: Debug.
@@ -329,26 +329,27 @@ def objcopy(buildir: Path, elf_name: str) -> Path:
 
 
 def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
-        if image == "ota":
-                sys.exit(
-                        "FlightComputer26 has no LaunchCore delta partition and cannot hold a "
-                        "second full image. Use bootloader recovery transport for full-image updates."
-                )
         target = {
                 "factory": "factory-image",
                 "bootloader": f"{PROJECT.name}Bootloader",
                 "firmware": PROJECT.name,
+                "ota": PROJECT.name,
         }[image]
         build(buildir, target)
         if image == "factory":
                 path, address = buildir / f"{PROJECT.name}.factory.bin", FC_ADDR
-        elif image == "firmware":
+        elif image in ("firmware", "ota"):
                 path, address = buildir / f"{PROJECT.name}.launchcore.img", APP_ADDR
         else:
                 path = objcopy(buildir, f"{PROJECT.name}Bootloader.elf")
                 address = FC_ADDR
         if not path.exists():
                 sys.exit(f"Expected {image} artifact at {path}")
+        if image == "ota":
+                ota_path = buildir / f"{PROJECT.name}.seds"
+                shutil.copy2(path, ota_path)
+                path = ota_path
+                print("This board uses the LaunchCore recovery transport for full-image OTA.")
         print(f"Built {image} image: {path} (flash address {address})")
         return path, address
 
