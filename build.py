@@ -21,6 +21,13 @@ OPTIONS: (option not specified -> opposite is true)
         flash-st        Alternative to flash-dfu over STLink.
                         Prereq: STM32_Programmer_CLI over SWD.
 
+        flash-stlink    Flash with the open-source st-flash utility.
+
+        factory         Build bootloader + packaged firmware (default).
+        bootloader      Build only the bootloader.
+        firmware        Build only the packaged Slot A firmware.
+        ota             Unsupported on this board: no delta partition.
+
         stlink          Open STLink connection and exit.
                         Prereq: Debug.
 
@@ -97,6 +104,7 @@ DEFAULT_PRESET  = "Debug"
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
 ALL_OPTIONS     = {     "flash-dfu",
                         "flash-st",
+                        "flash-stlink",
                         "stlink",
                         "notelemetry", 
                         "clean",
@@ -118,6 +126,10 @@ ALL_OPTIONS     = {     "flash-dfu",
                         "exspinlock",
                         "alloctest",
                         "fakestation",
+                        "factory",
+                        "bootloader",
+                        "firmware",
+                        "ota",
                 }
 
 # Repo constants
@@ -126,6 +138,7 @@ BUILDDIR        = PROJECT / "build"
 BIN             = "FlightComputer26.bin"
 ELF             = "FlightComputer26.elf"
 FC_ADDR         = "0x08000000"
+APP_ADDR        = "0x08004000"
 DEBUG_HOST      = "127.0.0.1"
 DEBUG_PORT      = 4242
 STM32_PROG_CLI  = "STM32_Programmer_CLI"
@@ -176,6 +189,11 @@ def parse(argv: list[str]):
 
                 sys.exit(f"Unrecognized option: {a}")
 
+        images = [name for name in ("factory", "bootloader", "firmware", "ota")
+                  if options[name]]
+        if len(images) > 1:
+                sys.exit(f"Select only one image type, not: {', '.join(images)}")
+        options["image"] = images[0] if images else "factory"
         return preset, options
 
 
@@ -283,18 +301,19 @@ def configure(buildir: Path, preset: str, options: dict):
         run(cmake_args)
 
 
-def build(buildir: Path):
+def build(buildir: Path, target: str):
         run([
                 "cmake",
                 "--build",
                 str(buildir),
+                "--target", target,
                 "--parallel"
         ])
 
 
-def objcopy(buildir: Path) -> Path:
-        elf_path = buildir / ELF
-        bin_path = buildir / BIN
+def objcopy(buildir: Path, elf_name: str) -> Path:
+        elf_path = buildir / elf_name
+        bin_path = elf_path.with_suffix(".bin")
 
         if not elf_path.exists():
                 sys.exit(f"Expected ELF at {elf_path}")
@@ -309,7 +328,32 @@ def objcopy(buildir: Path) -> Path:
         return bin_path
 
 
-def flash(path: Path, options: dict):
+def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
+        if image == "ota":
+                sys.exit(
+                        "FlightComputer26 has no LaunchCore delta partition and cannot hold a "
+                        "second full image. Use bootloader recovery transport for full-image updates."
+                )
+        target = {
+                "factory": "factory-image",
+                "bootloader": f"{PROJECT.name}Bootloader",
+                "firmware": PROJECT.name,
+        }[image]
+        build(buildir, target)
+        if image == "factory":
+                path, address = buildir / f"{PROJECT.name}.factory.bin", FC_ADDR
+        elif image == "firmware":
+                path, address = buildir / f"{PROJECT.name}.launchcore.img", APP_ADDR
+        else:
+                path = objcopy(buildir, f"{PROJECT.name}Bootloader.elf")
+                address = FC_ADDR
+        if not path.exists():
+                sys.exit(f"Expected {image} artifact at {path}")
+        print(f"Built {image} image: {path} (flash address {address})")
+        return path, address
+
+
+def flash(path: Path, address: str, options: dict):
         if not path.exists():
                 sys.exit(f"Expected BIN at {path}")
 
@@ -318,16 +362,19 @@ def flash(path: Path, options: dict):
         if options["flash-dfu"]:
                 require_tool("dfu-util")
                 cmd = [ "dfu-util", "-a", "0",
-                        "-s", FC_ADDR, "-D", str(path),
+                        "-s", address, "-D", str(path),
                 ]
         elif options["flash-st"]:
                 stm32prog = require_tool(STM32_PROG_CLI)
                 cmd = [ stm32prog,
                         "-c", "port=SWD", "mode=UR", "reset=HWrst",
-                        "-w", str(path), FC_ADDR,
+                        "-w", str(path), address,
                         "-v",
                         "-rst",
                 ]
+        elif options["flash-stlink"]:
+                stflash = require_tool("st-flash")
+                cmd = [stflash, "--reset", "write", str(path), address]
 
         run(cmd)
 
@@ -411,15 +458,13 @@ def main() -> None:
         if options["configure"]:
                 return
 
-        build(buildir)
+        executable, address = select_artifact(buildir, options["image"])
 
-        if options["asm"]:
+        if options["asm"] and options["image"] != "bootloader":
                 asmgen(buildir)
 
-        executable = objcopy(buildir)
-
-        if options["flash-dfu"] or options["flash-st"]:
-                flash(executable, options)
+        if options["flash-dfu"] or options["flash-st"] or options["flash-stlink"]:
+                flash(executable, address, options)
         elif preset == "Release":
                 return
         elif options["stlink"]:
