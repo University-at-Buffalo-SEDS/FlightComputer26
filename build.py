@@ -89,6 +89,7 @@ from __future__ import annotations
 
 import sys
 import os
+import re
 import time
 import socket
 import shutil
@@ -195,6 +196,37 @@ def parse(argv: list[str]):
                 sys.exit(f"Select only one image type, not: {', '.join(images)}")
         options["image"] = images[0] if images else "factory"
         return preset, options
+
+
+def board_macro_optional(suffix: str) -> int | None:
+        text = (PROJECT / "Bootloader" / "board_config.h").read_text(encoding="utf-8")
+        matches = re.findall(
+                rf"(?m)^#define\s+[A-Za-z0-9_]*{re.escape(suffix)}\s+"
+                rf"(0x[0-9A-Fa-f]+|[0-9]+)u?\s*$", text
+        )
+        if len(matches) > 1:
+                sys.exit(f"Expected at most one BSP macro ending in {suffix}")
+        return int(matches[0], 0) if matches else None
+
+
+def detect_ota_layout() -> tuple[str, int]:
+        storage = "\n".join(
+                source.read_text(encoding="utf-8", errors="replace")
+                for source in sorted((PROJECT / "Bootloader").glob("*.c"))
+        )
+        delta_size = board_macro_optional("DELTA_SIZE")
+        slot_b_size = board_macro_optional("SLOT_B_SIZE")
+        staging_size = board_macro_optional("APP_STAGING_SIZE")
+        slot_b_is_delta = re.search(
+                r"\.slot_b_is_delta\s*=\s*true\b", storage
+        ) is not None
+        if delta_size:
+                return "delta", delta_size
+        if slot_b_size:
+                return ("delta" if slot_b_is_delta else "ab"), slot_b_size
+        if staging_size:
+                return "staging", staging_size
+        return "recovery", 0
 
 
 def configure(buildir: Path, preset: str, options: dict):
@@ -329,6 +361,13 @@ def objcopy(buildir: Path, elf_name: str) -> Path:
 
 
 def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
+        ota_layout, ota_secondary_size = detect_ota_layout()
+        automatic_base = None
+        if image == "ota" and ota_layout == "delta":
+                previous = buildir / f"{PROJECT.name}.launchcore.img"
+                if previous.exists():
+                        automatic_base = buildir / f".{PROJECT.name}.ota-base.launchcore.img"
+                        shutil.copy2(previous, automatic_base)
         target = {
                 "factory": "factory-image",
                 "bootloader": f"{PROJECT.name}Bootloader",
@@ -347,9 +386,29 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
                 sys.exit(f"Expected {image} artifact at {path}")
         if image == "ota":
                 ota_path = buildir / f"{PROJECT.name}.seds"
+                if automatic_base is not None:
+                        delta_tool = buildir / "_deps" / "sedslaunchcore-src" / "tools" / "mkdelta.py"
+                        erase_size = board_macro_optional("FLASH_ERASE_SIZE")
+                        slot_size = board_macro_optional("SLOT_A_SIZE")
+                        if delta_tool.exists() and erase_size and slot_size:
+                                delta = subprocess.run([
+                                        sys.executable, str(delta_tool),
+                                        "--base", str(automatic_base), "--target", str(path),
+                                        "--output", str(ota_path), "--erase-size", hex(erase_size),
+                                        "--slot-size", hex(slot_size),
+                                        "--delta-slot-size", hex(ota_secondary_size),
+                                ], capture_output=True, text=True)
+                                automatic_base.unlink(missing_ok=True)
+                                if delta.returncode == 0:
+                                        print("Built reversible-delta OTA from the BSP delta layout.")
+                                        return ota_path, ""
+                if automatic_base is not None:
+                        automatic_base.unlink(missing_ok=True)
                 shutil.copy2(path, ota_path)
                 path = ota_path
-                print("This board uses the LaunchCore recovery transport for full-image OTA.")
+                route = {"ab": "A/B slot", "staging": "single-slot staging",
+                         "recovery": "bootloader recovery", "delta": "bootloader recovery"}[ota_layout]
+                print(f"Built full-image OTA for {route}.")
         print(f"Built {image} image: {path} (flash address {address})")
         return path, address
 
