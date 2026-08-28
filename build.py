@@ -88,6 +88,7 @@ OPTIONS: (option not specified -> opposite is true)
 from __future__ import annotations
 
 import sys
+import io
 import os
 import re
 import time
@@ -418,14 +419,16 @@ def run_dfu(cmd: list[str]):
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+                bufsize=0,
         )
         output_chunks = []
         assert proc.stdout is not None
-        while chunk := proc.stdout.read(1):
-                output_chunks.append(chunk)
-                print(chunk, end="", flush=True)
+        stream = io.TextIOWrapper(
+                proc.stdout, encoding="utf-8", errors="replace", newline=""
+        )
+        while text := stream.read(1):
+                output_chunks.append(text)
+                print(text, end="", flush=True)
         returncode = proc.wait()
         output = "".join(output_chunks)
         reset_disconnect = (
