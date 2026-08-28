@@ -1,3 +1,5 @@
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,17 +16,20 @@ class OtaBuildScriptTests(unittest.TestCase):
     def test_dfu_flash_leaves_rom_bootloader_after_download(self):
         image = Path("FlightComputer26.factory.bin")
         options = {"flash-dfu": True, "flash-st": False, "flash-stlink": False}
-        completed = mock.Mock(
-            returncode=74,
-            stdout=("File downloaded successfully\nSubmitting leave request...\n"
-                    "dfu-util: Error during download get_status\n"),
-        )
+        dfu_output = ("Download [=========================] 100%\r"
+                      "File downloaded successfully\nSubmitting leave request...\n"
+                      "dfu-util: Error during download get_status\n")
+        process = mock.Mock(stdout=io.StringIO(dfu_output))
+        process.wait.return_value = 74
+        visible_output = io.StringIO()
         with mock.patch.object(Path, "exists", return_value=True):
             with mock.patch.object(build, "require_tool", return_value="dfu-util"):
-                with mock.patch.object(build.subprocess, "run", return_value=completed) as run:
-                    build.flash(image, "0x08000000", options)
-        command = run.call_args.args[0]
+                with mock.patch.object(build.subprocess, "Popen", return_value=process) as popen:
+                    with contextlib.redirect_stdout(visible_output):
+                        build.flash(image, "0x08000000", options)
+        command = popen.call_args.args[0]
         self.assertEqual(command[4], "0x08000000:leave")
+        self.assertTrue(visible_output.getvalue().startswith(dfu_output))
 
     def test_ota_option_is_available(self):
         _preset, options = build.parse(["release", "ota"])

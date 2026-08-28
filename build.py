@@ -414,14 +414,22 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
 
 
 def run_dfu(cmd: list[str]):
-        proc = subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
         )
-        output = proc.stdout or ""
-        if output:
-                print(output, end="" if output.endswith("\n") else "\n")
+        output_chunks = []
+        assert proc.stdout is not None
+        while chunk := proc.stdout.read(1):
+                output_chunks.append(chunk)
+                print(chunk, end="", flush=True)
+        returncode = proc.wait()
+        output = "".join(output_chunks)
         reset_disconnect = (
-                proc.returncode == 74
+                returncode == 74
                 and "File downloaded successfully" in output
                 and "Submitting leave request" in output
                 and "Error during download get_status" in output
@@ -429,8 +437,8 @@ def run_dfu(cmd: list[str]):
         if reset_disconnect:
                 print("DFU download completed; device reset before final status response.")
                 return
-        if proc.returncode != 0:
-                sys.exit(f"Command failed (exit {proc.returncode}): dfu-util")
+        if returncode != 0:
+                sys.exit(f"Command failed (exit {returncode}): dfu-util")
 
 
 def flash(path: Path, address: str, options: dict):
