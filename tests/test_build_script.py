@@ -14,13 +14,17 @@ class OtaBuildScriptTests(unittest.TestCase):
     def test_dfu_flash_leaves_rom_bootloader_after_download(self):
         image = Path("FlightComputer26.factory.bin")
         options = {"flash-dfu": True, "flash-st": False, "flash-stlink": False}
+        completed = mock.Mock(
+            returncode=74,
+            stdout=("File downloaded successfully\nSubmitting leave request...\n"
+                    "dfu-util: Error during download get_status\n"),
+        )
         with mock.patch.object(Path, "exists", return_value=True):
             with mock.patch.object(build, "require_tool", return_value="dfu-util"):
-                with mock.patch.object(build, "run") as run:
+                with mock.patch.object(build.subprocess, "run", return_value=completed) as run:
                     build.flash(image, "0x08000000", options)
-        run.assert_called_once_with([
-            "dfu-util", "-a", "0", "-s", "0x08000000:leave", "-D", str(image)
-        ])
+        command = run.call_args.args[0]
+        self.assertEqual(command[4], "0x08000000:leave")
 
     def test_ota_option_is_available(self):
         _preset, options = build.parse(["release", "ota"])

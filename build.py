@@ -413,6 +413,26 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
         return path, address
 
 
+def run_dfu(cmd: list[str]):
+        proc = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        output = proc.stdout or ""
+        if output:
+                print(output, end="" if output.endswith("\n") else "\n")
+        reset_disconnect = (
+                proc.returncode == 74
+                and "File downloaded successfully" in output
+                and "Submitting leave request" in output
+                and "Error during download get_status" in output
+        )
+        if reset_disconnect:
+                print("DFU download completed; device reset before final status response.")
+                return
+        if proc.returncode != 0:
+                sys.exit(f"Command failed (exit {proc.returncode}): dfu-util")
+
+
 def flash(path: Path, address: str, options: dict):
         if not path.exists():
                 sys.exit(f"Expected BIN at {path}")
@@ -437,7 +457,10 @@ def flash(path: Path, address: str, options: dict):
                 stflash = require_tool("st-flash")
                 cmd = [stflash, "--reset", "write", str(path), address]
 
-        run(cmd)
+        if options["flash-dfu"]:
+                run_dfu(cmd)
+        else:
+                run(cmd)
 
 
 def gdb_st_session(path: Path):
