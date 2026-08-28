@@ -53,6 +53,18 @@
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
 
+/* A task-creation failure happens before normal logging is available. Encode
+ * the failed stage as N short blue flashes followed by one long green flash. */
+static void startup_fault(UINT stage)
+{
+  __disable_irq();
+  while (1)
+  {
+    blink(Blue, false, (fi32)stage);
+    blink(Green, true, 1);
+  }
+}
+
 /* USER CODE END PFP */
 
 /**
@@ -74,32 +86,32 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   ret = create_telemetry_task(memory_ptr);
   if (ret != TX_SUCCESS)
   {
-    return ret;
+    startup_fault(1U);
   }
 #endif
 
   ret = create_recovery_task(memory_ptr);
   if (ret != TX_SUCCESS)
   {
-    return ret;
+    startup_fault(2U);
   }
 
   ret = create_dma_task(memory_ptr);
   if (ret != TX_SUCCESS)
   {
-    return ret;
+    startup_fault(3U);
   }
 
   ret = create_evaluation_task(memory_ptr);
   if (ret != TX_SUCCESS)
   {
-    return ret;
+    startup_fault(4U);
   }
 
   ret = create_distribution_task(memory_ptr);
   if (ret != TX_SUCCESS)
   {
-    return ret;
+    startup_fault(5U);
   }
 
   /* USER CODE END App_ThreadX_Init */
@@ -121,6 +133,8 @@ void MX_ThreadX_Init(void)
   tx_kernel_enter();
 
   /* USER CODE BEGIN Kernel_Start_Error */
+
+  startup_fault(6U);
 
   /* USER CODE END Kernel_Start_Error */
 }

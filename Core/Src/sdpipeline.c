@@ -92,7 +92,9 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 
 static inline constexpr char *seds_msg(SedsDataType ty)
 {
-    switch (ty) {
+    /* Local schema IDs intentionally extend the generated enum. Switching on
+     * the underlying value keeps GCC from diagnosing those valid IDs. */
+    switch ((int)ty) {
         case SEDS_DT_MESSAGE_DATA:		return "Message";
         case SEDS_DT_ORDERED_MESSAGE:	return "Ordered";
         case SEDS_DT_GENERIC_ERROR:		return "Error";
@@ -102,7 +104,7 @@ static inline constexpr char *seds_msg(SedsDataType ty)
 
 static inline constexpr char *seds_f32(SedsDataType ty)
 {
-    switch (ty) {
+    switch ((int)ty) {
         case SEDS_DT_IMU_LOCAL:			  return "IMU";
         case SEDS_DT_BAROMETER_LOCAL:	return "BARO";
         case SEDS_DT_ACCEL_LOCAL:		  return "ACCL";

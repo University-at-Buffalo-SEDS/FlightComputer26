@@ -131,6 +131,11 @@ int main(void)
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Solid blue means peripheral initialization completed and ThreadX is
+   * starting. The telemetry task clears it once CAN and SEDSNet are ready. */
+  led_off(LED1_PORT, LED1_PIN);
+  led_on(LED2_PORT, LED2_PIN);
+
   co2_low();
   reef_low();
 

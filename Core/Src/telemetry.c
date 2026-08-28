@@ -660,7 +660,20 @@ void telemetry_entry(ULONG _)
   can_bus_init(&hfdcan1);
 
   // Ensure router exists early (so we can send requests immediately)
-  (void)init_telemetry_router();
+  if (init_telemetry_router() != SEDS_OK)
+  {
+    /* Three long blue flashes followed by two short green flashes means that
+     * CAN initialized but the SEDSNet router did not. */
+    while (1)
+    {
+      blink(Blue, true, 3);
+      blink(Green, false, 2);
+    }
+  }
+
+  /* Clear the startup light and acknowledge a connected telemetry stack. */
+  led_off(LED2_PORT, LED2_PIN);
+  blink(Green, false, 2);
 
   MrAnalog (WE_ARE_SO_BACK)
   {
