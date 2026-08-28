@@ -421,8 +421,9 @@ def flash(path: Path, address: str, options: dict):
 
         if options["flash-dfu"]:
                 require_tool("dfu-util")
+                dfuse_address = address if ":" in address else f"{address}:leave"
                 cmd = [ "dfu-util", "-a", "0",
-                        "-s", address, "-D", str(path),
+                        "-s", dfuse_address, "-D", str(path),
                 ]
         elif options["flash-st"]:
                 stm32prog = require_tool(STM32_PROG_CLI)

@@ -7,6 +7,21 @@ import build
 
 
 class OtaBuildScriptTests(unittest.TestCase):
+    def test_dfu_flash_defaults_to_combined_factory_image(self):
+        _preset, options = build.parse(["release", "flash-dfu"])
+        self.assertEqual(options["image"], "factory")
+
+    def test_dfu_flash_leaves_rom_bootloader_after_download(self):
+        image = Path("FlightComputer26.factory.bin")
+        options = {"flash-dfu": True, "flash-st": False, "flash-stlink": False}
+        with mock.patch.object(Path, "exists", return_value=True):
+            with mock.patch.object(build, "require_tool", return_value="dfu-util"):
+                with mock.patch.object(build, "run") as run:
+                    build.flash(image, "0x08000000", options)
+        run.assert_called_once_with([
+            "dfu-util", "-a", "0", "-s", "0x08000000:leave", "-D", str(image)
+        ])
+
     def test_ota_option_is_available(self):
         _preset, options = build.parse(["release", "ota"])
         self.assertEqual(options["image"], "ota")
