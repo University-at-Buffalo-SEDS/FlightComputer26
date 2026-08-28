@@ -422,13 +422,28 @@ def run_dfu(cmd: list[str]):
                 bufsize=0,
         )
         output_chunks = []
+        line_chunks = []
+        deferred_status = ""
         assert proc.stdout is not None
         stream = io.TextIOWrapper(
                 proc.stdout, encoding="utf-8", errors="replace", newline=""
         )
         while text := stream.read(1):
                 output_chunks.append(text)
-                print(text, end="", flush=True)
+                line_chunks.append(text)
+                if text in ("\r", "\n"):
+                        line = "".join(line_chunks)
+                        line_chunks.clear()
+                        if "dfu-util: Error during download get_status" in line:
+                                deferred_status += line
+                        else:
+                                print(line, end="", flush=True)
+        if line_chunks:
+                line = "".join(line_chunks)
+                if "dfu-util: Error during download get_status" in line:
+                        deferred_status += line
+                else:
+                        print(line, end="", flush=True)
         returncode = proc.wait()
         output = "".join(output_chunks)
         reset_disconnect = (
@@ -438,8 +453,9 @@ def run_dfu(cmd: list[str]):
                 and "Error during download get_status" in output
         )
         if reset_disconnect:
-                print("DFU download completed; device reset before final status response.")
                 return
+        if deferred_status:
+                print(deferred_status, end="", flush=True)
         if returncode != 0:
                 sys.exit(f"Command failed (exit {returncode}): dfu-util")
 

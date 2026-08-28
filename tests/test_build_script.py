@@ -29,7 +29,10 @@ class OtaBuildScriptTests(unittest.TestCase):
                         build.flash(image, "0x08000000", options)
         command = popen.call_args.args[0]
         self.assertEqual(command[4], "0x08000000:leave")
-        self.assertTrue(visible_output.getvalue().startswith(dfu_output))
+        self.assertEqual(
+            visible_output.getvalue(),
+            dfu_output.replace("dfu-util: Error during download get_status\n", ""),
+        )
 
     def test_ota_option_is_available(self):
         _preset, options = build.parse(["release", "ota"])
