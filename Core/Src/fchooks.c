@@ -13,6 +13,14 @@ static volatile fu32 lock_fails = 0;
 static volatile fu32 unlock_fails = 0;
 static volatile fu32 alloc_leaks = 0;
 
+volatile fu32 g_telemetry_alloc_count = 0;
+volatile fu32 g_telemetry_free_count = 0;
+volatile fu32 g_telemetry_alloc_fail = 0;
+volatile fu32 g_telemetry_panic_count = 0;
+volatile ULONG g_telemetry_pool_available = 0;
+volatile ULONG g_telemetry_pool_low_water = ~0UL;
+volatile ULONG g_telemetry_pool_fragments = 0;
+
 static volatile conditional bool mem_hint = 0;
 static volatile conditional bool mu_hint = 0;
 
@@ -318,6 +326,22 @@ no_reserve_exit:
 
 #ifdef TELEMETRY_ENABLED
 
+static inline void telemetry_memory_profile_sample(void)
+{
+  ULONG available = 0;
+  ULONG fragments = 0;
+  if (tx_byte_pool_info_get(&telemetry_pool, TX_NULL, &available, &fragments,
+                            TX_NULL, TX_NULL, TX_NULL) == TX_SUCCESS)
+  {
+    g_telemetry_pool_available = available;
+    g_telemetry_pool_fragments = fragments;
+    if (available < g_telemetry_pool_low_water)
+    {
+      g_telemetry_pool_low_water = available;
+    }
+  }
+}
+
 void seds_error_msg(const char *str, size_t len)
 {
   if (str != NULL && len > 0U)
@@ -345,16 +369,29 @@ void telemetry_unlock(void)
 
 void *telemetryMalloc(size_t xSize)
 {
-  return fchook_alloc(&telemetry_pool, xSize, 5);
+  void *ptr = fchook_alloc(&telemetry_pool, xSize, 5);
+  if (ptr == NULL)
+  {
+    ++g_telemetry_alloc_fail;
+  }
+  else
+  {
+    ++g_telemetry_alloc_count;
+  }
+  telemetry_memory_profile_sample();
+  return ptr;
 }
 
 void telemetryFree(void *pv)
 {
   fchook_free(pv);
+  ++g_telemetry_free_count;
+  telemetry_memory_profile_sample();
 }
 
 void telemetry_panic_hook(const char *str, size_t len)
 {
+  ++g_telemetry_panic_count;
   if (panics_for(str, len, "alloc") || alloc_leaks)
   {
     panic_alloc();

@@ -137,6 +137,7 @@ ALL_OPTIONS     = {     "flash-dfu",
 # Repo constants
 PROJECT         = Path(__file__).parent.resolve()
 BUILDDIR        = PROJECT / "build"
+FIRMWARE_NAME   = "FlightComputer26"
 BIN             = "FlightComputer26.bin"
 ELF             = "FlightComputer26.elf"
 FC_ADDR         = "0x08000000"
@@ -365,28 +366,28 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
         ota_layout, ota_secondary_size = detect_ota_layout()
         automatic_base = None
         if image == "ota" and ota_layout == "delta":
-                previous = buildir / f"{PROJECT.name}.launchcore.img"
+                previous = buildir / f"{FIRMWARE_NAME}.launchcore.img"
                 if previous.exists():
-                        automatic_base = buildir / f".{PROJECT.name}.ota-base.launchcore.img"
+                        automatic_base = buildir / f".{FIRMWARE_NAME}.ota-base.launchcore.img"
                         shutil.copy2(previous, automatic_base)
         target = {
                 "factory": "factory-image",
-                "bootloader": f"{PROJECT.name}Bootloader",
-                "firmware": PROJECT.name,
-                "ota": PROJECT.name,
+                "bootloader": f"{FIRMWARE_NAME}Bootloader",
+                "firmware": FIRMWARE_NAME,
+                "ota": FIRMWARE_NAME,
         }[image]
         build(buildir, target)
         if image == "factory":
-                path, address = buildir / f"{PROJECT.name}.factory.bin", FC_ADDR
+                path, address = buildir / f"{FIRMWARE_NAME}.factory.bin", FC_ADDR
         elif image in ("firmware", "ota"):
-                path, address = buildir / f"{PROJECT.name}.launchcore.img", APP_ADDR
+                path, address = buildir / f"{FIRMWARE_NAME}.launchcore.img", APP_ADDR
         else:
-                path = objcopy(buildir, f"{PROJECT.name}Bootloader.elf")
+                path = objcopy(buildir, f"{FIRMWARE_NAME}Bootloader.elf")
                 address = FC_ADDR
         if not path.exists():
                 sys.exit(f"Expected {image} artifact at {path}")
         if image == "ota":
-                ota_path = buildir / f"{PROJECT.name}.seds"
+                ota_path = buildir / f"{FIRMWARE_NAME}.seds"
                 if automatic_base is not None:
                         delta_tool = buildir / "_deps" / "sedslaunchcore-src" / "tools" / "mkdelta.py"
                         erase_size = board_macro_optional("FLASH_ERASE_SIZE")
@@ -532,7 +533,7 @@ def clean(path: Path):
 
 
 def asmgen(buildir: Path):
-        path = buildir / f"{PROJECT.name}.asm"
+        path = buildir / f"{FIRMWARE_NAME}.asm"
 
         elf_path = buildir / ELF
 
