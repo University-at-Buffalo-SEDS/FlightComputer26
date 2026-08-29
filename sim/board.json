@@ -13,6 +13,8 @@
     "sedsnet_pool": 1024
   },
   "artifacts": {
+    "elf": "build/Release/FlightComputer26.elf",
+    "bootloader_elf": "build/Release/FlightComputer26Bootloader.elf",
     "firmware": "build/Release/FlightComputer26.launchcore.img",
     "bootloader": "build/Release/FlightComputer26Bootloader.bin",
     "factory": "build/Release/FlightComputer26.factory.bin",
@@ -46,4 +48,3 @@
     }
   ]
 }
-
