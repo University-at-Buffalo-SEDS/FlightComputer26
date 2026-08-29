@@ -573,6 +573,12 @@ def parse_test_options(argv: list[str]) -> tuple[bool, bool]:
 
 def run_tests(argv: list[str]) -> None:
         all_tests, release = parse_test_options(argv)
+        if all_tests:
+                from sim.run_full import require_docker
+                try:
+                        require_docker()
+                except RuntimeError as exc:
+                        sys.exit(str(exc))
         subprocess.run([
                 sys.executable, "-m", "unittest", "discover", "-s", "tests",
                 "-p", "test_*.py",
