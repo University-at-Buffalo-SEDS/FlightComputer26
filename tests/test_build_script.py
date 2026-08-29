@@ -9,6 +9,21 @@ import build
 
 
 class OtaBuildScriptTests(unittest.TestCase):
+    def test_all_tests_preserve_the_selected_build_mode(self):
+        self.assertEqual(build.parse_test_options(["--all"]), (True, False))
+        self.assertEqual(
+            build.parse_test_options(["--all", "--release"]), (True, True)
+        )
+        self.assertEqual(build.parse_test_options(["--full"]), (True, False))
+
+    def test_simulation_layout_uses_selected_build_directory(self):
+        from sim.run_full import load_layout_for_build
+
+        root = Path(build.__file__).resolve().parent
+        layout = load_layout_for_build(root, "Selected_Test_Build")
+        for artifact in layout["artifacts"].values():
+            self.assertEqual(Path(artifact).parts[1], "Selected_Test_Build")
+
     def test_dfu_flash_defaults_to_combined_factory_image(self):
         _preset, options = build.parse(["release", "flash-dfu"])
         self.assertEqual(options["image"], "factory")

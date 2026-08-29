@@ -561,22 +561,32 @@ class _TestUI:
                 print(f"[{level}] {message}")
 
 
-def run_tests(argv: list[str]) -> None:
-        full = "--full" in argv
-        unknown = [arg for arg in argv if arg != "--full"]
+def parse_test_options(argv: list[str]) -> tuple[bool, bool]:
+        all_tests = "--all" in argv or "--full" in argv
+        release = "--release" in argv
+        known = {"--all", "--full", "--release"}
+        unknown = [arg for arg in argv if arg not in known]
         if unknown:
                 sys.exit(f"Unrecognized test option: {unknown[0]}")
+        return all_tests, release
+
+
+def run_tests(argv: list[str]) -> None:
+        all_tests, release = parse_test_options(argv)
         subprocess.run([
                 sys.executable, "-m", "unittest", "discover", "-s", "tests",
                 "-p", "test_*.py",
         ], cwd=PROJECT, check=True)
-        if not full:
+        if not all_tests:
                 return
+        preset = "release" if release else "debug"
         script = Path(__file__).resolve()
-        subprocess.run([sys.executable, str(script), "release", "factory"], check=True)
-        subprocess.run([sys.executable, str(script), "release", "ota"], check=True)
+        subprocess.run([sys.executable, str(script), preset, "factory"], check=True)
+        subprocess.run([sys.executable, str(script), preset, "ota"], check=True)
         from sim.run_full import run_full_simulation
-        run_full_simulation(_TestUI(), PROJECT, "stm32h5")
+        run_full_simulation(
+                _TestUI(), PROJECT, "stm32h5", "Release" if release else "Debug"
+        )
 
 
 def main() -> None:
