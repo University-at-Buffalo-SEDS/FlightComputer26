@@ -28,7 +28,6 @@ Domain-specific part of this year's Flight Computer relies on the following assu
 * STM32H5 HAL Driver (bundled, 1)
 * ARM CMSIS (bundled, 1)
 * ThreadX (2), FileX, and USBX (bundled, 1)
-* sedsprintf_rs (optional) (submodule, 3)
 * GCC ARM EABI (make)
 * CMake (make)
 * Python (optional, for build script)
@@ -43,7 +42,6 @@ Domain-specific part of this year's Flight Computer relies on the following assu
 
 Use [build.py](/build.py) to build, flash, configure, toggle tests, benchmarks, and debug options, and to generate assembly code for the repository. The script includes a short manual page on its usage, along with the description of available options.
 
-To use [sedsprintf_rs](https://github.com/Rylan-Meilutis/sedsprintf_rs), install [Rust](https://rust-lang.org/), initialize the submodule with `git submodule update --init --recursive`, and follow the instructions in the library's repository. Please note that this library is distributed under the terms of GNU General Public License 2.0.
 
 ## IREC 2026
 
