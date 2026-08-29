@@ -555,8 +555,34 @@ def asmgen(buildir: Path):
         print(f"Written assembly code to {path}")
 
 
+class _TestUI:
+        def say(self, level: str, message: str) -> None:
+                print(f"[{level}] {message}")
+
+
+def run_tests(argv: list[str]) -> None:
+        full = "--full" in argv
+        unknown = [arg for arg in argv if arg != "--full"]
+        if unknown:
+                sys.exit(f"Unrecognized test option: {unknown[0]}")
+        subprocess.run([
+                sys.executable, "-m", "unittest", "discover", "-s", "tests",
+                "-p", "test_*.py",
+        ], cwd=PROJECT, check=True)
+        if not full:
+                return
+        script = Path(__file__).resolve()
+        subprocess.run([sys.executable, str(script), "release", "factory"], check=True)
+        subprocess.run([sys.executable, str(script), "release", "ota"], check=True)
+        from sim.run_full import run_full_simulation
+        run_full_simulation(_TestUI(), PROJECT, "stm32h5")
+
+
 def main() -> None:
         os.chdir(PROJECT)
+        if sys.argv[1:2] == ["test"]:
+                run_tests(sys.argv[2:])
+                return
         preset, options = parse(sys.argv[1:])
         buildir = BUILDDIR / preset
 
