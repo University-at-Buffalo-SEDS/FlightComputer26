@@ -7,6 +7,7 @@
 #include "fctasks.h"
 #include "fcapi.h"
 #include "fcconfig.h"
+#include "panic_match.h"
 
 
 static volatile fu32 lock_fails = 0;
@@ -81,52 +82,6 @@ static conditional noreturn void panic_unknown(void)
 
 
 /* Panic string parser */
-
-static inline conditional bool
-panics_for(const char *s, size_t n, const char *needle)
-{
-  if (!s || n <= 0 || !needle)
-  {
-    return false;
-  }
-
-  size_t needle_len = strlen(needle);
-
-  if (needle_len == 0U || n < needle_len)
-  {
-    return false;
-  }
-
-  for (size_t i = 0; i + needle_len <= n; ++i)
-  {
-      size_t j = 0;
-
-      for (; j < needle_len; ++j)
-      {
-          char a = s[i + j];
-          char b = needle[j];
-
-          if (a >= 'A' && a <= 'Z')
-          {
-            a = (char)(a - 'A' + 'a');
-          }
-          if (b >= 'A' && b <= 'Z')
-          {
-            b = (char)(b - 'A' + 'a');
-          }
-
-          if (a != b) break;
-      }
-
-      if (j == needle_len)
-      {
-        return true;
-      }
-  }
-
-  return false;
-}
-
 
 /* TX mutex wrapper */
 
@@ -346,12 +301,12 @@ void seds_error_msg(const char *str, size_t len)
 {
   if (str != NULL && len > 0U)
   {
-    mem_hint = panics_for(str, len, "alloc")  ||
-               panics_for(str, len, "memory") ||
-               panics_for(str, len, "oom");
+    mem_hint = fc_panic_message_contains(str, len, "alloc")  ||
+               fc_panic_message_contains(str, len, "memory") ||
+               fc_panic_message_contains(str, len, "oom");
 
-    mu_hint = panics_for(str, len, "mutex") ||
-              panics_for(str, len, "lock");
+    mu_hint = fc_panic_message_contains(str, len, "mutex") ||
+              fc_panic_message_contains(str, len, "lock");
 
     printf("%.*s\r\n", (int)len, str);
   }
@@ -392,17 +347,18 @@ void telemetryFree(void *pv)
 void telemetry_panic_hook(const char *str, size_t len)
 {
   ++g_telemetry_panic_count;
-  if (panics_for(str, len, "alloc") || alloc_leaks)
+  if (fc_panic_message_contains(str, len, "alloc") || alloc_leaks)
   {
     panic_alloc();
   }
 
-  if (panics_for(str, len, "memory") || mem_hint)
+  if (fc_panic_message_contains(str, len, "memory") || mem_hint)
   {
     panic_memory();
   }
 
-  if (panics_for(str, len, "mutex") || panics_for(str, len, "lock")
+  if (fc_panic_message_contains(str, len, "mutex") ||
+      fc_panic_message_contains(str, len, "lock")
       || mu_hint || lock_fails + unlock_fails != 0U)
   {
     panic_lock();

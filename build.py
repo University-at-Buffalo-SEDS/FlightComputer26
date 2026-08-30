@@ -561,6 +561,76 @@ class _TestUI:
                 print(f"[{level}] {message}")
 
 
+def run_gtests() -> None:
+        source = PROJECT / "tests" / "gtest"
+        cmake = shutil.which("cmake")
+        if cmake is None:
+                raise RuntimeError(
+                        "CMake is required for GoogleTest but was not found on PATH."
+                )
+        build_dir = BUILDDIR / "host-gtests"
+        generator = "Ninja" if shutil.which("ninja") else "Unix Makefiles"
+        subprocess.run([
+                cmake, "-S", str(source), "-B", str(build_dir), "-G", generator,
+        ], cwd=PROJECT, check=True)
+        subprocess.run([
+                cmake, "--build", str(build_dir), "--parallel",
+        ], cwd=PROJECT, check=True)
+        subprocess.run([
+                "ctest", "--test-dir", str(build_dir), "--output-on-failure",
+                "--no-tests=error",
+        ], cwd=PROJECT, check=True)
+
+
+def print_test_summary(results: list[tuple[str, str]]) -> None:
+        width = max([len("Test stage"), *(len(name) for name, _ in results)])
+        print("\nFirmware test summary")
+        print(f"{'Test stage':<{width}}  Result")
+        print(f"{'-' * width}  ------")
+        for name, result in results:
+                print(f"{name:<{width}}  {result}")
+        passed = sum(result == "PASS" for _, result in results)
+        if passed == len(results):
+                print(f"[OK] All {passed} test stages passed.")
+        else:
+                print(f"[ERR] {passed}/{len(results)} completed test stages passed.")
+
+
+def test_failure_help(stage: str) -> str:
+        if stage == "Docker readiness":
+                return "Start Docker Desktop/the Docker daemon and verify 'docker info' works."
+        if stage == "GoogleTest unit tests":
+                return (
+                        "Install CMake and a C++17 compiler. GoogleTest is found locally "
+                        "or fetched automatically."
+                )
+        if stage == "Python unit tests":
+                return "Read the first assertion above and run the named unittest directly."
+        if "build" in stage.lower():
+                return (
+                        "Confirm the ARM GNU toolchain, CMake, Ninja, Rust, and Cargo "
+                        "are on PATH; clear only the selected build cache if it is stale."
+                )
+        return (
+                "Review the simulator matrix for the failed row, especially memory probes, "
+                "peripheral configuration, and boot/OTA artifacts."
+        )
+
+
+def run_test_stage(results: list[tuple[str, str]], stage: str, action) -> None:
+        try:
+                action()
+        except Exception as exc:
+                results.append((stage, "FAIL"))
+                print_test_summary(results)
+                detail = str(exc).strip() or type(exc).__name__
+                raise RuntimeError(
+                        f"{stage} failed.\n\nPossible solutions:\n"
+                        f"- {test_failure_help(stage)}\n\nDetails: {detail}"
+                ) from None
+        results.append((stage, "PASS"))
+
+
 def parse_test_options(argv: list[str]) -> tuple[bool, bool]:
         all_tests = "--all" in argv or "--full" in argv
         release = "--release" in argv
@@ -573,32 +643,48 @@ def parse_test_options(argv: list[str]) -> tuple[bool, bool]:
 
 def run_tests(argv: list[str]) -> None:
         all_tests, release = parse_test_options(argv)
-        if all_tests:
-                from sim.run_full import require_docker
-                try:
-                        require_docker()
-                except RuntimeError as exc:
-                        sys.exit(str(exc))
-        subprocess.run([
+        results: list[tuple[str, str]] = []
+        run_test_stage(results, "Python unit tests", lambda: subprocess.run([
                 sys.executable, "-m", "unittest", "discover", "-s", "tests",
                 "-p", "test_*.py",
-        ], cwd=PROJECT, check=True)
+        ], cwd=PROJECT, check=True))
+        run_test_stage(results, "GoogleTest unit tests", run_gtests)
         if not all_tests:
+                print_test_summary(results)
                 return
+        from sim.run_full import require_docker, run_full_simulation
+        run_test_stage(results, "Docker readiness", require_docker)
         preset = "release" if release else "debug"
         script = Path(__file__).resolve()
-        subprocess.run([sys.executable, str(script), preset, "factory"], check=True)
-        subprocess.run([sys.executable, str(script), preset, "ota"], check=True)
-        from sim.run_full import run_full_simulation
-        run_full_simulation(
-                _TestUI(), PROJECT, "stm32h5", "Release" if release else "Debug"
+        run_test_stage(
+                results, "Factory firmware build",
+                lambda: subprocess.run(
+                        [sys.executable, str(script), preset, "factory"], check=True
+                ),
         )
+        run_test_stage(
+                results, "OTA package build",
+                lambda: subprocess.run(
+                        [sys.executable, str(script), preset, "ota"], check=True
+                ),
+        )
+        run_test_stage(
+                results, "Firmware simulation",
+                lambda: run_full_simulation(
+                        _TestUI(), PROJECT, "stm32h5",
+                        "Release" if release else "Debug"
+                ),
+        )
+        print_test_summary(results)
 
 
 def main() -> None:
         os.chdir(PROJECT)
         if sys.argv[1:2] == ["test"]:
-                run_tests(sys.argv[2:])
+                try:
+                        run_tests(sys.argv[2:])
+                except RuntimeError as exc:
+                        sys.exit(f"Test run failed.\n\n{exc}")
                 return
         preset, options = parse(sys.argv[1:])
         buildir = BUILDDIR / preset
