@@ -981,7 +981,6 @@ void can_bus_process_rx(void)
       (g_tx_head == g_tx_tail) &&
       !g_txevt_pending)
   {
-#if CAN_BUS_POLLING
     if (!g_hfdcan)
       return;
 
@@ -989,9 +988,6 @@ void can_bus_process_rx(void)
     const uint32_t f1 = HAL_FDCAN_GetRxFifoFillLevel(g_hfdcan, FDCAN_RX_FIFO1);
     if (f0 == 0U && f1 == 0U)
       return;
-#else
-    return;
-#endif
   }
 
   /* Thread-context HW drain (pull FIFO0/FIFO1 into the ring). */

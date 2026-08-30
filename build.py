@@ -611,6 +611,16 @@ def test_failure_help(stage: str) -> str:
                         "Confirm the ARM GNU toolchain, CMake, Ninja, Rust, and Cargo "
                         "are on PATH; clear only the selected build cache if it is stale."
                 )
+        if stage == "Long-duration memory profile":
+                return (
+                        "Inspect the probe table for pool loss, low-water, allocation "
+                        "failures, or stack errors."
+                )
+        if stage == "Network discovery and time sync":
+                return (
+                        "Check the FDCAN link and require both discovery_seen and "
+                        "timesync_valid to raise network_ready."
+                )
         return (
                 "Review the simulator matrix for the failed row, especially memory probes, "
                 "peripheral configuration, and boot/OTA artifacts."
@@ -652,7 +662,12 @@ def run_tests(argv: list[str]) -> None:
         if not all_tests:
                 print_test_summary(results)
                 return
-        from sim.run_full import require_docker, run_full_simulation
+        from sim.run_full import (
+                require_docker,
+                run_full_simulation,
+                run_memory_profile,
+                run_network_simulation,
+        )
         run_test_stage(results, "Docker readiness", require_docker)
         preset = "release" if release else "debug"
         script = Path(__file__).resolve()
@@ -673,6 +688,19 @@ def run_tests(argv: list[str]) -> None:
                 lambda: run_full_simulation(
                         _TestUI(), PROJECT, "stm32h5",
                         "Release" if release else "Debug"
+                ),
+        )
+        build_subdir = "Release" if release else "Debug"
+        run_test_stage(
+                results, "Long-duration memory profile",
+                lambda: run_memory_profile(
+                        _TestUI(), PROJECT, "stm32h5", build_subdir
+                ),
+        )
+        run_test_stage(
+                results, "Network discovery and time sync",
+                lambda: run_network_simulation(
+                        _TestUI(), PROJECT, "stm32h5", build_subdir
                 ),
         )
         print_test_summary(results)
