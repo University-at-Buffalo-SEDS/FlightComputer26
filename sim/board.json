@@ -72,6 +72,13 @@
       "bus": "spi1",
       "failure_every": 997,
       "disconnect_after": 950
+    },
+    {
+      "type": "storage",
+      "name": "sd_card",
+      "model": "sd_card",
+      "bus": "sdmmc1",
+      "capacity_bytes": 4194304
     }
   ]
 }
