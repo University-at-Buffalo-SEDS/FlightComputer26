@@ -1,6 +1,7 @@
 {
   "name": "FlightComputer26",
   "architecture": "stm32h5",
+  "mcu": "stm32h523",
   "memory": {
     "flash_base": 134217728,
     "flash_size": 524288,
@@ -22,6 +23,14 @@
     "bootloader": "build/Release/FlightComputer26Bootloader.bin",
     "factory": "build/Release/FlightComputer26.factory.bin",
     "ota": "build/Release/FlightComputer26.seds"
+  },
+  "board": {
+    "strict_mmio": false,
+    "clocks": [],
+    "connections": [],
+    "pins": [],
+    "dma_routes": [],
+    "security": {"trustzone": false, "secure_regions": []}
   },
   "execution": {
     "virtual_time_ms": 250,
@@ -53,13 +62,15 @@
       "name": "flight_imu",
       "model": "bmi088",
       "bus": "spi1",
-      "failure_every": 997
+      "failure_every": 997,
+      "disconnect_after": 950
     },
     {
       "type": "barometer",
       "name": "flight_barometer",
       "model": "bmp390",
       "bus": "spi1",
+      "failure_every": 997,
       "disconnect_after": 950
     }
   ]
