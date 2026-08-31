@@ -60,6 +60,9 @@ RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
 volatile uint32_t g_telemetry_network_ready = 0U;
+volatile uint32_t g_telemetry_queue_errors = 0U;
+volatile uint32_t g_telemetry_discovery_poll_errors = 0U;
+volatile uint32_t g_telemetry_timesync_poll_errors = 0U;
 static int32_t g_telemetry_discovery_baseline_len = -1;
 
 static const SedsLocalEndpointDesc locals[] = {
@@ -692,23 +695,35 @@ void telemetry_entry(ULONG _)
     }
   }
 
-  /* Clear the startup light and acknowledge a connected telemetry stack. */
+  /* Prime discovery only after CAN and the router are both ready. The normal
+   * poll remains rate-limited, but boot must not depend on the first RTOS tick
+   * arriving before this node becomes visible to an existing time source. */
+  if (telemetry_announce_discovery() != SEDS_OK ||
+      process_all_queues_timeout(50) != SEDS_OK)
+  {
+    g_telemetry_queue_errors++;
+  }
+
+  /* Do not block telemetry startup to animate an LED. Discovery and time sync
+   * must begin immediately so frames arriving during boot are serviced. */
   led_off(LED2_PORT, LED2_PIN);
-  blink(Green, false, 2);
+  led_on(light[Green].port, light[Green].pin);
 
   MrAnalog (WE_ARE_SO_BACK)
   {
     can_bus_process_rx();
-    (void)telemetry_poll_discovery();
+    if (telemetry_poll_discovery() != SEDS_OK)
+      g_telemetry_discovery_poll_errors++;
     SedsResult k = process_all_queues_timeout(50);
 
     if (k != SEDS_OK)
     {
-      blink(Blue, false, -k);
-      blink(Green, true, 1);
+      g_telemetry_queue_errors++;
+      led_toggle(light[Blue].port, light[Blue].pin);
     }
 
-    (void)telemetry_poll_timesync();
+    if (telemetry_poll_timesync() != SEDS_OK)
+      g_telemetry_timesync_poll_errors++;
 
     tx_thread_relinquish();
   }

@@ -43,9 +43,18 @@
       {"name": "pool_low_water", "symbol": "g_telemetry_pool_low_water", "minimum": 2048},
       {"name": "alloc_failures", "symbol": "g_telemetry_alloc_fail", "maximum": 0},
       {"name": "panics", "symbol": "g_telemetry_panic_count", "maximum": 0},
+      {"name": "startup_fault_stage", "symbol": "g_startup_fault_stage", "maximum": 0},
       {"name": "alloc_fallback_failures", "symbol": "alloc_leaks", "maximum": 0},
       {"name": "lock_get_failures", "symbol": "lock_fails", "maximum": 0},
       {"name": "lock_put_failures", "symbol": "unlock_fails", "maximum": 0},
+      {"name": "fdcan_irqs", "symbol": "g_fdcan_irq_count"},
+      {"name": "fdcan_tx_ok", "symbol": "g_fdcan_tx_ok_count"},
+      {"name": "fdcan_tx_fail", "symbol": "g_fdcan_tx_fail_count", "maximum": 0},
+      {"name": "fdcan_last_error", "symbol": "g_fdcan_last_error"},
+      {"name": "fdcan_last_state", "symbol": "g_fdcan_last_state"},
+      {"name": "queue_errors", "symbol": "g_telemetry_queue_errors"},
+      {"name": "discovery_poll_errors", "symbol": "g_telemetry_discovery_poll_errors"},
+      {"name": "timesync_poll_errors", "symbol": "g_telemetry_timesync_poll_errors"},
       {"name": "allocations", "symbol": "g_telemetry_alloc_count"},
       {"name": "frees", "symbol": "g_telemetry_free_count"}
     ]

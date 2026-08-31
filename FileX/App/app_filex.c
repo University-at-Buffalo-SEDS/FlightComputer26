@@ -136,20 +136,23 @@ UINT MX_FileX_Init(VOID *memory_ptr)
 
 /* USER CODE END fx_app_thread_entry 0*/
 
-/* Open the SD disk driver */
-  sd_status =  fx_media_open(&sdio_disk, FX_SD_VOLUME_NAME, fx_stm32_sd_driver, (VOID *)FX_NULL, (VOID *) fx_sd_media_memory, sizeof(fx_sd_media_memory));
-
-/* Check the media open sd_status */
-  if (sd_status != FX_SUCCESS)
+/* Open the SD disk driver. A missing or slow card must not monopolize this
+ * priority level: telemetry uses the same priority and needs an opportunity
+ * to service CAN while storage is unavailable. */
+  do
   {
-     /* USER CODE BEGIN SD DRIVER get info error */
-    while (1)
+    sd_status = fx_media_open(&sdio_disk, FX_SD_VOLUME_NAME,
+                              fx_stm32_sd_driver, (VOID *)FX_NULL,
+                              (VOID *)fx_sd_media_memory,
+                              sizeof(fx_sd_media_memory));
+    if (sd_status != FX_SUCCESS)
     {
-      blink(Blue, true, 1);
-      blink(Blue, false, 1);
+      led_toggle(light[Blue].port, light[Blue].pin);
+      tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
     }
-    /* USER CODE END SD DRIVER get info error */
-  }
+  } while (sd_status != FX_SUCCESS);
+
+  led_off(light[Blue].port, light[Blue].pin);
 
 /* USER CODE BEGIN fx_app_thread_entry 1*/
 

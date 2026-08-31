@@ -55,8 +55,11 @@
 
 /* A task-creation failure happens before normal logging is available. Encode
  * the failed stage as N short blue flashes followed by one long green flash. */
+volatile UINT g_startup_fault_stage __attribute__((used, externally_visible)) = 0U;
+
 static void startup_fault(UINT stage)
 {
+  g_startup_fault_stage = stage;
   __disable_irq();
   while (1)
   {
