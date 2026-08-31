@@ -48,6 +48,7 @@
       {"name": "lock_get_failures", "symbol": "lock_fails", "maximum": 0},
       {"name": "lock_put_failures", "symbol": "unlock_fails", "maximum": 0},
       {"name": "fdcan_irqs", "symbol": "g_fdcan_irq_count"},
+      {"name": "fdcan_rx", "symbol": "g_fdcan_rx_count"},
       {"name": "fdcan_tx_ok", "symbol": "g_fdcan_tx_ok_count"},
       {"name": "fdcan_tx_fail", "symbol": "g_fdcan_tx_fail_count", "maximum": 0},
       {"name": "fdcan_last_error", "symbol": "g_fdcan_last_error"},

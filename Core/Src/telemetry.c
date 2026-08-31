@@ -230,7 +230,14 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
     return SEDS_BAD_ARG;
   }
 
-  return (can_bus_send_large(bytes, len, 0x03) == HAL_OK) ? SEDS_OK : SEDS_IO;
+  if (can_bus_send_large(bytes, len, 0x03) != HAL_OK) {
+    return SEDS_IO;
+  }
+
+  /* A non-blocking activity indication makes successful CAN transmission
+   * visible on hardware without delaying the telemetry thread. */
+  led_toggle(LED2_PORT, LED2_PIN);
+  return SEDS_OK;
 }
 
 static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
