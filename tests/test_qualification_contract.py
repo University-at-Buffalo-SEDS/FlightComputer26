@@ -15,7 +15,9 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn('"--sample-count", "20"', runner)
         self.assertIn('"--traffic-iterations", "1000000"', runner)
         self.assertIn('"bay"', runner)
-        self.assertIn('"activity_probe": "network_ready"', runner)
+        self.assertIn('"tx_probe": "fdcan_tx_ok"', runner)
+        self.assertIn('"rx_probe": "fdcan_rx"', runner)
+        self.assertIn('"ground_radio_pico_path"', runner)
         self.assertIn('simulation_env["SEDS_FIRMWARE_SIM_TEST"] = "1"', runner)
         self.assertIn('run_live(command, "firmware simulation")', runner)
         self.assertIn('running ({int(now - started)}s elapsed)', runner)
@@ -58,7 +60,7 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn('seds_router_add_side_packed(r, "can", 3U, tx_send, NULL, false)', telemetry)
-        self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "12288"', cmake)
+        self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)
 
     def test_sd_failure_yields_instead_of_starving_telemetry(self):
         root = Path(build.__file__).resolve().parent

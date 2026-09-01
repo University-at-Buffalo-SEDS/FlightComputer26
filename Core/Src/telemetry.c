@@ -1,6 +1,7 @@
 /* Core/Src/telemetry.c */
 
 #include "platform.h"
+#include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
 #include "fctasks.h"
@@ -60,6 +61,11 @@ RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
 volatile uint32_t g_telemetry_network_ready = 0U;
+volatile uint32_t g_telemetry_peer_mask = 0U;
+volatile uint32_t g_sim_heartbeat_attempts = 0U;
+volatile uint32_t g_sim_heartbeat_ok = 0U;
+volatile uint32_t g_sim_heartbeat_fail = 0U;
+volatile uint32_t g_sim_heartbeat_wire_tx = 0U;
 volatile uint32_t g_telemetry_queue_errors = 0U;
 volatile uint32_t g_telemetry_discovery_poll_errors = 0U;
 volatile uint32_t g_telemetry_timesync_poll_errors = 0U;
@@ -229,8 +235,13 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   if (!bytes || len == 0U) {
     return SEDS_BAD_ARG;
   }
+  sim_probe_observe_can_tx(bytes, len);
 
-  if (can_bus_send_large(bytes, len, 0x03) != HAL_OK) {
+  const uint32_t can_id =
+      sim_probe_packed_data_type(bytes, len) == (uint32_t)SEDS_DT_HEARTBEAT
+          ? 0x003U
+          : 0x103U;
+  if (can_bus_send_large(bytes, len, can_id) != HAL_OK) {
     return SEDS_IO;
   }
 
@@ -242,6 +253,7 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
 
 static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
   (void)user;
+  sim_probe_observe_packed(data, len);
   rx_asynchronous(data, len);
 }
 
@@ -337,7 +349,11 @@ SedsResult telemetry_poll_discovery(void) {
     return SEDS_ERR;
   }
 
-  const SedsResult result = seds_router_poll_discovery(g_router.r, NULL);
+  bool did_queue = false;
+  const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
+  if (result == SEDS_OK) {
+    sim_probe_emit_heartbeat(g_router.r, telemetry_now_ms());
+  }
   telemetry_update_network_health(g_router.r);
   return result;
 #endif

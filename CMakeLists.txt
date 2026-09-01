@@ -29,6 +29,10 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
+option(SEDS_FIRMWARE_SIM_TEST "Enable simulator-only network observability" OFF)
+if(SEDS_FIRMWARE_SIM_TEST)
+    add_compile_definitions(SEDS_FIRMWARE_SIM_TEST=1)
+endif()
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
@@ -109,9 +113,10 @@ if (ENABLE_TELEMETRY)
 
     set(SEDSNET_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
     set(SEDSNET_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
-    set(SEDSNET_MAX_QUEUE_BUDGET "12288" CACHE STRING "" FORCE)
+    set(SEDSNET_MAX_QUEUE_BUDGET "8192" CACHE STRING
+        "Bound transient network storage during multi-board discovery" FORCE)
     set(SEDSNET_MAX_RECENT_RX_IDS "16" CACHE STRING "" FORCE)
-    set(SEDSNET_ENV_STARTING_QUEUE_SIZE "1024" CACHE STRING "" FORCE)
+    set(SEDSNET_ENV_STARTING_QUEUE_SIZE "512" CACHE STRING "" FORCE)
     set(SEDSNET_ENV_QUEUE_GROW_STEP "1.25" CACHE STRING "" FORCE)
     set(SEDSNET_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
     set(SEDSNET_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
