@@ -17,7 +17,7 @@ endforeach()
 FetchContent_Declare(
     sedslaunchcore
     GIT_REPOSITORY https://github.com/University-at-Buffalo-SEDS/SEDSLaunchCore.git
-    GIT_TAG ca4fc6e7722683e11f3a377a0d1bc82c2de6ee14
+    GIT_TAG 59255a784c31cc53be2c1ee276d0d94224ed13f0
     GIT_SHALLOW FALSE
 )
 FetchContent_GetProperties(sedslaunchcore)
@@ -25,6 +25,20 @@ if(NOT sedslaunchcore_POPULATED)
     FetchContent_Populate(sedslaunchcore)
 endif()
 include("${sedslaunchcore_SOURCE_DIR}/cmake/launchcore_stm32.cmake")
+
+# Application-side persistent settings use LaunchCore's board storage layout.
+# Keep these sources in the application as well as the bootloader so the
+# reserved persistent partition survives factory images and OTA installs.
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    "${sedslaunchcore_SOURCE_DIR}/bootloader/src/crc32.c"
+    "${sedslaunchcore_SOURCE_DIR}/bootloader/src/persist.c"
+    "${CMAKE_SOURCE_DIR}/Bootloader/storage_dispatch.c"
+    "${CMAKE_SOURCE_DIR}/Bootloader/storage_internal_flash.c"
+)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    "${CMAKE_SOURCE_DIR}/Bootloader"
+    "${sedslaunchcore_SOURCE_DIR}/bootloader/include"
+)
 
 set(_launchcore_bsp_config "${CMAKE_SOURCE_DIR}/Bootloader/board_config.h")
 _launchcore_read_layout_define(
