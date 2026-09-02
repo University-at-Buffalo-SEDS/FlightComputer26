@@ -112,7 +112,10 @@ if (ENABLE_TELEMETRY)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TELEMETRY_ENABLED)
 
     set(SEDSNET_DEVICE_IDENTIFIER "FC" CACHE STRING "" FORCE)
-    set(SEDSNET_MAX_STACK_PAYLOAD "8" CACHE STRING "" FORCE)
+    # Match the CAN-connected avionics peers. Eight bytes forced SEDSNet v4
+    # discovery/control packets into bursts that could fill the H5's fixed
+    # three-entry FDCAN TX FIFO before any peer made progress.
+    set(SEDSNET_MAX_STACK_PAYLOAD "128" CACHE STRING "" FORCE)
     set(SEDSNET_MAX_QUEUE_BUDGET "8192" CACHE STRING
         "Bound transient network storage during multi-board discovery" FORCE)
     set(SEDSNET_MAX_RECENT_RX_IDS "16" CACHE STRING "" FORCE)
@@ -123,6 +126,7 @@ if (ENABLE_TELEMETRY)
 
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/av_bay_underglow.c
     )
 
     include(cmake/sedsnet_fetch.cmake)

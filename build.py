@@ -663,6 +663,9 @@ def run_tests(argv: list[str]) -> None:
         if not all_tests:
                 print_test_summary(results)
                 return
+        # Qualification needs observability probes that are intentionally
+        # excluded from production/flash builds.
+        os.environ["SEDS_FIRMWARE_SIM_TEST"] = "1"
         from sim.run_full import (
                 require_docker,
                 run_full_simulation,

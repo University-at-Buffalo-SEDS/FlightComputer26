@@ -655,6 +655,11 @@ static void fc_timer_routine(ULONG _)
 
 void recovery_entry(ULONG st)
 {
+  /* The recovery task has the highest priority. Give the telemetry worker one
+   * scheduler tick to initialize SEDSNet before recovery emits its boot-state
+   * network log; otherwise recovery can initialize the router recursively and
+   * prevent every lower-priority task from starting. */
+  tx_thread_sleep(1U);
   try_allocate_reserve_pool();
 
   for (timer k = 0; k < Time_Users; ++k)

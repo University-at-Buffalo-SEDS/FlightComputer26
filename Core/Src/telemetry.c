@@ -1,6 +1,7 @@
 /* Core/Src/telemetry.c */
 
 #include "platform.h"
+#include "av_bay_underglow.h"
 #include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
@@ -42,6 +43,10 @@ static void print_data_no_telem(void *data, size_t len) {
 #define TELEMETRY_TIMESYNC_REQUEST_INTERVAL_MS 2000U
 #endif
 
+#ifndef TELEMETRY_QUEUE_SERVICE_BUDGET_MS
+#define TELEMETRY_QUEUE_SERVICE_BUDGET_MS 1U
+#endif
+
 #ifndef TX_TIMER_TICKS_PER_SECOND
 #error "TX_TIMER_TICKS_PER_SECOND must be defined by ThreadX."
 #endif
@@ -61,6 +66,7 @@ RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
 volatile uint32_t g_telemetry_network_ready = 0U;
+volatile uint32_t g_telemetry_thread_entered __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_peer_mask = 0U;
 volatile uint32_t g_sim_heartbeat_attempts = 0U;
 volatile uint32_t g_sim_heartbeat_ok = 0U;
@@ -69,6 +75,14 @@ volatile uint32_t g_sim_heartbeat_wire_tx = 0U;
 volatile uint32_t g_telemetry_queue_errors = 0U;
 volatile uint32_t g_telemetry_discovery_poll_errors = 0U;
 volatile uint32_t g_telemetry_timesync_poll_errors = 0U;
+/* Last completed telemetry service stage. This remains available in release
+ * ELFs so simulator/HIL failures identify the exact boot or loop boundary. */
+volatile uint32_t g_telemetry_service_stage
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_rx_stage
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_loop_completions
+    __attribute__((used, externally_visible)) = 0U;
 
 static const SedsLocalEndpointDesc locals[] = {
   { .endpoint = SEDS_EP_FLIGHT_CONTROLLER, .packet_handler = on_fc_packet, .user = NULL },
@@ -245,19 +259,20 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
     return SEDS_IO;
   }
 
-  /* A non-blocking activity indication makes successful CAN transmission
-   * visible on hardware without delaying the telemetry thread. */
-  led_toggle(LED2_PORT, LED2_PIN);
   return SEDS_OK;
 }
 
 static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
   (void)user;
+  g_telemetry_rx_stage = 1U;
   sim_probe_observe_packed(data, len);
+  g_telemetry_rx_stage = 2U;
   rx_asynchronous(data, len);
+  g_telemetry_rx_stage = 20U;
 }
 
 void rx_asynchronous(const uint8_t *bytes, size_t len) {
+  g_telemetry_rx_stage = 10U;
 #ifndef TELEMETRY_ENABLED
   (void)bytes;
   (void)len;
@@ -270,14 +285,18 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   if (!g_router.r && init_telemetry_router() != SEDS_OK) {
     return;
   }
+  g_telemetry_rx_stage = 11U;
 
   if (g_can_side_id >= 0) {
+    g_telemetry_rx_stage = 12U;
     (void)seds_router_receive_packed_from_side(
         g_router.r, (uint32_t)g_can_side_id, bytes, len);
   } else {
     (void)seds_router_receive_packed(g_router.r, bytes, len);
   }
+  g_telemetry_rx_stage = 13U;
   g_telemetry_discovery_seen = 1U;
+  g_telemetry_rx_stage = 14U;
 #endif
 }
 
@@ -350,9 +369,16 @@ SedsResult telemetry_poll_discovery(void) {
   }
 
   bool did_queue = false;
+  g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
+  g_telemetry_service_stage = 612U;
   if (result == SEDS_OK) {
-    sim_probe_emit_heartbeat(g_router.r, telemetry_now_ms());
+    /* Flight's real discovery and telemetry packets already identify it on
+     * avionics CAN. Do not inject an extra simulation-only heartbeat into a
+     * saturated TX queue; qualification traffic must not perturb scheduling. */
+    g_telemetry_service_stage = 613U;
+    (void)av_bay_underglow_poll(g_router.r);
+    g_telemetry_service_stage = 614U;
   }
   telemetry_update_network_health(g_router.r);
   return result;
@@ -401,6 +427,12 @@ SedsResult init_telemetry_router(void) {
     g_router.r = NULL;
     g_router.created = 0U;
     g_can_side_id = -1;
+    return result;
+  }
+
+  result = av_bay_underglow_init(r);
+  if (result != SEDS_OK) {
+    seds_router_free(r);
     return result;
   }
 
@@ -690,6 +722,8 @@ static cm_align CHAR static_pool[TELEMETRY_HEAP];
 
 void telemetry_entry(ULONG _)
 {
+  g_telemetry_thread_entered++;
+  g_telemetry_service_stage = 1U;
 #ifdef FAKESTATION
 
   tx_thread_sleep(TLMT_TIME_SLICE * 10);
@@ -698,6 +732,7 @@ void telemetry_entry(ULONG _)
 #else
 
   can_bus_init(&hfdcan1);
+  g_telemetry_service_stage = 2U;
 
   // Ensure router exists early (so we can send requests immediately)
   if (init_telemetry_router() != SEDS_OK)
@@ -710,15 +745,21 @@ void telemetry_entry(ULONG _)
       blink(Green, false, 2);
     }
   }
+  g_telemetry_service_stage = 3U;
 
   /* Prime discovery only after CAN and the router are both ready. The normal
    * poll remains rate-limited, but boot must not depend on the first RTOS tick
    * arriving before this node becomes visible to an existing time source. */
-  if (telemetry_announce_discovery() != SEDS_OK ||
-      process_all_queues_timeout(50) != SEDS_OK)
+  if (telemetry_announce_discovery() != SEDS_OK)
   {
     g_telemetry_queue_errors++;
   }
+  g_telemetry_service_stage = 4U;
+  if (dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS) != SEDS_OK)
+  {
+    g_telemetry_queue_errors++;
+  }
+  g_telemetry_service_stage = 5U;
 
   /* Do not block telemetry startup to animate an LED. Discovery and time sync
    * must begin immediately so frames arriving during boot are serviced. */
@@ -726,11 +767,16 @@ void telemetry_entry(ULONG _)
   led_on(light[Green].port, light[Green].pin);
 
   MrAnalog (WE_ARE_SO_BACK)
-  {
+    {
+    g_telemetry_service_stage = 6U;
     can_bus_process_rx();
+    g_telemetry_service_stage = 61U;
     if (telemetry_poll_discovery() != SEDS_OK)
       g_telemetry_discovery_poll_errors++;
-    SedsResult k = process_all_queues_timeout(50);
+    g_telemetry_service_stage = 62U;
+    SedsResult k =
+        dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS);
+    g_telemetry_service_stage = 63U;
 
     if (k != SEDS_OK)
     {
@@ -740,6 +786,9 @@ void telemetry_entry(ULONG _)
 
     if (telemetry_poll_timesync() != SEDS_OK)
       g_telemetry_timesync_poll_errors++;
+
+    g_telemetry_service_stage = 64U;
+    g_telemetry_loop_completions++;
 
     tx_thread_relinquish();
   }
@@ -768,6 +817,16 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
     return TX_POOL_ERROR;
   }
 
+  /* The telemetry thread enters SEDSNet immediately and its allocator hooks
+   * take this mutex. Create it before making the thread runnable; creating an
+   * auto-start thread first allowed a boot-time lock/unlock on an uncreated
+   * ThreadX object. */
+  st = tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
+  if (st != TX_SUCCESS)
+  {
+    return st;
+  }
+
   st = tx_thread_create(&telemetry_task,
                         "Telemetry Task",
                         telemetry_entry,
@@ -779,13 +838,6 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
                         TLMT_PRIORITY,
                         TLMT_TIME_SLICE,
                         TX_AUTO_START);
-
-  if (st != TX_SUCCESS)
-  {
-    return st;
-  }
-
-  st = tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
 
   if (st != TX_SUCCESS)
   {

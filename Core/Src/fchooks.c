@@ -97,6 +97,14 @@ static inline conditional void fchook_lock(TX_MUTEX *mu)
 
 #else
 
+  /* SEDSNet can construct/drop a short-lived guard while ThreadX is still in
+   * initialization context. There is no concurrent thread at that point and
+   * ThreadX mutex ownership is undefined, so the hook must be a no-op. */
+  if (tx_thread_identify() == TX_NULL)
+  {
+    return;
+  }
+
   if (tx_mutex_get(mu, TX_WAIT_FOREVER) != TX_SUCCESS)
   {
     ++lock_fails;
@@ -116,6 +124,11 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
   else ++unlock_fails;
 
 #else
+
+  if (tx_thread_identify() == TX_NULL)
+  {
+    return;
+  }
 
   if (tx_mutex_put(mu) != TX_SUCCESS)
   {

@@ -17,7 +17,13 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn('"bay"', runner)
         self.assertIn('"tx_probe": "fdcan_tx_ok"', runner)
         self.assertIn('"rx_probe": "fdcan_rx"', runner)
-        self.assertIn('"ground_radio_pico_path"', runner)
+        self.assertIn('"host_nodes"', runner)
+        self.assertIn('"groundstation"', runner)
+        self.assertIn('"rocket_radio"', runner)
+        self.assertIn('"fill_pico"', runner)
+        self.assertIn('"GS_SIM_VALIDATE_VALVE_ROUNDTRIP": "1"', runner)
+        self.assertIn('"probe": "valve_commands_received", "minimum": 1', runner)
+        self.assertIn("forwarded status ACK to GroundStation", runner)
         self.assertIn('simulation_env["SEDS_FIRMWARE_SIM_TEST"] = "1"', runner)
         self.assertIn('run_live(command, "firmware simulation")', runner)
         self.assertIn('running ({int(now - started)}s elapsed)', runner)
@@ -48,12 +54,20 @@ class QualificationContractTests(unittest.TestCase):
         can_bus = (root / "Core" / "Src" / "can_bus.c").read_text(encoding="utf-8")
         self.assertIn("g_fdcan_rx_count++", can_bus)
 
-    def test_successful_can_transmit_has_nonblocking_led_indicator(self):
+    def test_can_transmit_does_not_override_network_controlled_underglow(self):
         root = Path(build.__file__).resolve().parent
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         tx_send = telemetry[telemetry.index("SedsResult tx_send"):telemetry.index("static void telemetry_can_rx")]
-        self.assertIn("led_toggle(LED2_PORT, LED2_PIN)", tx_send)
+        self.assertNotIn("LED2_PORT", tx_send)
         self.assertNotIn("blink(", tx_send)
+        underglow = (root / "Core" / "Src" / "av_bay_underglow.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("seds_router_enable_network_variable", underglow)
+        self.assertIn("seds_router_on_network_variable_update", underglow)
+        self.assertIn("seds_router_get_network_variable_packed_len", underglow)
+        self.assertNotIn("seds_router_request_managed_variable", underglow)
+        self.assertIn("HAL_GPIO_WritePin(LED2_PORT, LED2_PIN", underglow)
 
     def test_shared_can_avoids_hop_retry_storms(self):
         root = Path(build.__file__).resolve().parent
@@ -61,6 +75,12 @@ class QualificationContractTests(unittest.TestCase):
         cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn('seds_router_add_side_packed(r, "can", 3U, tx_send, NULL, false)', telemetry)
         self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)
+
+    def test_sedsnet_can_payload_budget_matches_avionics_peers(self):
+        root = Path(build.__file__).resolve().parent
+        cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn('set(SEDSNET_MAX_STACK_PAYLOAD "128"', cmake)
+        self.assertNotIn('set(SEDSNET_MAX_STACK_PAYLOAD "8"', cmake)
 
     def test_sd_failure_yields_instead_of_starving_telemetry(self):
         root = Path(build.__file__).resolve().parent
@@ -76,7 +96,25 @@ class QualificationContractTests(unittest.TestCase):
         announce = telemetry.index("telemetry_announce_discovery()", router_init)
         self.assertLess(can_init, router_init)
         self.assertLess(router_init, announce)
-        self.assertIn("process_all_queues_timeout(50)", telemetry[announce:])
+        self.assertIn(
+            "dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
+            telemetry[announce:],
+        )
+
+    def test_can_callback_dispatches_rx_and_tx_service_is_bounded(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        callback = telemetry[telemetry.index("void rx_asynchronous") :]
+        callback = callback[: callback.index("static UNUSED_FUNCTION")]
+        self.assertIn("seds_router_receive_packed_from_side", callback)
+        self.assertNotIn("seds_router_rx_packed_packet_to_queue_from_side", callback)
+        self.assertIn("#define TELEMETRY_QUEUE_SERVICE_BUDGET_MS 1U", telemetry)
+        self.assertIn(
+            "dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
+            telemetry,
+        )
 
 
     def test_periodic_health_check_does_not_serialize_topology(self):
