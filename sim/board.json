@@ -46,6 +46,7 @@
       {"name": "can_rx_service_completions", "symbol": "g_can_rx_service_completions", "minimum": 1},
       {"name": "telemetry_service_stage", "symbol": "g_telemetry_service_stage"},
       {"name": "telemetry_loop_completions", "symbol": "g_telemetry_loop_completions", "minimum": 1},
+      {"name": "telemetry_stack_remaining", "symbol": "g_telemetry_stack_free_min", "minimum": 8192},
       {"name": "peer_mask", "symbol": "g_telemetry_peer_mask"},
       {"name": "discovery_seen", "symbol": "g_telemetry_discovery_seen"},
       {"name": "timesync_valid", "symbol": "g_telemetry_timesync_valid"},

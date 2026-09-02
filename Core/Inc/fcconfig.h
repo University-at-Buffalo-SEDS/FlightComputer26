@@ -24,7 +24,7 @@
 /* Logging */
 
 #define MSP_STACK_MARGIN	32768
-#define TELEMETRY_HEAP 		65536
+#define TELEMETRY_HEAP 		(48U * 1024U)
 
 #define LOG_RATE_SD	 	    50
 #define LOG_RATE_GND 	    7500

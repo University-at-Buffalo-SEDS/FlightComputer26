@@ -84,6 +84,29 @@ volatile uint32_t g_telemetry_rx_stage
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_loop_completions
     __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_stack_size
+    __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
+volatile uint32_t g_telemetry_stack_free_min
+    __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
+
+static void telemetry_sample_stack_margin(void) {
+  const uint32_t *cursor =
+      (const uint32_t *)telemetry_task.tx_thread_stack_start;
+  const uint32_t *const end =
+      (const uint32_t *)telemetry_task.tx_thread_stack_end;
+
+  if (cursor == NULL || end == NULL || cursor >= end) {
+    return;
+  }
+  while (cursor < end && *cursor == 0xEFEFEFEFUL) {
+    ++cursor;
+  }
+  const uint32_t free_bytes = (uint32_t)((uintptr_t)cursor -
+                                         (uintptr_t)telemetry_task.tx_thread_stack_start);
+  if (free_bytes < g_telemetry_stack_free_min) {
+    g_telemetry_stack_free_min = free_bytes;
+  }
+}
 
 static const SedsLocalEndpointDesc locals[] = {
   { .endpoint = SEDS_EP_FLIGHT_CONTROLLER, .packet_handler = on_fc_packet, .user = NULL },
@@ -373,7 +396,7 @@ SedsResult telemetry_poll_discovery(void) {
   g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
   g_telemetry_service_stage = 612U;
-  if (result == SEDS_OK) {
+  if (result == SEDS_OK && g_telemetry_discovery_seen != 0U) {
     /* Flight's real discovery and telemetry packets already identify it on
      * avionics CAN. Do not inject an extra simulation-only heartbeat into a
      * saturated TX queue; qualification traffic must not perturb scheduling. */
@@ -796,6 +819,7 @@ void telemetry_entry(ULONG _)
       g_telemetry_timesync_poll_errors++;
 
     g_telemetry_service_stage = 64U;
+    telemetry_sample_stack_margin();
     g_telemetry_loop_completions++;
 
     tx_thread_relinquish();

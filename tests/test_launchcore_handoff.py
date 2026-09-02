@@ -30,6 +30,7 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("launchcore_storage_set_driver", source)
         self.assertIn("launchcore_persist_get", source)
         self.assertIn("launchcore_persist_set", source)
+        self.assertIn("NETWORK_VARIABLE_REFRESH_INTERVAL_MS", source)
         self.assertIn(".persistent_data_write_size=16u", storage)
         self.assertIn('bootloader/src/persist.c"', cmake)
 
@@ -40,10 +41,27 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("SEDS_DT_FLIGHT_BUZZER", source)
         self.assertIn("launchcore_persist_get", source)
         self.assertIn("launchcore_persist_set", source)
+        self.assertIn("NETWORK_VARIABLE_REFRESH_INTERVAL_MS", source)
         self.assertIn("HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin", source)
         self.assertIn("flight_buzzer_init(r)", telemetry)
         self.assertIn("flight_buzzer_poll(g_router.r)", telemetry)
         self.assertIn("Core/Src/flight_buzzer.c", cmake)
+
+    def test_sedsnet_refresh_waits_for_a_peer_and_profiles_stack_margin(self):
+        tasks = (ROOT / "Core/Inc/fctasks.h").read_text()
+        config = (ROOT / "Core/Inc/fcconfig.h").read_text()
+        rtos = (ROOT / "AZURE_RTOS/App/app_azure_rtos_config.h").read_text()
+        telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
+        layout = (ROOT / "sim/board.json").read_text()
+        self.assertIn("TLMT_STACK_BYTES (48U * 1024U)", tasks)
+        self.assertIn("TELEMETRY_HEAP", config)
+        self.assertIn("48U * 1024U", config)
+        self.assertIn("69632U + (16U * 1024U)", rtos)
+        self.assertIn("g_telemetry_discovery_seen != 0U", telemetry)
+        self.assertIn("g_telemetry_stack_free_min", telemetry)
+        self.assertIn("telemetry_sample_stack_margin();", telemetry)
+        self.assertIn('"symbol": "g_telemetry_stack_free_min"', layout)
+        self.assertIn('"minimum": 8192', layout)
 
 
 if __name__ == "__main__":
