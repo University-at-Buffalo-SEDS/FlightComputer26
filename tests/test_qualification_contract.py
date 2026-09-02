@@ -6,6 +6,15 @@ import build
 
 
 class QualificationContractTests(unittest.TestCase):
+    def test_telemetry_loop_services_received_and_transmit_work_together(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        loop = telemetry.split("MrAnalog (WE_ARE_SO_BACK)", 1)[1]
+        self.assertIn("process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)", loop)
+        self.assertNotIn("dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)", loop)
+
     def test_full_runner_profiles_memory_and_linked_network(self):
         root = Path(build.__file__).resolve().parent
         runner = (root / "sim" / "run_full.py").read_text(encoding="utf-8")
@@ -97,7 +106,7 @@ class QualificationContractTests(unittest.TestCase):
         self.assertLess(can_init, router_init)
         self.assertLess(router_init, announce)
         self.assertIn(
-            "dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
+            "process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
             telemetry[announce:],
         )
 
@@ -112,7 +121,7 @@ class QualificationContractTests(unittest.TestCase):
         self.assertNotIn("seds_router_rx_packed_packet_to_queue_from_side", callback)
         self.assertIn("#define TELEMETRY_QUEUE_SERVICE_BUDGET_MS 1U", telemetry)
         self.assertIn(
-            "dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
+            "process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)",
             telemetry,
         )
 

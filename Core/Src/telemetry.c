@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
+#include "flight_state_cache.h"
 #include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
@@ -393,6 +394,7 @@ SedsResult telemetry_poll_discovery(void) {
   }
 
   bool did_queue = false;
+  (void)flight_state_cache_poll(g_router.r);
   g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
   g_telemetry_service_stage = 612U;
@@ -470,6 +472,7 @@ SedsResult init_telemetry_router(void) {
   /* Discovery begins from the normal poll loop after CAN startup. */
 
   g_router.r = r;
+  (void)flight_state_cache_init(r);
   g_router.created = 1U;
   g_router.start_time = tx_raw_now_ms_locked();
   return SEDS_OK;
@@ -786,7 +789,7 @@ void telemetry_entry(ULONG _)
     g_telemetry_queue_errors++;
   }
   g_telemetry_service_stage = 4U;
-  if (dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS) != SEDS_OK)
+  if (process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS) != SEDS_OK)
   {
     g_telemetry_queue_errors++;
   }
@@ -806,7 +809,7 @@ void telemetry_entry(ULONG _)
       g_telemetry_discovery_poll_errors++;
     g_telemetry_service_stage = 62U;
     SedsResult k =
-        dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS);
+        process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS);
     g_telemetry_service_stage = 63U;
 
     if (k != SEDS_OK)

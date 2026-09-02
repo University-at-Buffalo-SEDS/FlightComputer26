@@ -1,8 +1,7 @@
 #include "flight_buzzer.h"
 #include "main.h"
 
-#include "launchcore/persist.h"
-#include "launchcore/storage.h"
+#include "persistent_store.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -10,8 +9,6 @@
 
 #define FLIGHT_BUZZER_PERSIST_KEY 0x42555A5Au
 #define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 1000U
-
-extern const launchcore_storage_driver_t launchcore_board_storage_driver;
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
 volatile uint32_t g_flight_buzzer_updates = 0U;
@@ -21,6 +18,7 @@ volatile uint32_t g_flight_buzzer_persist_errors = 0U;
 
 static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
+static bool g_restore_attempted = false;
 
 static void drive_buzzer(bool enabled)
 {
@@ -29,20 +27,22 @@ static void drive_buzzer(bool enabled)
                       enabled ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-static void restore_buzzer(void)
+void flight_buzzer_restore(void)
 {
+    if (g_restore_attempted) return;
+    g_restore_attempted = true;
+
     uint8_t enabled = 0U;
     size_t enabled_size = sizeof(enabled);
 
-    launchcore_storage_set_driver(&launchcore_board_storage_driver);
-    if (launchcore_persist_init() != LAUNCHCORE_PERSIST_OK)
+    if (persistent_store_init() != LAUNCHCORE_PERSIST_OK)
     {
         g_flight_buzzer_persist_errors++;
         return;
     }
     g_persist_ready = true;
 
-    const launchcore_persist_status_t status = launchcore_persist_get(
+    const launchcore_persist_status_t status = persistent_store_get(
         FLIGHT_BUZZER_PERSIST_KEY, &enabled, &enabled_size);
     if (status == LAUNCHCORE_PERSIST_NOT_FOUND) return;
     if (status != LAUNCHCORE_PERSIST_OK || enabled_size != sizeof(enabled) ||
@@ -74,8 +74,8 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
     {
         const uint8_t stored = enabled ? 1U : 0U;
         if (!g_persist_ready ||
-            launchcore_persist_set(FLIGHT_BUZZER_PERSIST_KEY, &stored,
-                                   sizeof(stored)) != LAUNCHCORE_PERSIST_OK)
+            persistent_store_set(FLIGHT_BUZZER_PERSIST_KEY, &stored,
+                                 sizeof(stored)) != LAUNCHCORE_PERSIST_OK)
         {
             g_flight_buzzer_persist_errors++;
             return SEDS_HANDLER_ERROR;
@@ -89,7 +89,7 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
 SedsResult flight_buzzer_init(SedsRouter *router)
 {
     if (router == NULL) return SEDS_BAD_ARG;
-    restore_buzzer();
+    flight_buzzer_restore();
     SedsResult result = seds_router_enable_network_variable(
         router, SEDS_DT_FLIGHT_BUZZER, true, false);
     if (result != SEDS_OK) return result;

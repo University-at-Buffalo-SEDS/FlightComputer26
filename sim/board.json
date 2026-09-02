@@ -79,7 +79,12 @@
       {"name": "discovery_poll_errors", "symbol": "g_telemetry_discovery_poll_errors"},
       {"name": "timesync_poll_errors", "symbol": "g_telemetry_timesync_poll_errors"},
       {"name": "allocations", "symbol": "g_telemetry_alloc_count"},
-      {"name": "frees", "symbol": "g_telemetry_free_count"}
+      {"name": "frees", "symbol": "g_telemetry_free_count"},
+      {"name": "flight_state_cache", "symbol": "g_flight_state_cache_value", "maximum": 15},
+      {"name": "flight_state_restores", "symbol": "g_flight_state_cache_restores"},
+      {"name": "flight_state_writes", "symbol": "g_flight_state_cache_writes"},
+      {"name": "flight_state_updates", "symbol": "g_flight_state_cache_updates"},
+      {"name": "flight_state_errors", "symbol": "g_flight_state_cache_errors", "maximum": 0}
     ]
   },
   "traffic": {

@@ -23,6 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "platform.h"
+#include "av_bay_underglow.h"
+#include "flight_buzzer.h"
+#include "flight_state_cache.h"
 #include "fcapi.h"
 
 #ifdef TEST_SENSORS
@@ -135,6 +138,11 @@ int main(void)
    * starting. The telemetry task clears it once CAN and SEDSNet are ready. */
   led_off(LED1_PORT, LED1_PIN);
   led_on(LED2_PORT, LED2_PIN);
+  /* Replace the temporary startup indication with the persisted LaunchCore
+   * state before ThreadX and network-variable synchronization begin. */
+  av_bay_underglow_restore();
+  flight_buzzer_restore();
+  flight_state_cache_restore();
 
   co2_low();
   reef_low();
