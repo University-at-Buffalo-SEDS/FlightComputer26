@@ -33,6 +33,18 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn(".persistent_data_write_size=16u", storage)
         self.assertIn('bootloader/src/persist.c"', cmake)
 
+    def test_flight_buzzer_uses_the_same_persistent_network_variable_path(self):
+        source = (ROOT / "Core/Src/flight_buzzer.c").read_text()
+        telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
+        cmake = (ROOT / "CMakeLists.txt").read_text()
+        self.assertIn("SEDS_DT_FLIGHT_BUZZER", source)
+        self.assertIn("launchcore_persist_get", source)
+        self.assertIn("launchcore_persist_set", source)
+        self.assertIn("HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin", source)
+        self.assertIn("flight_buzzer_init(r)", telemetry)
+        self.assertIn("flight_buzzer_poll(g_router.r)", telemetry)
+        self.assertIn("Core/Src/flight_buzzer.c", cmake)
+
 
 if __name__ == "__main__":
     unittest.main()

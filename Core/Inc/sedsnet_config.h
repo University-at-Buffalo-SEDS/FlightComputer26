@@ -51,3 +51,4 @@
 #define SEDS_DT_ASCENT_LOCAL ((SedsDataType)131U)
 #define SEDS_DT_DESCENT_LOCAL ((SedsDataType)132U)
 #define SEDS_DT_AV_BAY_UNDERGLOW ((SedsDataType)133U)
+#define SEDS_DT_FLIGHT_BUZZER ((SedsDataType)134U)

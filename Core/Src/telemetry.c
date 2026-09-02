@@ -2,6 +2,7 @@
 
 #include "platform.h"
 #include "av_bay_underglow.h"
+#include "flight_buzzer.h"
 #include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
@@ -378,6 +379,7 @@ SedsResult telemetry_poll_discovery(void) {
      * saturated TX queue; qualification traffic must not perturb scheduling. */
     g_telemetry_service_stage = 613U;
     (void)av_bay_underglow_poll(g_router.r);
+    (void)flight_buzzer_poll(g_router.r);
     g_telemetry_service_stage = 614U;
   }
   telemetry_update_network_health(g_router.r);
@@ -431,6 +433,12 @@ SedsResult init_telemetry_router(void) {
   }
 
   result = av_bay_underglow_init(r);
+  if (result != SEDS_OK) {
+    seds_router_free(r);
+    return result;
+  }
+
+  result = flight_buzzer_init(r);
   if (result != SEDS_OK) {
     seds_router_free(r);
     return result;
