@@ -9,6 +9,28 @@ import build
 
 
 class OtaBuildScriptTests(unittest.TestCase):
+    def test_clean_command_removes_the_complete_build_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build_root = root / "build"
+            artifact = build_root / "Release" / "FlightComputer26.elf"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_bytes(b"firmware")
+            with mock.patch.object(build, "BUILDDIR", build_root):
+                build.clean(build_root)
+            self.assertFalse(build_root.exists())
+
+    def test_clean_rejects_paths_outside_build_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build_root = root / "build"
+            outside = root / "outside"
+            outside.mkdir()
+            with mock.patch.object(build, "BUILDDIR", build_root):
+                with self.assertRaisesRegex(SystemExit, "outside"):
+                    build.clean(outside)
+            self.assertTrue(outside.exists())
+
     def test_all_tests_preserve_the_selected_build_mode(self):
         self.assertEqual(build.parse_test_options(["--all"]), (True, False))
         self.assertEqual(

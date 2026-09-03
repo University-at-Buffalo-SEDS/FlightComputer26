@@ -525,12 +525,21 @@ def gdb_st_session(path: Path):
 
 
 def clean(path: Path):
-        if path.exists():
-                shutil.rmtree(path)
-        else:
-                sys.exit(f"No such directory: {path}")
+        build_root = BUILDDIR.resolve()
+        target = path.resolve()
+        try:
+                target.relative_to(build_root)
+        except ValueError:
+                sys.exit(f"Refusing to clean outside the build directory: {target}")
 
-        path.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+                print(f"Already clean: {target}")
+                return
+        if target.is_symlink():
+                sys.exit(f"Refusing to recursively clean a symbolic link: {target}")
+
+        shutil.rmtree(target)
+        print(f"Cleaned build artifacts: {target}")
 
 
 def asmgen(buildir: Path):
@@ -712,6 +721,9 @@ def run_tests(argv: list[str]) -> None:
 
 def main() -> None:
         os.chdir(PROJECT)
+        if sys.argv[1:] == ["clean"]:
+                clean(BUILDDIR)
+                return
         if sys.argv[1:2] == ["test"]:
                 try:
                         run_tests(sys.argv[2:])
