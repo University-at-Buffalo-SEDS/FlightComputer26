@@ -705,7 +705,7 @@ def run_tests(argv: list[str]) -> None:
         )
         build_subdir = "Release" if release else "Debug"
         run_test_stage(
-                results, "Long-duration memory profile",
+                results, "Allocator stress and memory probes",
                 lambda: run_memory_profile(
                         _TestUI(), PROJECT, "stm32h5", build_subdir
                 ),
