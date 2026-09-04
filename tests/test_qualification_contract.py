@@ -97,12 +97,12 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", filex)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
 
-    def test_discovery_is_primed_after_can_and_router_startup(self):
+    def test_constrained_discovery_is_primed_after_can_and_router_startup(self):
         root = Path(build.__file__).resolve().parent
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         can_init = telemetry.index("can_bus_init(&hfdcan1)")
         router_init = telemetry.index("init_telemetry_router()", can_init)
-        announce = telemetry.index("telemetry_announce_discovery()", router_init)
+        announce = telemetry.index("telemetry_poll_discovery()", router_init)
         self.assertLess(can_init, router_init)
         self.assertLess(router_init, announce)
         self.assertIn(

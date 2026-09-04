@@ -36,13 +36,18 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "stm32h5xx_hal.h"
+#include "tx_api.h"
 
 #ifndef CAN_BUS_DEBUG
 #define CAN_BUS_DEBUG 0
 #endif
 
 #ifndef CAN_BUS_POLLING
+#ifdef SEDS_FIRMWARE_SIM_TEST
+#define CAN_BUS_POLLING 1
+#else
 #define CAN_BUS_POLLING 0
+#endif
 #endif
 
 #ifndef CAN_BUS_TX_ENQUEUE_TIMEOUT_MS
@@ -990,7 +995,10 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
      * fragments instead of filling the FIFO and busy-waiting while holding
      * the SEDSNet send path. */
     if (idx + 1U < frag_cnt)
-      HAL_Delay(CAN_BUS_FRAGMENT_PACING_MS);
+      /* HAL_Delay can stop advancing once ThreadX owns the time base, which
+       * deadlocks large startup discovery packets. Yield to the RTOS timer so
+       * the FDCAN FIFO drains without busy-waiting in the SEDSNet callback. */
+      tx_thread_sleep(CAN_BUS_FRAGMENT_PACING_MS);
   }
 
   return HAL_OK;

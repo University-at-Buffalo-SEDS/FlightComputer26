@@ -389,12 +389,15 @@ SedsResult telemetry_poll_discovery(void) {
 #ifndef TELEMETRY_ENABLED
   return SEDS_OK;
 #else
+  g_telemetry_service_stage = 301U;
   if (init_telemetry_router() != SEDS_OK) {
     return SEDS_ERR;
   }
 
+  g_telemetry_service_stage = 302U;
   bool did_queue = false;
   (void)flight_state_cache_poll(g_router.r);
+  g_telemetry_service_stage = 303U;
   g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
   g_telemetry_service_stage = 612U;
@@ -808,10 +811,11 @@ void telemetry_entry(ULONG _)
   }
   g_telemetry_service_stage = 3U;
 
-  /* Prime discovery only after CAN and the router are both ready. The normal
-   * poll remains rate-limited, but boot must not depend on the first RTOS tick
-   * arriving before this node becomes visible to an existing time source. */
-  if (telemetry_announce_discovery() != SEDS_OK)
+  /* Prime the normal constrained-link discovery path after CAN and the router
+   * are ready. A full schema announcement is large enough to monopolize the
+   * three-entry H5 FDCAN FIFO during boot; periodic discovery advertises the
+   * address/topology needed for routing and leaves schema transfer on demand. */
+  if (telemetry_poll_discovery() != SEDS_OK)
   {
     g_telemetry_queue_errors++;
   }
