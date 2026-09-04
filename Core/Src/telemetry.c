@@ -412,7 +412,7 @@ SedsResult telemetry_poll_discovery(void) {
 #endif
 }
 
-SedsResult init_telemetry_router(void) {
+static SedsResult init_telemetry_router_locked(void) {
 #ifndef TELEMETRY_ENABLED
   return SEDS_OK;
 #else
@@ -431,8 +431,10 @@ SedsResult init_telemetry_router(void) {
     }
   }
 
+  g_telemetry_service_stage = 21U;
   r = seds_router_new(Seds_RM_Relay, node_now_since_ms, NULL, locals,
                                               sizeof(locals) / sizeof(locals[0]));
+  g_telemetry_service_stage = 22U;
   if (!r) {
     printf("Error: failed to create router\r\n");
     g_router.r = NULL;
@@ -441,25 +443,18 @@ SedsResult init_telemetry_router(void) {
     return SEDS_ERR;
   }
 
+  g_telemetry_service_stage = 23U;
   g_can_side_id = seds_router_add_side_packed(r, "can", 3U, tx_send, NULL, false);
+  g_telemetry_service_stage = 24U;
   if (g_can_side_id < 0) {
     printf("Error: failed to add CAN side: %ld\r\n", (long)g_can_side_id);
     g_can_side_id = -1;
   }
 
-  /* Retain compact discovery addresses for routing while suppressing the
-   * diagnostic topology graph that grows with the entire network. */
-  if (g_can_side_id >= 0 &&
-      seds_router_set_typed_route(r, -1, SEDS_DT_DISCOVERY_TOPOLOGY,
-                                  g_can_side_id, false) != SEDS_OK) {
-    seds_router_free(r);
-    g_router.r = NULL;
-    g_router.created = 0U;
-    g_can_side_id = -1;
-    return SEDS_ERR;
-  }
-
+  g_telemetry_service_stage = 25U;
+  g_telemetry_service_stage = 26U;
   result = telemetry_configure_timesync_locked(r);
+  g_telemetry_service_stage = 27U;
   if (result != SEDS_OK) {
     printf("Error: failed to configure telemetry timesync: %d\r\n", (int)result);
     seds_router_free(r);
@@ -469,13 +464,17 @@ SedsResult init_telemetry_router(void) {
     return result;
   }
 
+  g_telemetry_service_stage = 28U;
   result = av_bay_underglow_init(r);
+  g_telemetry_service_stage = 29U;
   if (result != SEDS_OK) {
     seds_router_free(r);
     return result;
   }
 
+  g_telemetry_service_stage = 30U;
   result = flight_buzzer_init(r);
+  g_telemetry_service_stage = 31U;
   if (result != SEDS_OK) {
     seds_router_free(r);
     return result;
@@ -483,12 +482,28 @@ SedsResult init_telemetry_router(void) {
 
   /* Discovery begins from the normal poll loop after CAN startup. */
 
+  g_telemetry_service_stage = 32U;
   g_router.r = r;
   (void)flight_state_cache_init(r);
+  g_telemetry_service_stage = 33U;
   g_router.created = 1U;
   g_router.start_time = tx_raw_now_ms_locked();
   return SEDS_OK;
 #endif
+}
+
+SedsResult init_telemetry_router(void) {
+  SedsResult result;
+
+  /* Startup tasks can begin publishing at the same time as telemetry_entry.
+   * Serialize the created check and the complete router construction so two
+   * threads cannot concurrently allocate partially initialized routers.  The
+   * SEDSNet callbacks use this same recursive ThreadX mutex, so construction
+   * remains safe when the library takes its normal nested lock. */
+  telemetry_lock();
+  result = init_telemetry_router_locked();
+  telemetry_unlock();
+  return result;
 }
 
 static inline SedsElemKind guess_kind_from_elem_size(size_t elem_size) {
