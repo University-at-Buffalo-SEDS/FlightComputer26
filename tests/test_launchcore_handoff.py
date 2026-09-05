@@ -73,6 +73,8 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("g_telemetry_discovery_seen != 0U", telemetry)
         self.assertIn("g_telemetry_stack_free_min", telemetry)
         self.assertIn("telemetry_sample_stack_margin();", telemetry)
+        self.assertIn("telemetry_sample_active_stack_margin();", telemetry)
+        self.assertIn("__get_PSP()", telemetry)
         self.assertIn('"symbol": "g_telemetry_stack_free_min"', layout)
         self.assertIn('"minimum": 8192', layout)
 

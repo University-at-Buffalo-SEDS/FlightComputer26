@@ -626,6 +626,11 @@ def test_failure_help(stage: str) -> str:
                         "Inspect the probe table for pool loss, low-water, allocation "
                         "failures, or stack errors."
                 )
+        if stage == "Disconnected CAN survival":
+                return (
+                        "Inspect CAN TX-failure and stack probes. The board must remain alive "
+                        "when no peer acknowledges its transmissions."
+                )
         if stage == "Network discovery and time sync":
                 return (
                         "Check the FDCAN link and require both discovery_seen and "
@@ -680,6 +685,7 @@ def run_tests(argv: list[str]) -> None:
                 run_full_simulation,
                 run_memory_profile,
                 run_network_simulation,
+                run_unacknowledged_can_simulation,
         )
         run_test_stage(results, "Docker readiness", require_docker)
         preset = "release" if release else "debug"
@@ -707,6 +713,12 @@ def run_tests(argv: list[str]) -> None:
         run_test_stage(
                 results, "Allocator stress and memory probes",
                 lambda: run_memory_profile(
+                        _TestUI(), PROJECT, "stm32h5", build_subdir
+                ),
+        )
+        run_test_stage(
+                results, "Disconnected CAN survival",
+                lambda: run_unacknowledged_can_simulation(
                         _TestUI(), PROJECT, "stm32h5", build_subdir
                 ),
         )

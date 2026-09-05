@@ -109,6 +109,28 @@ static void telemetry_sample_stack_margin(void) {
   }
 }
 
+/* Stack-fill scanning only sees bytes that a function actually writes.  Large
+ * Rust frames reserve their full size by moving PSP, but may leave most of the
+ * reserved area filled with ThreadX's marker.  Sample the live process stack
+ * pointer from the deepest board callback as well so HIL and the simulator see
+ * the real routing-path headroom. */
+static void telemetry_sample_active_stack_margin(void) {
+  const uintptr_t stack_start =
+      (uintptr_t)telemetry_task.tx_thread_stack_start;
+  const uintptr_t stack_end =
+      (uintptr_t)telemetry_task.tx_thread_stack_end;
+  const uintptr_t psp = (uintptr_t)__get_PSP();
+
+  if (psp < stack_start || psp > stack_end) {
+    return;
+  }
+
+  const uint32_t free_bytes = (uint32_t)(psp - stack_start);
+  if (free_bytes < g_telemetry_stack_free_min) {
+    g_telemetry_stack_free_min = free_bytes;
+  }
+}
+
 static const SedsLocalEndpointDesc locals[] = {
   { .endpoint = SEDS_EP_FLIGHT_CONTROLLER, .packet_handler = on_fc_packet, .user = NULL },
 };
@@ -270,6 +292,8 @@ static uint64_t node_now_since_ms(void *user) {
 
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
+
+  telemetry_sample_active_stack_margin();
 
   if (!bytes || len == 0U) {
     return SEDS_BAD_ARG;
