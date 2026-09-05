@@ -20,7 +20,8 @@ class LaunchCoreHandoffContract(unittest.TestCase):
     def test_memory_report_uses_bsp_ram_capacity(self):
         cmake = (ROOT / "cmake/launchcore_stm32.cmake").read_text()
         self.assertIn("LAUNCHCORE_INTERNAL_SRAM_SIZE _launchcore_total_ram", cmake)
-        self.assertIn('RAM_CAPACITY "${_launchcore_total_ram}"', cmake)
+        self.assertIn("LAUNCHCORE_TOTAL_SRAM_SIZE _launchcore_report_ram", cmake)
+        self.assertIn('RAM_CAPACITY "${_launchcore_report_ram}"', cmake)
 
     def test_underglow_uses_launchcore_managed_persistent_storage(self):
         source = (ROOT / "Core/Src/av_bay_underglow.c").read_text()

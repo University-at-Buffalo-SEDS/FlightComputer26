@@ -46,6 +46,8 @@ _launchcore_read_layout_define(
 _launchcore_read_layout_define(
     "${_launchcore_bsp_config}" LAUNCHCORE_INTERNAL_SRAM_SIZE _launchcore_total_ram)
 _launchcore_read_layout_define(
+    "${_launchcore_bsp_config}" LAUNCHCORE_TOTAL_SRAM_SIZE _launchcore_report_ram)
+_launchcore_read_layout_define(
     "${_launchcore_bsp_config}" LAUNCHCORE_BOOTLOADER_SIZE _launchcore_boot_capacity)
 _launchcore_read_layout_define(
     "${_launchcore_bsp_config}" BOARD_SLOT_A_BASE _launchcore_slot_base)
@@ -156,5 +158,5 @@ launchcore_add_memory_report(
     BOOTLOADER_CAPACITY "${_launchcore_boot_capacity}"
     FIRMWARE_CAPACITY "${_launchcore_firmware_capacity}"
     TOTAL_FLASH_SIZE "${_launchcore_total_flash}"
-    RAM_CAPACITY "${_launchcore_total_ram}")
+    RAM_CAPACITY "${_launchcore_report_ram}")
 add_dependencies(factory-image launchcore-memory-report)
