@@ -651,7 +651,7 @@
         "count": 1
       },
       "endpoints": [
-        "ActuatorHeartBeat"
+        "ActuatorFlightController"
       ]
     }
   ]

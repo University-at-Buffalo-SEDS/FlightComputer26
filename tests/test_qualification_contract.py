@@ -6,6 +6,12 @@ import build
 
 
 class QualificationContractTests(unittest.TestCase):
+    def test_flight_buzzer_routes_to_flight_controller_endpoint(self):
+        root = Path(build.__file__).resolve().parent
+        schema = json.loads((root / "config" / "sedsnet.json").read_text(encoding="utf-8"))
+        buzzer = next(item for item in schema["types"] if item["name"] == "FLIGHT_BUZZER")
+        self.assertEqual(buzzer["endpoints"], ["ActuatorFlightController"])
+
     def test_router_clock_epoch_precedes_router_and_side_setup(self):
         root = Path(build.__file__).resolve().parent
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
