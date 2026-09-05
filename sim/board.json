@@ -57,6 +57,8 @@
       {"name": "underglow_persist_restores", "symbol": "g_av_bay_underglow_persist_restores"},
       {"name": "underglow_persist_writes", "symbol": "g_av_bay_underglow_persist_writes"},
       {"name": "underglow_persist_errors", "symbol": "g_av_bay_underglow_persist_errors", "maximum": 0},
+      {"name": "underglow_boot_restore_valid", "symbol": "g_av_bay_underglow_boot_restore_valid", "maximum": 1},
+      {"name": "underglow_boot_restored_value", "symbol": "g_av_bay_underglow_boot_restored_value", "maximum": 1},
       {"name": "flight_buzzer_enabled", "symbol": "g_flight_buzzer_enabled", "maximum": 1},
       {"name": "flight_buzzer_updates", "symbol": "g_flight_buzzer_updates"},
       {"name": "flight_buzzer_persist_restores", "symbol": "g_flight_buzzer_persist_restores"},

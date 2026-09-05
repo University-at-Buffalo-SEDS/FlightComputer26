@@ -8,13 +8,15 @@
 #include <stdint.h>
 
 #define UNDERGLOW_PERSIST_KEY 0x55474C57u
-#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 1000U
+#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 250U
 
 volatile uint32_t g_av_bay_underglow_enabled = 0U;
 volatile uint32_t g_av_bay_underglow_updates = 0U;
 volatile uint32_t g_av_bay_underglow_persist_restores = 0U;
 volatile uint32_t g_av_bay_underglow_persist_writes = 0U;
 volatile uint32_t g_av_bay_underglow_persist_errors = 0U;
+volatile uint32_t g_av_bay_underglow_boot_restore_valid = 0U;
+volatile uint32_t g_av_bay_underglow_boot_restored_value = 0U;
 
 static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
@@ -54,6 +56,8 @@ void av_bay_underglow_restore(void)
 
     g_persist_has_value = true;
     g_av_bay_underglow_persist_restores++;
+    g_av_bay_underglow_boot_restore_valid = 1U;
+    g_av_bay_underglow_boot_restored_value = enabled;
     drive_underglow(enabled != 0U);
 }
 

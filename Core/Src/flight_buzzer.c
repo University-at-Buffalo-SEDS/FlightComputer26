@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 #define FLIGHT_BUZZER_PERSIST_KEY 0x42555A5Au
-#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 1000U
+#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 250U
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
 volatile uint32_t g_flight_buzzer_updates = 0U;
