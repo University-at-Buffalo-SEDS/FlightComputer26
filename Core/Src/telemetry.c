@@ -450,6 +450,12 @@ static SedsResult init_telemetry_router_locked(void) {
     return SEDS_OK;
   }
 
+  const uint64_t init_now_ms = tx_raw_now_ms_locked();
+  /* Discovery and time-sync deadlines are created during router/side setup.
+   * Establish the epoch first so node_now_since_ms never moves backwards once
+   * those deadlines exist, including after a simulated or hardware reboot. */
+  g_router.start_time = init_now_ms;
+
   if (!g_can_rx_subscribed) {
     if (can_bus_subscribe_rx(telemetry_can_rx, NULL) == HAL_OK) {
       g_can_rx_subscribed = 1U;
@@ -514,7 +520,6 @@ static SedsResult init_telemetry_router_locked(void) {
   (void)flight_state_cache_init(r);
   g_telemetry_service_stage = 33U;
   g_router.created = 1U;
-  g_router.start_time = tx_raw_now_ms_locked();
   return SEDS_OK;
 #endif
 }
