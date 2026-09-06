@@ -142,6 +142,14 @@ class QualificationContractTests(unittest.TestCase):
             telemetry,
         )
 
+        can_bus = (root / "Core" / "Src" / "can_bus.c").read_text(
+            encoding="utf-8"
+        )
+        send_large = can_bus[can_bus.index("HAL_StatusTypeDef can_bus_send_large") :]
+        send_large = send_large[: send_large.index("void can_bus_process_rx")]
+        self.assertNotIn("tx_thread_sleep", send_large)
+        self.assertIn("if (st != HAL_OK)\n      return st;", send_large)
+
 
     def test_periodic_health_check_does_not_serialize_topology(self):
         root = Path(build.__file__).resolve().parent

@@ -990,15 +990,11 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
     HAL_StatusTypeDef st = can_bus_send_bytes(frame, wire_len, std_id);
     if (st != HAL_OK)
       return st;
-    /* H5 has a fixed three-entry FDCAN TX FIFO. A 64-byte CAN-FD frame takes
-     * roughly 0.6 ms at the configured data rate, so yield one tick between
-     * fragments instead of filling the FIFO and busy-waiting while holding
-     * the SEDSNet send path. */
-    if (idx + 1U < frag_cnt)
-      /* HAL_Delay can stop advancing once ThreadX owns the time base, which
-       * deadlocks large startup discovery packets. Yield to the RTOS timer so
-       * the FDCAN FIFO drains without busy-waiting in the SEDSNet callback. */
-      tx_thread_sleep(CAN_BUS_FRAGMENT_PACING_MS);
+    /* Do not sleep while SEDSNet owns the transmit callback. With no other
+     * node acknowledging CAN, the H5 FIFO intentionally fills and the next
+     * enqueue returns HAL_BUSY. Propagating that bounded failure lets the
+     * periodic discovery poll retry later; sleeping here made boot progress
+     * depend on an RX/TX interrupt from another board. */
   }
 
   return HAL_OK;
