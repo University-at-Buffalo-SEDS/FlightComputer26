@@ -49,7 +49,7 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn('"fill_pico"', runner)
         self.assertIn('"GS_SIM_VALIDATE_VALVE_ROUNDTRIP": "1"', runner)
         self.assertIn('"probe": "valve_commands_received", "minimum": 1', runner)
-        self.assertIn("forwarded status ACK to GroundStation", runner)
+        self.assertIn("routed status ACK toward GroundStation", runner)
         self.assertIn('simulation_env["SEDS_FIRMWARE_SIM_TEST"] = "1"', runner)
         self.assertIn('run_live(command, "firmware simulation")', runner)
         self.assertIn('running ({int(now - started)}s elapsed)', runner)
@@ -113,6 +113,21 @@ class QualificationContractTests(unittest.TestCase):
         filex = (root / "FileX" / "App" / "app_filex.c").read_text(encoding="utf-8")
         self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", filex)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
+
+    def test_recovery_dependencies_exist_before_priority_zero_thread_starts(self):
+        root = Path(build.__file__).resolve().parent
+        recovery = (root / "Core" / "Src" / "recovery.c").read_text(
+            encoding="utf-8"
+        )
+        create = recovery[recovery.index("UINT create_recovery_task") :]
+        queue = create.index("tx_queue_create(&seds_syscall")
+        timer = create.index("tx_timer_create(&monotonic_checks")
+        thread = create.index("tx_thread_create(&recovery_task")
+        auto_start = create.index("TX_AUTO_START", thread)
+
+        self.assertLess(queue, thread)
+        self.assertLess(timer, thread)
+        self.assertGreater(auto_start, thread)
 
     def test_constrained_discovery_is_primed_after_can_and_router_startup(self):
         root = Path(build.__file__).resolve().parent

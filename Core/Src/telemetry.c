@@ -83,6 +83,8 @@ volatile uint32_t g_telemetry_service_stage
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_rx_stage
     __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_tx_stage
+    __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_loop_completions
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_stack_size
@@ -292,22 +294,27 @@ static uint64_t node_now_since_ms(void *user) {
 
 SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   (void)user;
+  g_telemetry_tx_stage = 1U;
 
   telemetry_sample_active_stack_margin();
 
   if (!bytes || len == 0U) {
     return SEDS_BAD_ARG;
   }
+  g_telemetry_tx_stage = 2U;
   sim_probe_observe_can_tx(bytes, len);
+  g_telemetry_tx_stage = 3U;
 
   const uint32_t can_id =
       sim_probe_packed_data_type(bytes, len) == (uint32_t)SEDS_DT_HEARTBEAT
           ? 0x003U
           : 0x103U;
   if (can_bus_send_large(bytes, len, can_id) != HAL_OK) {
+    g_telemetry_tx_stage = 5U;
     return SEDS_IO;
   }
 
+  g_telemetry_tx_stage = 4U;
   return SEDS_OK;
 }
 

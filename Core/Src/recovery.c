@@ -707,24 +707,10 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
     return IT_IS_NOW_OVER;
   }
   
-  st = tx_thread_create(&recovery_task,
-                        "Recovery Task",
-                        recovery_entry,
-                        RECV_INPUT,
-                        pointer,
-                        RECV_STACK_BYTES,
-                        RECV_PRIORITY,
-                        /* No preemption threshold */
-                        RECV_PRIORITY,
-                        TX_NO_TIME_SLICE,
-                        TX_AUTO_START);
-
-  if (st != TX_SUCCESS)
-  {
-    log_err(id "task %s %u", critical, st);
-    return IT_IS_NOW_OVER;
-  }
-
+  /* Initialize everything used by recovery_entry before making the
+   * highest-priority recovery thread runnable. With TX_AUTO_START it can
+   * preempt this creator immediately. An uncreated queue makes its receive
+   * fail in a tight priority-0 loop, starving telemetry and every other task. */
   st = tx_queue_create(&seds_syscall, id "Q", 1, &recvq,
                        sizeof recvq);
 
@@ -741,6 +727,24 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "timer %s %u", critical, st);
+    return IT_IS_NOW_OVER;
+  }
+
+  st = tx_thread_create(&recovery_task,
+                        "Recovery Task",
+                        recovery_entry,
+                        RECV_INPUT,
+                        pointer,
+                        RECV_STACK_BYTES,
+                        RECV_PRIORITY,
+                        /* No preemption threshold */
+                        RECV_PRIORITY,
+                        TX_NO_TIME_SLICE,
+                        TX_AUTO_START);
+
+  if (st != TX_SUCCESS)
+  {
+    log_err(id "task %s %u", critical, st);
     return IT_IS_NOW_OVER;
   }
 

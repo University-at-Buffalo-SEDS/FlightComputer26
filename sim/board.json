@@ -44,6 +44,8 @@
       {"name": "network_ready", "symbol": "g_telemetry_network_ready"},
       {"name": "telemetry_thread_entered", "symbol": "g_telemetry_thread_entered", "minimum": 1},
       {"name": "telemetry_rx_stage", "symbol": "g_telemetry_rx_stage"},
+      {"name": "telemetry_tx_stage", "symbol": "g_telemetry_tx_stage"},
+      {"name": "can_tx_service_stage", "symbol": "g_can_tx_service_stage"},
       {"name": "can_rx_service_stage", "symbol": "g_can_rx_service_stage"},
       {"name": "can_rx_service_completions", "symbol": "g_can_rx_service_completions", "minimum": 1},
       {"name": "telemetry_service_stage", "symbol": "g_telemetry_service_stage"},

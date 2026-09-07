@@ -227,6 +227,7 @@ volatile uint32_t g_fdcan_last_error __attribute__((used, externally_visible)) =
 volatile uint32_t g_fdcan_last_state __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_can_rx_service_stage __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_can_rx_service_completions __attribute__((used, externally_visible)) = 0;
+volatile uint32_t g_can_tx_service_stage __attribute__((used, externally_visible)) = 0;
 
 /*
  * RX/TX pending flags set from ISR.
@@ -239,12 +240,15 @@ static volatile uint8_t g_txevt_pending = 0;
 
 static HAL_StatusTypeDef can_bus_recover_if_bus_off(void)
 {
+  g_can_tx_service_stage = 21U;
   if (!g_hfdcan)
     return HAL_ERROR;
 
   FDCAN_ProtocolStatusTypeDef status;
+  g_can_tx_service_stage = 22U;
   if (HAL_FDCAN_GetProtocolStatus(g_hfdcan, &status) != HAL_OK)
     return HAL_ERROR;
+  g_can_tx_service_stage = 23U;
 
   if (status.BusOff == 0U)
   {
@@ -268,15 +272,19 @@ static HAL_StatusTypeDef can_bus_recover_if_bus_off(void)
 static HAL_StatusTypeDef can_bus_enqueue_tx_frame(const FDCAN_TxHeaderTypeDef *hdr,
                                                   const uint8_t *data)
 {
+  g_can_tx_service_stage = 11U;
   if (!g_hfdcan || !hdr || !data)
     return HAL_ERROR;
 
+  g_can_tx_service_stage = 12U;
   if (can_bus_recover_if_bus_off() != HAL_OK)
     return HAL_ERROR;
 
   /* Never spin inside a SEDSNet callback. The router keeps a failed TX item
    * queued and retries it on the next bounded service pass. */
+  g_can_tx_service_stage = 13U;
   HAL_StatusTypeDef st = HAL_FDCAN_AddMessageToTxFifoQ(g_hfdcan, hdr, data);
+  g_can_tx_service_stage = 14U;
   if (st == HAL_OK)
   {
     g_fdcan_tx_ok_count++;
@@ -933,6 +941,7 @@ HAL_StatusTypeDef can_bus_send_bytes(const uint8_t *bytes, size_t len, uint32_t 
 // This uses fixed 64B frames (DLC=64) and a small header in each frame.
 HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t std_id)
 {
+  g_can_tx_service_stage = 1U;
   if (!g_hfdcan)
     return HAL_ERROR;
   if (!bytes || len == 0)
@@ -963,6 +972,7 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
   size_t off = 0;
   for (uint8_t idx = 0; idx < frag_cnt; idx++)
   {
+    g_can_tx_service_stage = 2U;
     uint8_t frame[64] = {0};
 
     can_bus_frag_hdr_t hdr;
@@ -987,7 +997,9 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
     off += take;
 
     // send a fixed 64-byte payload frame (pads zeros)
+    g_can_tx_service_stage = 3U;
     HAL_StatusTypeDef st = can_bus_send_bytes(frame, wire_len, std_id);
+    g_can_tx_service_stage = 4U;
     if (st != HAL_OK)
       return st;
     /* Do not sleep while SEDSNet owns the transmit callback. With no other
@@ -997,6 +1009,7 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
      * depend on an RX/TX interrupt from another board. */
   }
 
+  g_can_tx_service_stage = 5U;
   return HAL_OK;
 }
 
