@@ -9,7 +9,8 @@
 
 #define FLIGHT_BUZZER_PERSIST_KEY 0x42555A5Au
 #define FLIGHT_BUZZER_PERSIST_RECORD_SIZE 9U
-#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 250U
+#define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 100U
+#define NETWORK_VARIABLE_REFRESH_INTERVAL_MS 2000U
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
 volatile uint32_t g_flight_buzzer_updates = 0U;
@@ -24,6 +25,8 @@ static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
 static bool g_persist_has_timestamp = false;
 static bool g_restore_attempted = false;
+static bool g_network_value_seen = false;
+static uint32_t g_last_refresh_ms = 0U;
 static uint64_t g_last_source_timestamp_ms = 0U;
 
 static uint64_t decode_u64_le(const uint8_t *bytes)
@@ -110,6 +113,7 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
                                g_flight_buzzer_enabled != (uint32_t)enabled ||
                                packet->timestamp > g_last_source_timestamp_ms;
     drive_buzzer(enabled);
+    g_network_value_seen = true;
     g_flight_buzzer_updates++;
     if (needs_persist)
     {
@@ -139,19 +143,24 @@ SedsResult flight_buzzer_init(SedsRouter *router)
     SedsResult result = seds_router_enable_network_variable(
         router, SEDS_DT_FLIGHT_BUZZER, true, false);
     if (result != SEDS_OK) return result;
-    return seds_router_on_network_variable_update(
+    result = seds_router_on_network_variable_update(
         router, SEDS_DT_FLIGHT_BUZZER, apply_buzzer, NULL);
+    if (result != SEDS_OK) return result;
+    g_last_refresh_ms = HAL_GetTick();
+    result = seds_router_request_managed_variable(
+        router, SEDS_DT_FLIGHT_BUZZER);
+    return result == SEDS_IO ? SEDS_OK : result;
 }
 
 SedsResult flight_buzzer_poll(SedsRouter *router)
 {
-    static uint32_t last_refresh_ms = 0U;
     if (router == NULL) return SEDS_BAD_ARG;
     const uint32_t now_ms = HAL_GetTick();
-    if ((uint32_t)(now_ms - last_refresh_ms) <
-        NETWORK_VARIABLE_REFRESH_INTERVAL_MS) return SEDS_OK;
-    last_refresh_ms = now_ms;
-    const int32_t result = seds_router_get_network_variable_packed_len(
-        router, SEDS_DT_FLIGHT_BUZZER, 5000U);
-    return result < 0 ? (SedsResult)result : SEDS_OK;
+    const uint32_t interval = g_network_value_seen
+        ? NETWORK_VARIABLE_REFRESH_INTERVAL_MS
+        : NETWORK_VARIABLE_UNSYNCED_RETRY_MS;
+    if ((uint32_t)(now_ms - g_last_refresh_ms) < interval) return SEDS_OK;
+    g_last_refresh_ms = now_ms;
+    return seds_router_request_managed_variable(
+        router, SEDS_DT_FLIGHT_BUZZER);
 }

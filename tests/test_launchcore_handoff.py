@@ -52,6 +52,8 @@ class LaunchCoreHandoffContract(unittest.TestCase):
 
     def test_flight_buzzer_uses_the_same_persistent_network_variable_path(self):
         source = (ROOT / "Core/Src/flight_buzzer.c").read_text()
+        self.assertIn("seds_router_request_managed_variable", source)
+        self.assertNotIn("seds_router_get_network_variable_packed_len", source)
         telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
         cmake = (ROOT / "CMakeLists.txt").read_text()
         self.assertIn("SEDS_DT_FLIGHT_BUZZER", source)
