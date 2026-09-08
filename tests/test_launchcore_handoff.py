@@ -39,7 +39,7 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("launchcore_storage_set_driver", persistent_store)
         self.assertIn("launchcore_persist_get", persistent_store)
         self.assertIn("launchcore_persist_set", persistent_store)
-        self.assertIn("NETWORK_VARIABLE_REFRESH_INTERVAL_MS", source)
+        self.assertIn("NETWORK_VARIABLE_UNSYNCED_RETRY_MS", source)
         self.assertIn(".persistent_data_write_size=16u", storage)
         self.assertIn('bootloader/src/persist.c"', cmake)
 
@@ -53,6 +53,7 @@ class LaunchCoreHandoffContract(unittest.TestCase):
     def test_flight_buzzer_uses_the_same_persistent_network_variable_path(self):
         source = (ROOT / "Core/Src/flight_buzzer.c").read_text()
         self.assertIn("seds_router_request_managed_variable", source)
+        self.assertIn("if (g_network_value_seen) return SEDS_OK;", source)
         self.assertNotIn("seds_router_get_network_variable_packed_len", source)
         telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
         cmake = (ROOT / "CMakeLists.txt").read_text()
@@ -63,7 +64,7 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("packet->timestamp < g_last_source_timestamp_ms", source)
         self.assertIn("record_size != 1U", source)
         self.assertIn("g_flight_buzzer_stale_updates++", source)
-        self.assertIn("NETWORK_VARIABLE_REFRESH_INTERVAL_MS", source)
+        self.assertIn("NETWORK_VARIABLE_UNSYNCED_RETRY_MS", source)
         self.assertIn("HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin", source)
         self.assertIn("flight_buzzer_init(r)", telemetry)
         self.assertIn("flight_buzzer_poll(g_router.r)", telemetry)

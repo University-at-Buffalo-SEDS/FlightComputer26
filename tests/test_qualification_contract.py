@@ -92,6 +92,7 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn("seds_router_enable_network_variable", underglow)
         self.assertIn("seds_router_on_network_variable_update", underglow)
         self.assertIn("seds_router_request_managed_variable", underglow)
+        self.assertIn("if (g_network_value_seen) return SEDS_OK;", underglow)
         self.assertNotIn("seds_router_get_network_variable_packed_len", underglow)
         self.assertIn("HAL_GPIO_WritePin(LED2_PORT, LED2_PIN", underglow)
 
