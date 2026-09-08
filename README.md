@@ -4,7 +4,7 @@ FlightComputer26 targets the STM32H523. ThreadX tasks acquire the BMI088 IMU
 and BMP390 barometer, maintain the flight state, log data, and exchange
 telemetry and commands over the avionics CAN-FD network.
 
-CMake fetches SEDSNet v4.0.18 and SEDS LaunchCore v1.0.0 without submodules.
+CMake fetches SEDSNet v4.0.19 and SEDS LaunchCore v1.0.0 without submodules.
 LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
