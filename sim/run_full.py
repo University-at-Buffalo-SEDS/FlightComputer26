@@ -221,12 +221,12 @@ def run_memory_profile(
             "--layout", "/simulation/board.json",
             "--firmware-root", "/firmware",
             # Renode executes every firmware instruction. The board layout's
-            # accelerated HAL tick makes 20 ms sufficient to reach steady
+            # accelerated HAL tick makes 30 ms sufficient to reach steady
             # scheduler state; allocator longevity is exercised separately by
             # the one-million-packet traffic model below. Longer instruction
             # windows consume unbounded host resources without increasing the
             # modeled STM32 RAM coverage.
-            "--virtual-time-ms", "20",
+            "--virtual-time-ms", "30",
             "--sample-count", "20",
             "--traffic-iterations", "1000000",
         ]
