@@ -9,7 +9,9 @@ LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
 storage before network synchronization and updated when an authoritative
-network value arrives.
+network value arrives. The buzzer record also retains the authoritative packet
+timestamp so a reliable update left in flight before a reset cannot roll the
+restored state back after reboot; legacy one-byte records remain readable.
 
 ## Build and flash
 

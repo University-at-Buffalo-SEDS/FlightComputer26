@@ -9,6 +9,9 @@ extern volatile uint32_t g_flight_buzzer_updates;
 extern volatile uint32_t g_flight_buzzer_persist_restores;
 extern volatile uint32_t g_flight_buzzer_persist_writes;
 extern volatile uint32_t g_flight_buzzer_persist_errors;
+extern volatile uint32_t g_flight_buzzer_stale_updates;
+extern volatile uint32_t g_flight_buzzer_boot_restore_valid;
+extern volatile uint32_t g_flight_buzzer_boot_restored_value;
 
 void flight_buzzer_restore(void);
 SedsResult flight_buzzer_init(SedsRouter *router);
