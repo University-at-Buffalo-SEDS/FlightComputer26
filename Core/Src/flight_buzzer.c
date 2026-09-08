@@ -9,7 +9,7 @@
 
 #define FLIGHT_BUZZER_PERSIST_KEY 0x42555A5Au
 #define FLIGHT_BUZZER_PERSIST_RECORD_SIZE 9U
-#define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 100U
+#define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
 volatile uint32_t g_flight_buzzer_updates = 0U;
