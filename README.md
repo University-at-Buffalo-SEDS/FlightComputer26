@@ -1,48 +1,43 @@
-# Flight Computer 26
+# FlightComputer26 firmware
 
-This is the UB SEDS Flight Computer repository for IREC 2026.
+FlightComputer26 targets the STM32H523. ThreadX tasks acquire the BMI088 IMU
+and BMP390 barometer, maintain the flight state, log data, and exchange
+telemetry and commands over the avionics CAN-FD network.
 
-## Functionality
+CMake fetches SEDSNet v4.0.18 and SEDS LaunchCore v1.0.0 without submodules.
+LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
+the application, and owns OTA and persistent-storage formats. The underglow,
+startup-buzzer, and flight-state managed variables are restored from persistent
+storage before network synchronization and updated when an authoritative
+network value arrives.
 
-The Flight Computer is responsible for maintaining an accurate record of rocket states during flight and collecting data for post-mortem flight reconstruction. A state is described by the flight stage name (e.g., Burnout, Descent) and a history of last N state vectors, which record relative height, velocity, and position. An accurate finite state machine enables the rocket to take autonomous actions on state transitions. 
+## Build and flash
 
-If telemetry is enabled, the Flight Computer is also responsible for logging flight events, reporting errors, and processing incoming messages. Otherwise, all logs will be redirected to a device behind `stdout`, with message processing limited to inter-thread communication.
+The legacy build interface uses positional options:
 
-## Structure
+```sh
+python3 build.py release factory
+python3 build.py release flash-st
+python3 build.py release flash-dfu
+python3 build.py release clean
+```
 
-The main logic resides in [Core/](/Core/) and is split across source, includes, and tests. The main logic is organized into tasks managed by the ThreadX scheduler. Each task comprises of application code that depends on common API, abstracted through platform and domain-specific headers, which in turn can be poisoned when necesasry (e.g., when testing or swapping hardware).
+`factory` builds the combined bootloader and confirmed Slot A image;
+`bootloader`, `firmware`, and `ota` select the other image workflows. A normal
+blank-board flash must use the complete factory image at `0x08000000`.
 
-Domain-specific part of this year's Flight Computer relies on the following assumptions:
+## Tests
 
-* The board includes Bosch Sensortec BMP390 barometer and BMI088 inertial measurement unit, connected to a single SPI bus, with interrupt pins (at least 1 per sensor) being connected to free GPIO pins of the microcontroller.
+```sh
+python3 build.py test
+python3 build.py test --all --release
+```
 
-* GPS device measurements are delivered over CAN bus from an external board. If telemetry is disabled or the data becomes unavailable during flight, then BMP390 barometer will be used as fallback.
+The full suite builds release factory and OTA artifacts, validates the STM32H523
+flash and SRAM regions, runs GoogleTest and Python units, boots the ELF with
+simulated IMU/barometer/flash/CAN devices, profiles allocator use, and verifies
+linked SEDSNet discovery, time sync, persistent variables, and command/ACK
+traffic. Hardware behavior and probe limits are declared in `sim/board.json`.
 
-* The board includes optional SD card (connected via SDMMC and managed by USBX) and LEDs.
-
-* The Flight Computer is the single master on the board.
-
-## Dependencies
-
-* Newlib Cygwin (comes with toolchain)
-* STM32H5 HAL Driver (bundled, 1)
-* ARM CMSIS (bundled, 1)
-* ThreadX (2), FileX, and USBX (bundled, 1)
-* GCC ARM EABI (make)
-* CMake (make)
-* Python (optional, for build script)
-
-(1) Please see [NOTICE](/NOTICE) on licensing information and compliance.
-
-(2) Both Eclipse ThreadX and Microsoft Azure RTOS can be used interchangeably.
-
-(3) If a different library is preferred, the new library must implement the API used in [telemetry.c](/Core/Src/telemetry.c), or telemetry can be disabled during compilation.
-
-## Building
-
-Use [build.py](/build.py) to build, flash, configure, toggle tests, benchmarks, and debug options, and to generate assembly code for the repository. The script includes a short manual page on its usage, along with the description of available options.
-
-
-## IREC 2026
-
-If you are a UB SEDS team member, you can join the [OpenProject board](https://projects.rylanswebsite.com/projects/avionics-2025) for this year.
+The board's runtime network schema is `config/sedsnet.json`; changes to network
+variables or endpoints must update that file and the matching stable C IDs.
