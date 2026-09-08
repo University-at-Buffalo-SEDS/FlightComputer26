@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+extern volatile uint32_t g_telemetry_discovery_seen;
+
 #define UNDERGLOW_PERSIST_KEY 0x55474C57u
 #define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
 
@@ -106,15 +108,14 @@ SedsResult av_bay_underglow_init(SedsRouter *router)
         router, SEDS_DT_AV_BAY_UNDERGLOW, apply_underglow, NULL);
     if (result != SEDS_OK) return result;
     g_last_refresh_ms = HAL_GetTick();
-    result = seds_router_request_managed_variable(
-        router, SEDS_DT_AV_BAY_UNDERGLOW);
-    return result == SEDS_IO ? SEDS_OK : result;
+    return SEDS_OK;
 }
 
 SedsResult av_bay_underglow_poll(SedsRouter *router)
 {
     if (router == NULL) return SEDS_BAD_ARG;
     if (g_network_value_seen) return SEDS_OK;
+    if (g_telemetry_discovery_seen == 0U) return SEDS_OK;
     const uint32_t now_ms = HAL_GetTick();
     if ((uint32_t)(now_ms - g_last_refresh_ms) <
         NETWORK_VARIABLE_UNSYNCED_RETRY_MS) return SEDS_OK;
