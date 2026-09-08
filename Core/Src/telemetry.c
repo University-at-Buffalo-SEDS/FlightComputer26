@@ -75,6 +75,14 @@ volatile uint32_t g_sim_heartbeat_ok = 0U;
 volatile uint32_t g_sim_heartbeat_fail = 0U;
 volatile uint32_t g_sim_heartbeat_wire_tx = 0U;
 volatile uint32_t g_telemetry_queue_errors = 0U;
+/* A full hardware TX FIFO is expected while this board is alone on CAN: the
+ * controller retains unacknowledged frames and SEDSNet retries them. Keep that
+ * recoverable link state separate from allocator/router failures so an
+ * isolated, healthy controller is not reported as crashed. */
+volatile uint32_t g_telemetry_link_backpressure
+    __attribute__((used, externally_visible)) = 0U;
+volatile int32_t g_telemetry_last_queue_result
+    __attribute__((used, externally_visible)) = SEDS_OK;
 volatile uint32_t g_telemetry_discovery_poll_errors = 0U;
 volatile uint32_t g_telemetry_timesync_poll_errors = 0U;
 /* Last completed telemetry service stage. This remains available in release
@@ -91,6 +99,9 @@ volatile uint32_t g_telemetry_stack_size
     __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
 volatile uint32_t g_telemetry_stack_free_min
     __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
+extern volatile uint32_t g_fdcan_tx_fail_count;
+extern volatile uint32_t g_fdcan_last_error;
+static uint32_t g_queue_observed_tx_fail_count = 0U;
 
 static void telemetry_sample_stack_margin(void) {
   const uint32_t *cursor =
@@ -131,6 +142,30 @@ static void telemetry_sample_active_stack_margin(void) {
   if (free_bytes < g_telemetry_stack_free_min) {
     g_telemetry_stack_free_min = free_bytes;
   }
+}
+
+static void telemetry_record_queue_result(SedsResult result) {
+  const uint32_t tx_fail_count = g_fdcan_tx_fail_count;
+  const uint8_t new_fifo_full =
+      (tx_fail_count != g_queue_observed_tx_fail_count &&
+       (g_fdcan_last_error & HAL_FDCAN_ERROR_FIFO_FULL) != 0U) ? 1U : 0U;
+  g_queue_observed_tx_fail_count = tx_fail_count;
+  if (result == SEDS_OK) {
+    return;
+  }
+  g_telemetry_last_queue_result = (int32_t)result;
+  /* SEDSNet presents a failed side callback as SEDS_HANDLER_ERROR. Confirm
+   * that it came from a newly observed FDCAN FIFO-full event before treating
+   * it as recoverable backpressure; genuine packet-handler failures remain
+   * fatal queue errors. */
+  if (result == SEDS_IO ||
+      (result == SEDS_HANDLER_ERROR && new_fifo_full != 0U)) {
+    g_telemetry_link_backpressure++;
+    return;
+  }
+
+  g_telemetry_queue_errors++;
+  led_toggle(light[Blue].port, light[Blue].pin);
 }
 
 static const SedsLocalEndpointDesc locals[] = {
@@ -856,10 +891,8 @@ void telemetry_entry(ULONG _)
     g_telemetry_queue_errors++;
   }
   g_telemetry_service_stage = 4U;
-  if (process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS) != SEDS_OK)
-  {
-    g_telemetry_queue_errors++;
-  }
+  telemetry_record_queue_result(
+      process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS));
   g_telemetry_service_stage = 5U;
 
   /* Do not block telemetry startup to animate an LED. Discovery and time sync
@@ -879,11 +912,7 @@ void telemetry_entry(ULONG _)
         process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS);
     g_telemetry_service_stage = 63U;
 
-    if (k != SEDS_OK)
-    {
-      g_telemetry_queue_errors++;
-      led_toggle(light[Blue].port, light[Blue].pin);
-    }
+    telemetry_record_queue_result(k);
 
     if (telemetry_poll_timesync() != SEDS_OK)
       g_telemetry_timesync_poll_errors++;

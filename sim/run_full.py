@@ -241,6 +241,31 @@ def run_unacknowledged_can_simulation(
     docker = require_docker()
     image = resolve_simulator_image(ui, docker, repo_root, architecture)
     layout = load_layout_for_build(repo_root, build_subdir)
+    configure_unacknowledged_can_layout(layout)
+
+    with tempfile.TemporaryDirectory(prefix="seds-firmware-isolated-can-") as directory:
+        write_container_layout(Path(directory), layout)
+        command = [
+            docker, "run", "--platform", SIMULATOR_DOCKER_PLATFORM, "--rm",
+            "-v", f"{repo_root}:/firmware:ro",
+            "-v", f"{directory}:/simulation:ro",
+            image, "profile",
+            "--layout", "/simulation/board.json",
+            "--firmware-root", "/firmware",
+            "--can-unacknowledged",
+            # Three H5 hardware TX slots must fill before the fourth enqueue
+            # observes an unacknowledged-bus failure. Renode currently advances
+            # roughly one complete FC telemetry service turn per 250 ms here.
+            "--virtual-time-ms", "1000",
+            "--sample-count", "5",
+            "--traffic-iterations", "100000",
+        ]
+        ui.say("run", " ".join(command))
+        run_live(command, "disconnected CAN survival simulation")
+
+
+def configure_unacknowledged_can_layout(layout: dict) -> None:
+    """Apply the hardware contract for a controller with no CAN acknowledger."""
     probes = layout.get("execution", {}).get("memory_probes", [])
     layout["execution"]["memory_probes"] = [
         probe for probe in probes
@@ -259,23 +284,16 @@ def run_unacknowledged_can_simulation(
             probe.pop("minimum", None)
         if probe.get("name") == "fdcan_tx_ok":
             probe["minimum"] = 1
-
-    with tempfile.TemporaryDirectory(prefix="seds-firmware-isolated-can-") as directory:
-        write_container_layout(Path(directory), layout)
-        command = [
-            docker, "run", "--platform", SIMULATOR_DOCKER_PLATFORM, "--rm",
-            "-v", f"{repo_root}:/firmware:ro",
-            "-v", f"{directory}:/simulation:ro",
-            image, "profile",
-            "--layout", "/simulation/board.json",
-            "--firmware-root", "/firmware",
-            "--can-unacknowledged",
-            "--virtual-time-ms", "250",
-            "--sample-count", "5",
-            "--traffic-iterations", "100000",
-        ]
-        ui.say("run", " ".join(command))
-        run_live(command, "disconnected CAN survival simulation")
+        if probe.get("name") == "telemetry_loop_completions":
+            # Renode's H5 backend advances only one complete ThreadX service
+            # turn in this qualification window. Requiring that turn plus
+            # observed backpressure and clean fault/OOM probes still catches
+            # the real isolated-bus failure without fabricating elapsed loops.
+            probe["minimum"] = 1
+        if probe.get("name") == "telemetry_link_backpressure":
+            probe["minimum"] = 1
+        if probe.get("name") == "queue_errors":
+            probe["maximum"] = 0
 
 
 def _network_peer(repo_root: Path) -> tuple[str, Path]:

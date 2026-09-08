@@ -57,7 +57,6 @@ __ALIGN_BEGIN static UCHAR tx_byte_pool_buffer[TX_APP_MEM_POOL_SIZE] __ALIGN_END
 static TX_BYTE_POOL tx_task_stacks;
 
 /* USER CODE BEGIN FX_Pool_Buffer */
-#ifdef SD_AVAILABLE
 /* USER CODE END FX_Pool_Buffer */
 #if defined ( __ICCARM__ )
 #pragma data_alignment=4
@@ -69,7 +68,6 @@ static TX_BYTE_POOL fx_app_byte_pool;
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
-#endif
 /* USER CODE END PFP */
 
 /**
@@ -112,40 +110,35 @@ VOID tx_application_define(VOID *first_unused_memory)
     /* USER CODE BEGIN  App_ThreadX_Init_Success */
     /* USER CODE END  App_ThreadX_Init_Success */
 
-#ifdef SD_AVAILABLE
-    if (sdmmc_ready)
-    {
-      if (tx_byte_pool_create(&fx_app_byte_pool, "Fx App memory pool", fx_byte_pool_buffer, FX_APP_MEM_POOL_SIZE) != TX_SUCCESS)
-      {
-        /* USER CODE BEGIN FX_Byte_Pool_Error */
+  }
+  if (tx_byte_pool_create(&fx_app_byte_pool, "Fx App memory pool", fx_byte_pool_buffer, FX_APP_MEM_POOL_SIZE) != TX_SUCCESS)
+  {
+    /* USER CODE BEGIN FX_Byte_Pool_Error */
         while (1)
         {
           blink(Green, true, 1);
         }
-        /* USER CODE END FX_Byte_Pool_Error */
-      }
-      else
-      {
-        /* USER CODE BEGIN FX_Byte_Pool_Success */
+    /* USER CODE END FX_Byte_Pool_Error */
+  }
+  else
+  {
+    /* USER CODE BEGIN FX_Byte_Pool_Success */
 
-        /* USER CODE END FX_Byte_Pool_Success */
+    /* USER CODE END FX_Byte_Pool_Success */
 
-        memory_ptr = (VOID *)&fx_app_byte_pool;
-        status = MX_FileX_Init(memory_ptr);
-        if (status != FX_SUCCESS)
-        {
-          /* USER CODE BEGIN  MX_FileX_Init_Error */
+    memory_ptr = (VOID *)&fx_app_byte_pool;
+    status = MX_FileX_Init(memory_ptr);
+    if (status != FX_SUCCESS)
+    {
+      /* USER CODE BEGIN  MX_FileX_Init_Error */
           while (1)
           {
             blink(Green, false, 1);
           }
-          /* USER CODE END  MX_FileX_Init_Error */
-        }
-        /* USER CODE BEGIN  MX_FileX_Init_Success */
-        /* USER CODE END  MX_FileX_Init_Success */
-      }
+      /* USER CODE END  MX_FileX_Init_Error */
     }
-#endif /* SD_AVAILABLE */
+    /* USER CODE BEGIN  MX_FileX_Init_Success */
+    /* USER CODE END  MX_FileX_Init_Success */
   }
 
 #else

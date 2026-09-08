@@ -63,6 +63,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
     ${CMAKE_SOURCE_DIR}/Core/Src/panic_match.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/resilient_storage.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c
 
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_atan2_f32.c
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_cos_f32.c
@@ -196,9 +198,6 @@ endif()
 
 if (ONBOARD_SD)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE SD_AVAILABLE)
-    target_sources(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c
-    )
 endif()
 
 if (FC_BENCH)
@@ -296,7 +295,8 @@ math(EXPR FLIGHT_APP_VECTOR_OFFSET
     "${LAUNCHCORE_APP_VECTOR_TABLE} - 0x08000000"
     OUTPUT_FORMAT HEXADECIMAL)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    VECT_TAB_OFFSET=${FLIGHT_APP_VECTOR_OFFSET}U)
+    VECT_TAB_OFFSET=${FLIGHT_APP_VECTOR_OFFSET}U
+    HAL_HASH_MODULE_ENABLED)
 target_compile_definitions(STM32_Drivers PRIVATE
     VECT_TAB_OFFSET=${FLIGHT_APP_VECTOR_OFFSET}U)
 include(cmake/launchcore_stm32.cmake)

@@ -125,6 +125,33 @@ class OtaBuildScriptTests(unittest.TestCase):
             self.assertEqual(root.stat().st_mode & 0o777, 0o755)
             self.assertEqual(layout.stat().st_mode & 0o777, 0o644)
 
+    def test_disconnected_can_requires_progress_without_fatal_queue_errors(self):
+        from sim.run_full import configure_unacknowledged_can_layout
+
+        layout = {
+            "execution": {
+                "memory_probes": [
+                    {"name": "network_ready", "symbol": "network"},
+                    {"name": "fdcan_tx_fail", "symbol": "tx_fail", "maximum": 0},
+                    {"name": "fdcan_tx_ok", "symbol": "tx_ok"},
+                    {"name": "telemetry_loop_completions", "symbol": "loops", "minimum": 1},
+                    {"name": "telemetry_link_backpressure", "symbol": "pressure"},
+                    {"name": "queue_errors", "symbol": "errors"},
+                ]
+            }
+        }
+        configure_unacknowledged_can_layout(layout)
+        probes = {
+            probe["name"]: probe for probe in layout["execution"]["memory_probes"]
+        }
+
+        self.assertNotIn("network_ready", probes)
+        self.assertNotIn("maximum", probes["fdcan_tx_fail"])
+        self.assertEqual(probes["fdcan_tx_ok"]["minimum"], 1)
+        self.assertEqual(probes["telemetry_loop_completions"]["minimum"], 1)
+        self.assertEqual(probes["telemetry_link_backpressure"]["minimum"], 1)
+        self.assertEqual(probes["queue_errors"]["maximum"], 0)
+
     def test_dfu_flash_defaults_to_combined_factory_image(self):
         _preset, options = build.parse(["release", "flash-dfu"])
         self.assertEqual(options["image"], "factory")

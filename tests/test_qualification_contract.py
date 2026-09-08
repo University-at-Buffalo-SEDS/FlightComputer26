@@ -111,7 +111,11 @@ class QualificationContractTests(unittest.TestCase):
     def test_sd_failure_yields_instead_of_starving_telemetry(self):
         root = Path(build.__file__).resolve().parent
         filex = (root / "FileX" / "App" / "app_filex.c").read_text(encoding="utf-8")
-        self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", filex)
+        storage = (root / "Core" / "Src" / "resilient_storage.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("#define fx_media_open flight_fx_media_open", filex)
+        self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", storage)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
 
     def test_recovery_dependencies_exist_before_priority_zero_thread_starts(self):
@@ -171,6 +175,16 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         self.assertNotIn("seds_router_export_topology_len", telemetry)
         self.assertIn("g_telemetry_discovery_seen = 1U", telemetry)
+
+    def test_isolated_can_backpressure_is_not_reported_as_a_router_crash(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("HAL_FDCAN_ERROR_FIFO_FULL", telemetry)
+        self.assertIn("result == SEDS_HANDLER_ERROR", telemetry)
+        self.assertIn("g_telemetry_link_backpressure++", telemetry)
+        self.assertIn("g_telemetry_queue_errors++", telemetry)
 
 if __name__ == "__main__":
     unittest.main()

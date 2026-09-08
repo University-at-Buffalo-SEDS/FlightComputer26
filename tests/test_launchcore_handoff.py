@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXED_LAUNCHCORE = "v1.0.0"
-FIXED_SEDSNET = "v4.0.19"
+FIXED_SEDSNET = "v4.0.20"
 UNSAFE_HANDOFFS = {
     "1ab6cd3dcddb7acaacb9dbfc16159f36f19363a8",
     "709474c68b83d259ba8657038340577ed4e8c6e4",
@@ -76,12 +76,14 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         tasks = (ROOT / "Core/Inc/fctasks.h").read_text()
         config = (ROOT / "Core/Inc/fcconfig.h").read_text()
         rtos = (ROOT / "AZURE_RTOS/App/app_azure_rtos_config.h").read_text()
+        ioc = (ROOT / "FlightComputer26.ioc").read_text()
         telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
         layout = (ROOT / "sim/board.json").read_text()
         self.assertIn("TLMT_STACK_BYTES (48U * 1024U)", tasks)
         self.assertIn("TELEMETRY_HEAP", config)
         self.assertIn("48U * 1024U", config)
-        self.assertIn("69632U + (16U * 1024U)", rtos)
+        self.assertIn("TX_APP_MEM_POOL_SIZE                     86016", rtos)
+        self.assertIn("THREADX.TX_APP_MEM_POOL_SIZE=86016", ioc)
         self.assertIn("g_telemetry_discovery_seen != 0U", telemetry)
         self.assertIn("g_telemetry_stack_free_min", telemetry)
         self.assertIn("telemetry_sample_stack_margin();", telemetry)

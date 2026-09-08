@@ -103,6 +103,7 @@ target_include_directories(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
 target_compile_definitions(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     USE_HAL_DRIVER
     ${LAUNCHCORE_DEVICE_DEFINE}
+    HAL_HASH_MODULE_ENABLED
 )
 target_link_options(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     -T "${CMAKE_SOURCE_DIR}/Bootloader/linker_bootloader.ld"
