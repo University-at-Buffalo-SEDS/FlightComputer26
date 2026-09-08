@@ -66,9 +66,17 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("record_size != 1U", source)
         self.assertIn("g_flight_buzzer_stale_updates++", source)
         self.assertIn("NETWORK_VARIABLE_UNSYNCED_RETRY_MS", source)
+        self.assertIn("FLIGHT_BUZZER_STARTUP_DURATION_MS 2000U", source)
+        self.assertIn("service_startup_buzz();", source)
+        self.assertIn("g_flight_buzzer_startup_completions++", source)
+        self.assertNotIn("drive_buzzer(enabled);", source)
         self.assertIn("HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin", source)
         self.assertIn("flight_buzzer_init(r)", telemetry)
         self.assertIn("flight_buzzer_poll(g_router.r)", telemetry)
+        self.assertLess(
+            telemetry.index("flight_buzzer_poll(g_router.r)"),
+            telemetry.index("seds_router_poll_discovery(g_router.r, &did_queue)"),
+        )
         self.assertIn("Core/Src/flight_buzzer.c", cmake)
 
         main = (ROOT / "Core/Src/main.c").read_text()

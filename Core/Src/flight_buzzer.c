@@ -11,6 +11,7 @@ extern volatile uint32_t g_telemetry_discovery_seen;
 
 #define FLIGHT_BUZZER_PERSIST_KEY 0x42555A5Au
 #define FLIGHT_BUZZER_PERSIST_RECORD_SIZE 9U
+#define FLIGHT_BUZZER_STARTUP_DURATION_MS 2000U
 #define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
@@ -21,6 +22,9 @@ volatile uint32_t g_flight_buzzer_persist_errors = 0U;
 volatile uint32_t g_flight_buzzer_stale_updates = 0U;
 volatile uint32_t g_flight_buzzer_boot_restore_valid = 0U;
 volatile uint32_t g_flight_buzzer_boot_restored_value = 0U;
+volatile uint32_t g_flight_buzzer_output_active = 0U;
+volatile uint32_t g_flight_buzzer_startup_buzzes = 0U;
+volatile uint32_t g_flight_buzzer_startup_completions = 0U;
 
 static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
@@ -29,6 +33,8 @@ static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
 static uint32_t g_last_refresh_ms = 0U;
 static uint64_t g_last_source_timestamp_ms = 0U;
+static bool g_startup_buzz_active = false;
+static uint32_t g_startup_buzz_deadline_ms = 0U;
 
 static uint64_t decode_u64_le(const uint8_t *bytes)
 {
@@ -48,11 +54,21 @@ static void encode_u64_le(uint8_t *bytes, uint64_t value)
     }
 }
 
-static void drive_buzzer(bool enabled)
+static void drive_buzzer_output(bool enabled)
 {
-    g_flight_buzzer_enabled = enabled ? 1U : 0U;
+    g_flight_buzzer_output_active = enabled ? 1U : 0U;
     HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin,
                       enabled ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static void service_startup_buzz(void)
+{
+    if (!g_startup_buzz_active) return;
+    const uint32_t now_ms = HAL_GetTick();
+    if ((int32_t)(now_ms - g_startup_buzz_deadline_ms) < 0) return;
+    drive_buzzer_output(false);
+    g_startup_buzz_active = false;
+    g_flight_buzzer_startup_completions++;
 }
 
 void flight_buzzer_restore(void)
@@ -72,7 +88,11 @@ void flight_buzzer_restore(void)
 
     const launchcore_persist_status_t status = persistent_store_get(
         FLIGHT_BUZZER_PERSIST_KEY, record, &record_size);
-    if (status == LAUNCHCORE_PERSIST_NOT_FOUND) return;
+    if (status == LAUNCHCORE_PERSIST_NOT_FOUND)
+    {
+        drive_buzzer_output(false);
+        return;
+    }
     if (status != LAUNCHCORE_PERSIST_OK ||
         (record_size != 1U && record_size != sizeof(record)) || record[0] > 1U)
     {
@@ -88,7 +108,18 @@ void flight_buzzer_restore(void)
     g_flight_buzzer_persist_restores++;
     g_flight_buzzer_boot_restore_valid = 1U;
     g_flight_buzzer_boot_restored_value = record[0];
-    drive_buzzer(record[0] != 0U);
+    g_flight_buzzer_enabled = record[0];
+    if (record[0] != 0U)
+    {
+        drive_buzzer_output(true);
+        g_startup_buzz_active = true;
+        g_startup_buzz_deadline_ms = HAL_GetTick() + FLIGHT_BUZZER_STARTUP_DURATION_MS;
+        g_flight_buzzer_startup_buzzes++;
+    }
+    else
+    {
+        drive_buzzer_output(false);
+    }
 }
 
 static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
@@ -113,7 +144,9 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
                                !g_persist_has_timestamp ||
                                g_flight_buzzer_enabled != (uint32_t)enabled ||
                                packet->timestamp > g_last_source_timestamp_ms;
-    drive_buzzer(enabled);
+    /* This variable configures the next boot indication. It is deliberately
+     * not a level command for the buzzer output. */
+    g_flight_buzzer_enabled = enabled ? 1U : 0U;
     g_network_value_seen = true;
     g_flight_buzzer_updates++;
     if (needs_persist)
@@ -153,6 +186,7 @@ SedsResult flight_buzzer_init(SedsRouter *router)
 
 SedsResult flight_buzzer_poll(SedsRouter *router)
 {
+    service_startup_buzz();
     if (router == NULL) return SEDS_BAD_ARG;
     if (g_network_value_seen) return SEDS_OK;
     if (g_telemetry_discovery_seen == 0U) return SEDS_OK;
