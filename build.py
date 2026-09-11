@@ -243,9 +243,18 @@ def configure(buildir: Path, preset: str, options: dict):
         gps             = "-DEXTERNAL_GPS=ON"
         sd              = "-DONBOARD_SD=ON"
         bench           = "-DFC_BENCH=OFF"
-        flags           = "-DCUSTOM_FLAGS=OFF"
+        # Release images must always use the project's LTO/size flags. Keeping
+        # this opt-in made peer builds silently omit -flto and overflow the
+        # LaunchCore application slot even though direct release builds fit.
+        flags           = ("-DCUSTOM_FLAGS=ON" if preset == "Release"
+                           else "-DCUSTOM_FLAGS=OFF")
         sensortest      = "-DSENSOR_TESTS=OFF"
-        usb             = "-DUSB_ENUM=ON"
+        # USB CDC is a bench/debug transport. Production telemetry uses CAN and
+        # the RF link, so release builds keep the USB stack dormant unless a
+        # future explicit option enables it. This also preserves scarce flash
+        # and runtime memory on the H523 application slot.
+        usb             = ("-DUSB_ENUM=OFF" if preset == "Release"
+                           else "-DUSB_ENUM=ON")
         parkf           = "-DPARALLEL_KF=OFF"
         mathdbg         = "-DDEBUG_MATH=OFF"
         lunatic         = "-DIGNORE_STATES=OFF"
@@ -656,18 +665,21 @@ def run_test_stage(results: list[tuple[str, str]], stage: str, action) -> None:
         results.append((stage, "PASS"))
 
 
-def parse_test_options(argv: list[str]) -> tuple[bool, bool]:
+def parse_test_options(argv: list[str]) -> tuple[bool, bool, bool]:
         all_tests = "--all" in argv or "--full" in argv
         release = "--release" in argv
-        known = {"--all", "--full", "--release"}
+        ultra_soak = "--ultra-soak" in argv
+        known = {"--all", "--full", "--release", "--ultra-soak"}
         unknown = [arg for arg in argv if arg not in known]
         if unknown:
                 sys.exit(f"Unrecognized test option: {unknown[0]}")
-        return all_tests, release
+        if ultra_soak and not all_tests:
+                sys.exit("--ultra-soak requires --all (or --full).")
+        return all_tests, release, ultra_soak
 
 
 def run_tests(argv: list[str]) -> None:
-        all_tests, release = parse_test_options(argv)
+        all_tests, release, ultra_soak = parse_test_options(argv)
         results: list[tuple[str, str]] = []
         run_test_stage(results, "Python unit tests", lambda: subprocess.run([
                 sys.executable, "-m", "unittest", "discover", "-s", "tests",
@@ -728,6 +740,14 @@ def run_tests(argv: list[str]) -> None:
                         _TestUI(), PROJECT, "stm32h5", build_subdir
                 ),
         )
+        if ultra_soak:
+                run_test_stage(
+                        results, "10-minute network fault/rejoin soak",
+                        lambda: run_network_simulation(
+                                _TestUI(), PROJECT, "stm32h5", build_subdir,
+                                ultra_soak=True,
+                        ),
+                )
         print_test_summary(results)
 
 

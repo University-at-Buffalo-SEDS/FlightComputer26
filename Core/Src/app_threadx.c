@@ -56,6 +56,26 @@
 /* A task-creation failure happens before normal logging is available. Encode
  * the failed stage as N short blue flashes followed by one long green flash. */
 volatile UINT g_startup_fault_stage __attribute__((used, externally_visible)) = 0U;
+volatile UINT g_thread_stack_error_count __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_thread_stack_error_thread __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_thread_stack_error_start __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_thread_stack_error_end __attribute__((used, externally_visible)) = 0U;
+
+static void startup_fault(UINT stage);
+
+static void thread_stack_error_handler(TX_THREAD *thread_ptr)
+{
+  g_thread_stack_error_count++;
+  g_thread_stack_error_thread = (uint32_t)(uintptr_t)thread_ptr;
+  if (thread_ptr != TX_NULL)
+  {
+    g_thread_stack_error_start =
+        (uint32_t)(uintptr_t)thread_ptr->tx_thread_stack_start;
+    g_thread_stack_error_end =
+        (uint32_t)(uintptr_t)thread_ptr->tx_thread_stack_end;
+  }
+  startup_fault(7U);
+}
 
 static void startup_fault(UINT stage)
 {
@@ -84,6 +104,8 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE END App_ThreadX_MEM_POOL */
 
   /* USER CODE BEGIN App_ThreadX_Init */
+
+  (void)tx_thread_stack_error_notify(thread_stack_error_handler);
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
   ret = create_telemetry_task(memory_ptr);

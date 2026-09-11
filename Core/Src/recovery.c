@@ -8,6 +8,8 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "av_bay_underglow.h"
+#include "tx_thread.h"
 
 #define id "RE "
 
@@ -16,7 +18,33 @@ TX_THREAD recovery_task;
 TX_QUEUE seds_syscall;
 TX_TIMER monotonic_checks;
 
+extern volatile fc_msg g_last_network_flight_command_msg;
+volatile uint32_t g_network_flight_commands_processed
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_recovery_stack_used
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_recovery_stack_remaining
+    __attribute__((used, externally_visible)) = RECV_STACK_BYTES;
+volatile uint32_t g_recovery_commands_dequeued
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_recovery_receive_loop_ready
+    __attribute__((used, externally_visible)) = 0U;
+
 TX_BYTE_POOL *tx_app_shared;
+
+static void recovery_update_stack_profile(void)
+{
+  _tx_thread_stack_analyze(&recovery_task);
+  const uintptr_t start = (uintptr_t)recovery_task.tx_thread_stack_start;
+  const uintptr_t end = (uintptr_t)recovery_task.tx_thread_stack_end;
+  const uintptr_t highest =
+      (uintptr_t)recovery_task.tx_thread_stack_highest_ptr;
+  if (highest >= start && highest <= end)
+  {
+    g_recovery_stack_used = (uint32_t)(end - highest + sizeof(ULONG));
+    g_recovery_stack_remaining = (uint32_t)(highest - start);
+  }
+}
 
 volatile fu32 local_time[Time_Users] = {0};
 
@@ -220,11 +248,13 @@ static inline void manual_deployment(bool apogee, bool force)
     sm.flight = Descent;
     release_parachute(force);
     blink(Blue, false, 2);
+    av_bay_underglow_reapply();
   }
   else if (expand_parachute(force))
   {
     sm.flight = Reefing;
     blink(Blue, false, 4);
+    av_bay_underglow_reapply();
   }
   else return;
 
@@ -672,12 +702,19 @@ void recovery_entry(ULONG st)
 
   tx_timer_activate(&monotonic_checks);
 
-  log_flight_state(to_global_state(Startup));
+  /* Flight state is restored before ThreadX starts and then converges through
+   * its managed network variable. Publishing it here lets this priority-0
+   * task preempt telemetry while telemetry is inside discovery, then enter
+   * the same router from a second thread. Under a busy CAN topology that can
+   * deadlock both tasks immediately after a reboot. Leave all router work to
+   * the telemetry task; later real state transitions still publish normally. */
+  g_recovery_receive_loop_ready = 1U;
 
   MrAnalog (WE_ARE_SO_BACK)
   {
     fc_msg msg;
 
+    recovery_update_stack_profile();
     /* Thread suspension */
     st = tx_queue_receive(&seds_syscall, &msg, TX_WAIT_FOREVER);
 
@@ -686,7 +723,20 @@ void recovery_entry(ULONG st)
       continue;
     }
 
+    g_recovery_commands_dequeued++;
+    const bool network_command = msg == g_last_network_flight_command_msg;
+    if (network_command)
+    {
+      /* Claim the accepted network command before executing it so a later
+       * command cannot overwrite the correlation while this handler runs. */
+      g_last_network_flight_command_msg = Invalid_Message;
+    }
     decode_flight_message(msg);
+    recovery_update_stack_profile();
+    if (network_command)
+    {
+      g_network_flight_commands_processed++;
+    }
   }
 }
 

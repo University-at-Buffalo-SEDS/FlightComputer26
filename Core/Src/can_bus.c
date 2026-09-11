@@ -51,7 +51,7 @@
 #endif
 
 #ifndef CAN_BUS_TX_ENQUEUE_TIMEOUT_MS
-#define CAN_BUS_TX_ENQUEUE_TIMEOUT_MS 50U
+#define CAN_BUS_TX_ENQUEUE_TIMEOUT_MS 5U
 #endif
 
 #ifndef CAN_BUS_RX_SERVICE_BUDGET
@@ -277,11 +277,26 @@ static HAL_StatusTypeDef can_bus_enqueue_tx_frame(const FDCAN_TxHeaderTypeDef *h
     return HAL_ERROR;
 
   g_can_tx_service_stage = 12U;
-  if (can_bus_recover_if_bus_off() != HAL_OK)
-    return HAL_ERROR;
+  const uint32_t started_ms = HAL_GetTick();
+  while (HAL_FDCAN_GetTxFifoFreeLevel(g_hfdcan) == 0U)
+  {
+    if (can_bus_recover_if_bus_off() != HAL_OK)
+      return HAL_ERROR;
+    if ((uint32_t)(HAL_GetTick() - started_ms) >=
+        (uint32_t)CAN_BUS_TX_ENQUEUE_TIMEOUT_MS)
+    {
+      (void)HAL_FDCAN_AbortTxRequest(
+          g_hfdcan, FDCAN_TX_BUFFER0 | FDCAN_TX_BUFFER1 | FDCAN_TX_BUFFER2);
+      g_fdcan_last_error = HAL_FDCAN_ERROR_FIFO_FULL;
+      g_fdcan_last_state = (uint32_t)g_hfdcan->State;
+      g_fdcan_tx_fail_count++;
+      return HAL_TIMEOUT;
+    }
+  }
 
-  /* Never spin inside a SEDSNet callback. The router keeps a failed TX item
-   * queued and retries it on the next bounded service pass. */
+  /* The bounded wait above lets packets larger than the three-element M_CAN
+   * FIFO stream as frames complete. A disconnected bus times out quickly and
+   * SEDSNet retries the complete logical packet on a later service pass. */
   g_can_tx_service_stage = 13U;
   HAL_StatusTypeDef st = HAL_FDCAN_AddMessageToTxFifoQ(g_hfdcan, hdr, data);
   g_can_tx_service_stage = 14U;
@@ -1002,11 +1017,9 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
     g_can_tx_service_stage = 4U;
     if (st != HAL_OK)
       return st;
-    /* Do not sleep while SEDSNet owns the transmit callback. With no other
-     * node acknowledging CAN, the H5 FIFO intentionally fills and the next
-     * enqueue returns HAL_BUSY. Propagating that bounded failure lets the
-     * periodic discovery poll retry later; sleeping here made boot progress
-     * depend on an RX/TX interrupt from another board. */
+    /* Stream packets larger than the hardware FIFO through its available
+     * slots. The bounded enqueue wait still returns promptly when the bus is
+     * disconnected so SEDSNet can retry without wedging this thread. */
   }
 
   g_can_tx_service_stage = 5U;

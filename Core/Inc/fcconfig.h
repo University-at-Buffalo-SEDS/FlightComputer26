@@ -27,7 +27,7 @@
 #define TELEMETRY_HEAP 		(48U * 1024U)
 
 #define LOG_RATE_SD	 	    50
-#define LOG_RATE_GND 	    7500
+#define LOG_RATE_GND 	    1000
 #define LOG_RATE_LIMITED	15000
 
 #define SD_BUFFER_SIZE		32768

@@ -1,5 +1,7 @@
 #include "resilient_storage.h"
 
+#include "sedsnet_config.h"
+#include "telemetry.h"
 #include "tx_api.h"
 
 extern SD_HandleTypeDef hsd1;
@@ -13,7 +15,10 @@ volatile uint32_t g_sd_init_failures
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_sd_mount_failures
     __attribute__((used, externally_visible)) = 0U;
-
+volatile uint32_t g_sd_warning_publish_count
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_sd_ready
+    __attribute__((used, externally_visible)) = 0U;
 HAL_StatusTypeDef flight_sd_init(SD_HandleTypeDef *sd) {
   HAL_StatusTypeDef status = HAL_SD_Init(sd);
   g_sd_initialized = (status == HAL_OK) ? 1U : 0U;
@@ -28,6 +33,7 @@ HAL_StatusTypeDef flight_sd_init(SD_HandleTypeDef *sd) {
 UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
                           VOID (*media_driver)(FX_MEDIA *), VOID *driver_info_ptr,
                           VOID *memory_ptr, ULONG memory_size) {
+  uint32_t failed_retries = 0U;
   for (;;) {
     if (g_sd_initialized == 0U) {
       HAL_StatusTypeDef status = HAL_SD_Init(&hsd1);
@@ -41,11 +47,21 @@ UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
       UINT result = fx_media_open(media_ptr, media_name, media_driver,
                                   driver_info_ptr, memory_ptr, memory_size);
       if (result == FX_SUCCESS) {
+        g_sd_ready = 1U;
         return result;
       }
       g_sd_initialized = 0U;
       g_sd_mount_failures++;
     }
+
+    if ((failed_retries == 0U) || ((failed_retries % 60U) == 0U)) {
+      if (log_telemetry_string_asynchronous(
+              SEDS_DT_WARNING,
+              "Flight Computer SD card unavailable; flight and networking continue") == SEDS_OK) {
+        g_sd_warning_publish_count++;
+      }
+    }
+    failed_retries++;
 
     tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
   }

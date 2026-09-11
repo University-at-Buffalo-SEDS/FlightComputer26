@@ -128,6 +128,7 @@ if (ENABLE_TELEMETRY)
 
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_rate.c
         ${CMAKE_SOURCE_DIR}/Core/Src/av_bay_underglow.c
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_buzzer.c
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_state_cache.c
@@ -170,7 +171,8 @@ message(STATUS "Sensor tests:           ${SENSOR_TESTS}")
 message(STATUS "USB enumeration:        ${USB_ENUM}")
 message(STATUS "Math debugging:         ${DEBUG_MATH}")
 message(STATUS "Ignore states:          ${IGNORE_STATES}")
-message(STATUS "Simulation:             ${SWAP_CONFIG}")
+message(STATUS "Simulator instrumentation: ${SEDS_FIRMWARE_SIM_TEST}")
+message(STATUS "Simulation user config:    ${SWAP_CONFIG}")
 message(STATUS "Export spinlock:        ${EXPORT_SPINLOCK}")
 message(STATUS "Test allocator:         ${ALLOC_TEST}")
 message(STATUS "Start at Apogee:        ${TEST_DESCENT}")
@@ -254,7 +256,11 @@ if (CUSTOM_FLAGS)
     set(FC_COMMON   "-mcpu=cortex-m33" "-mfpu=fpv4-sp-d16" "-mfloat-abi=hard")
 
     set(COMP_DEBUG    "-Og" "-g")
-    set(COMP_RELEASE  "-Os" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
+    # The H523 application partition is intentionally tight once LaunchCore's
+    # metadata/recovery area is reserved. GCC 13's -Oz keeps the same release
+    # semantics as -Os while preferring the smaller form when size and speed
+    # trade off, leaving margin for pinned networking-library updates.
+    set(COMP_RELEASE  "-Oz" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
 
     set(LINK_DEBUG    )
     set(LINK_RELEASE  "-flto")

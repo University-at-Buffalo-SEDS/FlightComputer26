@@ -6,6 +6,30 @@ import build
 
 
 class QualificationContractTests(unittest.TestCase):
+    def test_network_command_is_correlated_before_queue_can_preempt(self):
+        root = Path(build.__file__).resolve().parent
+        source = (root / "Core" / "Src" / "distribution.c").read_text(
+            encoding="utf-8"
+        )
+        handler = source.split("dispatch_flight_cmd", 1)[1].split(
+            "static inline SedsResult pulse_ground", 1
+        )[0]
+        handler = handler.split("#else /* MESSAGE_BATCHING_ENABLED */", 1)[1]
+        self.assertLess(
+            handler.index("g_last_network_flight_command_msg = msg;"),
+            handler.index("tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)"),
+        )
+
+    def test_sensor_telemetry_does_not_build_a_second_software_queue(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        body = telemetry.split("SedsResult log_telemetry_asynchronous", 1)[1]
+        body = body.split("SedsResult log_telemetry_string_asynchronous", 1)[0]
+        self.assertIn("seds_router_log_typed", body)
+        self.assertNotIn("seds_router_log_queue_typed", body)
+
     def test_flight_buzzer_routes_to_flight_controller_endpoint(self):
         root = Path(build.__file__).resolve().parent
         schema = json.loads((root / "config" / "sedsnet.json").read_text(encoding="utf-8"))
@@ -39,6 +63,7 @@ class QualificationContractTests(unittest.TestCase):
 
         self.assertIn('"profile"', runner)
         self.assertIn('"--sample-count", "20"', runner)
+        self.assertEqual(runner.count('str(max(1000, layout["execution"]["virtual_time_ms"]))'), 2)
         self.assertIn('"--traffic-iterations", "1000000"', runner)
         self.assertIn('"bay"', runner)
         self.assertIn('"tx_probe": "fdcan_tx_ok"', runner)
@@ -48,6 +73,9 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn('"rocket_radio"', runner)
         self.assertIn('"fill_pico"', runner)
         self.assertIn('"GS_SIM_VALIDATE_VALVE_ROUNDTRIP": "1"', runner)
+        self.assertIn('"GS_SIM_VALIDATE_SOAK_COMMANDS": "1" if ultra_soak else "0"', runner)
+        self.assertIn("Valve command path remained alive during soak interval", runner)
+        self.assertIn("Every ten-minute soak command returned an acknowledgement", runner)
         self.assertIn('"probe": "valve_commands_received", "minimum": 1', runner)
         self.assertIn("routed status ACK toward GroundStation", runner)
         self.assertIn('simulation_env["SEDS_FIRMWARE_SIM_TEST"] = "1"', runner)
@@ -101,8 +129,14 @@ class QualificationContractTests(unittest.TestCase):
         root = Path(build.__file__).resolve().parent
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn('seds_router_add_side_packed(r, "can", 3U, tx_send, NULL, false)', telemetry)
+        self.assertIn("seds_router_add_side_packed_profile(", telemetry)
+        self.assertIn("SEDS_SIDE_TRANSPORT_PROFILE_IPV6_LIKE", telemetry)
+        self.assertIn("FC_CAN_MAX_FRAME_BYTES 128U", telemetry)
         self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)
+        can_bus = (root / "Core" / "Src" / "can_bus.c").read_text(encoding="utf-8")
+        self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS 5U", can_bus)
+        self.assertIn("HAL_FDCAN_AbortTxRequest", can_bus)
+        self.assertNotIn("< (uint32_t)frag_cnt", can_bus)
 
     def test_sedsnet_can_payload_budget_matches_avionics_peers(self):
         root = Path(build.__file__).resolve().parent
@@ -118,7 +152,29 @@ class QualificationContractTests(unittest.TestCase):
         )
         self.assertIn("#define fx_media_open flight_fx_media_open", filex)
         self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", storage)
+        self.assertIn("Flight Computer SD card unavailable; flight and networking continue", storage)
+        self.assertIn("log_telemetry_string_asynchronous", storage)
+        self.assertIn("g_sd_warning_publish_count", storage)
+        self.assertIn("g_sd_ready", storage)
+        self.assertNotIn("FLIGHT_SD_PROVISION_MARKER", storage)
+        self.assertNotIn("fx_media_format", storage)
+        pipeline = (root / "Core" / "Src" / "sdpipeline.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("telemetry_unix_s()", pipeline)
+        self.assertIn("SEDS_LOG_FILENAME \"-%lu-%03lu.log\"", pipeline)
+        self.assertIn("(unsigned long)time", pipeline)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
+
+    def test_sensor_rate_limit_state_is_serialized_with_router_access(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        body = telemetry.split("SedsResult log_telemetry_asynchronous", 1)[1]
+        lock = body.index("telemetry_lock();")
+        limiter = body.index("fc_telemetry_rate_allow")
+        self.assertLess(lock, limiter)
 
     def test_recovery_dependencies_exist_before_priority_zero_thread_starts(self):
         root = Path(build.__file__).resolve().parent
@@ -134,6 +190,20 @@ class QualificationContractTests(unittest.TestCase):
         self.assertLess(queue, thread)
         self.assertLess(timer, thread)
         self.assertGreater(auto_start, thread)
+
+    def test_priority_zero_recovery_startup_does_not_reenter_router(self):
+        root = Path(build.__file__).resolve().parent
+        recovery = (root / "Core" / "Src" / "recovery.c").read_text(
+            encoding="utf-8"
+        )
+        entry = recovery[recovery.index("void recovery_entry") :]
+        entry = entry[: entry.index("UINT create_recovery_task")]
+
+        # Telemetry can be inside discovery when this higher-priority task
+        # wakes after a retained-flash reboot. Startup state is restored by
+        # the managed-variable cache, so recovery must not enter the router.
+        self.assertNotIn("log_flight_state", entry)
+        self.assertIn("g_recovery_receive_loop_ready = 1U;", entry)
 
     def test_constrained_discovery_is_primed_after_can_and_router_startup(self):
         root = Path(build.__file__).resolve().parent
@@ -170,6 +240,12 @@ class QualificationContractTests(unittest.TestCase):
         send_large = send_large[: send_large.index("void can_bus_process_rx")]
         self.assertNotIn("tx_thread_sleep", send_large)
         self.assertIn("if (st != HAL_OK)\n      return st;", send_large)
+        self.assertNotIn("< (uint32_t)frag_cnt", send_large)
+        enqueue = can_bus[can_bus.index("static HAL_StatusTypeDef can_bus_enqueue_tx_frame") :]
+        enqueue = enqueue[: enqueue.index("HAL_StatusTypeDef can_bus_send_large")]
+        self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS", enqueue)
+        self.assertIn("HAL_FDCAN_GetTxFifoFreeLevel(g_hfdcan)", enqueue)
+        self.assertIn("HAL_FDCAN_AbortTxRequest", enqueue)
 
 
     def test_periodic_health_check_does_not_serialize_topology(self):
@@ -177,6 +253,31 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         self.assertNotIn("seds_router_export_topology_len", telemetry)
         self.assertIn("g_telemetry_discovery_seen = 1U", telemetry)
+
+    def test_all_runtime_router_entry_is_serialized_across_threadx_tasks(self):
+        root = Path(build.__file__).resolve().parent
+        telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
+            encoding="utf-8"
+        )
+        for function in (
+            "log_telemetry_synchronous",
+            "log_telemetry_asynchronous",
+            "log_telemetry_string_asynchronous",
+            "dispatch_tx_queue",
+            "process_rx_queue",
+            "dispatch_tx_queue_timeout",
+            "process_rx_queue_timeout",
+            "process_all_queues_timeout",
+        ):
+            body = telemetry[telemetry.index(f"SedsResult {function}") :]
+            body = body[: body.index("\n}")]
+            self.assertIn("telemetry_lock();", body, function)
+            self.assertIn("telemetry_unlock();", body, function)
+
+        rx = telemetry[telemetry.index("void rx_asynchronous") :]
+        rx = rx[: rx.index("static UNUSED_FUNCTION void rx_synchronous")]
+        self.assertIn("telemetry_lock();", rx)
+        self.assertIn("telemetry_unlock();", rx)
 
     def test_isolated_can_backpressure_is_not_reported_as_a_router_crash(self):
         root = Path(build.__file__).resolve().parent

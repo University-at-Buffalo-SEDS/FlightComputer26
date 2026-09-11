@@ -65,6 +65,11 @@ void av_bay_underglow_restore(void)
     drive_underglow(enabled != 0U);
 }
 
+void av_bay_underglow_reapply(void)
+{
+    drive_underglow(g_av_bay_underglow_enabled != 0U);
+}
+
 static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
 {
     (void)user;

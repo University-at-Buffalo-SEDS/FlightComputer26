@@ -195,7 +195,7 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
       const float rep[2] = {meas.gps.lat, meas.gps.lon};
       char buf[MAX_METRIC_MESSAGE_SIZE] = id "new GPS reference: ";
 
-      seds_ftoa4(buf + strlen(buf), rep, 2);
+      seds_ftoa4(buf + strlen(buf), (fu16)(sizeof(buf) - strlen(buf)), rep, 2);
       message(buf, true);
     }
 
@@ -215,6 +215,15 @@ watch_for_gps_packets(fu32 conf, fu32 *acc, fu32 *ctr)
 /* General packet handling */
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
+
+volatile uint32_t g_network_flight_commands_received
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_network_flight_commands_accepted
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_last_network_flight_command_id
+    __attribute__((used, externally_visible)) = 0U;
+volatile fc_msg g_last_network_flight_command_msg
+    __attribute__((used, externally_visible)) = Invalid_Message;
 
 static inline SedsResult
 dispatch_flight_cmd(const uint8_t *data, size_t len)
@@ -245,9 +254,31 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
 
   msg = decode_cmd(data);
 
-  st = msg != Invalid_Message
-            ? tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)
-            : INVALID_MESSAGE_STATUS;
+  g_network_flight_commands_received++;
+  g_last_network_flight_command_id = data[0];
+
+  if (msg == Invalid_Message)
+  {
+    st = INVALID_MESSAGE_STATUS;
+  }
+  else
+  {
+    /* recovery_entry runs at a higher priority and can preempt this function
+     * inside tx_queue_send as soon as the queue wakes it. Publish the
+     * correlation before sending, otherwise the command may execute before it
+     * can be identified as a network command. */
+    g_last_network_flight_command_msg = msg;
+    st = tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT);
+    if (st != TX_SUCCESS && g_last_network_flight_command_msg == msg)
+    {
+      g_last_network_flight_command_msg = Invalid_Message;
+    }
+  }
+
+  if (st == TX_SUCCESS)
+  {
+    g_network_flight_commands_accepted++;
+  }
 
 #endif /* MESSAGE_BATCHING_ENABLED */
 
@@ -308,8 +339,7 @@ implicit_postinit(const uint8_t *data, size_t len)
 
 SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
 {
-  if (!pkt || !pkt->sender || !pkt->sender_len ||
-      !pkt->payload || !pkt->payload_len)
+  if (!pkt || !pkt->sender || !pkt->sender_len)
   {
     return SEDS_HANDLER_ERROR;
   }
@@ -470,7 +500,7 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
   }
 #endif
 
-  if (timer_probe(mems[dev].tim_gnd, rates.gnd * 2)) /* Slow link */
+  if (timer_probe(mems[dev].tim_gnd, rates.gnd))
   {
     log_f32(mems[dev].kind_gnd, mems[dev].size, buf);
     recorded = true;

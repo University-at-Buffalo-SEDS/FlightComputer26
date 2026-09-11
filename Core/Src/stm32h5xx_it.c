@@ -53,6 +53,52 @@
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+volatile uint32_t g_hardfault_count __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_cfsr __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_hfsr __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_mmfar __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_bfar __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_stacked_lr __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_stacked_pc __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_stacked_xpsr __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_fault_stack __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_core_frame __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_exc_return __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_psplim __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_hardfault_msplim __attribute__((used, externally_visible)) = 0U;
+
+static void __attribute__((__used__, __noinline__, __noreturn__))
+hardfault_capture_and_halt(const uint32_t *fault_stack, uint32_t exc_return)
+{
+  const uint32_t *core_frame = fault_stack;
+
+  if ((exc_return & (1UL << 4)) == 0U)
+  {
+    core_frame += 18U;
+  }
+
+  g_hardfault_count++;
+  g_hardfault_cfsr = SCB->CFSR;
+  g_hardfault_hfsr = SCB->HFSR;
+  g_hardfault_mmfar = SCB->MMFAR;
+  g_hardfault_bfar = SCB->BFAR;
+  g_hardfault_fault_stack = (uint32_t)fault_stack;
+  g_hardfault_core_frame = (uint32_t)core_frame;
+  g_hardfault_exc_return = exc_return;
+  g_hardfault_psplim = __get_PSPLIM();
+  g_hardfault_msplim = __get_MSPLIM();
+  g_hardfault_stacked_lr = core_frame[5];
+  g_hardfault_stacked_pc = core_frame[6];
+  g_hardfault_stacked_xpsr = core_frame[7];
+
+  __disable_irq();
+  for (;;)
+  {
+    blink(Green, false, 1);
+    blink(Blue, false, 1);
+  }
+}
+
 void reg_dump(unsigned int *sp, unsigned int lr)
 {
   volatile conditional unsigned int cfsr = *((volatile unsigned int *)(0xE000ED28));
@@ -133,18 +179,21 @@ void NMI_Handler(void)
 /**
   * @brief This function handles Hard fault interrupt.
   */
-void HardFault_Handler(void)
+__attribute__((naked)) void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
 
+  __asm volatile (
+      "mov r1, lr                    \n"
+      /* Stack-overflow faults can prevent a complete exception frame. The
+       * status and limit registers above remain useful even in that case. */
+      "tst r1, #4                    \n"
+      "ite eq                        \n"
+      "mrseq r0, msp                 \n"
+      "mrsne r0, psp                 \n"
+      "b hardfault_capture_and_halt  \n"
+  );
   /* USER CODE END HardFault_IRQn 0 */
-  while (1)
-  {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    blink(Green, false, 1);
-    blink(Blue, false, 1);
-    /* USER CODE END W1_HardFault_IRQn 0 */
-  }
 }
 
 /**
@@ -351,6 +400,10 @@ void SPI1_IRQHandler(void)
 void USB_DRD_FS_IRQHandler(void)
 {
   /* USER CODE BEGIN USB_DRD_FS_IRQn 0 */
+
+#ifndef USB_ENUMERATES
+  return;
+#endif
 
   /* USER CODE END USB_DRD_FS_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_DRD_FS);

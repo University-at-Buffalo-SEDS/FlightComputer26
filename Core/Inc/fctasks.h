@@ -32,7 +32,7 @@ UINT create_telemetry_task(TX_BYTE_POOL *);
 
 #define RECV_INPUT 0
 #define RECV_PRIORITY 0
-#define RECV_STACK_BYTES 8192
+#define RECV_STACK_BYTES (12U * 1024U)
 #define RECV_STACK_ULONG (RECV_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD recovery_task;

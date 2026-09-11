@@ -133,6 +133,7 @@ int main(void)
   MX_DCACHE1_Init();
   /* USER CODE BEGIN 2 */
 
+
   /* Solid blue means peripheral initialization completed and ThreadX is
    * starting. The telemetry task clears it once CAN and SEDSNet are ready. */
   led_off(LED1_PORT, LED1_PIN);
@@ -298,6 +299,8 @@ static void MX_FDCAN1_Init(void)
   hfdcan1.Init.ClockDivider = FDCAN_CLOCK_DIV1;
   hfdcan1.Init.FrameFormat = FDCAN_FRAME_FD_NO_BRS;
   hfdcan1.Init.Mode = FDCAN_MODE_NORMAL;
+  /* FDCAN retries physical arbitration/ACK failures; SEDSNet supplies
+   * end-to-end reliability without blocking this non-blocking TX path. */
   hfdcan1.Init.AutoRetransmission = ENABLE;
   hfdcan1.Init.TransmitPause = DISABLE;
   hfdcan1.Init.ProtocolException = DISABLE;
@@ -468,6 +471,13 @@ static void MX_USB_PCD_Init(void)
 {
 
   /* USER CODE BEGIN USB_Init 0 */
+
+  /* USB is a bench-only transport. CubeMX preserves this user block, so a
+   * production build retains the pin configuration while discarding the PCD
+   * driver and its RAM/flash cost. */
+#ifndef USB_ENUMERATES
+  return;
+#endif
 
   /* USER CODE END USB_Init 0 */
 

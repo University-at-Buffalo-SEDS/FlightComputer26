@@ -25,7 +25,7 @@ void sd_append_f32(SedsDataType, const float *, fu8);
 void sd_append_string(SedsDataType, const char *);
 void sd_conclude(void);
 
-fi16 seds_ftoa4(char *dst, const float *data, fu8 count);
+fi16 seds_ftoa4(char *dst, fu16 capacity, const float *data, fu8 count);
 
 
 /* Kalman filter */

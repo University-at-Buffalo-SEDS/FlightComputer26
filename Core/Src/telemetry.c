@@ -4,6 +4,7 @@
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
+#include "telemetry_rate.h"
 #include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
@@ -58,6 +59,8 @@ static void print_data_no_telem(void *data, size_t len) {
 
 static uint8_t g_can_rx_subscribed = 0U;
 static int32_t g_can_side_id = -1;
+#define FC_CAN_MAX_FRAME_BYTES 128U
+#define FC_SIDE_TRANSPORT_TEMPLATES 4U
 static uint8_t g_local_unix_valid = 0U;
 static uint64_t g_local_unix_ms = 0ULL;
 
@@ -74,6 +77,10 @@ volatile uint32_t g_sim_heartbeat_attempts = 0U;
 volatile uint32_t g_sim_heartbeat_ok = 0U;
 volatile uint32_t g_sim_heartbeat_fail = 0U;
 volatile uint32_t g_sim_heartbeat_wire_tx = 0U;
+volatile uint32_t g_sim_imu_publish_attempts
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_sim_imu_publish_ok
+    __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_queue_errors = 0U;
 /* A full hardware TX FIFO is expected while this board is alone on CAN: the
  * controller retains unacknowledged frames and SEDSNet retries them. Keep that
@@ -350,6 +357,10 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   }
 
   g_telemetry_tx_stage = 4U;
+  /* This is the physical CAN TX indicator. Keeping it on the successful send
+   * edge makes the LED distinguish an idle-but-healthy router from real bus
+   * activity and prevents a solid startup LED from masquerading as traffic. */
+  led_toggle(light[Green].port, light[Green].pin);
   return SEDS_OK;
 }
 
@@ -378,6 +389,7 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   }
   g_telemetry_rx_stage = 11U;
 
+  telemetry_lock();
   if (g_can_side_id >= 0) {
     g_telemetry_rx_stage = 12U;
     (void)seds_router_receive_packed_from_side(
@@ -385,6 +397,7 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   } else {
     (void)seds_router_receive_packed(g_router.r, bytes, len);
   }
+  telemetry_unlock();
   g_telemetry_rx_stage = 13U;
   g_telemetry_discovery_seen = 1U;
   g_telemetry_rx_stage = 14U;
@@ -405,12 +418,14 @@ static UNUSED_FUNCTION void rx_synchronous(const uint8_t *bytes, size_t len) {
     return;
   }
 
+  telemetry_lock();
   if (g_can_side_id >= 0) {
     (void)seds_router_receive_packed_from_side(g_router.r, (uint32_t)g_can_side_id, bytes,
                                                    len);
   } else {
     (void)seds_router_receive_packed(g_router.r, bytes, len);
   }
+  telemetry_unlock();
 #endif
 }
 
@@ -433,8 +448,10 @@ SedsResult telemetry_poll_timesync(void) {
     return SEDS_ERR;
   }
 
+  telemetry_lock();
   const SedsResult result = seds_router_poll_timesync(g_router.r, NULL);
   telemetry_update_network_health(g_router.r);
+  telemetry_unlock();
   return result;
 #endif
 }
@@ -447,7 +464,10 @@ SedsResult telemetry_announce_discovery(void) {
     return SEDS_ERR;
   }
 
-  return seds_router_announce_discovery(g_router.r);
+  telemetry_lock();
+  const SedsResult result = seds_router_announce_discovery(g_router.r);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -462,6 +482,7 @@ SedsResult telemetry_poll_discovery(void) {
 
   g_telemetry_service_stage = 302U;
   bool did_queue = false;
+  telemetry_lock();
   (void)flight_state_cache_poll(g_router.r);
   /* This also enforces the two-second startup-buzz deadline. It must run
    * before discovery succeeds so an unplugged CAN bus cannot hold the buzzer
@@ -476,10 +497,29 @@ SedsResult telemetry_poll_discovery(void) {
      * avionics CAN. Do not inject an extra simulation-only heartbeat into a
      * saturated TX queue; qualification traffic must not perturb scheduling. */
     g_telemetry_service_stage = 613U;
+#ifdef SEDS_FIRMWARE_SIM_TEST
+    /* The simulator models register-level IMU/ADC faults but cannot reproduce
+     * every vendor sensor's sampled stream. Publish a bounded 1 Hz zero-motion
+     * sample so the actual FC -> CAN -> RF -> radio return path is exercised. */
+    {
+      static uint64_t next_sim_sensor_ms = 0ULL;
+      const uint64_t now_ms = telemetry_now_ms();
+      if (now_ms >= next_sim_sensor_ms) {
+        const float imu[6] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f};
+        g_sim_imu_publish_attempts++;
+        if (seds_router_log_typed(g_router.r, SEDS_DT_IMU_DATA, imu, 6U,
+                                  sizeof(float), SEDS_EK_FLOAT) == SEDS_OK) {
+          g_sim_imu_publish_ok++;
+          next_sim_sensor_ms = now_ms + fc_telemetry_period_ms();
+        }
+      }
+    }
+#endif
     (void)av_bay_underglow_poll(g_router.r);
     g_telemetry_service_stage = 614U;
   }
   telemetry_update_network_health(g_router.r);
+  telemetry_unlock();
   return result;
 #endif
 }
@@ -504,28 +544,37 @@ static SedsResult init_telemetry_router_locked(void) {
   if (!g_can_rx_subscribed) {
     if (can_bus_subscribe_rx(telemetry_can_rx, NULL) == HAL_OK) {
       g_can_rx_subscribed = 1U;
-    } else {
-      printf("Error: can_bus_subscribe_rx failed\r\n");
     }
   }
 
   g_telemetry_service_stage = 21U;
-  r = seds_router_new(Seds_RM_Relay, node_now_since_ms, NULL, locals,
+  r = seds_router_new(node_now_since_ms, NULL, locals,
                                               sizeof(locals) / sizeof(locals[0]));
   g_telemetry_service_stage = 22U;
   if (!r) {
-    printf("Error: failed to create router\r\n");
     g_router.r = NULL;
     g_router.created = 0U;
     g_can_side_id = -1;
     return SEDS_ERR;
   }
 
+  if (seds_router_set_preferred_discovery_master(r, "GS", 2U) != SEDS_OK) {
+    seds_router_free(r);
+    g_router.r = NULL;
+    g_router.created = 0U;
+    return SEDS_ERR;
+  }
+
   g_telemetry_service_stage = 23U;
-  g_can_side_id = seds_router_add_side_packed(r, "can", 3U, tx_send, NULL, false);
+  /* The H523 has three FDCAN TX FIFO elements. The CAN driver streams larger
+   * side frames through those slots with hardware retransmission and a
+   * bounded disconnected-bus timeout. */
+  g_can_side_id = seds_router_add_side_packed_profile(
+      r, "can", 3U, tx_send, NULL, false,
+      SEDS_SIDE_TRANSPORT_PROFILE_IPV6_LIKE, FC_CAN_MAX_FRAME_BYTES, 0U,
+      FC_SIDE_TRANSPORT_TEMPLATES);
   g_telemetry_service_stage = 24U;
   if (g_can_side_id < 0) {
-    printf("Error: failed to add CAN side: %ld\r\n", (long)g_can_side_id);
     g_can_side_id = -1;
   }
 
@@ -534,7 +583,6 @@ static SedsResult init_telemetry_router_locked(void) {
   result = telemetry_configure_timesync_locked(r);
   g_telemetry_service_stage = 27U;
   if (result != SEDS_OK) {
-    printf("Error: failed to configure telemetry timesync: %d\r\n", (int)result);
     seds_router_free(r);
     g_router.r = NULL;
     g_router.created = 0U;
@@ -557,6 +605,7 @@ static SedsResult init_telemetry_router_locked(void) {
     seds_router_free(r);
     return result;
   }
+
 
   /* Discovery begins from the normal poll loop after CAN startup. */
 
@@ -601,8 +650,12 @@ SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
     return SEDS_ERR;
   }
 
-  return seds_router_log_typed(g_router.r, data_type, data, element_count, element_size,
-                               guess_kind_from_elem_size(element_size));
+  telemetry_lock();
+  const SedsResult result =
+      seds_router_log_typed(g_router.r, data_type, data, element_count,
+                            element_size, guess_kind_from_elem_size(element_size));
+  telemetry_unlock();
+  return result;
 #else
   (void)data_type;
   print_data_no_telem((void *)data, element_count * element_size);
@@ -621,8 +674,22 @@ SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
     return SEDS_ERR;
   }
 
-  return seds_router_log_queue_typed(g_router.r, data_type, data, element_count, element_size,
-                                     guess_kind_from_elem_size(element_size));
+  /* The CAN driver already provides bounded transport backpressure. Keeping a
+   * second heap-backed SEDSNet queue increases latency and can retain stale
+   * sensor packets indefinitely when the bus is congested. */
+  telemetry_lock();
+  /* The rate limiter is shared by every sensor producer. Keep its timestamp
+   * table under the same lock as the router so simultaneous producer threads
+   * cannot race and corrupt the per-type deadline state. */
+  if (!fc_telemetry_rate_allow(data_type, HAL_GetTick())) {
+    telemetry_unlock();
+    return SEDS_OK;
+  }
+  const SedsResult result =
+      seds_router_log_typed(g_router.r, data_type, data, element_count,
+                            element_size, guess_kind_from_elem_size(element_size));
+  telemetry_unlock();
+  return result;
 #else
   (void)data_type;
   print_data_no_telem((void *)data, element_count * element_size);
@@ -640,7 +707,11 @@ SedsResult log_telemetry_string_asynchronous(SedsDataType data_type, const char 
     return SEDS_ERR;
   }
 
-  return seds_router_log_string_ex(g_router.r, data_type, str, strlen(str), NULL, 1);
+  telemetry_lock();
+  const SedsResult result =
+      seds_router_log_string_ex(g_router.r, data_type, str, strlen(str), NULL, 1);
+  telemetry_unlock();
+  return result;
 #else
   (void)data_type;
   (void)str;
@@ -656,7 +727,10 @@ SedsResult dispatch_tx_queue(void) {
     return SEDS_ERR;
   }
 
-  return seds_router_process_tx_queue(g_router.r);
+  telemetry_lock();
+  const SedsResult result = seds_router_process_tx_queue(g_router.r);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -668,7 +742,10 @@ SedsResult process_rx_queue(void) {
     return SEDS_ERR;
   }
 
-  return seds_router_process_rx_queue(g_router.r);
+  telemetry_lock();
+  const SedsResult result = seds_router_process_rx_queue(g_router.r);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -681,7 +758,11 @@ SedsResult dispatch_tx_queue_timeout(uint32_t timeout_ms) {
     return SEDS_ERR;
   }
 
-  return seds_router_process_tx_queue_with_timeout(g_router.r, timeout_ms);
+  telemetry_lock();
+  const SedsResult result =
+      seds_router_process_tx_queue_with_timeout(g_router.r, timeout_ms);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -694,7 +775,11 @@ SedsResult process_rx_queue_timeout(uint32_t timeout_ms) {
     return SEDS_ERR;
   }
 
-  return seds_router_process_rx_queue_with_timeout(g_router.r, timeout_ms);
+  telemetry_lock();
+  const SedsResult result =
+      seds_router_process_rx_queue_with_timeout(g_router.r, timeout_ms);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -707,7 +792,11 @@ SedsResult process_all_queues_timeout(uint32_t timeout_ms) {
     return SEDS_ERR;
   }
 
-  return seds_router_process_all_queues_with_timeout(g_router.r, timeout_ms);
+  telemetry_lock();
+  const SedsResult result =
+      seds_router_process_all_queues_with_timeout(g_router.r, timeout_ms);
+  telemetry_unlock();
+  return result;
 #endif
 }
 
@@ -731,7 +820,11 @@ static SedsResult log_error_impl(uint8_t queue, const char *fmt, va_list args) {
 
   if (len < 0) {
     const char *empty = "";
-    return seds_router_log_string_ex(g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
+    telemetry_lock();
+    const SedsResult result = seds_router_log_string_ex(
+        g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
+    telemetry_unlock();
+    return result;
   }
 
   if (len > 512) {
@@ -742,11 +835,18 @@ static SedsResult log_error_impl(uint8_t queue, const char *fmt, va_list args) {
   written = vsnprintf(buf, (size_t)len + 1U, fmt, args);
   if (written < 0) {
     const char *empty = "";
-    return seds_router_log_string_ex(g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
+    telemetry_lock();
+    const SedsResult result = seds_router_log_string_ex(
+        g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
+    telemetry_unlock();
+    return result;
   }
 
-  return seds_router_log_string_ex(g_router.r, SEDS_DT_TELEMETRY_ERROR, buf, (size_t)written,
-                                   NULL, queue);
+  telemetry_lock();
+  const SedsResult result = seds_router_log_string_ex(
+      g_router.r, SEDS_DT_TELEMETRY_ERROR, buf, (size_t)written, NULL, queue);
+  telemetry_unlock();
+  return result;
 }
 #endif
 
@@ -886,9 +986,8 @@ void telemetry_entry(ULONG _)
   g_telemetry_service_stage = 3U;
 
   /* Prime the normal constrained-link discovery path after CAN and the router
-   * are ready. A full schema announcement is large enough to monopolize the
-   * three-entry H5 FDCAN FIFO during boot; periodic discovery advertises the
-   * address/topology needed for routing and leaves schema transfer on demand. */
+   * are ready. The driver streams announcements through the three-entry H5
+   * FIFO while preserving normal periodic discovery and schema-on-demand. */
   if (telemetry_poll_discovery() != SEDS_OK)
   {
     g_telemetry_queue_errors++;
@@ -898,9 +997,9 @@ void telemetry_entry(ULONG _)
       process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS));
   g_telemetry_service_stage = 5U;
 
-  /* Do not block telemetry startup to animate an LED. Discovery and time sync
-   * must begin immediately so frames arriving during boot are serviced. */
-  led_off(LED2_PORT, LED2_PIN);
+  /* Remove the temporary startup indication without overwriting the managed
+   * underglow value restored from LaunchCore persistent storage. */
+  av_bay_underglow_reapply();
   led_on(light[Green].port, light[Green].pin);
 
   MrAnalog (WE_ARE_SO_BACK)

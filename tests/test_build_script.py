@@ -9,6 +9,24 @@ import build
 
 
 class OtaBuildScriptTests(unittest.TestCase):
+    def test_release_builds_disable_debug_usb_by_default(self):
+        options = {name: False for name in build.ALL_OPTIONS}
+        commands = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(build, "PROJECT", Path(directory)):
+                with mock.patch.object(build, "run", side_effect=commands.append):
+                    build.configure(Path(directory) / "build", "Release", options)
+        command = commands[0]
+        self.assertIn("-DUSB_ENUM=OFF", command)
+        self.assertNotIn("-DUSB_ENUM=ON", command)
+
+    def test_release_builds_always_enable_size_and_lto_flags(self):
+        source = Path(build.__file__).read_text(encoding="utf-8")
+        self.assertIn(
+            '"-DCUSTOM_FLAGS=ON" if preset == "Release"',
+            source,
+        )
+
     def test_clean_command_removes_the_complete_build_tree(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -32,11 +50,15 @@ class OtaBuildScriptTests(unittest.TestCase):
             self.assertTrue(outside.exists())
 
     def test_all_tests_preserve_the_selected_build_mode(self):
-        self.assertEqual(build.parse_test_options(["--all"]), (True, False))
+        self.assertEqual(build.parse_test_options(["--all"]), (True, False, False))
         self.assertEqual(
-            build.parse_test_options(["--all", "--release"]), (True, True)
+            build.parse_test_options(["--all", "--release"]), (True, True, False)
         )
-        self.assertEqual(build.parse_test_options(["--full"]), (True, False))
+        self.assertEqual(build.parse_test_options(["--full"]), (True, False, False))
+        self.assertEqual(
+            build.parse_test_options(["--all", "--ultra-soak"]),
+            (True, False, True),
+        )
 
     def test_simulation_layout_uses_selected_build_directory(self):
         from sim.run_full import load_layout_for_build
@@ -67,6 +89,14 @@ class OtaBuildScriptTests(unittest.TestCase):
             with mock.patch.object(run_full.subprocess, "run", return_value=probe):
                 with self.assertRaisesRegex(RuntimeError, "daemon is not available"):
                     run_full.require_docker()
+
+    def test_docker_run_prefix_supports_restricted_hosts(self):
+        from sim import run_full
+
+        with mock.patch.dict(run_full.os.environ, {}, clear=True):
+            self.assertEqual(run_full.docker_run_prefix("/usr/bin/docker"), ["/usr/bin/docker", "run", "--platform", "linux/amd64", "--rm"])
+        with mock.patch.dict(run_full.os.environ, {"SEDS_FIRMWARE_SIM_DOCKER_NETWORK": "host"}, clear=True):
+            self.assertEqual(run_full.docker_run_prefix("/usr/bin/docker")[-2:], ["--network", "host"])
 
     def test_missing_registry_image_is_built_from_a_fresh_clone(self):
         from sim import run_full
@@ -147,7 +177,8 @@ class OtaBuildScriptTests(unittest.TestCase):
 
         self.assertNotIn("network_ready", probes)
         self.assertNotIn("maximum", probes["fdcan_tx_fail"])
-        self.assertEqual(probes["fdcan_tx_ok"]["minimum"], 1)
+        self.assertEqual(probes["fdcan_tx_fail"]["minimum"], 1)
+        self.assertNotIn("minimum", probes["fdcan_tx_ok"])
         self.assertEqual(probes["telemetry_loop_completions"]["minimum"], 1)
         self.assertEqual(probes["telemetry_link_backpressure"]["minimum"], 1)
         self.assertEqual(probes["queue_errors"]["maximum"], 0)
