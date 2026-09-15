@@ -29,18 +29,30 @@
   "board": {
     "strict_mmio": false,
     "clocks": [],
-    "connections": [],
+    "connections": [
+      {"from": "gpio.35", "to": "layoutFlightSensors@0"},
+      {"from": "gpio.3", "to": "layoutFlightSensors@1"},
+      {"from": "gpio.2", "to": "layoutFlightSensors@2"},
+      {"from": "layoutFlightSensors.0", "to": "exti@39"},
+      {"from": "layoutFlightSensors.1", "to": "exti@16"},
+      {"from": "layoutFlightSensors.2", "to": "exti@36"}
+    ],
     "pins": [],
-    "dma_routes": [],
+    "dma_routes": [
+      {"request": "spi1.DMARecieve", "controller": "gpdma", "channel": 0},
+      {"request": "spi1.DMATransmit", "controller": "gpdma", "channel": 1}
+    ],
     "security": {"trustzone": false, "secure_regions": []}
   },
   "execution": {
     "factory_boot_success_symbol": "_tx_thread_schedule",
-    "virtual_time_ms": 250,
+    "virtual_time_ms": 2000,
     "sample_count": 5,
     "memory_probe_warmup_samples": 2,
     "require_stack_probe": true,
     "memory_probes": [
+      {"name": "hal_milliseconds", "symbol": "uwTick"},
+      {"name": "rtos_ticks", "symbol": "_tx_timer_system_clock"},
       {"name": "network_ready", "symbol": "g_telemetry_network_ready"},
       {"name": "telemetry_thread_entered", "symbol": "g_telemetry_thread_entered", "minimum": 1},
       {"name": "telemetry_rx_stage", "symbol": "g_telemetry_rx_stage"},
@@ -55,7 +67,14 @@
       {"name": "discovery_seen", "symbol": "g_telemetry_discovery_seen"},
       {"name": "timesync_valid", "symbol": "g_telemetry_timesync_valid"},
       {"name": "imu_publish_attempts", "symbol": "g_sim_imu_publish_attempts"},
-      {"name": "imu_publish_ok", "symbol": "g_sim_imu_publish_ok"},
+      {"name": "sensor_ready_irqs", "symbol": "g_sim_sensor_ready_irqs"},
+      {"name": "sensor_dma_started", "symbol": "g_sim_sensor_dma_started"},
+      {"name": "sensor_dma_completed", "symbol": "g_sim_sensor_dma_completed", "minimum": 1},
+      {"name": "sensor_dma_delivered", "symbol": "g_sim_sensor_dma_delivered", "minimum": 1},
+      {"name": "imu_publish_ok", "symbol": "g_sim_imu_publish_ok", "minimum": 1},
+      {"name": "barometer_publish_ok", "symbol": "g_sim_baro_publish_ok", "minimum": 1},
+      {"name": "barometer_publish_attempts", "symbol": "g_sim_baro_publish_attempts"},
+      {"name": "barometer_publish_result", "symbol": "g_sim_baro_publish_result"},
       {"name": "underglow_enabled", "symbol": "g_av_bay_underglow_enabled", "maximum": 1},
       {"name": "underglow_updates", "symbol": "g_av_bay_underglow_updates"},
       {"name": "underglow_persist_restores", "symbol": "g_av_bay_underglow_persist_restores"},
@@ -138,17 +157,13 @@
       "type": "imu",
       "name": "flight_imu",
       "model": "bmi088",
-      "bus": "spi1",
-      "failure_every": 997,
-      "disconnect_after": 950
+      "bus": "spi1"
     },
     {
       "type": "barometer",
       "name": "flight_barometer",
       "model": "bmp390",
-      "bus": "spi1",
-      "failure_every": 997,
-      "disconnect_after": 950
+      "bus": "spi1"
     },
     {
       "type": "storage",

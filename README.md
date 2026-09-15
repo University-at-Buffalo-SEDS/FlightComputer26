@@ -3,7 +3,13 @@ FlightComputer26 targets the STM32H523. ThreadX tasks acquire the BMI088 IMU
 and BMP390 barometer, maintain the flight state, log data, and exchange
 telemetry and commands over the avionics CAN-FD network.
 
-CMake fetches SEDSNet v4.0.27 and SEDS LaunchCore v1.0.0 without submodules.
+With `CUSTOM_FLAGS` enabled, Release builds apply link-time optimization to
+application C and the HAL, FileX, and ThreadX C objects. This setting lives in
+the top-level CMake file so CubeMX regeneration does not remove it. Debug
+builds are unchanged. Keep checking the linker report: the H523 application
+flash partition remains tight, especially with simulation instrumentation.
+
+CMake fetches SEDSNet v4.0.28 and SEDS LaunchCore v1.0.0 without submodules.
 LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
@@ -30,7 +36,9 @@ blank-board flash must use the complete factory image at `0x08000000`.
 Release builds disable the USB CDC debug stack by default because flight data
 uses CAN/RF. Debug builds retain USB; pass `nousb` to disable it on a debug
 build as well. Telemetry publication is configured at compile time with `FC_TELEMETRY_RATE_HZ`
-in `Core/Inc/telemetry_rate.h` (default: 1 Hz). Set a whole-number rate from
+in `Core/Inc/telemetry_rate.h` (default: 5 Hz / 200 ms). This setting controls
+both producer scheduling and the publication limiter; `LOG_RATE_GND` derives
+from it rather than imposing an independent cap. Set a whole-number rate from
 1 to 1000 Hz and rebuild/reflash the board. Actual throughput is limited by
 sensor acquisition and link capacity; this is not a network variable.
 
@@ -87,6 +95,13 @@ traffic. The disconnected-CAN stage must observe recoverable H5 TX backpressure
 while the telemetry loop advances with zero allocator, panic, startup, or
 unexpected queue errors. Hardware behavior and probe limits are declared in
 `sim/board.json`.
+
+Sensor simulation exercises GPIO chip selection, SPI register reads, data-ready
+EXTI edges and GPDMA completion through the normal acquisition task; it does not
+inject telemetry packets. Required counters reject runs that boot but never
+deliver samples or publish IMU/barometer data. DMA completion uses a semaphore
+so an interrupt arriving before the task waits is retained. Timeout handling
+aborts the old transfer before reusing its buffer; busy retries yield CPU time.
 
 The board's runtime network schema is `config/sedsnet.json`; changes to network
 variables or endpoints must update that file and the matching stable C IDs.

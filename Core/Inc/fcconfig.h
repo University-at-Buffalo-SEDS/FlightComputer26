@@ -3,6 +3,8 @@
 #ifndef FC_USER_CONFIG
 #define FC_USER_CONFIG
 
+#include "telemetry_rate.h"
+
 #ifdef SIMULATION_CONFIG
 
 #include "simulation.h"
@@ -27,7 +29,7 @@
 #define TELEMETRY_HEAP 		(48U * 1024U)
 
 #define LOG_RATE_SD	 	    50
-#define LOG_RATE_GND 	    1000
+#define LOG_RATE_GND         FC_TELEMETRY_PERIOD_MS
 #define LOG_RATE_LIMITED	15000
 
 #define SD_BUFFER_SIZE		32768

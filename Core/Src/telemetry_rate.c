@@ -2,7 +2,7 @@
 
 uint32_t fc_telemetry_period_ms(void)
 {
-  return (1000U + FC_TELEMETRY_RATE_HZ / 2U) / FC_TELEMETRY_RATE_HZ;
+  return FC_TELEMETRY_PERIOD_MS;
 }
 
 static uint32_t g_last_emit_ms[29];

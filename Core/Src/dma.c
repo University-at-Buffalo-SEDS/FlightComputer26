@@ -13,6 +13,17 @@
 
 
 TX_THREAD dma_task;
+static TX_SEMAPHORE dma_completion;
+
+#ifdef SEDS_FIRMWARE_SIM_TEST
+volatile uint32_t g_sim_sensor_ready_irqs;
+volatile uint32_t g_sim_sensor_dma_started;
+volatile uint32_t g_sim_sensor_dma_completed;
+volatile uint32_t g_sim_sensor_dma_delivered;
+#define SENSOR_PROBE(counter) (++(counter))
+#else
+#define SENSOR_PROBE(counter) ((void)0)
+#endif
 
 static const gpio_map gpio = {
   .port   = {BARO_CS_PORT, GYRO_CS_PORT, ACCL_CS_PORT},
@@ -142,20 +153,22 @@ bool try_fetch_accl(f_xyz *buf)
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
+  SENSOR_PROBE(g_sim_sensor_dma_completed);
 	gpio_cs_high(select.next);
   select.valid = 1;
-	tx_thread_wait_abort(&dma_task);
+  tx_semaphore_put(&dma_completion);
 }
 
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
 	gpio_cs_high(select.next);
   select.valid = 0;
-	tx_thread_wait_abort(&dma_task);
+  tx_semaphore_put(&dma_completion);
 }
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
+  SENSOR_PROBE(g_sim_sensor_ready_irqs);
 	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
 }
 
@@ -164,6 +177,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
 static inline void propagate_rx(void)
 {
+  SENSOR_PROBE(g_sim_sensor_dma_delivered);
   fc_lock(&dma_locks[select.next]);
 
   volatile uint8_t *src = (volatile uint8_t *)(dmarx + gpio.offset[select.next]);
@@ -179,7 +193,13 @@ static inline void propagate_rx(void)
 
 static inline void start_dma_transfer(void)
 {
+  SENSOR_PROBE(g_sim_sensor_dma_started);
   HAL_StatusTypeDef st;
+
+  /* A completion may arrive before the task blocks. A semaphore retains
+   * that event; aborting a not-yet-sleeping thread loses the notification. */
+  while (tx_semaphore_get(&dma_completion, TX_NO_WAIT) == TX_SUCCESS) {}
+  select.valid = 0;
 
   gpio_cs_low(select.next);
 
@@ -189,16 +209,22 @@ static inline void start_dma_transfer(void)
   if (st != HAL_OK)
   {
     gpio_cs_high(select.next);
+    tx_thread_sleep(1);
     return;
   }
 
   fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
 
-  st = tx_thread_sleep(DMA_TIMEOUT_MS);
-
-  if (st == TX_WAIT_ABORTED && select.valid)
+  UINT completion = tx_semaphore_get(&dma_completion, DMA_TIMEOUT_MS);
+  if (completion == TX_SUCCESS && select.valid)
   {
     propagate_rx();
+  }
+  else if (completion != TX_SUCCESS)
+  {
+    /* Stop the old transaction before another sensor can own the buffer. */
+    HAL_SPI_Abort(&hspi1);
+    gpio_cs_high(select.next);
   }
 }
 
@@ -277,6 +303,13 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
     return IT_IS_NOW_OVER;
   }
 
+  st = tx_semaphore_create(&dma_completion, "Sensor DMA completion", 0);
+  if (st != TX_SUCCESS)
+  {
+    tx_byte_release(pointer);
+    return IT_IS_NOW_OVER;
+  }
+
   st = tx_thread_create(&dma_task,
                         "DMA Task",
                         dma_entry,
@@ -291,6 +324,8 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
 
 	if (st != TX_SUCCESS)
   {
+    tx_semaphore_delete(&dma_completion);
+    tx_byte_release(pointer);
     log_err(id "task %s %u", critical, st);
     return IT_IS_NOW_OVER;
   }

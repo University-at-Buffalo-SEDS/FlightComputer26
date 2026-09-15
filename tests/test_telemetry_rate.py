@@ -23,7 +23,8 @@ class TelemetryRateTests(unittest.TestCase):
   assert(!fc_telemetry_rate_allow(128, 0));
   assert(fc_telemetry_rate_allow(128, EXPECTED));
 """.replace("EXPECTED", str(expected))
-            code = '#include "telemetry_rate.h"\n#include <assert.h>\nint main(void) {\n'
+            code = '#include "telemetry_rate.h"\n#include "fcconfig.h"\n#include <assert.h>\nint main(void) {\n'
+            code += f'assert(LOG_RATE_GND == {expected});\n'
             code += f'assert({PREFIX}_telemetry_period_ms() == {expected});\n' + checks + '}\n'
             cmd = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "Core/Inc")]
             if rate is not None:
@@ -37,8 +38,11 @@ class TelemetryRateTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("must be a whole number", result.stderr)
 
-    def test_default_one_hz(self):
-        self.compile_rate(None, 1000)
+    def test_default_five_hz(self):
+        self.compile_rate(None, 200)
+
+    def test_twenty_hz_updates_producer_and_limiter(self):
+        self.compile_rate(20, 50)
 
     def test_board_override_four_hz(self):
         self.compile_rate(4, 250)

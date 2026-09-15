@@ -265,6 +265,14 @@ if (CUSTOM_FLAGS)
     set(LINK_DEBUG    )
     set(LINK_RELEASE  "-flto")
 
+    # Include vendor C objects in release link-time optimization as well as
+    # application C. Keep this outside CubeMX-generated files so regeneration
+    # preserves the setting. Debug builds retain their normal code generation.
+    foreach(FC_VENDOR_TARGET STM32_Drivers FileX ThreadX)
+        target_compile_options(${FC_VENDOR_TARGET} PRIVATE
+            $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C>>:-flto>)
+    endforeach()
+
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE
         ${FC_COMMON}
         $<$<CONFIG:Debug>:${COMP_DEBUG}>

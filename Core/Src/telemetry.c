@@ -81,6 +81,12 @@ volatile uint32_t g_sim_imu_publish_attempts
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_sim_imu_publish_ok
     __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_sim_baro_publish_ok
+    __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_sim_baro_publish_attempts
+    __attribute__((used, externally_visible)) = 0U;
+volatile int32_t g_sim_baro_publish_result
+    __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_telemetry_queue_errors = 0U;
 /* A full hardware TX FIFO is expected while this board is alone on CAN: the
  * controller retains unacknowledged frames and SEDSNet retries them. Keep that
@@ -497,24 +503,6 @@ SedsResult telemetry_poll_discovery(void) {
      * avionics CAN. Do not inject an extra simulation-only heartbeat into a
      * saturated TX queue; qualification traffic must not perturb scheduling. */
     g_telemetry_service_stage = 613U;
-#ifdef SEDS_FIRMWARE_SIM_TEST
-    /* The simulator models register-level IMU/ADC faults but cannot reproduce
-     * every vendor sensor's sampled stream. Publish a bounded 1 Hz zero-motion
-     * sample so the actual FC -> CAN -> RF -> radio return path is exercised. */
-    {
-      static uint64_t next_sim_sensor_ms = 0ULL;
-      const uint64_t now_ms = telemetry_now_ms();
-      if (now_ms >= next_sim_sensor_ms) {
-        const float imu[6] = {0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f};
-        g_sim_imu_publish_attempts++;
-        if (seds_router_log_typed(g_router.r, SEDS_DT_IMU_DATA, imu, 6U,
-                                  sizeof(float), SEDS_EK_FLOAT) == SEDS_OK) {
-          g_sim_imu_publish_ok++;
-          next_sim_sensor_ms = now_ms + fc_telemetry_period_ms();
-        }
-      }
-    }
-#endif
     (void)av_bay_underglow_poll(g_router.r);
     g_telemetry_service_stage = 614U;
   }
@@ -654,6 +642,18 @@ SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
   const SedsResult result =
       seds_router_log_typed(g_router.r, data_type, data, element_count,
                             element_size, guess_kind_from_elem_size(element_size));
+#ifdef SEDS_FIRMWARE_SIM_TEST
+  /* Observe real producer calls; never manufacture qualification packets. */
+  if (data_type == SEDS_DT_BAROMETER_DATA) {
+    g_sim_baro_publish_attempts++;
+    g_sim_baro_publish_result = result;
+    if (result == SEDS_OK) g_sim_baro_publish_ok++;
+  }
+  if (data_type == SEDS_DT_IMU_DATA) {
+    g_sim_imu_publish_attempts++;
+    if (result == SEDS_OK) g_sim_imu_publish_ok++;
+  }
+#endif
   telemetry_unlock();
   return result;
 #else
@@ -688,6 +688,17 @@ SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
   const SedsResult result =
       seds_router_log_typed(g_router.r, data_type, data, element_count,
                             element_size, guess_kind_from_elem_size(element_size));
+#ifdef SEDS_FIRMWARE_SIM_TEST
+  if (data_type == SEDS_DT_IMU_DATA) {
+    g_sim_imu_publish_attempts++;
+    if (result == SEDS_OK) g_sim_imu_publish_ok++;
+  }
+  if (data_type == SEDS_DT_BAROMETER_DATA) {
+    g_sim_baro_publish_attempts++;
+    g_sim_baro_publish_result = result;
+    if (result == SEDS_OK) g_sim_baro_publish_ok++;
+  }
+#endif
   telemetry_unlock();
   return result;
 #else
