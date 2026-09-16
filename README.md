@@ -9,7 +9,7 @@ the top-level CMake file so CubeMX regeneration does not remove it. Debug
 builds are unchanged. Keep checking the linker report: the H523 application
 flash partition remains tight, especially with simulation instrumentation.
 
-CMake fetches SEDSNet v4.0.31 and SEDS LaunchCore v1.0.0 without submodules.
+CMake fetches rolling SEDSNet `main` and SEDS LaunchCore v1.0.0 without submodules.
 LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
