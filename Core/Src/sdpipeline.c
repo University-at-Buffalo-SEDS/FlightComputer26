@@ -22,6 +22,7 @@ uncached char sdbuf[2][SD_BUFFER_SIZE] = {0};
 /* Helpers */
 
 volatile uint32_t g_sd_format_errors = 0U;
+volatile uint32_t g_sd_lock_contention_drops = 0U;
 
 fi16 seds_ftoa4(char *dst, fu16 capacity, const float *data, fu8 count)
 {
@@ -36,10 +37,10 @@ static inline void sd_release_notify(fu16 written, fu16 rem)
 
         if (line.off[line.cur] >= SD_POST_MARGIN)
         {
-            line.cur = !line.cur;
-
             if (line.free)
             {
+                /* Never hand a producer the buffer still being written to SD. */
+                line.cur = !line.cur;
                 line.free = false;
                 fc_unlock(&line.lock);
                 tx_semaphore_put(&line.full);
@@ -113,13 +114,24 @@ void sd_append_f32(SedsDataType ty, const float *data, fu8 count)
         return;
     }
 
-    fc_lock(&line.lock);
+    /* SEDSNet's embedded clock query takes telemetry_mu. Never acquire it
+     * while holding the SD buffer lock: network callbacks can log to SD while
+     * already holding telemetry_mu. Capture both timestamps first. */
+    const fu32 network_seconds = (fu32)telemetry_unix_s();
+    const fu32 local_ms = (fu32)now_ms();
+    /* A high-priority callback must not spin on a preempted SD writer. Keep
+     * flight/network work live; expose a dropped log record instead. */
+    if (!fc_trylock(&line.lock))
+    {
+        g_sd_lock_contention_drops++;
+        return;
+    }
 
     char *off = sdbuf[line.cur] + line.off[line.cur];
     fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
     fu16 written = snprintf(off, rem, "%u %u %s: %s\n",
-            (fu32) telemetry_unix_s(), (fu32) now_ms(),
+            network_seconds, local_ms,
             seds_f32(ty), buf);
 
     sd_release_notify(written, rem);
@@ -132,13 +144,19 @@ void sd_append_string(SedsDataType ty, const char *str)
         return;
     }
 
-    fc_lock(&line.lock);
+    const fu32 network_seconds = (fu32)telemetry_unix_s();
+    const fu32 local_ms = (fu32)now_ms();
+    if (!fc_trylock(&line.lock))
+    {
+        g_sd_lock_contention_drops++;
+        return;
+    }
 
     char *off = sdbuf[line.cur] + line.off[line.cur];
     fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
 
     fu16 written = snprintf(off, rem, "%u %u %s: %s\n",
-            (fu32) telemetry_unix_s(), (fu32) now_ms(),
+            network_seconds, local_ms,
             seds_msg(ty), str);
 
     sd_release_notify(written, rem);
@@ -146,13 +164,9 @@ void sd_append_string(SedsDataType ty, const char *str)
 
 void sd_conclude(void)
 {
-    fc_lock(&line.lock);
+    /* Reset is the producer stop flag; the writer owns buffer bookkeeping.
+     * Do not spin here from the higher-priority recovery task. */
     fetch_or(&g_conf, option(SD_Pipeline_Reset), Rel);
-
-    line.free = false;
-
-    fc_unlock(&line.lock);
-
     tx_semaphore_put(&line.full);
 }
 
