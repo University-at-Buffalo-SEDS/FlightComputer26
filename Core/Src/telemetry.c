@@ -5,6 +5,7 @@
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
 #include "telemetry_rate.h"
+#include "ota_stream.h"
 #include "sim_network_probe.h"
 #include "fctypes.h"
 #include "fcapi.h"
@@ -494,6 +495,7 @@ SedsResult telemetry_poll_discovery(void) {
    * before discovery succeeds so an unplugged CAN bus cannot hold the buzzer
    * on indefinitely. */
   (void)flight_buzzer_poll(g_router.r);
+  ota_stream_poll();
   g_telemetry_service_stage = 303U;
   g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
@@ -598,6 +600,11 @@ static SedsResult init_telemetry_router_locked(void) {
   /* Discovery begins from the normal poll loop after CAN startup. */
 
   g_telemetry_service_stage = 32U;
+  result = ota_stream_init(r);
+  if (result != SEDS_OK) {
+    seds_router_free(r);
+    return result;
+  }
   g_router.r = r;
   (void)flight_state_cache_init(r);
   g_telemetry_service_stage = 33U;
@@ -620,17 +627,20 @@ SedsResult init_telemetry_router(void) {
   return result;
 }
 
-static inline SedsElemKind guess_kind_from_elem_size(size_t elem_size) {
-  if (elem_size == 4U || elem_size == 8U) {
-    return SEDS_EK_FLOAT;
-  }
-  return SEDS_EK_UNSIGNED;
-}
+/* STM32's native little-endian numeric representation is SEDSNet's wire
+ * representation. The bytes API still applies the schema's fixed-length
+ * padding and routing, without linking conversions for every numeric type. */
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "FC telemetry payloads require little-endian serialization"
+#endif
 
 SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
                                      size_t element_count, size_t element_size) {
 #ifdef TELEMETRY_ENABLED
-  if (!data || element_count == 0U || element_size == 0U) {
+  if (!data || element_count == 0U ||
+      (element_size != 1U && element_size != 2U && element_size != 4U &&
+       element_size != 8U && element_size != 16U) ||
+      element_count > SIZE_MAX / element_size) {
     return SEDS_BAD_ARG;
   }
 
@@ -640,8 +650,7 @@ SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
 
   telemetry_lock();
   const SedsResult result =
-      seds_router_log_typed(g_router.r, data_type, data, element_count,
-                            element_size, guess_kind_from_elem_size(element_size));
+      seds_router_log_bytes(g_router.r, data_type, data, element_count * element_size);
 #ifdef SEDS_FIRMWARE_SIM_TEST
   /* Observe real producer calls; never manufacture qualification packets. */
   if (data_type == SEDS_DT_BAROMETER_DATA) {
@@ -666,7 +675,10 @@ SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
 SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
                                       size_t element_count, size_t element_size) {
 #ifdef TELEMETRY_ENABLED
-  if (!data || element_count == 0U || element_size == 0U) {
+  if (!data || element_count == 0U ||
+      (element_size != 1U && element_size != 2U && element_size != 4U &&
+       element_size != 8U && element_size != 16U) ||
+      element_count > SIZE_MAX / element_size) {
     return SEDS_BAD_ARG;
   }
 
@@ -686,8 +698,7 @@ SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
     return SEDS_OK;
   }
   const SedsResult result =
-      seds_router_log_typed(g_router.r, data_type, data, element_count,
-                            element_size, guess_kind_from_elem_size(element_size));
+      seds_router_log_bytes(g_router.r, data_type, data, element_count * element_size);
 #ifdef SEDS_FIRMWARE_SIM_TEST
   if (data_type == SEDS_DT_IMU_DATA) {
     g_sim_imu_publish_attempts++;

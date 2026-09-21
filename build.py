@@ -26,7 +26,8 @@ OPTIONS: (option not specified -> opposite is true)
         factory         Build bootloader + packaged firmware (default).
         bootloader      Build only the bootloader.
         firmware        Build only the packaged Slot A firmware.
-        ota             Build a full .seds image for bootloader recovery.
+        ota             Build a delta .seds from the previous package when it
+                        fits; otherwise emit a full image for wired recovery.
 
         stlink          Open STLink connection and exit.
                         Prereq: Debug.
@@ -141,7 +142,7 @@ FIRMWARE_NAME   = "FlightComputer26"
 BIN             = "FlightComputer26.bin"
 ELF             = "FlightComputer26.elf"
 FC_ADDR         = "0x08000000"
-APP_ADDR        = "0x08004000"
+APP_ADDR        = "0x08002000"
 DEBUG_HOST      = "127.0.0.1"
 DEBUG_PORT      = 4242
 STM32_PROG_CLI  = "STM32_Programmer_CLI"
@@ -420,7 +421,9 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
                 path = ota_path
                 route = {"ab": "A/B slot", "staging": "single-slot staging",
                          "recovery": "bootloader recovery", "delta": "bootloader recovery"}[ota_layout]
-                print(f"Built full-image OTA for {route}.")
+                print(f"Built full-image OTA for {route}; not a live delta upload.")
+                if ota_layout in ("delta", "recovery"):
+                        print("FC requires a wired factory flash for this fallback: ./build.py release flash-st")
         print(f"Built {image} image: {path} (flash address {address})")
         return path, address
 
@@ -472,6 +475,8 @@ def run_dfu(cmd: list[str]):
 
 
 def flash(path: Path, address: str, options: dict):
+        if not address:
+                sys.exit("Delta OTA files cannot be flashed directly. Upload the .seds through GroundStation, or build a factory image for wired flashing.")
         if not path.exists():
                 sys.exit(f"Expected BIN at {path}")
 

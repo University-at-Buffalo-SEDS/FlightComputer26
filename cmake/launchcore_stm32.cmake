@@ -32,12 +32,21 @@ include("${sedslaunchcore_SOURCE_DIR}/cmake/launchcore_stm32.cmake")
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     "${sedslaunchcore_SOURCE_DIR}/bootloader/src/crc32.c"
     "${sedslaunchcore_SOURCE_DIR}/bootloader/src/persist.c"
+    "${sedslaunchcore_SOURCE_DIR}/bootloader/src/metadata.c"
+    "${sedslaunchcore_SOURCE_DIR}/update_lib/src/delta_update.c"
+    "${sedslaunchcore_SOURCE_DIR}/update_lib/src/confirm_boot.c"
+    "${sedslaunchcore_SOURCE_DIR}/update_lib/src/update_status.c"
+    "${CMAKE_SOURCE_DIR}/Core/Src/launchcore_delta_format.c"
     "${CMAKE_SOURCE_DIR}/Bootloader/storage_dispatch.c"
     "${CMAKE_SOURCE_DIR}/Bootloader/storage_internal_flash.c"
 )
+if(ENABLE_TELEMETRY)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/Core/Src/ota_stream.c")
+endif()
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     "${CMAKE_SOURCE_DIR}/Bootloader"
     "${sedslaunchcore_SOURCE_DIR}/bootloader/include"
+    "${sedslaunchcore_SOURCE_DIR}/update_lib/include"
 )
 
 set(_launchcore_bsp_config "${CMAKE_SOURCE_DIR}/Bootloader/board_config.h")
@@ -90,7 +99,7 @@ add_executable(${LAUNCHCORE_BOOTLOADER_TARGET}
     ${LAUNCHCORE_HARDWARE_SHA256_SOURCE}
     "${LAUNCHCORE_SYSTEM_SOURCE}"
     ${LAUNCHCORE_FLASH_SOURCES}
-    "${LAUNCHCORE_STARTUP_SOURCE}"
+    "${CMAKE_SOURCE_DIR}/Bootloader/startup.c"
 )
 target_include_directories(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     "${CMAKE_SOURCE_DIR}/Bootloader"
@@ -104,6 +113,7 @@ target_compile_definitions(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     USE_HAL_DRIVER
     ${LAUNCHCORE_DEVICE_DEFINE}
     HAL_HASH_MODULE_ENABLED
+    VECT_TAB_OFFSET=0U
 )
 target_link_options(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     -T "${CMAKE_SOURCE_DIR}/Bootloader/linker_bootloader.ld"
@@ -112,6 +122,9 @@ target_link_options(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
     -Wl,--print-memory-usage
 )
 target_link_libraries(${LAUNCHCORE_BOOTLOADER_TARGET} m)
+target_compile_options(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:-Oz;-flto>)
+target_link_options(${LAUNCHCORE_BOOTLOADER_TARGET} PRIVATE -flto)
 
 set(LAUNCHCORE_APP_VERSION "1.0.0" CACHE STRING
     "Version stored in the packaged LaunchCore application image")

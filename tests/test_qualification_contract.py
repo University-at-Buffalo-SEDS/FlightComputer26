@@ -27,7 +27,7 @@ class QualificationContractTests(unittest.TestCase):
         )
         body = telemetry.split("SedsResult log_telemetry_asynchronous", 1)[1]
         body = body.split("SedsResult log_telemetry_string_asynchronous", 1)[0]
-        self.assertIn("seds_router_log_typed", body)
+        self.assertIn("seds_router_log_bytes", body)
         self.assertNotIn("seds_router_log_queue_typed", body)
 
     def test_flight_buzzer_routes_to_flight_controller_endpoint(self):

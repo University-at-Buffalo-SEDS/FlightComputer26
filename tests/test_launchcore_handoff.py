@@ -40,7 +40,7 @@ class LaunchCoreHandoffContract(unittest.TestCase):
         self.assertIn("launchcore_persist_get", persistent_store)
         self.assertIn("launchcore_persist_set", persistent_store)
         self.assertIn("NETWORK_VARIABLE_UNSYNCED_RETRY_MS", source)
-        self.assertIn(".persistent_data_write_size=16u", storage)
+        self.assertIn(".persistent_data_write_size = BOARD_FLASH_WRITE_ALIGNMENT", storage)
         self.assertIn('bootloader/src/persist.c"', cmake)
 
     def test_underglow_is_restored_before_threadx_and_network_sync(self):
