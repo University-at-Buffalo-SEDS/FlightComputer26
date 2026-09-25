@@ -65,6 +65,10 @@ static int32_t g_can_side_id = -1;
 static uint8_t g_local_unix_valid = 0U;
 static uint64_t g_local_unix_ms = 0ULL;
 
+static uint8_t g_discovery_schema_announced = 0U;
+static uint8_t g_discovery_schema_requested = 0U;
+static uint64_t g_discovery_schema_retry_ms = 0ULL;
+
 RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 
 /* Exported simulator/HIL health signals. A linked-bay test requires both a
@@ -490,6 +494,27 @@ SedsResult telemetry_poll_discovery(void) {
   g_telemetry_service_stage = 302U;
   bool did_queue = false;
   telemetry_lock();
+  /* Cadence polling advertises routes, not schema. Publish the complete local
+   * catalog once after startup so existing relays learn newly added types.
+   * Leave queue processing running between bounded retries on queue pressure. */
+  const uint64_t now = tx_raw_now_ms_locked();
+  if (now >= g_discovery_schema_retry_ms) {
+    if (!g_discovery_schema_announced) {
+      g_discovery_schema_retry_ms = now + 1000ULL;
+      if (seds_router_announce_discovery(g_router.r) == SEDS_OK) {
+        g_discovery_schema_announced = 1U;
+      }
+    } else if (!g_discovery_schema_requested && g_telemetry_discovery_seen) {
+      /* Recover peer definitions when this board restarts after the peers'
+       * startup announcements. Wait for a peer, and separate the two bursts. */
+      static const uint8_t empty = 0U;
+      g_discovery_schema_retry_ms = now + 1000ULL;
+      if (seds_router_log_bytes(g_router.r, SEDS_DT_DISCOVERY_SCHEMA_REQUEST,
+                                &empty, 0U) == SEDS_OK) {
+        g_discovery_schema_requested = 1U;
+      }
+    }
+  }
   (void)flight_state_cache_poll(g_router.r);
   /* This also enforces the two-second startup-buzz deadline. It must run
    * before discovery succeeds so an unplugged CAN bus cannot hold the buzzer
@@ -609,6 +634,9 @@ static SedsResult init_telemetry_router_locked(void) {
   (void)flight_state_cache_init(r);
   g_telemetry_service_stage = 33U;
   g_router.created = 1U;
+  g_discovery_schema_announced = 0U;
+  g_discovery_schema_requested = 0U;
+  g_discovery_schema_retry_ms = 0ULL;
   return SEDS_OK;
 #endif
 }
