@@ -297,6 +297,7 @@ set(LAUNCHCORE_HAL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver
 set(LAUNCHCORE_SYSTEM_SOURCE "${CMAKE_SOURCE_DIR}/Core/Src/system_stm32h5xx.c")
 set(LAUNCHCORE_STARTUP_SOURCE "${CMAKE_SOURCE_DIR}/startup_stm32h523xx.s")
 set(LAUNCHCORE_FLASH_SOURCES
+    "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_icache.c"
     "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_flash.c"
     "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_flash_ex.c"
     "${CMAKE_SOURCE_DIR}/Drivers/STM32H5xx_HAL_Driver/Src/stm32h5xx_hal_hash.c")

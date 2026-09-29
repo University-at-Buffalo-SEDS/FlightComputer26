@@ -15,6 +15,8 @@
 #define OTA_OP_STATUS 0x05U
 #define OTA_RESPONSE_FLAG 0x80U
 #define OTA_CONFIRM_DELAY_MS 5000ULL
+#define OTA_CONFIRM_RETRY_MS 10000ULL
+#define OTA_CONFIRM_MAX_ATTEMPTS 3U
 #define OTA_RESET_DELAY_MS 250ULL
 
 extern const launchcore_storage_driver_t launchcore_board_storage_driver;
@@ -26,6 +28,8 @@ typedef struct {
   uint32_t declared_size;
   uint64_t initialized_ms;
   uint64_t reset_requested_ms;
+  uint64_t last_confirm_ms;
+  uint32_t confirm_attempts;
   bool active;
   bool connected;
   bool boot_confirmed;
@@ -33,6 +37,8 @@ typedef struct {
 } ota_stream_state_t;
 
 static ota_stream_state_t state;
+volatile uint32_t g_ota_confirm_attempts;
+volatile int32_t g_ota_confirm_status;
 
 static uint32_t read_u32_le(const uint8_t *p)
 {
@@ -170,8 +176,16 @@ SedsResult ota_stream_init(SedsRouter *router)
 void ota_stream_poll(void)
 {
   const uint64_t now = telemetry_now_ms();
-  if (!state.boot_confirmed && now - state.initialized_ms >= OTA_CONFIRM_DELAY_MS)
-    state.boot_confirmed = launchcore_confirm_boot() == LAUNCHCORE_OK;
+  if (!state.boot_confirmed && state.confirm_attempts < OTA_CONFIRM_MAX_ATTEMPTS &&
+      now - state.initialized_ms >= OTA_CONFIRM_DELAY_MS &&
+      (state.confirm_attempts == 0U || now - state.last_confirm_ms >= OTA_CONFIRM_RETRY_MS)) {
+    state.last_confirm_ms = now;
+    ++state.confirm_attempts;
+    g_ota_confirm_attempts = state.confirm_attempts;
+    const launchcore_status_t status = launchcore_confirm_boot();
+    g_ota_confirm_status = (int32_t)status;
+    state.boot_confirmed = status == LAUNCHCORE_OK;
+  }
   if (state.reset_requested && now - state.reset_requested_ms >= OTA_RESET_DELAY_MS)
     NVIC_SystemReset();
 }

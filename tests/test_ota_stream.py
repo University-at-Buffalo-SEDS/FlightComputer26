@@ -39,6 +39,7 @@ enum { SEDS_P2P_STREAM_ACCEPTED, SEDS_P2P_STREAM_DATA,
 typedef struct { int kind; uint32_t stream_id; const uint8_t *payload; size_t payload_len; } SedsP2pStreamEventView;
 const launchcore_storage_driver_t launchcore_board_storage_driver=1;
 static unsigned resets, aborted, written, confirmed;
+static int confirmation_result;
 static uint64_t now;
 static uint8_t reply[13];
 static void launchcore_storage_set_driver(const launchcore_storage_driver_t *d) { assert(d); }
@@ -49,7 +50,7 @@ static int launchcore_delta_update_begin(uint32_t n) { written=0; return n>16384
 static int launchcore_delta_update_write(const void *p,size_t n) { assert(p); written+=n; return 0; }
 static int launchcore_delta_update_finish(void) { return 0; }
 static int launchcore_delta_update_abort(void) { ++aborted; return 0; }
-static int launchcore_confirm_boot(void) { ++confirmed; return 0; }
+static int launchcore_confirm_boot(void) { ++confirmed; return confirmation_result; }
 static int seds_router_send_p2p_stream(SedsRouter *r,uint32_t id,const void *p,size_t n) {
   assert(r && id && n==13); memcpy(reply,p,n); return 0;
 }
@@ -91,6 +92,19 @@ int main(void) {
   now=250; ota_stream_poll(); assert(resets==1);
   now=0; assert(ota_stream_init(&router)==SEDS_OK);
   now=5000; ota_stream_poll(); assert(confirmed==1);
+  now=50000; ota_stream_poll(); assert(confirmed==1); /* Success is latched. */
+  now=0; assert(ota_stream_init(&router)==SEDS_OK);
+  confirmation_result=LAUNCHCORE_ERR_METADATA; confirmed=0;
+  for(now=0; now<5000; ++now) ota_stream_poll();
+  assert(confirmed==0);
+  for(;now<15000;++now) ota_stream_poll();
+  assert(confirmed==1);
+  ota_stream_poll(); assert(confirmed==2);
+  for(;now<25000;++now) ota_stream_poll();
+  assert(confirmed==2);
+  ota_stream_poll(); assert(confirmed==3);
+  now=1000000; ota_stream_poll(); assert(confirmed==3);
+  assert(g_ota_confirm_attempts==3 && g_ota_confirm_status==LAUNCHCORE_ERR_METADATA);
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
