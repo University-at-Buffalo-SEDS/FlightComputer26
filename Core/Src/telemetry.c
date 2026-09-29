@@ -515,6 +515,7 @@ SedsResult telemetry_poll_discovery(void) {
       }
     }
   }
+  (void)av_bay_underglow_poll(g_router.r);
   (void)flight_state_cache_poll(g_router.r);
   /* This also enforces the two-second startup-buzz deadline. It must run
    * before discovery succeeds so an unplugged CAN bus cannot hold the buzzer
@@ -530,7 +531,6 @@ SedsResult telemetry_poll_discovery(void) {
      * avionics CAN. Do not inject an extra simulation-only heartbeat into a
      * saturated TX queue; qualification traffic must not perturb scheduling. */
     g_telemetry_service_stage = 613U;
-    (void)av_bay_underglow_poll(g_router.r);
     g_telemetry_service_stage = 614U;
   }
   telemetry_update_network_health(g_router.r);

@@ -45,4 +45,5 @@ class StartupLedTests(unittest.TestCase):
             encoding="utf-8"
         )
         deploy = recovery.split("static inline void manual_deployment", 1)[1]
-        self.assertEqual(deploy.count("av_bay_underglow_reapply();"), 2)
+        self.assertIn("av_bay_underglow_signal(2U);", deploy)
+        self.assertIn("av_bay_underglow_signal(4U);", deploy)

@@ -26,11 +26,55 @@ static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
 static uint32_t g_last_refresh_ms = 0U;
 
-static void drive_underglow(bool enabled)
+/* The recovery task must never busy-wait for an indicator. Only these short
+ * GPIO/state updates mask interrupts; packet processing continues between edges. */
+#define INDICATOR_HALF_PERIOD_MS 100U
+static uint32_t g_indicator_edges;
+static uint32_t g_indicator_deadline;
+
+static void reapply_locked(void)
 {
-    g_av_bay_underglow_enabled = enabled ? 1U : 0U;
+    const bool enabled = g_indicator_edges != 0U
+        ? (g_indicator_edges & 1U) == 0U
+        : g_av_bay_underglow_enabled != 0U;
     HAL_GPIO_WritePin(LED2_PORT, LED2_PIN,
                       enabled ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static void drive_underglow(bool enabled)
+{
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    g_av_bay_underglow_enabled = enabled ? 1U : 0U;
+    reapply_locked();
+    __set_PRIMASK(mask);
+}
+
+void av_bay_underglow_signal(uint32_t pulses)
+{
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    g_indicator_edges = (pulses > 4U ? 4U : pulses) * 2U;
+    g_indicator_deadline = HAL_GetTick() + INDICATOR_HALF_PERIOD_MS;
+    reapply_locked();
+    __set_PRIMASK(mask);
+}
+
+static void poll_indicator(void)
+{
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    const uint32_t now = HAL_GetTick();
+    if (g_indicator_edges != 0U && (int32_t)(now - g_indicator_deadline) >= 0) {
+        const uint32_t elapsed_edges =
+            (now - g_indicator_deadline) / INDICATOR_HALF_PERIOD_MS + 1U;
+        g_indicator_edges = elapsed_edges >= g_indicator_edges
+            ? 0U : g_indicator_edges - elapsed_edges;
+        g_indicator_deadline = now + INDICATOR_HALF_PERIOD_MS -
+            (now - g_indicator_deadline) % INDICATOR_HALF_PERIOD_MS;
+        reapply_locked();
+    }
+    __set_PRIMASK(mask);
 }
 
 void av_bay_underglow_restore(void)
@@ -67,7 +111,10 @@ void av_bay_underglow_restore(void)
 
 void av_bay_underglow_reapply(void)
 {
-    drive_underglow(g_av_bay_underglow_enabled != 0U);
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    reapply_locked();
+    __set_PRIMASK(mask);
 }
 
 static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
@@ -118,6 +165,7 @@ SedsResult av_bay_underglow_init(SedsRouter *router)
 
 SedsResult av_bay_underglow_poll(SedsRouter *router)
 {
+    poll_indicator();
     if (router == NULL) return SEDS_BAD_ARG;
     if (g_network_value_seen) return SEDS_OK;
     if (g_telemetry_discovery_seen == 0U) return SEDS_OK;

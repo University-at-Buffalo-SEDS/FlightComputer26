@@ -12,6 +12,7 @@ extern volatile uint32_t g_av_bay_underglow_persist_errors;
 
 void av_bay_underglow_restore(void);
 void av_bay_underglow_reapply(void);
+void av_bay_underglow_signal(uint32_t pulses);
 SedsResult av_bay_underglow_init(SedsRouter *router);
 SedsResult av_bay_underglow_poll(SedsRouter *router);
 

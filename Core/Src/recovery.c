@@ -251,17 +251,19 @@ static inline void manual_deployment(bool apogee, bool force)
   {
     sm.flight = Descent;
     release_parachute(force);
-    blink(Blue, false, 2);
 #ifdef TELEMETRY_ENABLED
-    av_bay_underglow_reapply();
+    av_bay_underglow_signal(2U);
+#else
+    blink(Blue, false, 2);
 #endif
   }
   else if (expand_parachute(force))
   {
     sm.flight = Reefing;
-    blink(Blue, false, 4);
 #ifdef TELEMETRY_ENABLED
-    av_bay_underglow_reapply();
+    av_bay_underglow_signal(4U);
+#else
+    blink(Blue, false, 4);
 #endif
   }
   else return;
