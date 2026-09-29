@@ -267,6 +267,9 @@ extern uint8_t sdmmc_ready;
 
 #else /* !TELEMETRY_ENABLED */
 
+/* No synchronized network clock; SD logging falls back to local uptime. */
+static inline uint64_t telemetry_unix_s(void) { return 0U; }
+
 typedef enum SedsResult_Debug {
   SEDS_OK,
   SEDS_ERR,

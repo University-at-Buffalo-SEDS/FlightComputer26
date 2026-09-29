@@ -8,7 +8,9 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#ifdef TELEMETRY_ENABLED
 #include "av_bay_underglow.h"
+#endif
 #include "tx_thread.h"
 
 #define id "RE "
@@ -18,7 +20,9 @@ TX_THREAD recovery_task;
 TX_QUEUE seds_syscall;
 TX_TIMER monotonic_checks;
 
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 extern volatile fc_msg g_last_network_flight_command_msg;
+#endif
 volatile uint32_t g_network_flight_commands_processed
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_recovery_stack_used
@@ -248,13 +252,17 @@ static inline void manual_deployment(bool apogee, bool force)
     sm.flight = Descent;
     release_parachute(force);
     blink(Blue, false, 2);
+#ifdef TELEMETRY_ENABLED
     av_bay_underglow_reapply();
+#endif
   }
   else if (expand_parachute(force))
   {
     sm.flight = Reefing;
     blink(Blue, false, 4);
+#ifdef TELEMETRY_ENABLED
     av_bay_underglow_reapply();
+#endif
   }
   else return;
 
@@ -724,6 +732,7 @@ void recovery_entry(ULONG st)
     }
 
     g_recovery_commands_dequeued++;
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
     const bool network_command = msg == g_last_network_flight_command_msg;
     if (network_command)
     {
@@ -731,6 +740,9 @@ void recovery_entry(ULONG st)
        * command cannot overwrite the correlation while this handler runs. */
       g_last_network_flight_command_msg = Invalid_Message;
     }
+#else
+    const bool network_command = false;
+#endif
     decode_flight_message(msg);
     recovery_update_stack_profile();
     if (network_command)

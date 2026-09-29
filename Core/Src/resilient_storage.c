@@ -1,7 +1,10 @@
 #include "resilient_storage.h"
 
-#include "sedsnet_config.h"
+#ifdef TELEMETRY_ENABLED
 #include "telemetry.h"
+#else
+#include <stdio.h>
+#endif
 #include "tx_api.h"
 
 extern SD_HandleTypeDef hsd1;
@@ -55,11 +58,15 @@ UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
     }
 
     if ((failed_retries == 0U) || ((failed_retries % 60U) == 0U)) {
+#ifdef TELEMETRY_ENABLED
       if (log_telemetry_string_asynchronous(
               SEDS_DT_WARNING,
               "Flight Computer SD card unavailable; flight and networking continue") == SEDS_OK) {
         g_sd_warning_publish_count++;
       }
+#else
+      fprintf(stderr, "Flight Computer SD card unavailable; retrying\n");
+#endif
     }
     failed_retries++;
 

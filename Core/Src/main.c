@@ -23,9 +23,11 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "platform.h"
+#ifdef TELEMETRY_ENABLED
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
+#endif
 #include "resilient_storage.h"
 #define HAL_SD_Init flight_sd_init
 #include "fcapi.h"
@@ -140,9 +142,11 @@ int main(void)
   led_on(LED2_PORT, LED2_PIN);
   /* Replace the temporary startup indication with the persisted LaunchCore
    * state before ThreadX and network-variable synchronization begin. */
+#ifdef TELEMETRY_ENABLED
   av_bay_underglow_restore();
   flight_buzzer_restore();
   flight_state_cache_restore();
+#endif
 
   co2_low();
   reef_low();
