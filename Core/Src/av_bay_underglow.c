@@ -11,7 +11,6 @@ extern volatile uint32_t g_telemetry_discovery_seen;
 
 #define UNDERGLOW_PERSIST_KEY 0x55474C57u
 #define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
-#define NETWORK_VARIABLE_REFRESH_MS 2000U
 
 volatile uint32_t g_av_bay_underglow_enabled = 0U;
 volatile uint32_t g_av_bay_underglow_updates = 0U;
@@ -132,7 +131,6 @@ static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
                                g_av_bay_underglow_enabled != (uint32_t)enabled;
     drive_underglow(enabled);
     g_network_value_seen = true;
-    g_last_refresh_ms = HAL_GetTick();
     g_av_bay_underglow_updates++;
 
     if (needs_persist)
@@ -169,15 +167,11 @@ SedsResult av_bay_underglow_poll(SedsRouter *router)
 {
     poll_indicator();
     if (router == NULL) return SEDS_BAD_ARG;
+    if (g_network_value_seen) return SEDS_OK;
     if (g_telemetry_discovery_seen == 0U) return SEDS_OK;
     const uint32_t now_ms = HAL_GetTick();
-    /* A successfully received value does not guarantee delivery of the next
-     * broadcast. Refresh the read-only replica after an idle interval so a
-     * dropped update or a restarted relay cannot leave the LED stale forever.
-     * Received updates reset this timer; never flood requests while toggling. */
-    const uint32_t interval = g_network_value_seen
-        ? NETWORK_VARIABLE_REFRESH_MS : NETWORK_VARIABLE_UNSYNCED_RETRY_MS;
-    if ((uint32_t)(now_ms - g_last_refresh_ms) < interval) return SEDS_OK;
+    if ((uint32_t)(now_ms - g_last_refresh_ms) <
+        NETWORK_VARIABLE_UNSYNCED_RETRY_MS) return SEDS_OK;
     g_last_refresh_ms = now_ms;
     return seds_router_request_managed_variable(
         router, SEDS_DT_AV_BAY_UNDERGLOW);

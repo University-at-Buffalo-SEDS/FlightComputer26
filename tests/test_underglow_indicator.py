@@ -63,21 +63,12 @@ int main(void) {
     av_bay_underglow_signal(4); tick+=50; av_bay_underglow_signal(2);
     tick+=400; av_bay_underglow_poll(&router); assert(pin==1);
     assert(mask==0 && requests==0); /* animation also finishes before discovery */
-    mask=1; av_bay_underglow_reapply(); assert(mask==1);
-    mask=0;
     g_telemetry_discovery_seen=1;
-    tick=1000; update(0);
-    tick=2999; av_bay_underglow_poll(&router); assert(requests==0);
-    tick=3000; av_bay_underglow_poll(&router); assert(requests==1);
-    tick=3001; av_bay_underglow_poll(&router); assert(requests==1);
-    /* A missed update must not disable future refreshes. */
-    tick=5000; av_bay_underglow_poll(&router); assert(requests==2);
-    tick=5100; update(1); assert(pin==1);
-    tick=7000; av_bay_underglow_poll(&router); assert(requests==2);
-    tick=7100; av_bay_underglow_poll(&router); assert(requests==3);
-    tick=UINT32_MAX-999; update(0);
-    tick=999; av_bay_underglow_poll(&router); assert(requests==3);
-    tick=1000; av_bay_underglow_poll(&router); assert(requests==4);
+    tick+=60000; av_bay_underglow_poll(&router);
+    assert(requests==0); /* synced state must rely on pushed updates */
+    update(0); assert(pin==0);
+    tick+=60000; av_bay_underglow_poll(&router); assert(requests==0);
+    mask=1; av_bay_underglow_reapply(); assert(mask==1);
 }
 """
         with tempfile.TemporaryDirectory() as tmp:
