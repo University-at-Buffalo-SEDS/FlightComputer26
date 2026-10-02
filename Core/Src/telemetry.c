@@ -182,8 +182,10 @@ static void telemetry_record_queue_result(SedsResult result) {
     return;
   }
 
+  /* Blue is owned by managed underglow and the recovery indicator. A raw
+   * toggle here can latch it on after a transient queue error. Keep errors
+   * observable through counters without changing the requested LED state. */
   g_telemetry_queue_errors++;
-  led_toggle(light[Blue].port, light[Blue].pin);
 }
 
 static const SedsLocalEndpointDesc locals[] = {

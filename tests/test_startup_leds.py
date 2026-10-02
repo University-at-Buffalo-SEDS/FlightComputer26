@@ -47,3 +47,13 @@ class StartupLedTests(unittest.TestCase):
         deploy = recovery.split("static inline void manual_deployment", 1)[1]
         self.assertIn("av_bay_underglow_signal(2U);", deploy)
         self.assertIn("av_bay_underglow_signal(4U);", deploy)
+
+    def test_queue_errors_do_not_override_managed_blue_led(self):
+        source = (ROOT / "Core/Src/telemetry.c").read_text()
+        handler = source.split("static void telemetry_record_queue_result", 1)[1].split(
+            "static const SedsLocalEndpointDesc", 1
+        )[0]
+        self.assertIn("g_telemetry_queue_errors++;", handler)
+        self.assertNotIn("led_toggle", handler)
+        self.assertNotIn("av_bay_underglow_signal", handler)
+        self.assertNotIn("HAL_GPIO_", handler)
