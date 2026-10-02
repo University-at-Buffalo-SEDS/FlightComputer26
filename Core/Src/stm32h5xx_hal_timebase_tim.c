@@ -40,6 +40,9 @@ TIM_HandleTypeDef        htim6;
   */
 HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
 {
+  extern volatile uint32_t g_fc_runtime_clock_active;
+  if (g_fc_runtime_clock_active != 0U) return HAL_OK;
+
   RCC_ClkInitTypeDef    clkconfig;
   uint32_t              uwTimclock, uwAPB1Prescaler;
   uint32_t              uwPrescalerValue;

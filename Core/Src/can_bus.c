@@ -278,19 +278,21 @@ static HAL_StatusTypeDef can_bus_enqueue_tx_frame(const FDCAN_TxHeaderTypeDef *h
 
   g_can_tx_service_stage = 12U;
   const uint32_t started_ms = HAL_GetTick();
+  const uint32_t started_cycles = DWT->CYCCNT;
+  const uint32_t max_cycles = (SystemCoreClock / 1000U) * CAN_BUS_TX_ENQUEUE_TIMEOUT_MS;
   while (HAL_FDCAN_GetTxFifoFreeLevel(g_hfdcan) == 0U)
   {
     if (can_bus_recover_if_bus_off() != HAL_OK)
       return HAL_ERROR;
     if ((uint32_t)(HAL_GetTick() - started_ms) >=
-        (uint32_t)CAN_BUS_TX_ENQUEUE_TIMEOUT_MS)
+        (uint32_t)CAN_BUS_TX_ENQUEUE_TIMEOUT_MS ||
+        (uint32_t)(DWT->CYCCNT - started_cycles) >= max_cycles)
     {
-      (void)HAL_FDCAN_AbortTxRequest(
-          g_hfdcan, FDCAN_TX_BUFFER0 | FDCAN_TX_BUFFER1 | FDCAN_TX_BUFFER2);
+      /* Preserve accepted frames; refuse only the new frame for retry. */
       g_fdcan_last_error = HAL_FDCAN_ERROR_FIFO_FULL;
       g_fdcan_last_state = (uint32_t)g_hfdcan->State;
       g_fdcan_tx_fail_count++;
-      return HAL_TIMEOUT;
+      return HAL_BUSY;
     }
   }
 

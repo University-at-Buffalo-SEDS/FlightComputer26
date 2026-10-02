@@ -60,6 +60,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/deployment_pulse.c
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
     ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
     ${CMAKE_SOURCE_DIR}/Core/Src/abort_unwind.c

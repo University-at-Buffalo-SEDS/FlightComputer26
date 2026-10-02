@@ -638,22 +638,6 @@ static void fc_timer_routine(ULONG _)
 {
   sweetbench_catch(6);
 
-  if (g_conf & option(CO2_Asserted) &&
-      timer_fetch(AssertCO2) >= CO2_ASSERT_INTERVAL)
-  {
-    co2_low();
-    sweetbench_catch(4);
-    g_conf &= ~option(CO2_Asserted);
-  }
-
-  if (g_conf & option(REEF_Asserted) &&
-      timer_fetch(AssertREEF) >= REEF_ASSERT_INTERVAL)
-  {
-    reef_low();
-    sweetbench_catch(4);
-    g_conf &= ~option(REEF_Asserted);
-  }
-
   if (timer_fetch(HeartbeatGND) > GND_TIMEOUT)
   {
 #ifdef TELEMETRY_ENABLED

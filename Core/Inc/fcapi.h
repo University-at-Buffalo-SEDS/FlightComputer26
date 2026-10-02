@@ -299,6 +299,8 @@ log_metric(const char *msg, fi32 metric, bool critical)
 
 /* Deployment routines */
 
+void deployment_pulse_start(bool reef);
+
 static inline bool release_parachute(bool force)
 {
   if (!force && !beyond(Armed))
@@ -307,13 +309,11 @@ static inline bool release_parachute(bool force)
     return false;
   }
 
-  co2_high();
+  deployment_pulse_start(false);
   log_metric("PD approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
 
-  timer_update(AssertCO2);
-  fetch_or(&g_conf, option(Parachute_Deployed | CO2_Asserted), Rel);
 
   return true;
 }
@@ -332,13 +332,11 @@ static inline bool expand_parachute(bool force)
     return false;
   }
 
-  reef_high();
+  deployment_pulse_start(true);
   log_metric("PR approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
 
-  timer_update(AssertREEF);
-  fetch_or(&g_conf, option(Parachute_Expanded | REEF_Asserted), Rel);
 
   return true;
 }

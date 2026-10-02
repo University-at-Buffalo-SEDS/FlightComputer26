@@ -135,7 +135,7 @@ class QualificationContractTests(unittest.TestCase):
         self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)
         can_bus = (root / "Core" / "Src" / "can_bus.c").read_text(encoding="utf-8")
         self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS 5U", can_bus)
-        self.assertIn("HAL_FDCAN_AbortTxRequest", can_bus)
+        self.assertNotIn("HAL_FDCAN_AbortTxRequest", can_bus)
         self.assertNotIn("< (uint32_t)frag_cnt", can_bus)
 
     def test_sedsnet_can_payload_budget_matches_avionics_peers(self):
@@ -245,7 +245,7 @@ class QualificationContractTests(unittest.TestCase):
         enqueue = enqueue[: enqueue.index("HAL_StatusTypeDef can_bus_send_large")]
         self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS", enqueue)
         self.assertIn("HAL_FDCAN_GetTxFifoFreeLevel(g_hfdcan)", enqueue)
-        self.assertIn("HAL_FDCAN_AbortTxRequest", enqueue)
+        self.assertNotIn("HAL_FDCAN_AbortTxRequest", enqueue)
 
 
     def test_periodic_health_check_does_not_serialize_topology(self):
