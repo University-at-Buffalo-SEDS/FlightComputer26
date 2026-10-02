@@ -33,7 +33,8 @@ class StackGuardContracts(unittest.TestCase):
         handler = (ROOT / "Core/Src/stm32h5xx_it.c").read_text()
         layout = (ROOT / "sim/board.json").read_text()
         self.assertIn("hardfault_capture_and_halt", handler)
-        self.assertIn("core_frame += 18U", handler)
+        self.assertNotIn("core_frame += 18U", handler)
+        self.assertIn("const uint32_t *core_frame = fault_stack;", handler)
         self.assertIn('"symbol": "g_hardfault_count", "maximum": 0', layout)
         self.assertIn('"symbol": "g_hardfault_cfsr"', layout)
 

@@ -72,10 +72,8 @@ hardfault_capture_and_halt(const uint32_t *fault_stack, uint32_t exc_return)
 {
   const uint32_t *core_frame = fault_stack;
 
-  if ((exc_return & (1UL << 4)) == 0U)
-  {
-    core_frame += 18U;
-  }
+  /* Armv8-M places R0..xPSR first, with optional FP state above them.
+   * EXC_RETURN bit 4 does not move the core frame by 18 words. */
 
   g_hardfault_count++;
   g_hardfault_cfsr = SCB->CFSR;

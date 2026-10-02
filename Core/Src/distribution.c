@@ -8,6 +8,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include <string.h>
 
 #define id "DI "
 
@@ -152,7 +153,16 @@ process_gps_packet(const uint8_t *data, size_t len)
   timer_update(HeartbeatRF);
 
   fu32 cfg = fetch_or(&g_conf, option(GPS_Available), Rlx);
-  fu32 rep = validate_coords((const f_xyz *)data, len, cfg);
+  /* Packet payloads are byte-aligned, not necessarily float-aligned. */
+  f_xyz coords;
+  if (data == NULL || len != sizeof(coords))
+  {
+    fu32 rep = fc_mask(GPS_Malformed);
+    tx_queue_send(&seds_syscall, &rep, TX_NO_WAIT);
+    return SEDS_ERR;
+  }
+  memcpy(&coords, data, sizeof(coords));
+  fu32 rep = validate_coords(&coords, sizeof(coords), cfg);
 
   if (rep != fc_mask(GPS_Data_Code))
   {
@@ -161,7 +171,7 @@ process_gps_packet(const uint8_t *data, size_t len)
   }
 
   fc_lock(&rfboard.rflock);
-  rfboard.coords_buf = *(f_xyz *)data;
+  rfboard.coords_buf = coords;
   rfboard.updated = true;
   fc_concede(&rfboard.rflock);
 
@@ -296,7 +306,7 @@ static inline SedsResult pulse_ground(void)
 static inline SedsResult
 update_ascent_biases(const uint8_t *data, size_t len)
 {
-  if (len != sizeof(ekf_bias))
+  if (data == NULL || len != sizeof(ekf_bias))
   {
     return SEDS_ERR;
   }
@@ -307,14 +317,18 @@ update_ascent_biases(const uint8_t *data, size_t len)
     return SEDS_ERR;
   }
 
+  /* Copy before typed access: the network buffer may be unaligned. */
+  ekf_bias biases;
+  memcpy(&biases, data, sizeof(biases));
+
   /* TODO Bias validation? */
 
   for (fu8 k = 0; k < STATE_HISTORY; ++k)
   {
-    svec(k).bias = *(ekf_bias *)data;
+    svec(k).bias = biases;
   }
 
-  imedsv.bias = *(ekf_bias *)data;
+  imedsv.bias = biases;
 
   fetch_or(&g_conf, option(Manual_Biases), Rel);
 
