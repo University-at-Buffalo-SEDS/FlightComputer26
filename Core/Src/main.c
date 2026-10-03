@@ -643,6 +643,16 @@ void MPU_Config(void)
   MPU_AttributesInit.Number = MPU_ATTRIBUTES_NUMBER1;
 
   HAL_MPU_ConfigMemoryAttributes(&MPU_AttributesInit);
+#if BOARD_WATCHDOG_ENABLE
+  /* Retained records must reach SRAM before reset, rather than remain in a
+   * write-back cache. This also orders the action journal before GPIO writes. */
+  extern const uint8_t __fc_watchdog_retained_start[], __fc_watchdog_retained_end[];
+  MPU_InitStruct.Number = MPU_REGION_NUMBER2;
+  MPU_InitStruct.BaseAddress = (uintptr_t)__fc_watchdog_retained_start;
+  MPU_InitStruct.LimitAddress = (uintptr_t)__fc_watchdog_retained_end - 1U;
+  MPU_InitStruct.AttributesIndex = MPU_ATTRIBUTES_NUMBER0;
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+#endif
   /* Enables the MPU */
   HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 

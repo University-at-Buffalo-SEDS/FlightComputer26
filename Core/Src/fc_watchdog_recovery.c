@@ -38,7 +38,7 @@ volatile uint32_t g_fc_watchdog_resume_rejected;
 volatile uint32_t g_fc_watchdog_checkpoints;
 volatile uint32_t g_fc_watchdog_resume_gap_ms;
 static uint32_t image_id, actions, next_slot, sequence, action_slot, action_sequence;
-static bool busy, clock_ready;
+static bool clock_ready;
 
 static uint32_t checksum(uint32_t crc, const void *buffer, uint32_t length)
 {
@@ -212,10 +212,13 @@ reject:
 void fc_watchdog_checkpoint(void)
 {
     if (!clock_ready || !fc_watchdog_can_actuate() || !(g_conf & option(Launch_Requested))) return;
+    /* Keep control from terminating/resetting the writer mid-transaction.
+     * Interrupts remain enabled during CRC work so CAN and pulse timing run. */
+    TX_THREAD *thread = tx_thread_identify();
+    UINT old_threshold, discarded;
+    if (!thread || tx_thread_preemption_change(thread, 0U, &old_threshold) != TX_SUCCESS) return;
     const uint32_t mask = __get_PRIMASK();
     __disable_irq();
-    if (busy) { __set_PRIMASK(mask); return; }
-    busy = true;
     flight_record *r = &retained.flight[next_slot];
     r->seal = 0U; __DMB();
     r->sequence = ++sequence; r->image = image_id;
@@ -224,7 +227,8 @@ void fc_watchdog_checkpoint(void)
     __set_PRIMASK(mask);
     r->crc = flight_crc(r);
     __DMB(); r->seal = RECORD_SEAL; __DMB();
-    next_slot ^= 1U; busy = false;
+    next_slot ^= 1U;
     g_fc_watchdog_checkpoints++;
+    tx_thread_preemption_change(thread, old_threshold, &discarded);
 }
 #endif

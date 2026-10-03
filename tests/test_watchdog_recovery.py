@@ -57,6 +57,19 @@ static struct {uint32_t ICSR,PRER,WPR,CR,SSR;} rtc;
 #define RCC (&rcc)
 #define RTC (&rtc)
 static uint8_t test_image[]={1,2,3,4,5};
+typedef unsigned UINT;
+typedef struct {unsigned dummy;} TX_THREAD;
+#define TX_SUCCESS 0
+static TX_THREAD checkpoint_thread;
+static unsigned threshold=7, threshold_guards;
+static TX_THREAD *tx_thread_identify(void) {return &checkpoint_thread;}
+static UINT tx_thread_preemption_change(TX_THREAD *thread, UINT requested, UINT *previous) {
+ assert(thread==&checkpoint_thread);
+ *previous=threshold;
+ if (requested==0) {assert(threshold==7);threshold_guards++;}
+ else assert(threshold==0 && requested==7);
+ threshold=requested;return TX_SUCCESS;
+}
 static uint32_t mask, now, frozen, bindings;
 static void __NOP(void) {if (!frozen) rtc.SSR--; rtc.ICSR |= RTC_ICSR_INITF;}
 static void __DMB(void) {}
@@ -81,7 +94,7 @@ static void reset_runtime(void) {
  memset(states,0,sizeof(states));memset(covariance,0,sizeof(covariance));
  memset(baro,0,sizeof(baro));memset(local_time,0,sizeof(local_time));
  image_id=actions=next_slot=sequence=action_slot=action_sequence=0;
- busy=clock_ready=false;g_fc_watchdog_resumed=g_fc_watchdog_resume_rejected=0;
+ clock_ready=false;g_fc_watchdog_resumed=g_fc_watchdog_resume_rejected=0;
 }
 static void cold_boot(void) {
  reset_runtime(); frozen=0; rcc.BDCR=RCC_BDCR_LSIRDY|RCC_BDCR_RTCSEL_1;
@@ -94,7 +107,7 @@ static void flight(unsigned phase) {
  sm.flight=phase;sm.idx=5;sm.global_state=9;sm.confidence=77;
  baro[0]=101000;baro[1]=123;baro[2]=120;
  states[0]=321.5f;covariance[0]=0.125f;now=1000;local_time[0]=200;
- fc_watchdog_checkpoint();assert(!mask && g_fc_watchdog_checkpoints);
+ fc_watchdog_checkpoint();assert(!mask && g_fc_watchdog_checkpoints && threshold==7 && threshold_guards);
 }
 int main(void) {
  for(unsigned phase=Armed;phase<=Recovery;phase++) {
@@ -162,6 +175,8 @@ int main(void) {
         for name in ['STM32H523xx_FLASH.ld','STM32H523xx_RAM.ld']:
             text=(ROOT/name).read_text()
             self.assertIn('.fc_watchdog_retained (NOLOAD)',text)
+            self.assertIn('__fc_watchdog_retained_start = .;',text)
+            self.assertIn('__fc_watchdog_retained_end = .;',text)
             self.assertGreater(text.index('.fc_watchdog_retained'),text.index('_ebss ='))
         self.assertNotIn('board_watchdog_progress',pulse)
     def test_fsm_waits_for_an_entire_fresh_history_after_reset(self):
@@ -208,3 +223,55 @@ int main(void) {
             exe=str(Path(directory)/'fresh-history')
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-x','c','-','-o',exe],input=stub+function+main,text=True,check=True)
             subprocess.run([exe],check=True,timeout=5)
+    def test_retained_region_is_writable_and_noncacheable(self):
+        source=(ROOT/'Core/Src/main.c').read_text()
+        function=source[source.index('void MPU_Config(void)\n{'):]
+        function=function[:function.index('\n}')+2]
+        function='\n'.join(line for line in function.splitlines() if 'extern const uint8_t __fc_watchdog_retained_start' not in line)
+        function=function.replace('__fc_watchdog_retained_start','retained_test').replace('__fc_watchdog_retained_end','(retained_test + sizeof(retained_test))')
+        stub=r'''
+#include <stdint.h>
+#include <assert.h>
+#include <string.h>
+#define MPU_REGION_ENABLE 1
+#define MPU_REGION_NUMBER0 0
+#define MPU_REGION_NUMBER1 1
+#define MPU_REGION_NUMBER2 2
+#define MPU_ATTRIBUTES_NUMBER0 0
+#define MPU_ATTRIBUTES_NUMBER1 1
+#define MPU_REGION_ALL_RO 0
+#define MPU_REGION_ALL_RW 1
+#define MPU_INSTRUCTION_ACCESS_DISABLE 1
+#define MPU_ACCESS_NOT_SHAREABLE 0
+#define MPU_NOT_CACHEABLE 9
+#define INNER_OUTER(x) (x)
+#define MPU_PRIVILEGED_DEFAULT 1
+static _Alignas(32) uint8_t retained_test[4096];
+typedef struct {unsigned Enable,Number;uintptr_t BaseAddress,LimitAddress;unsigned AttributesIndex,AccessPermission,DisableExec,IsShareable;} MPU_Region_InitTypeDef;
+typedef struct {unsigned Number,Attributes;} MPU_Attributes_InitTypeDef;
+static MPU_Region_InitTypeDef regions[3];
+static unsigned configured,attributes[2],enabled;
+static void HAL_MPU_Disable(void) {enabled=0;}
+static void HAL_MPU_ConfigRegion(const MPU_Region_InitTypeDef *p) {regions[p->Number]=*p;configured++;}
+static void HAL_MPU_ConfigMemoryAttributes(const MPU_Attributes_InitTypeDef *p) {attributes[p->Number]=p->Attributes;}
+static void HAL_MPU_Enable(unsigned mode) {assert(mode==1);enabled=1;}
+'''
+        main=r'''
+int main(void) {
+ MPU_Config();assert(enabled);
+ (void)retained_test;
+#if BOARD_WATCHDOG_ENABLE
+ assert(configured==3 && attributes[regions[2].AttributesIndex]==MPU_NOT_CACHEABLE);
+ assert(regions[2].BaseAddress==(uintptr_t)retained_test);
+ assert(regions[2].LimitAddress==(uintptr_t)retained_test+sizeof(retained_test)-1);
+ assert(regions[2].AccessPermission==MPU_REGION_ALL_RW && regions[2].DisableExec);
+#else
+ assert(configured==2);
+#endif
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            for enabled in (0,1):
+                exe=str(Path(directory)/('mpu'+str(enabled)))
+                subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-DBOARD_WATCHDOG_ENABLE='+str(enabled),'-x','c','-','-o',exe],input=stub+function+main,text=True,check=True)
+                subprocess.run([exe],check=True,timeout=5)

@@ -221,10 +221,12 @@ SECTIONS
   PROVIDE( __bss_size = __bss_end - __bss_start );
 
 
-  .fc_watchdog_retained (NOLOAD) : ALIGN(8)
+  .fc_watchdog_retained (NOLOAD) : ALIGN(32)
   {
+    __fc_watchdog_retained_start = .;
     KEEP(*(.fc_watchdog_retained))
-    . = ALIGN(8);
+    . = ALIGN(32);
+    __fc_watchdog_retained_end = .;
   } >RAM
 
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */

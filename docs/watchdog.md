@@ -16,7 +16,9 @@ also exempts the dormant evaluator. SysTick never feeds the watchdog.
 ## Flight restart
 
 Completed estimator cycles and initial flight entry commit an allocation-free,
-two-slot CRC-checked RAM checkpoint. It holds internal flight phase/history,
+two-slot CRC-checked RAM checkpoint. A temporary ThreadX preemption threshold
+protects each write from task termination; CAN and pulse interrupts remain
+enabled during CRC work. It holds internal flight phase/history,
 confidence/statistics, quaternion and Kalman covariance/model arrays, runtime
 configuration, launch pressure/altitude baseline, GPS rail origin, and timers.
 It does not retain RTOS objects, locks, pending commands, pointers to transient
@@ -25,7 +27,8 @@ buffers, or sensor DMA state. Matrix pointers are rebound to static arrays.
 A watchdog reset resumes autonomously only when the retained record matches
 a CRC of this full firmware image, passes CRC/layout and semantic validation, and has a valid
 deployment journal and a reset gap of at most 60 seconds. RAM is in a NOLOAD
-section outside startup's BSS zeroing. Rebuilding firmware invalidates old records;
+section outside startup's BSS zeroing, with a dedicated noncacheable MPU
+region so journal/checkpoint writes cannot remain in a write-back cache. Rebuilding firmware invalidates old records;
 this is warm-reset recovery, not power-loss persistence. Power/brownout resets
 start normally and do not restore flight records.
 
