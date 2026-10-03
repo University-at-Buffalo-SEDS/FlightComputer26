@@ -1,6 +1,7 @@
 /* Core/Src/telemetry.c */
 
 #include "platform.h"
+#include "board_watchdog.h"
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
@@ -1074,6 +1075,7 @@ void telemetry_entry(ULONG _)
     g_telemetry_service_stage = 64U;
     telemetry_sample_stack_margin();
     g_telemetry_loop_completions++;
+    board_watchdog_progress(BOARD_WATCHDOG_NETWORK);
 
     tx_thread_relinquish();
   }

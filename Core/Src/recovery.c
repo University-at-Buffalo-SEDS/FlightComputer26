@@ -1,6 +1,8 @@
 /* Core/Src/recovery.c */
 
 #include "platform.h"
+#include "board_watchdog.h"
+#include "fc_watchdog_recovery.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -74,6 +76,15 @@ static struct baro_config baro_conf = {
     .iir_coef = Baro_IIR_Coef_3,
     .rezero = 1,
 };
+
+
+#if BOARD_WATCHDOG_ENABLE
+const fc_resume_region fc_resume_recovery[] = {
+  FC_RESUME_REGION(g_conf),
+  FC_RESUME_REGION(local_time),
+  { NULL, 0U }
+};
+#endif
 
 static struct gyro_config gyro_conf = {
     .rng = Gyro_Range_2000Dps,
@@ -247,6 +258,7 @@ static inline void evaluation_configure(bool focus)
 
 static inline void manual_deployment(bool apogee, bool force)
 {
+  if (!fc_watchdog_can_actuate()) return;
   if (apogee)
   {
     sm.flight = Descent;
@@ -313,6 +325,7 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
+  if (!fc_watchdog_can_actuate()) return;
   if (!beyond(Startup))
   {
     message(id "blocked Launch before Postinit", true);
@@ -686,6 +699,7 @@ void recovery_entry(ULONG st)
   tx_thread_sleep(1U);
   try_allocate_reserve_pool();
 
+  if (!g_fc_watchdog_resumed)
   for (timer k = 0; k < Time_Users; ++k)
   {
     timer_update(k);
@@ -694,6 +708,15 @@ void recovery_entry(ULONG st)
   local_time[PostinitCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
 
+  if (g_fc_watchdog_resumed) {
+    baro_conf.rezero = 0; /* retain the launch pressure, even above ground */
+    sensor_init_supervised(Wild_Mask);
+    if (current() >= Descent && (g_conf & option(Using_Ascent_KF)))
+      descent_initialize(g_conf);
+    timer_update(AscentKF);
+    timer_update(DescentKF);
+    if (g_conf & option(Using_Ascent_KF)) tx_thread_resume(&evaluation_task);
+  }
   tx_timer_activate(&monotonic_checks);
 
   /* Flight state is restored before ThreadX starts and then converges through
@@ -710,7 +733,8 @@ void recovery_entry(ULONG st)
 
     recovery_update_stack_profile();
     /* Thread suspension */
-    st = tx_queue_receive(&seds_syscall, &msg, TX_WAIT_FOREVER);
+    board_watchdog_progress(BOARD_WATCHDOG_CONTROL);
+    st = tx_queue_receive(&seds_syscall, &msg, TX_TIMER_TICKS_PER_SECOND / 4U);
 
     if (st != TX_SUCCESS)
     {

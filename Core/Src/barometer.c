@@ -3,6 +3,7 @@
  */
 
 #include "platform.h"
+#include "fc_watchdog_recovery.h"
 #include "barometer.h"
 
 
@@ -10,6 +11,14 @@
 
 static struct baro_calibration cd = {0};
 static float gnd_lvl_pressure = 0.0f;
+static float prev_rel_alt = 0.0f;
+static float checkpoint_alt = 0.0f;
+#if BOARD_WATCHDOG_ENABLE
+const fc_resume_region fc_resume_barometer[] = {
+  FC_RESUME_REGION(gnd_lvl_pressure), FC_RESUME_REGION(prev_rel_alt),
+  FC_RESUME_REGION(checkpoint_alt), { NULL, 0U }
+};
+#endif
 
 
 /* ------ Synchronous SPI helpers ------ */
@@ -305,8 +314,6 @@ pressure_for_altitude(float p, float alt)
  */
 float baro_relative_alt(float pressure)
 {
-  static float prev_rel_alt = 0.0f;
-  static float checkpoint_alt = 0.0f;
 
   if (gnd_lvl_pressure <= 0.0f || !isfinite(pressure))
   {

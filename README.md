@@ -110,3 +110,9 @@ SD float logging uses bounded nine-significant-digit formatting, including
 non-finite diagnostics. Oversized vectors are rejected and counted in
 `g_sd_format_errors` instead of overflowing the caller stack. File-name
 collisions use a bounded suffix search, even before network time is available.
+
+## Hardware watchdog
+
+[Board watchdog and autonomous flight recovery](docs/watchdog.md). Build with
+`./build.py release --watchdog`.
+Watchdogs are opt-in and require the matching bootloader.

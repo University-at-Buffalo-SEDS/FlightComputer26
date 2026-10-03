@@ -105,7 +105,7 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = {     "flash-dfu",
+ALL_OPTIONS     = {     "watchdog",     "flash-dfu",
                         "flash-st",
                         "flash-stlink",
                         "stlink",
@@ -181,7 +181,7 @@ def parse(argv: list[str]):
         options = {opt: False for opt in ALL_OPTIONS}
 
         for a in argv:
-                arg = a.lower()
+                arg = "watchdog" if a.lower() == "--watchdog" else a.lower()
 
                 if arg in ALL_PRESETS:
                         preset = ALL_PRESETS[arg]
@@ -321,6 +321,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
                 telem,
+                "-DENABLE_BOARD_WATCHDOG=" + ("ON" if options["watchdog"] else "OFF"),
                 "-DSEDS_FIRMWARE_SIM_TEST=" + ("ON" if os.environ.get("SEDS_FIRMWARE_SIM_TEST") == "1" else "OFF"),
                 batch,
                 compat,

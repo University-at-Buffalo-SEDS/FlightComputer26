@@ -1,4 +1,5 @@
 #include "platform.h"
+#include "fc_watchdog_recovery.h"
 #include "fcstructs.h"
 #include "fccommon.h"
 #include "fcconfig.h"
@@ -19,7 +20,8 @@ void deployment_pulse_start(bool reef)
     __disable_irq();
     volatile uint32_t *remaining = reef ? &reef_ticks : &co2_ticks;
     /* Repeated commands during a pulse must not extend its on-time. */
-    if (*remaining == 0U) {
+    if (*remaining == 0U && fc_watchdog_can_actuate() &&
+        fc_watchdog_record_deployment(reef)) {
         *remaining = reef ? REEF_ASSERT_INTERVAL : CO2_ASSERT_INTERVAL;
         if (reef) {
             g_conf |= option(Parachute_Expanded | REEF_Asserted);

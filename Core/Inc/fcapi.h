@@ -4,6 +4,7 @@
 #define FC_API
 
 #include "fctypes.h"
+#include "fc_watchdog_recovery.h"
 #include "platform.h"
 #include "fcstructs.h"
 #include "fccommon.h"
@@ -303,12 +304,14 @@ void deployment_pulse_start(bool reef);
 
 static inline bool release_parachute(bool force)
 {
+  if (!fc_watchdog_can_actuate()) return false;
   if (!force && !beyond(Armed))
   {
     log_metric("PD drogue blocked, state", current(), true);
     return false;
   }
 
+  if (!force && (g_conf & option(Parachute_Deployed))) return false;
   deployment_pulse_start(false);
   log_metric("PD approx altitude", svec(0).alt, true);
 
@@ -320,6 +323,7 @@ static inline bool release_parachute(bool force)
 
 static inline bool expand_parachute(bool force)
 {
+  if (!fc_watchdog_can_actuate()) return false;
   if (!force && !beyond(Launch))
   {
     log_metric("PR reef blocked, state %u", current(), true);
@@ -332,6 +336,7 @@ static inline bool expand_parachute(bool force)
     return false;
   }
 
+  if (!force && (g_conf & option(Parachute_Expanded))) return false;
   deployment_pulse_start(true);
   log_metric("PR approx altitude", svec(0).alt, true);
 

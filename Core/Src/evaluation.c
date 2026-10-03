@@ -1,6 +1,8 @@
 /* Core/Src/evaluation.c */
 
 #include "platform.h"
+#include "board_watchdog.h"
+#include "fc_watchdog_recovery.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -21,6 +23,16 @@ kf_svec sv[STATE_HISTORY] = {0};
 sv_meta sm = {Startup, G_Startup, 0, 0, 0};
 
 static stats extremes = {0};
+
+#if BOARD_WATCHDOG_ENABLE
+const fc_resume_region fc_resume_evaluation[] = {
+  FC_RESUME_REGION(sv),
+  FC_RESUME_REGION(sm),
+  FC_RESUME_REGION(extremes),
+  { NULL, 0U }
+};
+#endif
+
 
 #ifndef NDEBUG
 uncached volatile float kalt, kvel;
@@ -414,6 +426,16 @@ void evaluate_rocket_state(fu32 conf, float dt)
   kvel = svec(0).vel;
 #endif
 
+#if BOARD_WATCHDOG_ENABLE
+  static uint8_t resume_history;
+  /* Fill the complete history with fresh sensor cycles before the FSM can
+   * act on comparisons or successive-sample confidence after an outage. */
+  if (g_fc_watchdog_resumed && resume_history < STATE_HISTORY) {
+    ++resume_history;
+    goto publish;
+  }
+#endif
+
   state curr = current();
 
   switch (curr)
@@ -437,11 +459,19 @@ void evaluate_rocket_state(fu32 conf, float dt)
     vigilant_watchdog(conf, curr, dt);
   }
 
+#if BOARD_WATCHDOG_ENABLE
+publish:
+#endif
   propel_kalman_state(conf);
+  fc_watchdog_checkpoint();
+  board_watchdog_progress(BOARD_WATCHDOG_SAFETY);
 }
 
 static inline void enter_flight_mode(fu32 conf)
 {
+  static bool restored_entry;
+  if (g_fc_watchdog_resumed && !restored_entry) { restored_entry = true; return; }
+
   if (conf & option(Launch_Requested))
   {
     sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
@@ -470,6 +500,7 @@ void evaluation_entry(ULONG _)
   float dt = 0;
 
   enter_flight_mode(conf);
+  fc_watchdog_checkpoint();
 
   MrAnalog (conf & option(Eval_Abort_Flag))
   {

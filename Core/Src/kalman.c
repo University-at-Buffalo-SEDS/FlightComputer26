@@ -1,6 +1,8 @@
 /* Core/Src/kalman.c */
 
 #include "platform.h"
+#include "board_watchdog.h"
+#include "fc_watchdog_recovery.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -18,18 +20,38 @@ TX_BYTE_POOL kfpool;
 quat qv = {0};
 kf_svec imedsv = {0};
 static kf_matrix kf = {0};
+void kalman_resume_bindings(bool ascent);
 
-static float EKF_P[EKF_STATE][EKF_STATE] = {0};
-static float EKF_Q[EKF_STATE][EKF_STATE] = {0};
-static float EKF_O[EKF_OMEGA][EKF_OMEGA] = {0};
-static float EKF_F[EKF_STATE][EKF_STATE] = {0};
-static float EKF_H[1][EKF_MEASM] = {0};
+static struct {
+    float EKF_P[EKF_STATE][EKF_STATE];
+    float EKF_Q[EKF_STATE][EKF_STATE];
+    float EKF_O[EKF_OMEGA][EKF_OMEGA];
+    float EKF_F[EKF_STATE][EKF_STATE];
+    float EKF_H[1][EKF_MEASM];
+    float DKF_P[DKF_STATE][DKF_STATE];
+    float DKF_Q[DKF_STATE][DKF_STATE];
+    float DKF_A[DKF_STATE][DKF_STATE];
+    float DKF_R[DKF_MEASM][DKF_MEASM];
+    float DKF_H[DKF_MEASM][DKF_STATE];
+} kalman_storage;
+#define EKF_P kalman_storage.EKF_P
+#define EKF_Q kalman_storage.EKF_Q
+#define EKF_O kalman_storage.EKF_O
+#define EKF_F kalman_storage.EKF_F
+#define EKF_H kalman_storage.EKF_H
+#define DKF_P kalman_storage.DKF_P
+#define DKF_Q kalman_storage.DKF_Q
+#define DKF_A kalman_storage.DKF_A
+#define DKF_R kalman_storage.DKF_R
+#define DKF_H kalman_storage.DKF_H
 
-static float DKF_P[DKF_STATE][DKF_STATE] = {0};
-static float DKF_Q[DKF_STATE][DKF_STATE] = {0};
-static float DKF_A[DKF_STATE][DKF_STATE] = {0};
-static float DKF_R[DKF_MEASM][DKF_MEASM] = {0};
-static float DKF_H[DKF_MEASM][DKF_STATE] = {0};
+#if BOARD_WATCHDOG_ENABLE
+const fc_resume_region fc_resume_kalman[] = {
+  FC_RESUME_REGION(qv), FC_RESUME_REGION(imedsv),
+  FC_RESUME_REGION(kalman_storage), { NULL, 0U }
+};
+#endif
+
 
 
 static inline float *kfalloc(size_t size)
@@ -226,18 +248,7 @@ void descent_initialize(fu32 conf)
   DKF_R[0][0] = DKF_R[1][1] = DKF_GPS_TRUST;
   DKF_R[2][2] = DKF_BARO_TRUST;
 
-  kf.mxp.numRows = kf.mxp.numCols = DKF_STATE;
-  kf.mxq.numRows = kf.mxq.numCols = DKF_STATE;
-  kf.mxa.numCols = kf.mxa.numRows = DKF_STATE;
-  kf.mxr.numCols = kf.mxr.numRows = DKF_MEASM;
-  kf.mxh.numRows = DKF_MEASM;
-  kf.mxh.numCols = DKF_STATE;
-
-  kf.mxp.pData = (float *)DKF_P;
-  kf.mxq.pData = (float *)DKF_Q;
-  kf.mxa.pData = (float *)DKF_A;
-  kf.mxr.pData = (float *)DKF_R;
-  kf.mxh.pData = (float *)DKF_H;
+  kalman_resume_bindings(false);
 
   fc_msg toggle = Using_Ascent_KF;
   fc_msg cmd = fc_mask(Disable_IMU);
@@ -256,6 +267,7 @@ void descent_initialize(fu32 conf)
   timer_update(DescentKF);
   fetch_and(&g_conf, ~option(toggle), Rel);
 }
+
 
 void descent_predict(const float dt)
 {
@@ -371,18 +383,7 @@ void ascent_initialize(fu32 conf)
   EKF_Q[2][2] = 1e-7f;
   EKF_Q[3][3] = EKF_Q[4][4] = EKF_Q[5][5] = 1e-10f;
 
-  kf.mxp.numRows = kf.mxp.numCols = EKF_STATE;
-  kf.mxq.numRows = kf.mxq.numCols = EKF_STATE;
-  kf.mxa.numCols = kf.mxa.numRows = EKF_OMEGA;
-  kf.mxr.numCols = kf.mxr.numRows = EKF_STATE;
-  kf.mxh.numRows = 1;
-  kf.mxh.numCols = EKF_MEASM;
-
-  kf.mxp.pData = (float *)EKF_P;
-  kf.mxq.pData = (float *)EKF_Q;
-  kf.mxa.pData = (float *)EKF_O;
-  kf.mxr.pData = (float *)EKF_F;
-  kf.mxh.pData = (float *)EKF_H;
+  kalman_resume_bindings(true);
 
   if (!(conf & option(Manual_Biases)))
   {
@@ -412,6 +413,7 @@ void ascent_initialize(fu32 conf)
   timer_update(AscentKF);
   fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
+
 
 void ascent_predict(const float dt, fu32 conf)
 {
@@ -562,4 +564,31 @@ void ascent_update(void)
   mx_mul(&v_sv0, &v_sv1, &kf.mxp);
 
   kffree(start);
+}void __attribute__((noinline)) kalman_resume_bindings(bool ascent)
+{
+  if (ascent) {
+  kf.mxp.numRows = kf.mxp.numCols = EKF_STATE;
+  kf.mxq.numRows = kf.mxq.numCols = EKF_STATE;
+  kf.mxa.numCols = kf.mxa.numRows = EKF_OMEGA;
+  kf.mxr.numCols = kf.mxr.numRows = EKF_STATE;
+  kf.mxh.numRows = 1;
+  kf.mxh.numCols = EKF_MEASM;
+  kf.mxp.pData = (float *)EKF_P;
+  kf.mxq.pData = (float *)EKF_Q;
+  kf.mxa.pData = (float *)EKF_O;
+  kf.mxr.pData = (float *)EKF_F;
+  kf.mxh.pData = (float *)EKF_H;
+  } else {
+  kf.mxp.numRows = kf.mxp.numCols = DKF_STATE;
+  kf.mxq.numRows = kf.mxq.numCols = DKF_STATE;
+  kf.mxa.numCols = kf.mxa.numRows = DKF_STATE;
+  kf.mxr.numCols = kf.mxr.numRows = DKF_MEASM;
+  kf.mxh.numRows = DKF_MEASM;
+  kf.mxh.numCols = DKF_STATE;
+  kf.mxp.pData = (float *)DKF_P;
+  kf.mxq.pData = (float *)DKF_Q;
+  kf.mxa.pData = (float *)DKF_A;
+  kf.mxr.pData = (float *)DKF_R;
+  kf.mxh.pData = (float *)DKF_H;
+  }
 }

@@ -24,6 +24,8 @@ class DeploymentPulseTests(unittest.TestCase):
 #define option(x) (x)
 atomic_uint_fast32_t g_conf;
 static unsigned mask, co2, reef, hal_ticks, suspended, freeze_hal;
+static bool fc_watchdog_can_actuate(void) { return true; }
+static bool fc_watchdog_record_deployment(bool reef) { (void)reef; return true; }
 static uint32_t __get_PRIMASK(void) {return mask;}
 static void __disable_irq(void) {mask=1;}
 static void __set_PRIMASK(uint32_t v) {mask=v;}

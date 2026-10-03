@@ -19,6 +19,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 #include "main.h"
+#include "board_watchdog.h"
+#include "fc_watchdog_recovery.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -163,6 +165,8 @@ int main(void)
 
   /* USER CODE END 2 */
 
+  board_watchdog_start();
+  fc_watchdog_recovery_boot(g_watchdog_reset_flags);
   MX_ThreadX_Init();
 
   /* We should never get here as control is now taken by the scheduler */

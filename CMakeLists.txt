@@ -146,6 +146,12 @@ endif()
 option(TELEMETRY_COMPAT "Byte payload compatibility"    ON)
 option(EXTERNAL_GPS     "GPS board availability"        ON)
 option(ONBOARD_SD       "On-board logger storage"       ON)
+option(ENABLE_BOARD_WATCHDOG "Board-owned hardware watchdog and FC flight recovery" OFF)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    Core/Src/board_watchdog.c Core/Src/fc_watchdog_recovery.c)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    BOARD_WATCHDOG_ENABLE=$<BOOL:${ENABLE_BOARD_WATCHDOG}>)
+
 option(CUSTOM_FLAGS     "User-defined flags"            ON)
 option(FC_BENCH         "Project-wide benchmark"        OFF)
 option(PARALLEL_KF      "Predict does not wait Update"  OFF)

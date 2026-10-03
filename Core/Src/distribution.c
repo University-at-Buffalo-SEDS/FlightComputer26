@@ -1,6 +1,8 @@
 /* Core/Src/distribution.c */
 
 #include "platform.h"
+#include "board_watchdog.h"
+#include "fc_watchdog_recovery.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -21,6 +23,11 @@ spinlock meas_locks[MEMS_Devices] = {0};
 
 #ifdef GPS_AVAILABLE
 static rf_receiver rfboard = {0};
+#if BOARD_WATCHDOG_ENABLE
+const fc_resume_region fc_resume_distribution[] = {
+  FC_RESUME_REGION(rfboard.rail), { NULL, 0U }
+};
+#endif
 #endif
 
 
@@ -645,6 +652,7 @@ static inline void data_streaming_mode(void)
   MrAnalog ((conf & option(Postinit_Requested)) ||
             (conf & option(Launch_Requested)))
   {
+    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     if (try_fetch_gyro(&meas.gyro))
     {
       imu |= Gyro_Mask;
@@ -693,6 +701,7 @@ static inline void post_initialization(void)
   MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)
   {
     fu32 conf = load(&g_conf, Acq);
+    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
 
     if (try_fetch_accl(&meas.accl))
     {
@@ -755,8 +764,10 @@ static inline void fill_sequence_states(void)
   }
   MrAnalog (beyond(Startup) && (conf & option(Launch_Requested)));
 
-  MrAnalog (request_ignition() == SEDS_OK)
-    ;
+  MrAnalog (request_ignition() == SEDS_OK) {
+    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
+    tx_thread_sleep(1U);
+  }
   message(id "ignition requested, in flight mode", true);
 }
 
@@ -765,11 +776,19 @@ void distribution_entry(ULONG _)
   fu8 imu = 0;
   fu32 conf;
 
-  fill_sequence_states();
+  if (!g_fc_watchdog_resumed && fc_watchdog_can_actuate()) {
+    fill_sequence_states();
+  }
+  while (!fc_watchdog_can_actuate()) {
+    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
+    tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 4U);
+  }
 
   MrAnalog (WE_ARE_SO_BACK)
   {
     conf = load(&g_conf, Acq);
+    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION);
+    if (conf & option(Eval_Abort_Flag)) board_watchdog_progress(BOARD_WATCHDOG_SAFETY);
 
     if (conf & option(Using_Ascent_KF))
     {
