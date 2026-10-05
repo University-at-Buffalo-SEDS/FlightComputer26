@@ -116,3 +116,12 @@ collisions use a bounded suffix search, even before network time is available.
 [Board watchdog and autonomous flight recovery](docs/watchdog.md). Build with
 `./build.py release --watchdog`.
 Watchdogs are opt-in and require the matching bootloader.
+
+## Experimental SEDSnet development builds
+
+Use `python3 build.py release sedsnet-dev factory` to build the current SEDSnet
+`dev` commit. Add `flash-st` for a wired factory flash.
+Normal builds continue to select `main`. Each branch has its own source cache;
+when the network is unavailable the last usable on-disk source is retained.
+The selected revision is printed during configure. An explicit CMake source
+override remains local and is never fetched or reset.
