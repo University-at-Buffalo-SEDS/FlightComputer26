@@ -78,6 +78,11 @@ RouterState g_router = {.r = NULL, .created = 0U, .start_time = 0ULL};
 
 /* Exported simulator/HIL health signals. A linked-bay test requires both a
  * remote discovery topology change and a valid SEDSNet network clock. */
+volatile int32_t g_telemetry_rx_last_result __attribute__((used, externally_visible)) = SEDS_OK;
+volatile uint32_t g_telemetry_rx_ok __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_rx_errors __attribute__((used, externally_visible)) = 0U;
+volatile uint32_t g_telemetry_rx_error_length __attribute__((used, externally_visible)) = 0U;
+volatile uint8_t g_telemetry_rx_error_prefix[16] __attribute__((used, externally_visible));
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
 volatile uint32_t g_telemetry_network_ready = 0U;
@@ -407,17 +412,27 @@ void rx_asynchronous(const uint8_t *bytes, size_t len) {
   }
   g_telemetry_rx_stage = 11U;
 
+  SedsResult result;
   telemetry_lock();
   if (g_can_side_id >= 0) {
     g_telemetry_rx_stage = 12U;
-    (void)seds_router_receive_packed_from_side(
+    result = seds_router_receive_packed_from_side(
         g_router.r, (uint32_t)g_can_side_id, bytes, len);
   } else {
-    (void)seds_router_receive_packed(g_router.r, bytes, len);
+    result = seds_router_receive_packed(g_router.r, bytes, len);
   }
   telemetry_unlock();
   g_telemetry_rx_stage = 13U;
-  g_telemetry_discovery_seen = 1U;
+  g_telemetry_rx_last_result = result;
+  if (result == SEDS_OK) {
+    g_telemetry_rx_ok++;
+    g_telemetry_discovery_seen = 1U;
+  } else {
+    g_telemetry_rx_errors++;
+    g_telemetry_rx_error_length = (uint32_t)len;
+    for (size_t i = 0; i < sizeof(g_telemetry_rx_error_prefix); ++i)
+      g_telemetry_rx_error_prefix[i] = i < len ? bytes[i] : 0U;
+  }
   g_telemetry_rx_stage = 14U;
 #endif
 }
@@ -1020,6 +1035,10 @@ TX_BYTE_POOL telemetry_pool;
 extern TX_THREAD fx_app_thread;
 
 static cm_align CHAR static_pool[TELEMETRY_HEAP];
+#ifdef TELEMETRY_USE_TLSF
+static TX_BYTE_POOL telemetry_extra_pool;
+static uncached CHAR telemetry_extra_storage[TELEMETRY_EXTRA_HEAP];
+#endif
 
 void telemetry_entry(ULONG _)
 {
@@ -1126,6 +1145,10 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
 
 #ifdef TELEMETRY_USE_TLSF
   telemetry_tlsf_register_pool(&telemetry_pool);
+  st = tx_byte_pool_create(&telemetry_extra_pool, "TE reserve",
+                           telemetry_extra_storage, sizeof(telemetry_extra_storage));
+  if (st != TX_SUCCESS) return st;
+  telemetry_tlsf_register_pool(&telemetry_extra_pool);
   try_allocate_reserve_pool();
 #endif
 

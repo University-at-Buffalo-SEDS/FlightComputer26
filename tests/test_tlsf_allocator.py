@@ -53,10 +53,31 @@ extern volatile uint32_t g_telemetry_tlsf_active,g_telemetry_tlsf_init_failed;
 extern volatile uint32_t g_telemetry_tlsf_snapshot_count;
 extern volatile uint32_t g_telemetry_tlsf_live_bytes,g_telemetry_tlsf_peak_bytes;
 extern volatile uint32_t g_telemetry_tlsf_free_bytes,g_telemetry_tlsf_largest_free;
-static uint64_t arenas[3][4096];
+static uint64_t arenas[3][12288];
 int main(int argc,char**argv){
- (void)argv;TX_BYTE_POOL pools[3];
- for(unsigned i=0;i<3;i++){pools[i]=(TX_BYTE_POOL){(unsigned char*)arenas[i],0,sizeof(arenas[i])};telemetry_tlsf_register_pool(&pools[i]);}
+ TX_BYTE_POOL pools[3];
+ if(argc>1 && (strcmp(argv[1],"shared-tail")==0 || strcmp(argv[1],"primary-only")==0 || strcmp(argv[1],"late-tail")==0 || strcmp(argv[1],"extra-reserve")==0)){
+  const int late=strcmp(argv[1],"late-tail")==0;
+  const int extra=strcmp(argv[1],"extra-reserve")==0;
+  const int with_tail=strcmp(argv[1],"primary-only")!=0;
+  pools[0]=(TX_BYTE_POOL){(unsigned char*)arenas[0],0,48U*1024U + tlsf_size() - 3192U};
+  pools[1]=(TX_BYTE_POOL){(unsigned char*)arenas[1],80U*1024U,84U*1024U};
+  if(extra)pools[1]=(TX_BYTE_POOL){(unsigned char*)arenas[1],0,16U*1024U};
+  memset(pools[1].base,0xA5,pools[1].used);
+  telemetry_tlsf_register_pool(&pools[0]);
+  if(with_tail && !late)telemetry_tlsf_register_pool(&pools[1]);
+  void *baseline=telemetry_tlsf_malloc(42088U);assert(baseline);
+  if(late) { assert(!telemetry_tlsf_admit(2351U,133U)); telemetry_tlsf_register_pool(&pools[1]); }
+  telemetry_tlsf_register_pool(&pools[0]);
+  /* Reproduce the captured FC baseline and 101-byte receive admission. */
+  assert(telemetry_tlsf_admit(101U*3U+2048U,133U)==with_tail);
+  if(extra)assert(telemetry_tlsf_admit(8192U,2048U));
+  else for(unsigned i=0;i<80U*1024U;i++)assert(pools[1].base[i]==0xA5);
+  telemetry_tlsf_free(baseline);assert(telemetry_tlsf_admit(2351U,133U));
+  return 0;
+ }
+
+ for(unsigned i=0;i<3;i++){pools[i]=(TX_BYTE_POOL){(unsigned char*)arenas[i],0,32768U};telemetry_tlsf_register_pool(&pools[i]);}
  if(argc>1){fail_init=1;assert(!telemetry_tlsf_malloc(32));assert(g_telemetry_tlsf_init_failed);assert(!g_telemetry_tlsf_active);assert(mock_irq==0);return 0;}
  void *first=telemetry_tlsf_malloc(0);assert(first&&g_telemetry_tlsf_active);telemetry_tlsf_free(first);
  assert(!telemetry_tlsf_malloc(SIZE_MAX));
@@ -109,3 +130,13 @@ int main(int argc,char**argv){
             subprocess.run(['cc','-std=c11','-g','-fsanitize=address,undefined','-I',tmp,'-I',str(ROOT/'Core/Inc'),'-I',str(ROOT/'third_party/tlsf'),str(p/'test.c'),str(ROOT/'Core/Src/telemetry_tlsf.c'),str(ROOT/'third_party/tlsf/tlsf.c'),'-o',exe],check=True)
             subprocess.run([exe],check=True)
             subprocess.run([exe,'init-failure'],check=True)
+            subprocess.run([exe,'primary-only'],check=True)
+            subprocess.run([exe,'shared-tail'],check=True)
+            subprocess.run([exe,'late-tail'],check=True)
+            subprocess.run([exe,'extra-reserve'],check=True)
+            init=(ROOT/'Core/Src/app_threadx.c').read_text()
+            config=(ROOT/'Core/Inc/fcconfig.h').read_text()
+            self.assertIn('#define SD_BUFFER_SIZE (24U * 1024U)',config)
+            self.assertIn('#define TELEMETRY_EXTRA_HEAP (16U * 1024U)',config)
+            self.assertEqual(2*24+16,2*32)
+            self.assertGreater(init.index('telemetry_tlsf_register_pool((TX_BYTE_POOL *)memory_ptr)'),init.index('create_distribution_task(memory_ptr)'))

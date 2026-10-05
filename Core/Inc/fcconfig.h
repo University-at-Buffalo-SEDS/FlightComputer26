@@ -32,7 +32,13 @@
 #define LOG_RATE_GND         FC_TELEMETRY_PERIOD_MS
 #define LOG_RATE_LIMITED	15000
 
-#define SD_BUFFER_SIZE		32768
+#ifdef TELEMETRY_USE_TLSF
+/* Preserve total SRAM3 usage while reserving headroom for receive/discovery. */
+#define SD_BUFFER_SIZE (24U * 1024U)
+#define TELEMETRY_EXTRA_HEAP (16U * 1024U)
+#else
+#define SD_BUFFER_SIZE 32768
+#endif
 #define SD_FLUSH_INTERVAL   30000
 #define SD_MAX_MSG_SIZE		256
 

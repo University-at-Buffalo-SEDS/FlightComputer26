@@ -3,8 +3,8 @@
 #include "tlsf.h"
 #include <stdint.h>
 
-static TX_BYTE_POOL *backing[3];
-static pool_t regions[3];
+static TX_BYTE_POOL *backing[4];
+static pool_t regions[4];
 static unsigned backing_count, region_count, init_attempted;
 static tlsf_t allocator;
 volatile uint32_t g_telemetry_tlsf_active;
@@ -24,16 +24,41 @@ volatile uint32_t g_telemetry_tlsf_largest_free;
 volatile uint32_t g_telemetry_tlsf_free_blocks;
 volatile uint32_t g_telemetry_tlsf_snapshot_count;
 
+static int add_region(TX_BYTE_POOL *pool)
+{
+    ULONG available = 0;
+    const size_t alignment = tlsf_align_size();
+    if (tx_byte_pool_info_get(pool, TX_NULL, &available, TX_NULL,
+                             TX_NULL, TX_NULL, TX_NULL) != TX_SUCCESS) return 0;
+    if (available <= 4U * sizeof(void *) + tlsf_pool_overhead() + tlsf_block_size_min())
+        return 0;
+    const size_t bytes = (available - 4U * sizeof(void *)) & ~(alignment - 1U);
+    void *memory = NULL;
+    if (tx_byte_allocate(pool, &memory, bytes, TX_NO_WAIT) != TX_SUCCESS) return 0;
+    pool_t region = tlsf_add_pool(allocator, memory, bytes);
+    if (!region) return 0;
+    regions[region_count++] = region;
+    g_telemetry_tlsf_region_bytes += bytes;
+    return 1;
+}
 void telemetry_tlsf_register_pool(TX_BYTE_POOL *pool)
 {
-    if (!pool || init_attempted || backing_count == 3U) {
-        Error_Handler();
-        return;
-    }
+    const uint32_t saved = __get_PRIMASK();
+    __disable_irq();
+    if (!pool) goto fail;
     for (unsigned i = 0; i < backing_count; ++i) {
-        if (backing[i] == pool) return;
+        if (backing[i] == pool) { __set_PRIMASK(saved); return; }
     }
+    if (backing_count == sizeof(backing) / sizeof(backing[0])) goto fail;
+    /* Startup logging may initialize TLSF before the last task is created.
+     * Add only the free tail now, after its live task stacks are allocated. */
+    if (init_attempted && (!g_telemetry_tlsf_active || !add_region(pool))) goto fail;
     backing[backing_count++] = pool;
+    __set_PRIMASK(saved);
+    return;
+fail:
+    __set_PRIMASK(saved);
+    Error_Handler();
 }
 static void snapshot_block(void *ptr, size_t size, int used, void *context)
 {
@@ -67,21 +92,7 @@ static int initialize(void)
     if (!allocator) goto fail;
     g_telemetry_tlsf_control_bytes = control_bytes;
     for (unsigned i = 0; i < backing_count; ++i) {
-        ULONG available = 0;
-        if (tx_byte_pool_info_get(backing[i], TX_NULL, &available, TX_NULL,
-                                 TX_NULL, TX_NULL, TX_NULL) != TX_SUCCESS) goto fail;
-        /* Startup leaves one contiguous free tail in each registered pool.
-         * Keep room for ThreadX's allocation header and alignment. A failed
-         * takeover is fatal to this experiment; never mix pointer ownership. */
-        if (available <= 4U * sizeof(void *) + tlsf_pool_overhead() + tlsf_block_size_min())
-            goto fail;
-        const size_t bytes = (available - 4U * sizeof(void *)) & ~(alignment - 1U);
-        void *memory = NULL;
-        if (tx_byte_allocate(backing[i], &memory, bytes, TX_NO_WAIT) != TX_SUCCESS) goto fail;
-        pool_t region = tlsf_add_pool(allocator, memory, bytes);
-        if (!region) goto fail;
-        regions[region_count++] = region;
-        g_telemetry_tlsf_region_bytes += bytes;
+        if (!add_region(backing[i])) goto fail;
     }
     g_telemetry_tlsf_active = 1;
     snapshot();

@@ -28,6 +28,9 @@
 #include "platform.h"
 #include "fctasks.h"
 #include "fcapi.h"
+#ifdef TELEMETRY_USE_TLSF
+#include "telemetry_tlsf.h"
+#endif
 
 /* USER CODE END Includes */
 
@@ -138,6 +141,12 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   {
     startup_fault(5U);
   }
+
+#ifdef TELEMETRY_USE_TLSF
+  /* All task stacks are allocated before the scheduler starts. Restore the
+   * allocator fallback tail without taking any live ThreadX stack storage. */
+  telemetry_tlsf_register_pool((TX_BYTE_POOL *)memory_ptr);
+#endif
 
   /* USER CODE END App_ThreadX_Init */
 
