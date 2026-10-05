@@ -13,15 +13,15 @@ the new application alone onto the old layout.
 |---|---|---|
 | Bootloader | `0x08000000` | 8 KiB |
 | Application header | `0x08002000` | 512 B |
-| Application vectors/code | `0x08002200` | 455.5 KiB |
-| Delta staging | `0x08074000` | 16 KiB |
+| Application vectors/code | `0x08002200` | 463.5 KiB |
+| Delta staging | `0x08076000` | 8 KiB |
 | Metadata copies | `0x08078000`, `0x0807A000` | 8 KiB each |
 | Persistent settings (unchanged) | `0x0807C000` | 16 KiB |
 
-Build the factory image with `./build.py release`; use
-`./build.py release flash-st` for a wired flash. Build an OTA artifact with
-`./build.py release ota`. Its previous packaged base must match the installed
-image. Only small deltas fit in 16 KiB; larger changes require a wired update.
+Build the factory image with `python3 build.py build --release --allocator tlsf --packet-store compact`;
+use `python3 build.py flash --release --allocator tlsf --packet-store compact` for a wired flash.
+Build an OTA artifact with `python3 build.py build --release --ota`. Its previous packaged base must match the installed
+image. Only small deltas fit in 8 KiB; larger changes require a wired update.
 When no base exists or a delta does not fit, the script emits a full-image
 `.seds` recovery artifact. GroundStation rejects that artifact for live OTA.
 FC has no UART bootloader recovery transport; use a wired factory flash instead.
@@ -39,3 +39,9 @@ installs and confirms a small delta, and checks persistent settings survive.
 The remote instruction-level factory boot and memory checks passed. This short
 isolated check is not an end-to-end network OTA or a long-duration soak;
 wired migration and hardware OTA still need hardware qualification.
+
+The arena/TLSF migration grows Slot A by 8 KiB and halves staging to 8 KiB.
+The erase sector remains 8 KiB. Reversible patches containing ordinary code
+changes often exceed staging; full wired factory updates remain supported.
+Metadata and persistent settings keep their existing addresses and sizes.
+USB enumeration is disabled by default. ThreadX remains the scheduler.

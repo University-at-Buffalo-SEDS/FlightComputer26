@@ -8,6 +8,11 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "panic_match.h"
+#ifdef TELEMETRY_USE_TLSF
+#include "telemetry_tlsf.h"
+extern volatile uint32_t g_telemetry_tlsf_region_bytes, g_telemetry_tlsf_live_bytes;
+extern volatile uint32_t g_telemetry_tlsf_free_blocks;
+#endif
 
 
 static volatile fu32 lock_fails = 0;
@@ -140,6 +145,7 @@ static inline conditional void fchook_unlock(TX_MUTEX *mu)
 
 
 /* Fault-tolerant allocator wrapper */
+#ifndef TELEMETRY_USE_TLSF
 
 static inline void *reserve_alloc(size_t size, size_t timeout)
 {
@@ -258,8 +264,12 @@ static inline conditional void fchook_free(void *ptr)
   fc_unlock(&alloc_lock);
 }
 
+#endif /* !TELEMETRY_USE_TLSF */
 void try_allocate_reserve_pool(void)
 {
+  static unsigned attempted;
+  if (attempted) return;
+  attempted = 1U;
   extern uint8_t _end[];
   extern uint8_t _estack[];
 
@@ -282,6 +292,9 @@ void try_allocate_reserve_pool(void)
   else if (tx_byte_pool_create(&reserve, "RES", 
                                checkout, psize) == TX_SUCCESS)
   {
+#ifdef TELEMETRY_USE_TLSF
+    telemetry_tlsf_register_pool(&reserve);
+#endif
     return;
   }
 
@@ -296,6 +309,13 @@ no_reserve_exit:
 
 static inline void telemetry_memory_profile_sample(void)
 {
+#ifdef TELEMETRY_USE_TLSF
+  ULONG available = g_telemetry_tlsf_region_bytes > g_telemetry_tlsf_live_bytes ?
+      g_telemetry_tlsf_region_bytes - g_telemetry_tlsf_live_bytes : 0U;
+  g_telemetry_pool_available = available;
+  g_telemetry_pool_fragments = g_telemetry_tlsf_free_blocks;
+  if (available < g_telemetry_pool_low_water) g_telemetry_pool_low_water = available;
+#else
   ULONG available = 0;
   ULONG fragments = 0;
   if (tx_byte_pool_info_get(&telemetry_pool, TX_NULL, &available, &fragments,
@@ -308,6 +328,7 @@ static inline void telemetry_memory_profile_sample(void)
       g_telemetry_pool_low_water = available;
     }
   }
+#endif
 }
 
 void seds_error_msg(const char *str, size_t len)
@@ -337,7 +358,11 @@ void telemetry_unlock(void)
 
 void *telemetryMalloc(size_t xSize)
 {
+#ifdef TELEMETRY_USE_TLSF
+  void *ptr = telemetry_tlsf_malloc(xSize);
+#else
   void *ptr = fchook_alloc(&telemetry_pool, xSize, 5);
+#endif
   if (ptr == NULL)
   {
     ++g_telemetry_alloc_fail;
@@ -352,7 +377,11 @@ void *telemetryMalloc(size_t xSize)
 
 void telemetryFree(void *pv)
 {
+#ifdef TELEMETRY_USE_TLSF
+  telemetry_tlsf_free(pv);
+#else
   fchook_free(pv);
+#endif
   ++g_telemetry_free_count;
   telemetry_memory_profile_sample();
 }

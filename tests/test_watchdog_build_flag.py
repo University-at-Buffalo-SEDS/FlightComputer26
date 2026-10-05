@@ -5,10 +5,10 @@ from unittest import mock
 import build
 
 class WatchdogBuildFlagTests(unittest.TestCase):
-    def test_watchdog_flag_reaches_cmake_and_default_turns_it_off(self):
+    def test_watchdog_flag_reaches_cmake_and_default_turns_it_on(self):
         for enabled in (False, True):
-            _, options = build.parse(["release"] + (["watchdog"] if enabled else []))
-            self.assertEqual(options['watchdog'], enabled)
+            _, options = build.parse(["release"] + ([] if enabled else ["no-watchdog"]))
+            self.assertEqual(not options['no-watchdog'], enabled)
             if enabled:
                 self.assertTrue(build.parse(['release','--watchdog'])[1]['watchdog'])
             commands=[]

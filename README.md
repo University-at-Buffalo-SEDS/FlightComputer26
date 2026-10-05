@@ -143,3 +143,7 @@ FC arena builds are not yet flash-qualified: the current ARM image exceeds the e
 application partition, despite passing the arena initialization and build-selection unit tests.
 Keep the default heap build on FC until a complete arena factory image links successfully.
 The build does not enlarge the application partition or overwrite reserved update/metadata storage.
+
+`--allocator tlsf` selects the board-owned TLSF allocator for SEDSnet.
+ThreadX scheduling and thread stacks retain their existing ownership. The default is `threadx`.
+TLSF coalesces adjacent free blocks; packet-arena compaction is a separate option.

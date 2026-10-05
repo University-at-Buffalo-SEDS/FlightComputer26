@@ -27,8 +27,8 @@ application onto the old layout.
 |---|---|---|
 | Bootloader | `0x08000000` | 8 KiB |
 | Application header | `0x08002000` | 512 B |
-| Application vectors/code | `0x08002200` | 455.5 KiB |
-| Reversible delta staging | `0x08074000` | 16 KiB |
+| Application vectors/code | `0x08002200` | 463.5 KiB |
+| Reversible delta staging | `0x08076000` | 8 KiB |
 | Metadata copies | `0x08078000`, `0x0807A000` | 8 KiB each |
 | Persistent settings (unchanged) | `0x0807C000` | 16 KiB |
 

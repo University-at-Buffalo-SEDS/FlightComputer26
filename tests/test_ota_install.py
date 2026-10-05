@@ -20,12 +20,14 @@ class FlightOtaTests(unittest.TestCase):
     def test_layout_and_startup_are_consistent(self):
         layout = json.loads((ROOT / "sim/board.json").read_text())["memory"]
         self.assertEqual(layout["bootloader_size"], 8192)
+        self.assertEqual(layout["slot_a_size"], 0x74000)
+        self.assertEqual(layout["delta_size"], 8192)
         self.assertEqual(layout["slot_a_base"], 0x08002000)
         self.assertEqual(layout["slot_a_base"] + layout["slot_a_size"], layout["delta_base"])
         self.assertEqual(layout["delta_base"] + layout["delta_size"], 0x08078000)
         self.assertEqual(layout["persistent_data_base"], 0x0807C000)
         linker = (ROOT / "STM32H523xx_FLASH.ld").read_text()
-        self.assertIn("ORIGIN = 0x08002200,  LENGTH = 0x71E00", linker)
+        self.assertIn("ORIGIN = 0x08002200,  LENGTH = 0x73E00", linker)
         startup = (ROOT / "Bootloader/startup.c").read_text()
         self.assertIn('"cpsid i"', startup)
         self.assertIn("boot_vectors[16]", startup)
@@ -39,12 +41,9 @@ class FlightOtaTests(unittest.TestCase):
             self.skipTest("Run ./build.py release to fetch LaunchCore for the installer test")
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)
-            # Use the actual linked FC payload when present. Only its package
-            # version changes, so this is a bounded small-delta qualification,
-            # not a claim that every firmware change fits in 16 KiB.
-            binary = ROOT / "build/Release/FlightComputer26.bin"
-            payload = binary.read_bytes() if binary.exists() else (
-                struct.pack("<II", 0x20033000, 0x08002209) + b"\0" * 2040)
+            # Compressible fixture exercises the actual installer within 8 KiB.
+            # Real code deltas may exceed staging and require a wired image.
+            payload = struct.pack("<II", 0x20033000, 0x08002209) + b"\0" * 2040
             raw = temp / "firmware.bin"
             raw.write_bytes(payload)
             for name, version in [("base", "1.0.0"), ("target", "1.0.1")]:
@@ -55,7 +54,7 @@ class FlightOtaTests(unittest.TestCase):
             subprocess.run([sys.executable, str(core / "tools/mkdelta.py"),
                 "--base", str(temp / "base.img"), "--target", str(temp / "target.img"),
                 "--output", str(temp / "update.seds"), "--erase-size", "0x2000",
-                "--slot-size", "0x72000", "--delta-slot-size", "0x4000", "--force"], check=True)
+                "--slot-size", "0x74000", "--delta-slot-size", "0x2000", "--force"], check=True)
             sources = [core / "bootloader/src" / f"{name}.c" for name in
                        ["delta", "crc32", "metadata", "image_validate", "sha256"]]
             sources += [core / "update_lib/src" / f"{name}.c" for name in

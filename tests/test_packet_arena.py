@@ -12,7 +12,7 @@ class PacketArenaTests(unittest.TestCase):
         for compact in (False, True):
             with tempfile.TemporaryDirectory() as directory:
                 commands=[]
-                if hasattr(build, 'make_parser'):
+                if hasattr(build, 'build_cfg_from_args'):
                     args=build.make_parser().parse_args(['build','--release'] + (['--packet-store','compact'] if compact else []))
                     cfg=build.build_cfg_from_args(mock.Mock(),args)
                     self.assertEqual(cfg.sedsnet_ref, 'dev' if compact else 'main')

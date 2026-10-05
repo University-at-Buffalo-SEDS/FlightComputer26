@@ -37,6 +37,7 @@ endif()
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 include(cmake/packet_store.cmake)
+include(cmake/tlsf_allocator.cmake)
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     -T "${CMAKE_SOURCE_DIR}/STM32H523xx_FLASH.ld")
 
@@ -147,7 +148,7 @@ endif()
 option(TELEMETRY_COMPAT "Byte payload compatibility"    ON)
 option(EXTERNAL_GPS     "GPS board availability"        ON)
 option(ONBOARD_SD       "On-board logger storage"       ON)
-option(ENABLE_BOARD_WATCHDOG "Board-owned hardware watchdog and FC flight recovery" OFF)
+option(ENABLE_BOARD_WATCHDOG "Board-owned hardware watchdog and FC flight recovery" ON)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/board_watchdog.c Core/Src/fc_watchdog_recovery.c)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE

@@ -89,6 +89,7 @@ OPTIONS: (option not specified -> opposite is true)
 from __future__ import annotations
 
 import sys
+import argparse
 import io
 import os
 import re
@@ -105,7 +106,7 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = { "packet-store-compact", "sedsnet-dev",     "watchdog",     "flash-dfu",
+ALL_OPTIONS     = { "no-watchdog", "allocator-tlsf", "packet-store-compact", "sedsnet-dev",     "watchdog",     "flash-dfu",
                         "flash-st",
                         "flash-stlink",
                         "stlink",
@@ -319,12 +320,13 @@ def configure(buildir: Path, preset: str, options: dict):
                 "cmake",
                 f"-DCMAKE_BUILD_TYPE={preset}",
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-                "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
+                "-DCMAKE_TOOLCHAIN_FILE=" + str(options.get("toolchain") or PROJECT / "cmake/gcc-arm-none-eabi.cmake"),
                 telem,
-                "-DSEDSNET_GIT_REF=" + ("dev" if options["sedsnet-dev"] or options["packet-store-compact"] else "main"),
+                "-DSEDSNET_GIT_REF=" + (options.get("sedsnet-ref") or ("dev" if options["sedsnet-dev"] or options["packet-store-compact"] else "main")),
+                "-DTELEMETRY_USE_TLSF=" + ("ON" if options.get("allocator-tlsf") else "OFF"),
                 "-DSEDSNET_COMPACT_PACKET_STORE=" + ("ON" if options["packet-store-compact"] else "OFF"),
                 "-DSEDSNET_COMPACT_PACKET_COMPRESSION=OFF",
-                "-DENABLE_BOARD_WATCHDOG=" + ("ON" if options["watchdog"] else "OFF"),
+                "-DENABLE_BOARD_WATCHDOG=" + ("OFF" if options.get("no-watchdog") else "ON"),
                 "-DSEDS_FIRMWARE_SIM_TEST=" + ("ON" if os.environ.get("SEDS_FIRMWARE_SIM_TEST") == "1" else "OFF"),
                 batch,
                 compat,
@@ -344,7 +346,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 fakestation,
                 "-S", str(PROJECT),
                 "-B", str(buildir),
-                "-G", "Ninja",
+                "-G", options.get("generator") or "Ninja",
         ]
 
         run(cmake_args)
@@ -478,6 +480,17 @@ def run_dfu(cmd: list[str]):
                 sys.exit(f"Command failed (exit {returncode}): dfu-util")
 
 
+def verify_stm32_target(exe: str, connect: str) -> None:
+    """Refuse a CubeProgrammer write when the connected MCU family is wrong."""
+    probe = subprocess.run([exe, "-c", *connect.split()], capture_output=True,
+                           text=True, timeout=30)
+    output = re.sub(r"\x1b\[[0-9;]*m", "", probe.stdout + probe.stderr)
+    found = re.search(r"Device ID\s*:\s*(0x[0-9a-fA-F]+)", output)
+    if probe.returncode or found is None or int(found.group(1), 16) != 0x478:
+        actual = found.group(1) if found else "unidentified"
+        raise RuntimeError(f"Refusing flash: expected STM32 device 0x478, got {actual}. Check ST-Link wiring.")
+
+
 def flash(path: Path, address: str, options: dict):
         if not address:
                 sys.exit("Delta OTA files cannot be flashed directly. Upload the .seds through GroundStation, or build a factory image for wired flashing.")
@@ -494,6 +507,7 @@ def flash(path: Path, address: str, options: dict):
                 ]
         elif options["flash-st"]:
                 stm32prog = require_tool(STM32_PROG_CLI)
+                verify_stm32_target(stm32prog, "port=SWD mode=UR reset=HWrst")
                 cmd = [ stm32prog,
                         "-c", "port=SWD", "mode=UR", "reset=HWrst",
                         "-w", str(path), address,
@@ -760,41 +774,119 @@ def run_tests(argv: list[str]) -> None:
         print_test_summary(results)
 
 
+FLAG_HELP = {
+    "fullcmd": ("full-cmd", "Disable legacy one-byte command compatibility."),
+    "batching": ("batching", "Enable command message batching."),
+    "parallelkf": ("parallel-kf", "Enable experimental parallel Kalman predict/update support."),
+    "notelemetry": ("no-telemetry", "Disable telemetry and dependent GPS/SD features."),
+    "nogps": ("no-gps", "Disable the external GPS device."),
+    "nosd": ("no-sd", "Disable on-board SD logging."),
+    "nousb": ("no-usb", "Disable USB enumeration."),
+    "asm": ("asm", "Generate application assembly after the build."),
+    "bench": ("bench", "Enable project benchmarks."),
+    "userflags": ("user-flags", "Use the project compiler flags in Debug too."),
+    "sensortest": ("sensor-test", "Enable synchronous sensor tests; requires no telemetry."),
+    "gmath": ("math-debug", "Report math API errors with file and line."),
+    "lunatic": ("ignore-states", "Bypass flight-state checks for critical commands (test only)."),
+    "simulation": ("simulation", "Use simulation thresholds in user configuration."),
+    "manualconfirm": ("manual-confirm", "Require operator confirmation for critical actions."),
+    "exspinlock": ("export-spinlock", "Use the experimental library spinlock instead of a mutex."),
+    "alloctest": ("alloc-test", "Enable allocation diagnostics."),
+    "fakestation": ("fake-station", "Enable the simulated GroundStation task."),
+    "stlink": ("stlink", "Open the ST-Link debugger after a Debug build."),
+    "configure": ("configure-only", "Configure CMake and exit without building."),
+}
+
+def make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Build, test and flash FlightComputer firmware. Legacy preset/token commands remain supported.")
+    def globals_for(p, nested=False):
+        default = argparse.SUPPRESS if nested else None
+        p.add_argument("--toolchain", default=default, help="CMake toolchain file (default: cmake/gcc-arm-none-eabi.cmake).")
+        p.add_argument("--generator", default=argparse.SUPPRESS if nested else "Ninja", help="CMake generator (default: Ninja).")
+        p.add_argument("--build-subdir", default=default, help="Folder under build/ (default: Debug or Release).")
+        p.add_argument("--trace", action="store_true", default=argparse.SUPPRESS if nested else False, help="Show Python tracebacks on failures.")
+    globals_for(parser)
+    commands = parser.add_subparsers(dest="cmd", required=True)
+    for command, description in (("build","Configure and build firmware."),("flash","Build and flash firmware."),("test","Run unit and optional integration tests."),("clean","Remove generated build files.")):
+        p = commands.add_parser(command, help=description, description=description)
+        globals_for(p, True)
+        mode = p.add_mutually_exclusive_group()
+        mode.add_argument("--release", action="store_true", help="Build with Release size optimization.")
+        mode.add_argument("--debug", action="store_true", help="Debug build (default).")
+        p.add_argument("--allocator", choices=("threadx","tlsf"), default="threadx", help="SEDSnet heap allocator; ThreadX continues scheduling (default: threadx).")
+        p.add_argument("--packet-store", choices=("heap","compact"), default="heap", help="Experimental packet arena; compact automatically selects dev unless overridden.")
+        p.add_argument("--sedsnet-ref", choices=("main","dev"), help="Fetch current branch commit, with an on-disk offline fallback.")
+        watchdog = p.add_mutually_exclusive_group()
+        watchdog.add_argument("--watchdog", dest="watchdog", action="store_true", default=True, help="Enable the task-progress hardware watchdog (default).")
+        watchdog.add_argument("--no-watchdog", dest="watchdog", action="store_false", help="Disable the hardware watchdog for diagnostics.")
+        p.add_argument("--image", choices=("factory","firmware","bootloader","ota"), default="factory", help="Build artifact (default: matching bootloader and application factory image).")
+        p.add_argument("--ota", action="store_true", help="Shortcut for --image ota; use the previous build as baseline.")
+        for key,(flag,help_text) in FLAG_HELP.items():
+            aliases = ["--"+flag]
+            if flag != key: aliases.append("--"+key)
+            p.add_argument(*aliases, dest=key, action="store_true", help=help_text)
+        if command == "flash":
+            p.add_argument("--method", choices=("stm32prog-cli","dfu","st-flash"), default="stm32prog-cli", help="Programmer (default: STM32CubeProgrammer over SWD).")
+        if command == "test":
+            p.add_argument("--all", "--full", dest="all_tests", action="store_true", help="Also run library, simulator and linked-firmware tests.")
+            p.add_argument("--ultra-soak", action="store_true", help="Run the extended soak; requires --all.")
+    return parser
+
+def cli_build_options(args):
+    options = {key: False for key in ALL_OPTIONS}
+    for key in FLAG_HELP: options[key] = getattr(args,key,False)
+    options["allocator-tlsf"] = args.allocator == "tlsf"
+    options["packet-store-compact"] = args.packet_store == "compact"
+    options["sedsnet-ref"] = args.sedsnet_ref or ("dev" if args.packet_store == "compact" else "main")
+    options["no-watchdog"] = not args.watchdog
+    options["watchdog"] = args.watchdog
+    options["image"] = "ota" if args.ota else args.image
+    options["toolchain"] = args.toolchain
+    options["generator"] = args.generator
+    if args.cmd == "flash":
+        key = {"stm32prog-cli":"flash-st","dfu":"flash-dfu","st-flash":"flash-stlink"}[args.method]
+        options[key] = True
+    return "Release" if args.release else "Debug", options
+
+
 def main() -> None:
-        os.chdir(PROJECT)
-        if sys.argv[1:] == ["clean"]:
-                clean(BUILDDIR)
-                return
-        if sys.argv[1:2] == ["test"]:
-                try:
-                        run_tests(sys.argv[2:])
-                except RuntimeError as exc:
-                        sys.exit(f"Test run failed.\n\n{exc}")
-                return
-        preset, options = parse(sys.argv[1:])
+    os.chdir(PROJECT)
+    argv = sys.argv[1:]
+    modern = bool(argv and (argv[0] in ("build","flash","test","clean") or argv[0].startswith("-")))
+    if modern:
+        args = make_parser().parse_args(argv)
+        if args.cmd == "test":
+            tests = (["--release"] if args.release else []) + (["--all"] if args.all_tests else []) + (["--ultra-soak"] if args.ultra_soak else [])
+            run_tests(tests)
+            return
+        preset, options = cli_build_options(args)
+        buildir = BUILDDIR / (args.build_subdir or preset)
+        if args.cmd == "clean":
+            clean(buildir if args.build_subdir or args.release or args.debug else BUILDDIR)
+            return
+    else:
+        preset, options = parse(argv)
         buildir = BUILDDIR / preset
-
-        if options["clean"]:
-                clean(buildir)
-                return
-
-        configure(buildir, preset, options)
-
-        if options["configure"]:
-                return
-
-        executable, address = select_artifact(buildir, options["image"])
-
-        if options["asm"] and options["image"] != "bootloader":
-                asmgen(buildir)
-
-        if options["flash-dfu"] or options["flash-st"] or options["flash-stlink"]:
-                flash(executable, address, options)
-        elif preset == "Release":
-                return
-        elif options["stlink"]:
-                gdb_st_session(executable)
+    if options["clean"]:
+        clean(buildir)
+        return
+    configure(buildir, preset, options)
+    if options["configure"]: return
+    executable, address = select_artifact(buildir, options["image"])
+    if options["asm"] and options["image"] != "bootloader": asmgen(buildir)
+    if options["flash-dfu"] or options["flash-st"] or options["flash-stlink"]:
+        flash(executable, address, options)
+    elif preset != "Release" and options["stlink"]:
+        gdb_st_session(executable)
 
 
 if __name__ == "__main__":
+    try:
         main()
+    except KeyboardInterrupt:
+        raise SystemExit(130)
+    except Exception as exc:
+        if "--trace" in sys.argv:
+            raise
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1)
