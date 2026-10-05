@@ -1,4 +1,5 @@
 import subprocess
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,6 +57,23 @@ extern volatile uint32_t g_telemetry_tlsf_free_bytes,g_telemetry_tlsf_largest_fr
 static uint64_t arenas[3][12288];
 int main(int argc,char**argv){
  TX_BYTE_POOL pools[3];
+ if(argc>1 && (strcmp(argv[1],"loaded-old")==0 || strcmp(argv[1],"loaded-new")==0)){
+  const int expanded=strcmp(argv[1],"loaded-new")==0;
+  pools[0]=(TX_BYTE_POOL){(unsigned char*)arenas[0],0,48U*1024U + tlsf_size() - 3192U};
+  pools[1]=(TX_BYTE_POOL){(unsigned char*)arenas[1],0,(expanded?32U:16U)*1024U};
+  pools[2]=(TX_BYTE_POOL){(unsigned char*)arenas[2],0,4U*1024U};
+  for(unsigned i=0;i<3;i++)telemetry_tlsf_register_pool(&pools[i]);
+  /* Captured post-discovery live usage: 59,244 bytes in several blocks.
+   * The old extra pool accepts small data but cannot learn/refresh routes. */
+  const size_t sizes[]={42088U,8000U,8000U,1156U};
+  void *held[4];
+  for(unsigned i=0;i<4;i++){held[i]=telemetry_tlsf_malloc(sizes[i]);assert(held[i]);}
+  assert(telemetry_tlsf_admit(107U*4U+8192U,2048U)==expanded);
+  assert(telemetry_tlsf_admit(8192U,2048U)==expanded);
+  for(unsigned i=0;i<4;i++)telemetry_tlsf_free(held[i]);
+  assert(telemetry_tlsf_admit(107U*4U+8192U,2048U));
+  return 0;
+ }
  if(argc>1 && (strcmp(argv[1],"shared-tail")==0 || strcmp(argv[1],"primary-only")==0 || strcmp(argv[1],"late-tail")==0 || strcmp(argv[1],"extra-reserve")==0)){
   const int late=strcmp(argv[1],"late-tail")==0;
   const int extra=strcmp(argv[1],"extra-reserve")==0;
@@ -134,9 +152,11 @@ int main(int argc,char**argv){
             subprocess.run([exe,'shared-tail'],check=True)
             subprocess.run([exe,'late-tail'],check=True)
             subprocess.run([exe,'extra-reserve'],check=True)
+            subprocess.run([exe,'loaded-old'],check=True)
+            subprocess.run([exe,'loaded-new'],check=True)
             init=(ROOT/'Core/Src/app_threadx.c').read_text()
             config=(ROOT/'Core/Inc/fcconfig.h').read_text()
-            self.assertIn('#define SD_BUFFER_SIZE (24U * 1024U)',config)
-            self.assertIn('#define TELEMETRY_EXTRA_HEAP (16U * 1024U)',config)
-            self.assertEqual(2*24+16,2*32)
+            sd_kib=int(re.search(r'#define SD_BUFFER_SIZE \((\d+)U \* 1024U\)',config).group(1))
+            heap_kib=int(re.search(r'#define TELEMETRY_EXTRA_HEAP \((\d+)U \* 1024U\)',config).group(1))
+            self.assertEqual(2*sd_kib+heap_kib,64)
             self.assertGreater(init.index('telemetry_tlsf_register_pool((TX_BYTE_POOL *)memory_ptr)'),init.index('create_distribution_task(memory_ptr)'))

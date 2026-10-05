@@ -34,8 +34,8 @@
 
 #ifdef TELEMETRY_USE_TLSF
 /* Preserve total SRAM3 usage while reserving headroom for receive/discovery. */
-#define SD_BUFFER_SIZE (24U * 1024U)
-#define TELEMETRY_EXTRA_HEAP (16U * 1024U)
+#define SD_BUFFER_SIZE (16U * 1024U)
+#define TELEMETRY_EXTRA_HEAP (32U * 1024U)
 #else
 #define SD_BUFFER_SIZE 32768
 #endif
