@@ -7,10 +7,16 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 set(SEDSNET_FORCE_RELEASE ON CACHE BOOL
     "Build SEDSNet in release mode for embedded firmware" FORCE)
 set(SEDSNET_EMBEDDED_BUILD ON CACHE BOOL "Build SEDSNet for an embedded target" FORCE)
+# Match the H523 CPU instead of generic ARMv8-M code generation.
+set(SEDSNET_ENV_RUSTFLAGS "-C target-cpu=cortex-m33" CACHE STRING "Rust code generation flags")
 set(SEDSNET_ENABLE_CRYPTOGRAPHY OFF CACHE BOOL
     "Keep the current unencrypted embedded transport" FORCE)
 
 include("${CMAKE_SOURCE_DIR}/cmake/sedsnet_source.cmake")
+
+if(SEDSNET_COMPACT_PACKET_STORE AND NOT EXISTS "${SEDSNET_DIR}/src/packet_store.rs")
+    message(FATAL_ERROR "Selected SEDSnet lacks the packet arena; fetch dev or supply a current dev checkout")
+endif()
 
 FetchContent_Declare(
     sedsnet
@@ -29,8 +35,15 @@ FetchContent_MakeAvailable(sedsnet)
 # Rust archive is stale. Deleting/touching files from a build-time dependency
 # races Ninja's initial dirty check and can remove the archive immediately
 # before the firmware link step.
-configure_file("${SEDSNET_SCHEMA_FILE}"
-               "${sedsnet_SOURCE_DIR}/telemetry_config.json" COPYONLY)
+configure_file("${SEDSNET_SCHEMA_FILE}" "${sedsnet_SOURCE_DIR}/telemetry_config.json" COPYONLY)
 file(TOUCH "${sedsnet_SOURCE_DIR}/build.rs")
-target_link_libraries(${CMAKE_PROJECT_NAME} sedsnet::sedsnet)
+# Resolve the C firmware's memory/ABI helpers with the ARM runtime before
+# Rust's static archive can supply its larger portable implementations.
+# Root the ABI entry points too: they are first referenced inside that archive,
+# after the linker has already scanned libc. Its aligned variants are aliases.
+target_link_libraries(${CMAKE_PROJECT_NAME} gcc c sedsnet::sedsnet)
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset
+    -Wl,-u,__aeabi_memcpy -Wl,-u,__aeabi_memmove
+    -Wl,-u,__aeabi_memset -Wl,-u,__aeabi_memclr)
 add_dependencies(${CMAKE_PROJECT_NAME} sedsnet_build)

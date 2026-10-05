@@ -125,3 +125,21 @@ Normal builds continue to select `main`. Each branch has its own source cache;
 when the network is unavailable the last usable on-disk source is retained.
 The selected revision is printed during configure. An explicit CMake source
 override remains local and is never fetched or reset.
+
+### Experimental packet arena
+
+```sh
+python3 build.py release packet-store-compact factory
+```
+
+This selects the latest SEDSnet `dev` commit and initializes a 4096-byte,
+32-handle arena before the router starts. It uses the existing allocator
+pool and leaves ThreadX scheduling unchanged. Compression stays disabled.
+Omit `packet-store-compact` to disable the arena, including in a previously enabled build cache.
+Startup fails cleanly if the reservation does not fit; router retries reuse
+the arena. This is an opt-in development build, not hardware qualification.
+
+FC arena builds are not yet flash-qualified: the current ARM image exceeds the existing
+application partition, despite passing the arena initialization and build-selection unit tests.
+Keep the default heap build on FC until a complete arena factory image links successfully.
+The build does not enlarge the application partition or overwrite reserved update/metadata storage.

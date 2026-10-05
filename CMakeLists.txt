@@ -36,6 +36,7 @@ endif()
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
+include(cmake/packet_store.cmake)
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     -T "${CMAKE_SOURCE_DIR}/STM32H523xx_FLASH.ld")
 

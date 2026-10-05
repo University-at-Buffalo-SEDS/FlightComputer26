@@ -105,7 +105,7 @@ DEFAULT_PRESET  = "Debug"
 
 # Configuration
 ALL_PRESETS     = {"debug" : "Debug", "release" : "Release"}
-ALL_OPTIONS     = { "sedsnet-dev",     "watchdog",     "flash-dfu",
+ALL_OPTIONS     = { "packet-store-compact", "sedsnet-dev",     "watchdog",     "flash-dfu",
                         "flash-st",
                         "flash-stlink",
                         "stlink",
@@ -321,7 +321,9 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake",
                 telem,
-                "-DSEDSNET_GIT_REF=" + ("dev" if options["sedsnet-dev"] else "main"),
+                "-DSEDSNET_GIT_REF=" + ("dev" if options["sedsnet-dev"] or options["packet-store-compact"] else "main"),
+                "-DSEDSNET_COMPACT_PACKET_STORE=" + ("ON" if options["packet-store-compact"] else "OFF"),
+                "-DSEDSNET_COMPACT_PACKET_COMPRESSION=OFF",
                 "-DENABLE_BOARD_WATCHDOG=" + ("ON" if options["watchdog"] else "OFF"),
                 "-DSEDS_FIRMWARE_SIM_TEST=" + ("ON" if os.environ.get("SEDS_FIRMWARE_SIM_TEST") == "1" else "OFF"),
                 batch,
