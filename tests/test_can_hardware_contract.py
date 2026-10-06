@@ -27,7 +27,7 @@ class CanHardwareContract(unittest.TestCase):
     def test_release_vendor_lto_survives_cubemx_regeneration(self):
         cmake = (ROOT / "CMakeLists.txt").read_text()
         self.assertIn("foreach(FC_VENDOR_TARGET STM32_Drivers FileX ThreadX)", cmake)
-        self.assertIn("$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C>>:-flto>", cmake)
+        self.assertIn("$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C>>:-flto;-fno-partial-inlining>", cmake)
 
     def test_flight_sensor_downlink_uses_shared_rate(self):
         config = (ROOT / "Core/Inc/fcconfig.h").read_text()

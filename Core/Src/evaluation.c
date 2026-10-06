@@ -70,7 +70,7 @@ static inline void flight_advance(state promotion)
   if (fetch_add(&sm.flight, 1, AcqRel) != promotion - 1)
   {
     store(&sm.flight, promotion, Rel);
-    message(id "vigilant mode transition", false);
+    message(id "enter vigilant mode", false);
   }
 
   log_metric(id "new flight state", promotion, true);
@@ -251,7 +251,7 @@ static inline void detect_landed(fu32 mode)
 static inline void announce_recovery(fu32 mode)
 {
   flight_advance(Recovery);
-  message(id "announcing recovery", true);
+  message(id "recovery announced", true);
 
 #ifdef SD_AVAILABLE
   sd_conclude();
@@ -450,7 +450,7 @@ void evaluate_rocket_state(fu32 conf, float dt)
     case Landed:    announce_recovery(conf);    break;
     case Recovery:  report_lowpass_gps(conf);   break;
     default:
-      log_metric(id "non-evaluatable state", curr, true);
+      log_metric(id "state not evaluable", curr, true);
       return;
   }
 
@@ -475,12 +475,12 @@ static inline void enter_flight_mode(fu32 conf)
   if (conf & option(Launch_Requested))
   {
     sm.idx = (sm.idx - 1) & STATE_HISTORY_MASK;
-    message(id "re-entered flight mode", true);
+    message(id "flight resumed", true);
   }
   else
   {
     ascent_initialize(conf);
-    message(id "received launch signal", true);
+    message(id "launch received", true);
     fetch_or(&g_conf, option(Launch_Requested), Rel);
 
 #ifdef DESCENT_TEST
@@ -559,7 +559,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   }
 
   st = tx_thread_create(&evaluation_task,
-                        "Evaluation Task",
+                        "Evaluation",
                         evaluation_entry,
                         EVAL_INPUT,
                         pointer,

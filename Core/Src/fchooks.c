@@ -299,7 +299,7 @@ void try_allocate_reserve_pool(void)
   }
 
 no_reserve_exit:
-  message("WARNING: insufficient memory for reserve pool", true);
+  message("WARN: reserve heap too small", true);
 }
 
 
@@ -342,7 +342,9 @@ void seds_error_msg(const char *str, size_t len)
     mu_hint = fc_panic_message_contains(str, len, "mutex") ||
               fc_panic_message_contains(str, len, "lock");
 
+#ifdef USB_ENUMERATES
     printf("%.*s\r\n", (int)len, str);
+#endif
   }
 }
 

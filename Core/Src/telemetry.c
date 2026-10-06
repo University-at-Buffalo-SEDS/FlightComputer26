@@ -794,7 +794,7 @@ SedsResult log_telemetry_string_asynchronous(SedsDataType data_type, const char 
 
   telemetry_lock();
   const SedsResult result =
-      seds_router_log_string_ex(g_router.r, data_type, str, strlen(str), NULL, 1);
+      seds_router_log_bytes_ex(g_router.r, data_type, (const uint8_t *)str, strlen(str), NULL, 1);
   telemetry_unlock();
   return result;
 #else
@@ -887,52 +887,21 @@ SedsResult process_all_queues_timeout(uint32_t timeout_ms) {
 
 #ifdef TELEMETRY_ENABLED
 static SedsResult log_error_impl(uint8_t queue, const char *fmt, va_list args) {
-  va_list args_copy;
-  int len = 0;
-  int written = 0;
+  char buf[513];
+  if (!fmt) return SEDS_BAD_ARG;
+  if (!g_router.r && init_telemetry_router() != SEDS_OK) return SEDS_ERR;
 
-  if (!fmt) {
-    return SEDS_BAD_ARG;
-  }
-
-  if (!g_router.r && init_telemetry_router() != SEDS_OK) {
-    return SEDS_ERR;
-  }
-
-  va_copy(args_copy, args);
-  len = vsnprintf(NULL, 0U, fmt, args_copy);
-  va_end(args_copy);
-
-  if (len < 0) {
-    const char *empty = "";
-    telemetry_lock();
-    const SedsResult result = seds_router_log_string_ex(
-        g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
-    telemetry_unlock();
-    return result;
-  }
-
-  if (len > 512) {
-    len = 512;
-  }
-
-  char buf[(size_t)len + 1U];
-  written = vsnprintf(buf, (size_t)len + 1U, fmt, args);
-  if (written < 0) {
-    const char *empty = "";
-    telemetry_lock();
-    const SedsResult result = seds_router_log_string_ex(
-        g_router.r, SEDS_DT_TELEMETRY_ERROR, empty, 0U, NULL, queue);
-    telemetry_unlock();
-    return result;
-  }
-
+  const int written = vsnprintf(buf, sizeof(buf), fmt, args);
+  /* snprintf reports the untruncated length. Never publish bytes beyond buf. */
+  const size_t len = written < 0 ? 0U :
+      ((size_t)written < sizeof(buf) ? (size_t)written : sizeof(buf) - 1U);
   telemetry_lock();
-  const SedsResult result = seds_router_log_string_ex(
-      g_router.r, SEDS_DT_TELEMETRY_ERROR, buf, (size_t)written, NULL, queue);
+  const SedsResult result = seds_router_log_bytes_ex(
+      g_router.r, SEDS_DT_TELEMETRY_ERROR, (const uint8_t *)buf, len, NULL, queue);
   telemetry_unlock();
   return result;
 }
+
 #endif
 
 SedsResult log_error_asynchronous(const char *fmt, ...) {
@@ -1008,7 +977,9 @@ SedsResult print_telemetry_error(const int32_t error_code) {
   char buf[(size_t)need];
   SedsResult res = seds_error_to_string(error_code, buf, sizeof(buf));
   if (res == SEDS_OK) {
+#ifdef USB_ENUMERATES
     printf("Error: %s\r\n", buf);
+#endif
   } else {
     (void)log_error_asynchronous("Error: seds_error_to_string failed: %d\r\n", (int)res);
   }
@@ -1026,7 +997,9 @@ void die(const char *fmt, ...) {
   va_end(args);
 
   while (1) {
+#ifdef USB_ENUMERATES
     printf("FATAL: %s\r\n", buf);
+#endif
     HAL_Delay(1000);
   }
 }

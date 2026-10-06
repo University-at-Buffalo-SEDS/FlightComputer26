@@ -145,7 +145,7 @@ int main(int argc,char**argv){
 }
 ''')
             exe=str(p/'test')
-            subprocess.run(['cc','-std=c11','-g','-fsanitize=address,undefined','-I',tmp,'-I',str(ROOT/'Core/Inc'),'-I',str(ROOT/'third_party/tlsf'),str(p/'test.c'),str(ROOT/'Core/Src/telemetry_tlsf.c'),str(ROOT/'third_party/tlsf/tlsf.c'),'-o',exe],check=True)
+            subprocess.run(['cc','-std=c11','-DTLSF_NO_STDIO','-g','-fsanitize=address,undefined','-I',tmp,'-I',str(ROOT/'Core/Inc'),'-I',str(ROOT/'third_party/tlsf'),str(p/'test.c'),str(ROOT/'Core/Src/telemetry_tlsf.c'),str(ROOT/'third_party/tlsf/tlsf.c'),'-o',exe],check=True)
             subprocess.run([exe],check=True)
             subprocess.run([exe,'init-failure'],check=True)
             subprocess.run([exe,'primary-only'],check=True)

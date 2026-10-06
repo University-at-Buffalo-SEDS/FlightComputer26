@@ -152,7 +152,7 @@ class QualificationContractTests(unittest.TestCase):
         )
         self.assertIn("#define fx_media_open flight_fx_media_open", filex)
         self.assertIn("tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND)", storage)
-        self.assertIn("Flight Computer SD card unavailable; flight and networking continue", storage)
+        self.assertIn("SD unavailable; flight/network continue", storage)
         self.assertIn("log_telemetry_string_asynchronous", storage)
         self.assertIn("g_sd_warning_publish_count", storage)
         self.assertIn("g_sd_ready", storage)

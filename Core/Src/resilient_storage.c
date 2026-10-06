@@ -61,7 +61,7 @@ UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
 #ifdef TELEMETRY_ENABLED
       if (log_telemetry_string_asynchronous(
               SEDS_DT_WARNING,
-              "Flight Computer SD card unavailable; flight and networking continue") == SEDS_OK) {
+              "SD unavailable; flight/network continue") == SEDS_OK) {
         g_sd_warning_publish_count++;
       }
 #else

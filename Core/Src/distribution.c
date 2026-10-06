@@ -320,7 +320,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 
   if (load(&g_conf, Acq) & option(Launch_Requested))
   {
-    message(id "biases blocked mid-flight", true);
+    message(id "biases blocked: flight", true);
     return SEDS_ERR;
   }
 
@@ -729,11 +729,11 @@ static inline void post_initialization(void)
   if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
   {
     store(&sm.flight, Armed, Rlx);
-    message(id "unusual startup sequence", true);
+    message(id "unexpected startup", true);
   }
 
   fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
-  message(id "armed, awaiting launch signal", true);
+  message(id "armed; await launch", true);
 }
 
 
@@ -768,7 +768,7 @@ static inline void fill_sequence_states(void)
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     tx_thread_sleep(1U);
   }
-  message(id "ignition requested, in flight mode", true);
+  message(id "ignition; flight mode", true);
 }
 
 void distribution_entry(ULONG _)
@@ -817,7 +817,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
   }
 
   st = tx_thread_create(&distribution_task,
-                        "Distribution Task",
+                        "Distribution",
                         distribution_entry,
                         DIST_INPUT,
                         pointer,

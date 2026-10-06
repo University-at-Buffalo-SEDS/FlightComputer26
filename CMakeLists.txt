@@ -161,6 +161,10 @@ option(MESSAGE_BATCHING "Handle batched messages"       OFF)
 option(MANUAL_CONFIRM   "Request confirm critical cmd"  OFF)
 option(SENSOR_TESTS     "Synchronous sensor tests"      OFF)
 option(USB_ENUM         "Assume USB for IO functions"   OFF)
+if(NOT USB_ENUM)
+    set_source_files_properties(third_party/tlsf/tlsf.c PROPERTIES
+        COMPILE_DEFINITIONS TLSF_NO_STDIO)
+endif()
 option(DEBUG_MATH       "Report failures of math fns"   OFF)
 option(IGNORE_STATES    "Disable recovery state checks" OFF)
 option(SWAP_CONFIG      "Use simulation user config"    OFF)
@@ -270,17 +274,17 @@ if (CUSTOM_FLAGS)
     # metadata/recovery area is reserved. GCC 13's -Oz keeps the same release
     # semantics as -Os while preferring the smaller form when size and speed
     # trade off, leaving margin for pinned networking-library updates.
-    set(COMP_RELEASE  "-Oz" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
+    set(COMP_RELEASE  "-Oz" "-fno-partial-inlining" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
 
     set(LINK_DEBUG    )
-    set(LINK_RELEASE  "-flto")
+    set(LINK_RELEASE  "-flto" "-fno-partial-inlining" "-flto-partition=one")
 
     # Include vendor C objects in release link-time optimization as well as
     # application C. Keep this outside CubeMX-generated files so regeneration
     # preserves the setting. Debug builds retain their normal code generation.
     foreach(FC_VENDOR_TARGET STM32_Drivers FileX ThreadX)
         target_compile_options(${FC_VENDOR_TARGET} PRIVATE
-            $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C>>:-flto>)
+            $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C>>:-flto;-fno-partial-inlining>)
     endforeach()
 
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE

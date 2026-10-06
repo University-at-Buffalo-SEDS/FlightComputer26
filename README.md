@@ -129,19 +129,21 @@ override remains local and is never fetched or reset.
 ### Experimental packet arena
 
 ```sh
-python3 build.py release packet-store-compact factory
+python3 build.py build --release --allocator tlsf --packet-store compact
 ```
 
 This selects the latest SEDSnet `dev` commit and initializes a 4096-byte,
 32-handle arena before the router starts. It uses the existing allocator
 pool and leaves ThreadX scheduling unchanged. Compression stays disabled.
-Omit `packet-store-compact` to disable the arena, including in a previously enabled build cache.
+Use `--packet-store heap` to disable the arena, including in a previously enabled build cache.
 Startup fails cleanly if the reservation does not fit; router retries reuse
 the arena. This is an opt-in development build, not hardware qualification.
 
-FC arena builds are not yet flash-qualified: the current ARM image exceeds the existing
-application partition, despite passing the arena initialization and build-selection unit tests.
-Keep the default heap build on FC until a complete arena factory image links successfully.
+The release compact/TLSF factory image links within the existing application partition
+with USB enumeration disabled (the default). Flash headroom is extremely small; every
+firmware or dependency update must pass the full factory-image link check. This is
+build validation, not flight qualification. USB-disabled builds omit stdout-only
+allocator/error diagnostics; network error reports and allocator checks remain enabled.
 The build does not enlarge the application partition or overwrite reserved update/metadata storage.
 
 `--allocator tlsf` selects the board-owned TLSF allocator for SEDSnet.

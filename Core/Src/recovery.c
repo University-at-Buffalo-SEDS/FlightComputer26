@@ -170,7 +170,7 @@ static inline void sensor_init_supervised(sens_init sn)
   if (fails != 0)
   {
     g_conf |= option(Init_Failure_Record);
-    log_metric(id "observed init failures", fails, true);
+    log_metric(id "init failures", fails, true);
   }
 
   sweetbench_catch(5);
@@ -201,7 +201,7 @@ static inline void abortion_due_failures(void)
   else
   {
     g_conf |= option(In_Aborted_State);
-    message(id "aborted, expecting commands", true);
+    message(id "aborted; await command", true);
   }
 }
 
@@ -223,7 +223,7 @@ static inline void barometer_fallback_vigilant(void)
 
   g_conf |= option(Vigilant_Mode);
   g_conf |= option(Measm_Reports);
-  message(id "entered vigilant mode", false);
+  message(id "vigilant mode", false);
 }
 
 
@@ -280,7 +280,7 @@ static inline void manual_deployment(bool apogee, bool force)
   }
   else return;
 
-  log_metric(id "manual flight state", sm.flight, true);
+  log_metric(id "manual state", sm.flight, true);
   log_flight_state(to_global_state(sm.flight));
 
   if (g_conf & option(Using_Ascent_KF))
@@ -297,7 +297,7 @@ static inline void enter_postinit(bool noconfirm)
 {
   if (g_conf & option(Postinit_Requested) || beyond(Armed))
   {
-    message(id "Postinit blocked mid-flight or during itself", true);
+    message(id "Postinit blocked: flight/busy", true);
     return;
   }
 
@@ -315,7 +315,7 @@ static inline void enter_postinit(bool noconfirm)
   if (++sm.flight != Postinit)
   {
     sm.flight = Postinit;
-    message(id "unusual sequence at Postinit", true);
+    message(id "Postinit: wrong sequence", true);
   }
 
   baro_conf.rezero = 1;
@@ -328,7 +328,7 @@ static inline void enter_launch(bool noconfirm)
   if (!fc_watchdog_can_actuate()) return;
   if (!beyond(Startup))
   {
-    message(id "blocked Launch before Postinit", true);
+    message(id "Launch blocked: no Postinit", true);
     return;
   }
 
@@ -354,7 +354,7 @@ static inline void enter_launch(bool noconfirm)
     smon.gps_delayed = 0;
     smon.gps_malform = 0;
 
-    log_metric(id "total GPS errors (now reset)", total, true);
+    log_metric(id "GPS errors (reset)", total, true);
   }
 
   smon.failures = 0;
@@ -430,18 +430,18 @@ static inline void process_action(fc_msg cmd, bool internal)
 
     case Log_Rate_Limit:
       rates.gnd = LOG_RATE_LIMITED;
-      message(id "WARNING: using reserve heap", true);
+      message(id "WARN: reserve heap", true);
       break;
 
     case Log_Restrict:
       rates.gnd = UINT_FAST32_MAX;
-      message(id "WARNING: using shared stack pool", true);
+      message(id "WARN: shared stack pool", true);
       break;
 
     case Log_Terminate:
 #ifdef TELEMETRY_ENABLED
       tx_thread_terminate(&telemetry_task);
-      message(id "stopped telemetry task", true);
+      message(id "telemetry stopped", true);
 #endif
       break;
 
@@ -473,7 +473,7 @@ static inline void update_global_config(fc_msg incoming)
   if ((raw & valid) == 0 || (raw & ~valid) != 0 ||
       (raw & (raw - 1)) != 0)
   {
-    log_metric(id "option ill-formed", (fu32) incoming, true);
+    log_metric(id "invalid option", (fu32) incoming, true);
     return;
   }
 
@@ -613,7 +613,7 @@ static inline void decode_flight_message(fc_msg msg)
     return process_config_update(msg);
   }
 
-  log_metric(id "unrecognized option", (fi32) fc_unmask(msg), true);
+  log_metric(id "unknown option", (fi32) fc_unmask(msg), true);
 }
 
 
