@@ -41,7 +41,7 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         create = telemetry.index("seds_router_new(")
         epoch = telemetry.index("g_router.start_time = init_now_ms;")
-        side = telemetry.index('r, "can", 3U, tx_send')
+        side = telemetry.index('r, "can", 3U, tx_send_with_priority')
 
         self.assertLess(epoch, create)
         self.assertLess(epoch, side)
@@ -129,7 +129,7 @@ class QualificationContractTests(unittest.TestCase):
         root = Path(build.__file__).resolve().parent
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(encoding="utf-8")
         cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
-        self.assertIn("seds_router_add_side_packed_profile(", telemetry)
+        self.assertIn("seds_router_add_side_packed_profile_with_priority(", telemetry)
         self.assertIn("SEDS_SIDE_TRANSPORT_PROFILE_IPV6_LIKE", telemetry)
         self.assertIn("FC_CAN_MAX_FRAME_BYTES 128U", telemetry)
         self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)

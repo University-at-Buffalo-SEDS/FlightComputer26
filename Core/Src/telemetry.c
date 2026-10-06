@@ -357,7 +357,8 @@ static uint64_t node_now_since_ms(void *user) {
   return s.r ? (now - s.start_time) : 0ULL;
 }
 
-SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
+static SedsResult tx_send_with_priority(const uint8_t *bytes, size_t len,
+                                        uint8_t priority, void *user) {
   (void)user;
   g_telemetry_tx_stage = 1U;
 
@@ -371,7 +372,8 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   g_telemetry_tx_stage = 3U;
 
   const uint32_t can_id =
-      sim_probe_packed_data_type(bytes, len) == (uint32_t)SEDS_DT_HEARTBEAT
+      (priority >= 200U ||
+       sim_probe_packed_data_type(bytes, len) == (uint32_t)SEDS_DT_HEARTBEAT)
           ? 0x003U
           : 0x103U;
   if (can_bus_send_large(bytes, len, can_id) != HAL_OK) {
@@ -386,6 +388,11 @@ SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
   led_toggle(light[Green].port, light[Green].pin);
   return SEDS_OK;
 }
+
+SedsResult tx_send(const uint8_t *bytes, size_t len, void *user) {
+  return tx_send_with_priority(bytes, len, 0U, user);
+}
+
 
 static void telemetry_can_rx(const uint8_t *data, size_t len, void *user) {
   (void)user;
@@ -612,8 +619,8 @@ static SedsResult init_telemetry_router_locked(void) {
   /* The H523 has three FDCAN TX FIFO elements. The CAN driver streams larger
    * side frames through those slots with hardware retransmission and a
    * bounded disconnected-bus timeout. */
-  g_can_side_id = seds_router_add_side_packed_profile(
-      r, "can", 3U, tx_send, NULL, false,
+  g_can_side_id = seds_router_add_side_packed_profile_with_priority(
+      r, "can", 3U, tx_send_with_priority, NULL, false,
       SEDS_SIDE_TRANSPORT_PROFILE_IPV6_LIKE, FC_CAN_MAX_FRAME_BYTES, 0U,
       FC_SIDE_TRANSPORT_TEMPLATES);
   g_telemetry_service_stage = 24U;
