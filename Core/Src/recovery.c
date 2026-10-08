@@ -708,9 +708,11 @@ void recovery_entry(ULONG st)
   local_time[PostinitCmd] = UINT_FAST32_MAX;
   local_time[LaunchCmd] = UINT_FAST32_MAX;
 
-  if (g_fc_watchdog_resumed) {
+  if (g_fc_watchdog_resumed)
     baro_conf.rezero = 0; /* retain the launch pressure, even above ground */
-    sensor_init_supervised(Wild_Mask);
+  /* Sensor telemetry remains available when recovery rejects actuation. */
+  sensor_init_supervised(Wild_Mask);
+  if (g_fc_watchdog_resumed) {
     if (current() >= Descent && (g_conf & option(Using_Ascent_KF)))
       descent_initialize(g_conf);
     timer_update(AscentKF);

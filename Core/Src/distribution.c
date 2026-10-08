@@ -746,11 +746,6 @@ static inline void fill_sequence_states(void)
 
   do
   {
-    if (!beyond(Startup))
-    {
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
-    }
-
     data_streaming_mode();
     message(id "left streaming mode", true);
 
@@ -780,6 +775,9 @@ void distribution_entry(ULONG _)
     fill_sequence_states();
   }
   while (!fc_watchdog_can_actuate()) {
+    /* Acquisition and telemetry are safe while deployment stays inhibited.
+     * Do not enter fill/launch or estimator-driven actuation in this state. */
+    data_streaming_mode();
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 4U);
   }
