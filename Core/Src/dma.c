@@ -201,6 +201,10 @@ static inline void start_dma_transfer(void)
   while (tx_semaphore_get(&dma_completion, TX_NO_WAIT) == TX_SUCCESS) {}
   select.valid = 0;
 
+  /* Consume the selected ready event before starting SPI. A new sensor IRQ
+   * can arrive inside HAL_SPI_TransmitReceive_DMA; clearing after that call
+   * would erase it and can leave acquisition waiting forever. */
+  fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
   gpio_cs_low(select.next);
 
   st = dma_spi_txrx(tx[select.next], (uint8_t *)dmarx,
@@ -209,11 +213,10 @@ static inline void start_dma_transfer(void)
   if (st != HAL_OK)
   {
     gpio_cs_high(select.next);
+    fetch_or(&flags.drdy, gpio.drdy[select.next], Rel);
     tx_thread_sleep(1);
     return;
   }
-
-  fetch_and(&flags.drdy, ~gpio.drdy[select.next], Rlx);
 
   UINT completion = tx_semaphore_get(&dma_completion, DMA_TIMEOUT_MS);
   if (completion == TX_SUCCESS && select.valid)
@@ -225,6 +228,7 @@ static inline void start_dma_transfer(void)
     /* Stop the old transaction before another sensor can own the buffer. */
     HAL_SPI_Abort(&hspi1);
     gpio_cs_high(select.next);
+    fetch_or(&flags.drdy, gpio.drdy[select.next], Rel);
   }
 }
 

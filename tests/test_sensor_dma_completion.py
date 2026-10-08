@@ -22,7 +22,7 @@ typedef unsigned UINT;
 typedef int HAL_StatusTypeDef;
 typedef int SPI_HandleTypeDef;
 enum { TX_NO_WAIT=0, TX_SUCCESS=0, HAL_OK=0, HAL_BUSY=2,
-       DMA_TIMEOUT_MS=20, SENSOR_BUF_SIZE=8, Rlx=0 };
+       DMA_TIMEOUT_MS=20, SENSOR_BUF_SIZE=8, Rlx=0, Rel=1 };
 static struct { int next, valid; } select;
 static struct { unsigned drdy[3]; } gpio = {{1,2,4}};
 static struct { unsigned drdy; } flags;
@@ -36,6 +36,8 @@ static void tx_thread_sleep(int ticks) { slept += ticks; }
 static void HAL_SPI_Abort(int *spi) { (void)spi; aborted++; }
 static void fetch_and(unsigned *p, unsigned mask, int order)
 { (void)order; *p &= mask; }
+static __attribute__((unused)) void fetch_or(unsigned *p, unsigned mask, int order)
+{ (void)order; *p |= mask; }
 static void propagate_rx(void) { delivered++; }
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *);
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *);
@@ -46,7 +48,11 @@ static UINT tx_semaphore_get(int *s, UINT timeout) {
 }
 static int dma_spi_txrx(const uint8_t *a, uint8_t *b, int n) {
   (void)a; (void)b; (void)n;
-  if(mode == 0) HAL_SPI_TxRxCpltCallback(&hspi1);
+  if(mode == 0) {
+    /* A second data-ready IRQ arrives while HAL starts the transfer. */
+    flags.drdy |= gpio.drdy[select.next];
+    HAL_SPI_TxRxCpltCallback(&hspi1);
+  }
   if(mode == 2) HAL_SPI_ErrorCallback(&hspi1);
   return mode == 4 ? HAL_BUSY : HAL_OK;
 }
@@ -56,10 +62,14 @@ int main(void) {
   for(mode=0; mode<5; mode++) {
     dma_completion=1; /* stale completion must not satisfy this transfer */
     delivered=aborted=slept=0; select.valid=1;
+    flags.drdy = gpio.drdy[select.next] | 8U;
     start_dma_transfer();
     assert(delivered == (mode < 2));
     assert(aborted == (mode == 3));
     assert(slept == (mode == 4));
+    assert((flags.drdy & 8U) != 0U); /* another sensor is untouched */
+    assert(((flags.drdy & gpio.drdy[select.next]) != 0U) ==
+           (mode == 0 || mode == 3 || mode == 4));
   }
   return 0;
 }
