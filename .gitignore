@@ -91,3 +91,7 @@ __pycache__/
 # Misc
 *.db
 *.sqlite
+
+third_party/embedded-crc32fast/target/
+
+third_party/embedded-crc32fast/Cargo.lock
