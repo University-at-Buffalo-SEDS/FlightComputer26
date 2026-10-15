@@ -1,9 +1,8 @@
 # FC hardware watchdog and autonomous recovery
 
-Build with `./build.py release --watchdog` (`watchdog` also works with the legacy CLI), or CMake
-`-DENABLE_BOARD_WATCHDOG=ON`. Other boards use `build --release --watchdog`.
-The default is OFF, and the build script explicitly configures ON/OFF to prevent
-stale cache settings. ThreadX still schedules the firmware; this feature is
+Build with `./build.py build --release`; the watchdog is enabled by default
+(`-DENABLE_BOARD_WATCHDOG=ON` in CMake). Use `--no-watchdog` for diagnostics.
+The build script explicitly configures ON/OFF to prevent stale cache settings. ThreadX still schedules the firmware; this feature is
 board-owned and changes no SEDSnet code.
 
 The independent IWDG has a nominal 16.384 second deadline (LSI / 256, reload

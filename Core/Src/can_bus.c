@@ -43,11 +43,8 @@
 #endif
 
 #ifndef CAN_BUS_POLLING
-#ifdef SEDS_FIRMWARE_SIM_TEST
-#define CAN_BUS_POLLING 1
-#else
+/* Observability must retain the production interrupt-driven receive path. */
 #define CAN_BUS_POLLING 0
-#endif
 #endif
 
 #ifndef CAN_BUS_TX_ENQUEUE_TIMEOUT_MS
@@ -222,7 +219,11 @@ static uint32_t g_own_std_id = 0xFFFFFFFFu;
 volatile uint32_t g_fdcan_irq_count __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_fdcan_rx_count __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_fdcan_tx_ok_count __attribute__((used, externally_visible)) = 0;
+/* fail_count retains all refused attempts for existing diagnostics. BUSY
+ * preserves the router packet for retry; error_count identifies HAL failures. */
 volatile uint32_t g_fdcan_tx_fail_count __attribute__((used, externally_visible)) = 0;
+volatile uint32_t g_fdcan_tx_busy_count __attribute__((used, externally_visible)) = 0;
+volatile uint32_t g_fdcan_tx_error_count __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_fdcan_last_error __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_fdcan_last_state __attribute__((used, externally_visible)) = 0;
 volatile uint32_t g_can_rx_service_stage __attribute__((used, externally_visible)) = 0;
@@ -292,6 +293,7 @@ static HAL_StatusTypeDef can_bus_enqueue_tx_frame(const FDCAN_TxHeaderTypeDef *h
       g_fdcan_last_error = HAL_FDCAN_ERROR_FIFO_FULL;
       g_fdcan_last_state = (uint32_t)g_hfdcan->State;
       g_fdcan_tx_fail_count++;
+      g_fdcan_tx_busy_count++;
       return HAL_BUSY;
     }
   }
@@ -311,6 +313,8 @@ static HAL_StatusTypeDef can_bus_enqueue_tx_frame(const FDCAN_TxHeaderTypeDef *h
   g_fdcan_last_error = HAL_FDCAN_GetError(g_hfdcan);
   g_fdcan_last_state = (uint32_t)g_hfdcan->State;
   g_fdcan_tx_fail_count++;
+  if (st == HAL_BUSY) g_fdcan_tx_busy_count++;
+  else g_fdcan_tx_error_count++;
   return st;
 }
 
@@ -330,7 +334,7 @@ static inline void can_bus_notify_rx(const uint8_t *data, size_t len)
 
 #define CAN_BUS_FRAG_MAGIC ((uint16_t)('S') | ((uint16_t)('D') << 8)) /* 'S''D' in little-endian byte order */
 #define CAN_BUS_NODE_ID 3U
-#define CAN_BUS_FRAG_WIRE_LEN 64                                      // always send 64B payload frames for frags
+#define CAN_BUS_FRAG_WIRE_LEN 64                                      // fixed stride for multi-fragment packets
 #define CAN_BUS_REASM_TIMEOUT_MS 1000u                                // tolerate interleaved multi-sender packets
 
 typedef struct __attribute__((packed))
@@ -466,16 +470,19 @@ static inline void rb_push_drop_oldest(uint32_t std_id, const uint8_t *data, uin
 // Pop frame in thread context
 static inline int rb_pop(can_bus_rx_frame_t *out)
 {
-  uint16_t t = g_rx_tail;
-  uint16_t h = g_rx_head;
-
-  if (h == t)
+  const uint32_t irq_mask = __get_PRIMASK();
+  __disable_irq();
+  const uint16_t t = g_rx_tail;
+  if (g_rx_head == t) {
+    __set_PRIMASK(irq_mask);
     return 0;
-
-  __DMB(); // acquire
+  }
+  /* The ISR may evict the oldest slot; keep copy and tail update atomic. */
+  __DMB();
   *out = g_rx_ring[t];
-  __DMB(); // conservative
   g_rx_tail = rb_next(t);
+  __DMB();
+  __set_PRIMASK(irq_mask);
   return 1;
 }
 
@@ -491,7 +498,7 @@ static inline int rb_pop(can_bus_rx_frame_t *out)
  *  - Call ONLY from thread/main-loop context.
  *  - ISRs must not drain HW FIFOs; they only set pending flags.
  */
-static void can_bus_drain_hw_to_ring_thread(void)
+static UNUSED_FUNCTION void can_bus_drain_hw_to_ring_thread(void)
 {
   if (!g_hfdcan)
     return;
@@ -955,7 +962,7 @@ HAL_StatusTypeDef can_bus_send_bytes(const uint8_t *bytes, size_t len, uint32_t 
 }
 
 // Send an arbitrarily large buffer by fragmenting into multiple CAN FD frames.
-// This uses fixed 64B frames (DLC=64) and a small header in each frame.
+// Multi-fragment packets use 64-byte frames and a small header in each frame.
 HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t std_id)
 {
   g_can_tx_service_stage = 1U;
@@ -1013,9 +1020,12 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
     memcpy(frame + hdr_sz, bytes + off, take);
     off += take;
 
-    // send a fixed 64-byte payload frame (pads zeros)
+    // Single fragments use the smallest legal DLC; multi-fragment stride stays 64 bytes.
     g_can_tx_service_stage = 3U;
-    HAL_StatusTypeDef st = can_bus_send_bytes(frame, wire_len, std_id);
+    /* Only a single fragment can shorten its first-frame stride.
+     * Keep multi-fragment frames fixed for existing reassembly code. */
+    const size_t used = frag_cnt == 1U ? hdr_sz + take : wire_len;
+    HAL_StatusTypeDef st = can_bus_send_bytes(frame, used, std_id);
     g_can_tx_service_stage = 4U;
     if (st != HAL_OK)
       return st;
@@ -1067,7 +1077,9 @@ void can_bus_process_rx(void)
 
   /* Thread-context HW drain (pull FIFO0/FIFO1 into the ring). */
   g_can_rx_service_stage = 5U;
+#if CAN_BUS_POLLING
   can_bus_drain_hw_to_ring_thread();
+#endif
   g_can_rx_service_stage = 6U;
 
   // Drain any TX event notifications queued by ISR (debug only)
@@ -1107,22 +1119,24 @@ void can_bus_process_rx(void)
 
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 {
-  (void)hfdcan;
-  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == 0)
+  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == 0U ||
+      hfdcan == NULL || hfdcan != g_hfdcan)
     return;
 
   g_fdcan_irq_count++;
-  g_rx_fifo0_pending = 1;
+  /* Move at most one physical FIFO into the ring; no decode/allocation here. */
+  (void)can_bus_drain_rx_fifo(hfdcan, FDCAN_RX_FIFO0, 3U);
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
-  (void)hfdcan;
-  if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) == 0)
+  if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) == 0U ||
+      hfdcan == NULL || hfdcan != g_hfdcan)
     return;
 
   g_fdcan_irq_count++;
-  g_rx_fifo1_pending = 1;
+  /* Move at most one physical FIFO into the ring; no decode/allocation here. */
+  (void)can_bus_drain_rx_fifo(hfdcan, FDCAN_RX_FIFO1, 3U);
 }
 
 // TX event FIFO callback (called in ISR context). We read all new events

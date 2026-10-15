@@ -354,7 +354,8 @@ static uint64_t node_now_since_ms(void *user) {
   (void)user;
   const RouterState s = g_router;
   const uint64_t now = tx_raw_now_ms_locked();
-  return s.r ? (now - s.start_time) : 0ULL;
+  /* Construction and initial maintenance also need an advancing clock. */
+  return now - s.start_time;
 }
 
 static SedsResult tx_send_with_priority(const uint8_t *bytes, size_t len,

@@ -27,7 +27,7 @@ OPTIONS: (option not specified -> opposite is true)
         bootloader      Build only the bootloader.
         firmware        Build only the packaged Slot A firmware.
         ota             Build a delta .seds from the previous package when it
-                        fits; otherwise emit a full image for wired recovery.
+                        fits; otherwise emit a full image for wired recovery.`
 
         stlink          Open STLink connection and exit.
                         Prereq: Debug.
@@ -322,7 +322,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=" + str(options.get("toolchain") or PROJECT / "cmake/gcc-arm-none-eabi.cmake"),
                 telem,
-                "-DSEDSNET_GIT_REF=" + (options.get("sedsnet-ref") or ("dev" if options["sedsnet-dev"] or options["packet-store-compact"] else "main")),
+                "-DSEDSNET_GIT_REF=" + (options.get("sedsnet-ref") or ("dev" if options["sedsnet-dev"] else "main")),
                 "-DTELEMETRY_USE_TLSF=" + ("ON" if options.get("allocator-tlsf") else "OFF"),
                 "-DSEDSNET_COMPACT_PACKET_STORE=" + ("ON" if options["packet-store-compact"] else "OFF"),
                 "-DSEDSNET_COMPACT_PACKET_COMPRESSION=OFF",
@@ -814,7 +814,7 @@ def make_parser() -> argparse.ArgumentParser:
         mode.add_argument("--release", action="store_true", help="Build with Release size optimization.")
         mode.add_argument("--debug", action="store_true", help="Debug build (default).")
         p.add_argument("--allocator", choices=("threadx","tlsf"), default="threadx", help="SEDSnet heap allocator; ThreadX continues scheduling (default: threadx).")
-        p.add_argument("--packet-store", choices=("heap","compact"), default="heap", help="Experimental packet arena; compact automatically selects dev unless overridden.")
+        p.add_argument("--packet-store", choices=("heap","compact"), default="heap", help="Experimental packet arena; uses main unless --sedsnet-ref is explicit.")
         p.add_argument("--sedsnet-ref", choices=("main","dev"), help="Fetch current branch commit, with an on-disk offline fallback.")
         watchdog = p.add_mutually_exclusive_group()
         watchdog.add_argument("--watchdog", dest="watchdog", action="store_true", default=True, help="Enable the task-progress hardware watchdog (default).")
@@ -837,7 +837,7 @@ def cli_build_options(args):
     for key in FLAG_HELP: options[key] = getattr(args,key,False)
     options["allocator-tlsf"] = args.allocator == "tlsf"
     options["packet-store-compact"] = args.packet_store == "compact"
-    options["sedsnet-ref"] = args.sedsnet_ref or ("dev" if args.packet_store == "compact" else "main")
+    options["sedsnet-ref"] = args.sedsnet_ref or "main"
     options["no-watchdog"] = not args.watchdog
     options["watchdog"] = args.watchdog
     options["image"] = "ota" if args.ota else args.image

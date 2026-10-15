@@ -114,13 +114,15 @@ collisions use a bounded suffix search, even before network time is available.
 ## Hardware watchdog
 
 [Board watchdog and autonomous flight recovery](docs/watchdog.md). Build with
-`./build.py release --watchdog`.
-Watchdogs are opt-in and require the matching bootloader.
+`./build.py build --release` (watchdog enabled by default).
+Watchdogs are enabled by default and require the matching bootloader.
+Use `--no-watchdog` only for a diagnostic build.
 
 ## Experimental SEDSnet development builds
 
-Use `python3 build.py release sedsnet-dev factory` to build the current SEDSnet
-`dev` commit. Add `flash-st` for a wired factory flash.
+Use `python3 build.py build --release --sedsnet-ref dev` for an explicit SEDSnet
+`dev` comparison. The same option is accepted by `test` and `flash`.
+Use `python3 build.py flash --release --method stm32prog-cli` for a wired factory flash.
 Normal builds continue to select `main`. Each branch has its own source cache;
 when the network is unavailable the last usable on-disk source is retained.
 The selected revision is printed during configure. An explicit CMake source
@@ -132,7 +134,7 @@ override remains local and is never fetched or reset.
 python3 build.py build --release --allocator tlsf --packet-store compact
 ```
 
-This selects the latest SEDSnet `dev` commit and initializes a 4096-byte,
+This selects the latest compatible SEDSnet `main` commit and initializes a 4096-byte,
 32-handle arena before the router starts. It uses the existing allocator
 pool and leaves ThreadX scheduling unchanged. Compression stays disabled.
 Use `--packet-store heap` to disable the arena, including in a previously enabled build cache.

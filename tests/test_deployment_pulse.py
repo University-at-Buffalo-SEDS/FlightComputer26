@@ -87,7 +87,7 @@ static struct { unsigned State; } handle, *g_hfdcan=&handle;
 static struct { uint32_t CYCCNT; } cycles;
 #define DWT (&cycles)
 static uint32_t SystemCoreClock=1000000U;
-static unsigned g_can_tx_service_stage,g_fdcan_last_error,g_fdcan_last_state,g_fdcan_tx_fail_count,g_fdcan_tx_ok_count,slots,polls,accepted;
+static unsigned g_can_tx_service_stage,g_fdcan_last_error,g_fdcan_last_state,g_fdcan_tx_fail_count,g_fdcan_tx_busy_count,g_fdcan_tx_error_count,g_fdcan_tx_ok_count,slots,polls,accepted;
 static uint32_t HAL_GetTick(void) {return 1;} /* deliberately frozen */
 static int HAL_FDCAN_GetTxFifoFreeLevel(void *p) {(void)p;polls++;cycles.CYCCNT+=1000;assert(polls<10);return slots;}
 static int can_bus_recover_if_bus_off(void) {return HAL_OK;}
@@ -99,6 +99,7 @@ int main(void) {
  int hdr=0;uint8_t d[64]={0};cycles.CYCCNT=UINT32_MAX-2000;
  assert(can_bus_enqueue_tx_frame(&hdr,d)==HAL_BUSY);
  assert(accepted==0 && polls==5 && g_fdcan_tx_fail_count==1);
+ assert(g_fdcan_tx_busy_count==1 && g_fdcan_tx_error_count==0);
  slots=1;assert(can_bus_enqueue_tx_frame(&hdr,d)==HAL_OK && accepted==1);
 }
 '''

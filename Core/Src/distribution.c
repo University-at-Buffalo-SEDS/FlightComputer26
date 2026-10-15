@@ -358,7 +358,7 @@ implicit_postinit(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
-SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
+static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
 {
   if (!pkt || !pkt->sender || !pkt->sender_len)
   {
@@ -379,9 +379,29 @@ SedsResult on_fc_packet(const SedsPacketView *pkt, void *_)
       return dispatch_flight_cmd(pkt->payload, pkt->payload_len);
     case SEDS_DT_ASCENT_BIASES:
       return update_ascent_biases(pkt->payload, pkt->payload_len);
+    case SEDS_DT_AV_BAY_UNDERGLOW:
+    case SEDS_DT_FLIGHT_BUZZER:
+      /* The registered network-variable callback already validated/applied
+       * these values. Do not reject them again in the endpoint dispatcher:
+       * that would suppress the first end-to-end receipt after delivery. */
+      return (pkt->payload != NULL && pkt->payload_len == 1U)
+                 ? SEDS_OK : SEDS_HANDLER_ERROR;
   }
 
   return SEDS_HANDLER_ERROR;
+}
+
+/* Retain the actual endpoint failure, separate from transport backpressure. */
+volatile uint32_t g_fc_endpoint_error_type;
+volatile int32_t g_fc_endpoint_error_result;
+SedsResult on_fc_packet(const SedsPacketView *pkt, void *user)
+{
+  const SedsResult result = on_fc_packet_impl(pkt, user);
+  if (result != SEDS_OK) {
+    g_fc_endpoint_error_type = pkt != NULL ? pkt->ty : 0U;
+    g_fc_endpoint_error_result = (int32_t)result;
+  }
+  return result;
 }
 
 #endif /* TELEMETRY_ENABLED + FAKESTATION */
