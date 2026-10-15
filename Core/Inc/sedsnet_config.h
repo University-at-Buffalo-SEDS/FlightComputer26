@@ -55,6 +55,3 @@
 #define SEDS_DT_AV_BAY_UNDERGLOW ((SedsDataType)68266860U)
 #define SEDS_DT_FLIGHT_BUZZER ((SedsDataType)169036741U)
 /* Retired runtime-rate IDs remain reserved to preserve wire compatibility. */
-#define SEDS_DT_RESERVED_135 ((SedsDataType)263305256U)
-#define SEDS_DT_RESERVED_136 ((SedsDataType)45202657U)
-#define SEDS_DT_DAQ_LOADCELL_CALIBRATION ((SedsDataType)189079860U)

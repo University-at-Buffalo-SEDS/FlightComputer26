@@ -623,21 +623,6 @@
       "endpoints": [
         "ActuatorFlightController"
       ]
-    },
-    {
-      "rust": "Reserved135", "name": "RESERVED_135", "doc": "Reserved legacy rate ID; telemetry rates are compile-time board settings.",
-      "reliable": "Ordered", "priority": 16, "class": "Data",
-      "element": {"kind": "Static", "data_type": "Float32", "count": 1}, "endpoints": []
-    },
-    {
-      "rust": "Reserved136", "name": "RESERVED_136", "doc": "Reserved legacy rate ID; telemetry rates are compile-time board settings.",
-      "reliable": "Ordered", "priority": 16, "class": "Data",
-      "element": {"kind": "Static", "data_type": "Float32", "count": 1}, "endpoints": []
-    },
-    {
-      "rust": "DaqLoadcellCalibration", "name": "DAQ_LOADCELL_CALIBRATION", "doc": "DAQ calibration [KG1000 slope, KG1000 intercept, IADC slope, IADC intercept].",
-      "reliable": "Ordered", "priority": 16, "class": "Data",
-      "element": {"kind": "Static", "data_type": "Float32", "count": 4}, "endpoints": ["FillSdCard"]
     }
   ]
 }

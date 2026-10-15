@@ -16,6 +16,11 @@ class NetworkSchemaContractTests(unittest.TestCase):
         for item in temperatures:
             self.assertEqual(item["reliable"], "Off")
 
+    def test_boot_catalog_omits_unused_legacy_slots_and_daq_only_calibration(self):
+        schema = json.loads((ROOT / "config/sedsnet.json").read_text())
+        names = {item["name"] for item in schema["types"]}
+        self.assertTrue(names.isdisjoint({"RESERVED_135", "RESERVED_136", "DAQ_LOADCELL_CALIBRATION"}))
+
     def test_umbilical_command_ack_is_reliable_and_ordered(self):
         schema = json.loads((ROOT / "config" / "sedsnet.json").read_text(encoding="utf-8"))
         status = next(item for item in schema["types"] if item["name"] == "UMBILICAL_STATUS")
