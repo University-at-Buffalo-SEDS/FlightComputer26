@@ -99,6 +99,7 @@ import shutil
 import subprocess
 import importlib.util
 from pathlib import Path
+from build_cleanup import clean_generated, format_reclaimed
 
 
 # Defaults
@@ -557,21 +558,15 @@ def gdb_st_session(path: Path):
 
 
 def clean(path: Path):
-        build_root = BUILDDIR.resolve()
-        target = path.resolve()
         try:
-                target.relative_to(build_root)
-        except ValueError:
-                sys.exit(f"Refusing to clean outside the build directory: {target}")
-
-        if not target.exists():
-                print(f"Already clean: {target}")
-                return
-        if target.is_symlink():
-                sys.exit(f"Refusing to recursively clean a symbolic link: {target}")
-
-        shutil.rmtree(target)
-        print(f"Cleaned build artifacts: {target}")
+                removed, reclaimed = clean_generated(BUILDDIR, path)
+        except ValueError as error:
+                sys.exit(str(error))
+        for target in removed:
+                print(f"Cleaned build artifacts: {target}")
+        if not removed:
+                print("Already clean")
+        print(f"Reclaimed approximately {format_reclaimed(reclaimed)} ({reclaimed:,} allocated file bytes)")
 
 
 def asmgen(buildir: Path):
@@ -807,7 +802,7 @@ def make_parser() -> argparse.ArgumentParser:
         p.add_argument("--trace", action="store_true", default=argparse.SUPPRESS if nested else False, help="Show Python tracebacks on failures.")
     globals_for(parser)
     commands = parser.add_subparsers(dest="cmd", required=True)
-    for command, description in (("build","Configure and build firmware."),("flash","Build and flash firmware."),("test","Run unit and optional integration tests."),("clean","Remove generated build files.")):
+    for command, description in (("build","Configure and build firmware."),("flash","Build and flash firmware."),("test","Run unit and optional integration tests."),("clean","Remove build/ and CRC32 artifacts; report reclaimed space.")):
         p = commands.add_parser(command, help=description, description=description)
         globals_for(p, True)
         mode = p.add_mutually_exclusive_group()
