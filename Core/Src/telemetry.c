@@ -569,6 +569,16 @@ SedsResult telemetry_poll_discovery(void) {
 #endif
 }
 
+#ifdef TELEMETRY_USE_TLSF
+static __attribute__((unused)) bool telemetry_memory_admission_probe(
+    size_t additional, size_t largest, uint32_t work)
+{
+  if (work == SEDS_MEMORY_WORK_SMALL_PROTECTED)
+    return telemetry_tlsf_admit_small_protected(additional, largest);
+  return telemetry_tlsf_admit(additional, largest);
+}
+#endif
+
 static SedsResult init_telemetry_router_locked(void) {
 #ifndef TELEMETRY_ENABLED
   return SEDS_OK;
@@ -594,7 +604,7 @@ static SedsResult init_telemetry_router_locked(void) {
 
   g_telemetry_service_stage = 21U;
 #ifdef TELEMETRY_USE_TLSF
-  seds_set_memory_admission_probe(telemetry_tlsf_admit);
+  seds_set_memory_admission_probe_v2(telemetry_memory_admission_probe);
 #endif
   result = board_packet_store_init();
   if (result != SEDS_OK) return result;
@@ -676,6 +686,8 @@ static SedsResult init_telemetry_router_locked(void) {
   return SEDS_OK;
 #endif
 }
+
+
 
 SedsResult init_telemetry_router(void) {
   SedsResult result;
