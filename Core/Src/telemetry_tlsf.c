@@ -186,3 +186,9 @@ bool telemetry_tlsf_admit_small_protected(size_t additional, size_t largest)
         return telemetry_tlsf_admit(additional, largest);
     return admit_impl(additional, largest, true);
 }
+
+bool telemetry_tlsf_admit_can_control(size_t bytes)
+{
+    return bytes != 0U && bytes <= 160U &&
+        admit_impl(bytes + 512U, bytes, true);
+}

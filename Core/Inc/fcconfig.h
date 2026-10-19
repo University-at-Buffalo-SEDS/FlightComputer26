@@ -40,7 +40,7 @@
 #define SD_BUFFER_SIZE 32768
 #endif
 #define SD_FLUSH_INTERVAL   30000
-#define SD_MAX_MSG_SIZE		256
+#define SD_MAX_MSG_SIZE      1024
 
 
 /* Deployment GPIO (sensors' GPIO is in main.h) */

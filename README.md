@@ -45,13 +45,20 @@ sensor acquisition and link capacity; this is not a network variable.
 ## SD-card logging
 
 The optional SD card must already contain a FAT filesystem. Each successful
-mount creates a new `irec-<network-seconds>-<suffix>.log`; therefore every reboot starts
+mount creates a new `irec-<network-seconds>-<suffix>.csv`; therefore every reboot starts
 a new log. Records contain network and monotonic time alongside the sensor
 payload. Flight Computer data needs no load-cell calibration metadata. A
 missing or unreadable card is nonfatal: acquisition, control, and SEDSNet still
 start, the board publishes a rate-limited warning, and it retries the card.
 Format a new card as FAT on a computer before inserting it; firmware does not
 erase or reformat flight logs.
+
+The logger uses the same [CSV columns as DAQ](docs/sd-record-format.md),
+including independent boot uptime ticks, nominal clock frequency and record
+sequence. Failed/partial writes retain their buffers; shutdown drains the final
+short buffer. Large files rotate before 3 GiB without resetting uptime or the
+sequence. Storage and rejection counters distinguish buffered records from
+successful media flushes.
 
 ## Regenerating with STM32CubeMX
 

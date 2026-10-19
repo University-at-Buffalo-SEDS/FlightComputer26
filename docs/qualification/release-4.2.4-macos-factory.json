@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-19",
+  "platform": "macOS",
+  "compiler": "STM32 GCC13.3.1",
+  "sedsnet_version": "4.2.4",
+  "sedsnet_selector": "main",
+  "sedsnet_commit": "781df378aad05be84f39811d49257eab8161134d",
+  "command": "python3 build.py --build-subdir Release424PublishedMain build --release --allocator tlsf --packet-store compact",
+  "result": "passed",
+  "flash": {
+    "application_used_bytes": 473624,
+    "application_capacity_bytes": 474624,
+    "application_spare_bytes": 1000,
+    "bootloader_used_bytes": 7988,
+    "bootloader_capacity_bytes": 8192
+  },
+  "watchdog": true,
+  "tlsf": true,
+  "compact_packet_store": true,
+  "usb_enumeration": false,
+  "factory_image_sha256": "6305f4d7b1dd498ed124e146673b28147d90dfe00f4744ab8bea39174e05a1c6",
+  "hardware_flashed": false,
+  "limits": [
+    "This records the published-main factory build; linker bounds remain enabled.",
+    "Physical hardware validation remains separate."
+  ]
+}

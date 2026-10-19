@@ -131,12 +131,12 @@ class QualificationContractTests(unittest.TestCase):
         cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertIn("seds_router_add_side_packed_profile_with_priority(", telemetry)
         self.assertIn("SEDS_SIDE_TRANSPORT_PROFILE_IPV6_LIKE", telemetry)
-        self.assertIn("FC_CAN_MAX_FRAME_BYTES 128U", telemetry)
+        self.assertIn("FC_CAN_MAX_FRAME_BYTES CAN_TX_ALIGNED_FRAME_BYTES", telemetry)
         self.assertIn('SEDSNET_MAX_QUEUE_BUDGET "8192"', cmake)
         can_bus = (root / "Core" / "Src" / "can_bus.c").read_text(encoding="utf-8")
-        self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS 5U", can_bus)
-        self.assertNotIn("HAL_FDCAN_AbortTxRequest", can_bus)
+        self.assertNotIn("HAL_FDCAN_AbortTxRequest", can_bus.split("HAL_StatusTypeDef can_bus_send_bytes(", 1)[1].split("HAL_StatusTypeDef can_bus_send_large", 1)[0])
         self.assertNotIn("< (uint32_t)frag_cnt", can_bus)
+        self.assertIn("return can_tx_queue_submit(bytes, len, std_id);", can_bus)
 
     def test_sedsnet_can_payload_budget_matches_avionics_peers(self):
         root = Path(build.__file__).resolve().parent
@@ -162,7 +162,7 @@ class QualificationContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("telemetry_unix_s()", pipeline)
-        self.assertIn("SEDS_LOG_FILENAME \"-%lu-%03lu.log\"", pipeline)
+        self.assertIn("SEDS_LOG_FILENAME \"-%lu-%03lu.csv\"", pipeline)
         self.assertIn("(unsigned long)time", pipeline)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
 
@@ -239,13 +239,9 @@ class QualificationContractTests(unittest.TestCase):
         send_large = can_bus[can_bus.index("HAL_StatusTypeDef can_bus_send_large") :]
         send_large = send_large[: send_large.index("void can_bus_process_rx")]
         self.assertNotIn("tx_thread_sleep", send_large)
-        self.assertIn("if (st != HAL_OK)\n      return st;", send_large)
+        self.assertIn("return can_tx_queue_submit(bytes, len, std_id);", send_large)
         self.assertNotIn("< (uint32_t)frag_cnt", send_large)
-        enqueue = can_bus[can_bus.index("static HAL_StatusTypeDef can_bus_enqueue_tx_frame") :]
-        enqueue = enqueue[: enqueue.index("HAL_StatusTypeDef can_bus_send_large")]
-        self.assertIn("CAN_BUS_TX_ENQUEUE_TIMEOUT_MS", enqueue)
-        self.assertIn("HAL_FDCAN_GetTxFifoFreeLevel(g_hfdcan)", enqueue)
-        self.assertNotIn("HAL_FDCAN_AbortTxRequest", enqueue)
+        self.assertIn("return can_tx_queue_submit(bytes, len, std_id);", can_bus)
 
 
     def test_periodic_health_check_does_not_serialize_topology(self):

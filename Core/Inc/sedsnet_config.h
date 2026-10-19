@@ -55,3 +55,5 @@
 #define SEDS_DT_AV_BAY_UNDERGLOW ((SedsDataType)68266860U)
 #define SEDS_DT_FLIGHT_BUZZER ((SedsDataType)169036741U)
 /* Retired runtime-rate IDs remain reserved to preserve wire compatibility. */
+
+#define SEDS_DT_BOARD_HEALTH ((SedsDataType)215170867U)

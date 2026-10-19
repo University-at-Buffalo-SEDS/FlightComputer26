@@ -18,6 +18,7 @@ typedef uint16_t fu16;
 #define SD_POST_MARGIN 100
 struct { int lock, full; bool cur, free; fu16 off[2]; } line;
 unsigned posts;
+unsigned sd_buffer_records[2], g_sd_enqueued_records;
 void fc_unlock(int *lock) { *lock=0; }
 void fc_concede(int *lock) { *lock=0; }
 void tx_semaphore_put(int *semaphore) { (void)semaphore; posts++; }
@@ -38,7 +39,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory() as directory:
             binary = pathlib.Path(directory) / "buffer-ownership"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-x", "c", "-", "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "Core/Inc"), "-x", "c", "-", "-o", str(binary)],
                            input=harness, text=True, check=True)
             subprocess.run([str(binary)], check=True)
 
@@ -55,25 +56,29 @@ typedef unsigned char fu8;
 typedef unsigned short fu16;
 typedef uint32_t fu32;
 typedef int SedsDataType;
+#include "sd_record_format.h"
 #define F32_TO_STR_MAX_SIZE 128
 #define SD_BUFFER_SIZE 1024
-#define load(p,o) 0
+#define load(p,o) stop_flag
 #define option(o) 1
 struct { int lock; unsigned cur; fu16 off[2]; } line;
 char sdbuf[2][SD_BUFFER_SIZE];
-unsigned g_sd_format_errors, g_sd_lock_contention_drops;
-bool expect_contention;
+unsigned g_sd_format_errors, g_sd_lock_contention_drops, sd_csv_sequence;
+bool expect_contention, stop_during_clock, stop_flag;
+bool sd_accepting=true;
+unsigned g_sd_unavailable_drops;
 int clock_calls;
 int seds_ftoa4(char *out,fu16 n,const float *data,fu8 count) {
     (void)data; (void)count; return snprintf(out,n,"1.0");
 }
 const char *seds_f32(SedsDataType ty) { (void)ty; return "IMU"; }
 const char *seds_msg(SedsDataType ty) { (void)ty; return "Message"; }
-uint64_t telemetry_unix_s(void) {
-    assert(!line.lock); ++clock_calls; return 123;
+uint64_t telemetry_unix_ms(void) {
+    assert(!line.lock); ++clock_calls; if(stop_during_clock) stop_flag=true; return 123000;
 }
-uint32_t now_ms(void) { return 456; }
+uint64_t board_uptime_ticks(void) { return 456; }
 void fc_lock(int *lock) { assert(!*lock); *lock=1; }
+void fc_concede(int *lock) { *lock=0; }
 bool fc_trylock(int *lock) {
     if (expect_contention || *lock) return false;
     *lock=1; return true;
@@ -88,17 +93,23 @@ int main(void) {
     sd_append_f32(0,&value,1);
     sd_append_string(0,"callback");
     assert(clock_calls==2 && !line.lock);
-    assert(strstr(sdbuf[0],"123 456 IMU: 1.0"));
-    assert(strstr(sdbuf[0],"123 456 Message: callback"));
+    assert(strstr(sdbuf[0],"123000,456,IMU,\"1.0\",,,,network,,,456,1000,1"));
+    assert(strstr(sdbuf[0],"123000,456,Message,\"callback\",,,,network,,,456,1000,2"));
     fu16 before=line.off[0]; expect_contention=true;
     sd_append_f32(0,&value,1); sd_append_string(0,"busy");
     assert(line.off[0]==before && g_sd_lock_contention_drops==2);
+    expect_contention=false; sd_accepting=false;
+    sd_append_f32(0,&value,1); sd_append_string(0,"not ready");
+    assert(line.off[0]==before && g_sd_unavailable_drops==2 && clock_calls==4);
+    sd_accepting=true; stop_during_clock=true;
+    sd_append_string(0,"raced stop");
+    assert(stop_flag && !line.lock && line.off[0]==before);
     return 0;
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
             binary = pathlib.Path(directory) / "lock-order"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-x", "c", "-", "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "Core/Inc"), "-x", "c", "-", "-o", str(binary)],
                            input=harness, text=True, check=True)
             subprocess.run([str(binary)], check=True)
 

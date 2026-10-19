@@ -32,7 +32,9 @@ static volatile conditional bool mu_hint = 0;
 
 static TX_BYTE_POOL reserve;
 
+#ifndef TELEMETRY_USE_TLSF
 static spinlock alloc_lock = {0};
+#endif
 
 #ifdef EXPORT_SPINLOCK
 static spinlock external_lock = {0};
@@ -375,6 +377,51 @@ void *telemetryMalloc(size_t xSize)
   }
   telemetry_memory_profile_sample();
   return ptr;
+}
+
+/* Bounded foreground CAN ownership must never enter reserve_alloc(), wait,
+ * terminate logging, or allocate from interrupt context. */
+void *telemetry_can_tx_allocate(size_t bytes)
+{
+#ifdef TELEMETRY_USE_TLSF
+  if (!telemetry_tlsf_admit(bytes + 512U, bytes)) return NULL;
+  return telemetryMalloc(bytes);
+#else
+  void *ptr = NULL;
+  fc_lock(&alloc_lock);
+  ULONG available = 0U;
+  if (tx_byte_pool_info_get(&telemetry_pool, TX_NULL, &available,
+      TX_NULL, TX_NULL, TX_NULL, TX_NULL) == TX_SUCCESS &&
+      bytes <= available && available - bytes >= 4096U &&
+      tx_byte_allocate(&telemetry_pool, &ptr, bytes, TX_NO_WAIT) == TX_SUCCESS)
+    ++g_telemetry_alloc_count;
+  fc_unlock(&alloc_lock);
+  telemetry_memory_profile_sample();
+  return ptr;
+#endif
+}
+
+void *telemetry_can_tx_allocate_priority(size_t bytes, uint8_t protected_control)
+{
+  if (!protected_control || bytes == 0U || bytes > 160U)
+    return telemetry_can_tx_allocate(bytes);
+#ifdef TELEMETRY_USE_TLSF
+  if (!telemetry_tlsf_admit_can_control(bytes)) return NULL;
+  return telemetryMalloc(bytes);
+#else
+  void *ptr = NULL;
+  fc_lock(&alloc_lock);
+  ULONG available = 0U;
+  const size_t working = bytes + 512U;
+  if (tx_byte_pool_info_get(&telemetry_pool, TX_NULL, &available,
+      TX_NULL, TX_NULL, TX_NULL, TX_NULL) == TX_SUCCESS &&
+      working <= available && available - working >= 512U &&
+      tx_byte_allocate(&telemetry_pool, &ptr, bytes, TX_NO_WAIT) == TX_SUCCESS)
+    ++g_telemetry_alloc_count;
+  fc_unlock(&alloc_lock);
+  telemetry_memory_profile_sample();
+  return ptr;
+#endif
 }
 
 void telemetryFree(void *pv)

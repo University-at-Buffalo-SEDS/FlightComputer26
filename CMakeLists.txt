@@ -43,6 +43,9 @@ target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
+# Use the scheduler's built-in idle wait; peripheral clocks stay running.
+# The Cortex-M4 assembly does not include tx_user.h, so set this on ThreadX.
+target_compile_definitions(ThreadX PRIVATE TX_ENABLE_WFI)
 
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
@@ -63,7 +66,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/deployment_pulse.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c 
+    ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/can_tx_queue.c
     ${CMAKE_SOURCE_DIR}/Core/Src/fchooks.c
     ${CMAKE_SOURCE_DIR}/Core/Src/abort_unwind.c
     ${CMAKE_SOURCE_DIR}/Core/Src/panic_match.c
@@ -155,6 +159,7 @@ option(ONBOARD_SD       "On-board logger storage"       ON)
 option(ENABLE_BOARD_WATCHDOG "Board-owned hardware watchdog and FC flight recovery" ON)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/board_watchdog.c Core/Src/fc_watchdog_recovery.c)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/board_health.c)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     BOARD_WATCHDOG_ENABLE=$<BOOL:${ENABLE_BOARD_WATCHDOG}>)
 
@@ -281,7 +286,9 @@ if (CUSTOM_FLAGS)
     set(COMP_RELEASE  "-Oz" "-fno-partial-inlining" "-flto" "-ffast-math" "-DNDEBUG" "-g0")
 
     set(LINK_DEBUG    )
-    set(LINK_RELEASE  "-flto" "-fno-partial-inlining" "-flto-partition=one")
+    # Group input sections by required alignment to avoid padding waste in
+    # the tight application partition; retain every section's alignment.
+    set(LINK_RELEASE  "-flto" "-fno-partial-inlining" "-flto-partition=one" "-Wl,--sort-section=alignment")
 
     # Include vendor C objects in release link-time optimization as well as
     # application C. Keep this outside CubeMX-generated files so regeneration
