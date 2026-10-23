@@ -45,7 +45,7 @@ int main(void) {
 
     def test_actual_sd_append_functions_do_not_invert_network_lock_or_spin(self):
         source = (ROOT / "Core/Src/sdpipeline.c").read_text()
-        functions = source[source.index("void sd_append_f32("):source.index("void sd_conclude(")]
+        functions = source[source.index("/* All producers share one bounded append path."):source.index("void sd_conclude(")]
         harness = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -57,6 +57,8 @@ typedef unsigned short fu16;
 typedef uint32_t fu32;
 typedef int SedsDataType;
 #include "sd_record_format.h"
+#include "sd_vector_format.h"
+struct { uint32_t sd; } rates = {5};
 #define F32_TO_STR_MAX_SIZE 128
 #define SD_BUFFER_SIZE 1024
 #define load(p,o) stop_flag
@@ -93,8 +95,8 @@ int main(void) {
     sd_append_f32(0,&value,1);
     sd_append_string(0,"callback");
     assert(clock_calls==2 && !line.lock);
-    assert(strstr(sdbuf[0],"123000,456,IMU,\"1.0\",,,,network,,,456,1000,1"));
-    assert(strstr(sdbuf[0],"123000,456,Message,\"callback\",,,,network,,,456,1000,2"));
+    assert(strstr(sdbuf[0],"123000,456,IMU,\"1.0\",\"\",\"\",\"\",network,,,456,1000,1"));
+    assert(strstr(sdbuf[0],"123000,456,Message,\"callback\",\"\",\"\",\"\",network,,,456,1000,2"));
     fu16 before=line.off[0]; expect_contention=true;
     sd_append_f32(0,&value,1); sd_append_string(0,"busy");
     assert(line.off[0]==before && g_sd_lock_contention_drops==2);
@@ -104,6 +106,18 @@ int main(void) {
     sd_accepting=true; stop_during_clock=true;
     sd_append_string(0,"raced stop");
     assert(stop_flag && !line.lock && line.off[0]==before);
+    stop_flag=false; stop_during_clock=false;
+    float raw[]={-32768.0f,0.0f,32767.0f}, converted[]={-2.0f,0.0f,1.999f};
+    sd_append_sensor(1,raw,converted,3);
+    assert(!line.lock && line.off[0]>before);
+    assert(strstr(sdbuf[0],"gyroscope_sample"));
+    before=line.off[0];
+    sd_append_sensor(1,raw,converted,3); /* Same acquisition cadence: no duplicate. */
+    sd_append_sensor(3,raw,converted,3); /* Invalid sensor cannot index timers. */
+    assert(line.off[0]==before);
+    expect_contention=true;
+    sd_append_sensor(2,raw,converted,3);
+    assert(!line.lock && line.off[0]==before && g_sd_lock_contention_drops==3);
     return 0;
 }
 '''

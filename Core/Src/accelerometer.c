@@ -115,7 +115,7 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
     return st;
   }
   if (id != ACCL_CHIP_ID) {
-    log_err("ACCL: CHIP_ID=0x%02X (expected 0x1E)", id);
+    log_err("ACCL: ID %02X, expected 1E", id);
     return HAL_ERROR;
   }
 

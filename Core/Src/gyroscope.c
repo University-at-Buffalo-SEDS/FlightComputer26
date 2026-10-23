@@ -108,7 +108,7 @@ gyro_init(SPI_HandleTypeDef *hspi, const struct gyro_config *conf)
     return st;
   }
   if (id != GYRO_CHIP_ID_VALUE) {
-      log_err("GYRO: CHIP_ID=0x%02X (expected 0x0F)", id);
+      log_err("GYRO: ID %02X, expected 0F", id);
       return HAL_ERROR;
   }
 

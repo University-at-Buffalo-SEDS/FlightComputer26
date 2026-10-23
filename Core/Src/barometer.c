@@ -682,6 +682,12 @@ HAL_StatusTypeDef baro_try_fetch_temp(SPI_HandleTypeDef *hspi, float *temp_c) {
 
 /* ------ Initialization ------ */
 
+static __attribute__((noinline)) HAL_StatusTypeDef baro_init_failed(const char *operation)
+{
+  log_err("BARO: %s failed", operation);
+  return HAL_ERROR;
+}
+
 /*
  * Initializes barometer with specified parameters.
  * OSR, ODR, and IIR values can be found in barometer.h.
@@ -699,8 +705,7 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
  
   st = baro_write_reg(hspi, BARO_CMD, &cmd, 1);
   if (st != HAL_OK) {
-    log_err("BARO: failed to issue soft reset");
-    return HAL_ERROR;
+    return baro_init_failed("reset");
   }
 
   HAL_Delay(BARO_RESET_DELAY_MS);
@@ -713,12 +718,11 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
 
   st = baro_read_u8(hspi, BARO_CHIP_ID, &val);
   if (st != HAL_OK) {
-    log_err("BARO: failed to read CHIP_ID");
-    return HAL_ERROR;
+    return baro_init_failed("ID read");
   }
 
   if (val != BARO_CHIP_ID_VALUE) {
-    log_err("BARO: CHIP_ID=0x%02X (expected 0x60)", val);
+    log_err("BARO: ID %02X, expected 60", val);
     return HAL_ERROR;
   }
 
@@ -734,8 +738,7 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
 
   st = baro_write_u8(hspi, BARO_PWR_CTRL, BARO_PWR_ENABLE_SENSORS);
   if (st != HAL_OK) {
-    log_err("BARO: failed to enable sensors");
-    return HAL_ERROR;
+    return baro_init_failed("enable");
   }
 
   HAL_Delay(BARO_ENABLE_DELAY_MS);
@@ -768,14 +771,12 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
   /* Oversampling and data rates (C-f OSR / ODR) */
   st = baro_write_u8(hspi, BARO_OSR, baro_osr_make(valid.osr_t, valid.osr_p));
   if (st != HAL_OK) {
-    log_err("BARO: failed to write OSR");
-    return HAL_ERROR;
+    return baro_init_failed("OSR");
   }
 
   st = baro_write_u8(hspi, BARO_ODR, valid.odr);
   if (st != HAL_OK) {
-    log_err("BARO: failed to write ODR");
-    return HAL_ERROR;
+    return baro_init_failed("ODR");
   }
 
   HAL_Delay(BARO_ENABLE_DELAY_MS);
@@ -783,15 +784,13 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
   /* IIR filter coefficient */
   st = baro_write_u8(hspi, BARO_CONFIG, valid.iir_coef);
   if (st != HAL_OK) {
-    log_err("BARO: failed to write IIR coef");
-    return HAL_ERROR;
+    return baro_init_failed("IIR");
   }
 
   /* EXTI */
   st = baro_write_u8(hspi, BARO_INT_CTRL, BARO_INT_CTRL_VAL);
   if (st != HAL_OK) {
-    log_err("BARO: failed to write INT conf");
-    return HAL_ERROR;
+    return baro_init_failed("INT");
   }
 
   HAL_Delay(BARO_ENABLE_DELAY_MS);
@@ -805,8 +804,8 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
     baro_read_u8(hspi, BARO_STATUS, &status);
     baro_read_u8(hspi, BARO_ERR_REG, &err);
 
-    log_err("BARO: Could not enter normal mode.\n"
-            "PWR_CTRL=0x%02X STATUS=0x%02X ERR=0x%02X",
+    log_err("BARO: normal mode failed.\n"
+            "PWR=%02X STATUS=%02X ERR=%02X",
             pwr, status, err);
     return HAL_ERROR;
   }
@@ -814,8 +813,7 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
   /* Read calibration parameters from barometer registers */
   st = read_trim_pars(hspi);
   if (st != HAL_OK) {
-    log_err("BARO: failed to read calibration params");
-    return HAL_ERROR;
+    return baro_init_failed("calibration read");
   }
 
   /* Cached samples from before the reset are no longer meaningful */

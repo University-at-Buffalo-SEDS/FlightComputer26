@@ -7,16 +7,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 set(SEDSNET_FORCE_RELEASE ON CACHE BOOL
     "Build SEDSNet in release mode for embedded firmware" FORCE)
 set(SEDSNET_EMBEDDED_BUILD ON CACHE BOOL "Build SEDSNet for an embedded target" FORCE)
-# Match the H523 CPU instead of generic ARMv8-M code generation.
-set(SEDSNET_ENV_RUSTFLAGS "-C target-cpu=cortex-m33" CACHE STRING "Rust code generation flags")
-# A small inlining budget exposes constant call-site arguments without the
-# code growth of higher thresholds. Measured with the complete arena/TLSF
-# factory image on GCC 13/macOS and GCC 14/Linux; keep explicit user overrides.
-if(NOT SEDSNET_ENV_RUSTFLAGS MATCHES "inline-threshold=")
-    string(APPEND SEDSNET_ENV_RUSTFLAGS " -Cllvm-args=-inline-threshold=20")
-    set(SEDSNET_ENV_RUSTFLAGS "${SEDSNET_ENV_RUSTFLAGS}" CACHE STRING
-        "Rust code generation flags" FORCE)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/sedsnet_codegen.cmake")
 
 set(SEDSNET_ENABLE_CRYPTOGRAPHY OFF CACHE BOOL
     "Keep the current unencrypted embedded transport" FORCE)

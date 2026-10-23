@@ -23,6 +23,7 @@ bool try_fetch_accl(f_xyz *);
 
 void sd_pipeline_task(void);
 void sd_append_f32(SedsDataType, const float *, fu8);
+void sd_append_sensor(unsigned sensor, const float *raw, const float *converted, fu8 count);
 void sd_append_string(SedsDataType, const char *);
 void sd_conclude(void);
 

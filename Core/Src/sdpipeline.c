@@ -125,87 +125,67 @@ static inline char *unique_sd_filename(uint32_t suffix)
 
 /* API */
 
+/* All producers share one bounded append path. Clock queries precede the
+ * SD lock; a preempted writer never makes a producer spin. */
+#if defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static void sd_append_ready(const char *sensor, const char *value,
+                            const char *raw, uint64_t uptime)
+{
+    const uint64_t current_network_ms = telemetry_unix_ms();
+    const uint64_t age = board_uptime_ticks() - uptime;
+    const uint64_t network_ms = current_network_ms > age ? current_network_ms - age : 0U;
+    if (!fc_trylock(&line.lock)) { ++g_sd_lock_contention_drops; return; }
+    /* Conclude may race the pre-lock check. */
+    if (load(&g_conf, Acq) & option(SD_Pipeline_Reset)) {
+        fc_concede(&line.lock); return;
+    }
+    char *off = sdbuf[line.cur] + line.off[line.cur];
+    fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
+    int written = sd_format_csv_common(off, rem, network_ms, uptime,
+        sensor, value, raw, ++sd_csv_sequence);
+    if (written < 0) { g_sd_format_errors++; fc_concede(&line.lock); return; }
+    sd_release_notify(written, rem);
+}
+
 void sd_append_f32(SedsDataType ty, const float *data, fu8 count)
 {
     if (!data || count == 0 ||
-            (load(&g_conf, Acq) & option(SD_Pipeline_Reset)))
-    {
-        return;
-    }
-
+        (load(&g_conf, Acq) & option(SD_Pipeline_Reset))) return;
     if (!sd_accepting) { ++g_sd_unavailable_drops; return; }
-
     char buf[F32_TO_STR_MAX_SIZE];
-    if (seds_ftoa4(buf, sizeof(buf), data, count) < 0)
-    {
-        g_sd_format_errors++;
-        return;
+    if (seds_ftoa4(buf, sizeof(buf), data, count) < 0) {
+        g_sd_format_errors++; return;
     }
+    sd_append_ready(seds_f32(ty), buf, NULL, board_uptime_ticks());
+}
 
-    /* SEDSNet's embedded clock query takes telemetry_mu. Never acquire it
-     * while holding the SD buffer lock: network callbacks can log to SD while
-     * already holding telemetry_mu. Capture both timestamps first. */
-    const uint64_t network_ms = telemetry_unix_ms();
+/* Called by the acquisition consumer, never the DMA interrupt. Independent
+ * per-sensor SD cadence does not consume the existing IMU/barometer timers. */
+void sd_append_sensor(unsigned sensor, const float *raw, const float *converted, fu8 count)
+{
+    static uint32_t last_ms[3];
+    static const char *const names[3] = {"barometer_sample", "gyroscope_sample", "accelerometer_sample"};
+    if (sensor >= 3U || !raw || !converted || count == 0U || count > 3U ||
+        (load(&g_conf, Acq) & option(SD_Pipeline_Reset))) return;
     const uint64_t uptime = board_uptime_ticks();
-    /* A high-priority callback must not spin on a preempted SD writer. Keep
-     * flight/network work live; expose a dropped log record instead. */
-    if (!fc_trylock(&line.lock))
-    {
-        g_sd_lock_contention_drops++;
-        return;
+    if ((uint32_t)((uint32_t)uptime - last_ms[sensor]) < rates.sd) return;
+    last_ms[sensor] = (uint32_t)uptime;
+    if (!sd_accepting) { ++g_sd_unavailable_drops; return; }
+    char raw_text[80], converted_text[80];
+    if (sd_format_vector(raw_text, sizeof(raw_text), raw, count) < 0 ||
+        sd_format_vector(converted_text, sizeof(converted_text), converted, count) < 0) {
+        g_sd_format_errors++; return;
     }
-
-    /* Conclude can race the pre-lock check. No producer may append after the
-     * writer starts draining the final short buffer. */
-    if (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
-    {
-        fc_concede(&line.lock);
-        return;
-    }
-
-    char *off = sdbuf[line.cur] + line.off[line.cur];
-    fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
-
-    const int written = sd_format_csv_record(off, rem, network_ms, uptime,
-                                              seds_f32(ty), buf, ++sd_csv_sequence);
-    if (written < 0) { ++g_sd_format_errors; fc_concede(&line.lock); return; }
-
-    sd_release_notify(written, rem);
+    sd_append_ready(names[sensor], converted_text, raw_text, uptime);
 }
 
 void sd_append_string(SedsDataType ty, const char *str)
 {
-    if (!str || (load(&g_conf, Acq) & option(SD_Pipeline_Reset)))
-    {
-        return;
-    }
-
+    if (!str || (load(&g_conf, Acq) & option(SD_Pipeline_Reset))) return;
     if (!sd_accepting) { ++g_sd_unavailable_drops; return; }
-
-    const uint64_t network_ms = telemetry_unix_ms();
-    const uint64_t uptime = board_uptime_ticks();
-    if (!fc_trylock(&line.lock))
-    {
-        g_sd_lock_contention_drops++;
-        return;
-    }
-
-    /* Conclude can race the pre-lock check. No producer may append after the
-     * writer starts draining the final short buffer. */
-    if (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
-    {
-        fc_concede(&line.lock);
-        return;
-    }
-
-    char *off = sdbuf[line.cur] + line.off[line.cur];
-    fu16 rem = SD_BUFFER_SIZE - line.off[line.cur];
-
-    const int written = sd_format_csv_record(off, rem, network_ms, uptime,
-                                              seds_msg(ty), str, ++sd_csv_sequence);
-    if (written < 0) { ++g_sd_format_errors; fc_concede(&line.lock); return; }
-
-    sd_release_notify(written, rem);
+    sd_append_ready(seds_msg(ty), str, NULL, board_uptime_ticks());
 }
 
 void sd_conclude(void)

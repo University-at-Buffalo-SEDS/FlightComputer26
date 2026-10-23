@@ -22,8 +22,20 @@ while serializing. Loss before serialization must be checked with the queue,
 acquisition and storage counters as well as sequence gaps.
 
 DAQ raw rows populate ADC code, raw/calibrated values and ADC temperature.
-FC leaves those DAQ-specific columns empty and preserves its complete vector
-in the quoted `value` field, separated by spaces. Text values quote commas,
+FC keeps existing text/vector records and also records matched raw codes and
+converted sensor vectors. The latter use `barometer_sample`, `gyroscope_sample`
+and `accelerometer_sample` sensor names. `raw_adc_code` contains the quoted raw
+vector, `raw_value` retains the same raw vector, and `calibrated_value` contains
+the corresponding converted vector, with space-separated elements. `value` also contains the converted
+vector. Barometer order is pressure, temperature, relative altitude: the raw
+altitude element is `nan` because altitude is derived rather than an ADC code.
+Gyroscope and accelerometer order is X, Y, Z; their raw elements are signed
+16-bit sensor codes. Barometer raw pressure and temperature are 24-bit codes.
+These records follow the configured SD cadence (default 50 ms), alongside the
+existing logs, without extra radio traffic. The timestamp is the acquisition consumer uptime before numeric formatting,
+not a hardware interrupt timestamp; formatting and queue delays do not shift it. The ISR never formats CSV or waits for SD.
+Other FC record types leave the DAQ-specific columns empty and preserve their
+complete vector in the quoted `value` field, separated by spaces. Text values quote commas,
 quotes and newlines using CSV escaping; use a CSV parser rather than splitting
 lines or commas. Floats retain nine significant decimal digits. DAQ files also
 contain `# calibration` metadata rows, which readers should handle separately.

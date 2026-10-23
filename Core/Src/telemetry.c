@@ -715,6 +715,29 @@ SedsResult init_telemetry_router(void) {
 #error "FC telemetry payloads require little-endian serialization"
 #endif
 
+#ifdef SEDS_FIRMWARE_SIM_TEST
+/* Observe real producer calls; never manufacture qualification packets.
+ * Keep the same instrumentation in both publication paths without duplicating
+ * its code in the nearly full simulator image. Production builds omit it. */
+static __attribute__((noinline)) void record_sensor_publication(
+    SedsDataType type, SedsResult result) {
+  volatile uint32_t *attempts;
+  volatile uint32_t *ok;
+  if (type == SEDS_DT_BAROMETER_DATA) {
+    attempts = &g_sim_baro_publish_attempts;
+    ok = &g_sim_baro_publish_ok;
+    g_sim_baro_publish_result = result;
+  } else if (type == SEDS_DT_IMU_DATA) {
+    attempts = &g_sim_imu_publish_attempts;
+    ok = &g_sim_imu_publish_ok;
+  } else {
+    return;
+  }
+  ++*attempts;
+  if (result == SEDS_OK) ++*ok;
+}
+#endif
+
 SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
                                      size_t element_count, size_t element_size) {
 #ifdef TELEMETRY_ENABLED
@@ -733,16 +756,7 @@ SedsResult log_telemetry_synchronous(SedsDataType data_type, const void *data,
   const SedsResult result =
       seds_router_log_bytes(g_router.r, data_type, data, element_count * element_size);
 #ifdef SEDS_FIRMWARE_SIM_TEST
-  /* Observe real producer calls; never manufacture qualification packets. */
-  if (data_type == SEDS_DT_BAROMETER_DATA) {
-    g_sim_baro_publish_attempts++;
-    g_sim_baro_publish_result = result;
-    if (result == SEDS_OK) g_sim_baro_publish_ok++;
-  }
-  if (data_type == SEDS_DT_IMU_DATA) {
-    g_sim_imu_publish_attempts++;
-    if (result == SEDS_OK) g_sim_imu_publish_ok++;
-  }
+  record_sensor_publication(data_type, result);
 #endif
   telemetry_unlock();
   return result;
@@ -781,15 +795,7 @@ SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
   const SedsResult result =
       seds_router_log_bytes(g_router.r, data_type, data, element_count * element_size);
 #ifdef SEDS_FIRMWARE_SIM_TEST
-  if (data_type == SEDS_DT_IMU_DATA) {
-    g_sim_imu_publish_attempts++;
-    if (result == SEDS_OK) g_sim_imu_publish_ok++;
-  }
-  if (data_type == SEDS_DT_BAROMETER_DATA) {
-    g_sim_baro_publish_attempts++;
-    g_sim_baro_publish_result = result;
-    if (result == SEDS_OK) g_sim_baro_publish_ok++;
-  }
+  record_sensor_publication(data_type, result);
 #endif
   telemetry_unlock();
   return result;

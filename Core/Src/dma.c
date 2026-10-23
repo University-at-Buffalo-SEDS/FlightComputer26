@@ -8,6 +8,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include <math.h>
 
 #define id "DM "
 
@@ -81,6 +82,16 @@ bool try_fetch_baro(baro *buf)
   buf->prs = baro_compensate_pres(pres);
   buf->alt = baro_relative_alt(buf->prs);
 
+#ifdef SD_AVAILABLE
+  const float raw_sample[] = {(float)pres, (float)temp};
+  /* Converted order is pressure, temperature, relative altitude; the raw
+   * pressure/temperature ADC codes are sufficient to recompute all three. */
+  const float converted_sample[] = {buf->prs, buf->tmp, buf->alt};
+  /* The third raw entry is absent in hardware, not a synthesized ADC code. */
+  const float raw_codes[] = {raw_sample[0], raw_sample[1], NAN};
+  sd_append_sensor(Sensor_Baro, raw_codes, converted_sample, 3U);
+#endif
+
   // led_toggle(LED1_PORT, LED1_PIN);
 
   sweetbench_start(0, 150);
@@ -113,6 +124,11 @@ bool try_fetch_gyro(f_xyz *buf)
   buf->y = gy * inv_sens[init_rng];
   buf->z = gz * inv_sens[init_rng];
 
+#ifdef SD_AVAILABLE
+  const float raw_sample[] = {(float)gx, (float)gy, (float)gz};
+  sd_append_sensor(Sensor_Gyro, raw_sample, &buf->x, 3U);
+#endif
+
   sweetbench_start(1, 150);
 
   return true;
@@ -142,6 +158,11 @@ bool try_fetch_accl(f_xyz *buf)
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
   buf->z = az * lsb_to_g;
+
+#ifdef SD_AVAILABLE
+  const float raw_sample[] = {(float)ax, (float)ay, (float)az};
+  sd_append_sensor(Sensor_Accl, raw_sample, &buf->x, 3U);
+#endif
 
   sweetbench_start(2, 150);
 
