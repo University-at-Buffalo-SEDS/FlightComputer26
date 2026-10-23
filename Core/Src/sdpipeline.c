@@ -133,7 +133,12 @@ __attribute__((noinline))
 static void sd_append_ready(const char *sensor, const char *value,
                             const char *raw, uint64_t uptime)
 {
+#ifdef TELEMETRY_ENABLED
     const uint64_t current_network_ms = telemetry_unix_ms();
+#else
+    /* UTC is unavailable without networking; preserve the independent uptime. */
+    const uint64_t current_network_ms = 0U;
+#endif
     const uint64_t age = board_uptime_ticks() - uptime;
     const uint64_t network_ms = current_network_ms > age ? current_network_ms - age : 0U;
     if (!fc_trylock(&line.lock)) { ++g_sd_lock_contention_drops; return; }

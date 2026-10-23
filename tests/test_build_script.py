@@ -9,6 +9,18 @@ import build
 
 
 class OtaBuildScriptTests(unittest.TestCase):
+    def test_no_telemetry_disables_sdk_but_preserves_local_sd_logging(self):
+        args = build.make_parser().parse_args(["build", "--release", "--no-telemetry"])
+        _, options = build.cli_build_options(args)
+        commands = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(build, "PROJECT", Path(directory)):
+                with mock.patch.object(build, "run", side_effect=commands.append):
+                    build.configure(Path(directory) / "build", "Release", options)
+        self.assertIn("-DENABLE_TELEMETRY=OFF", commands[0])
+        self.assertIn("-DEXTERNAL_GPS=OFF", commands[0])
+        self.assertIn("-DONBOARD_SD=ON", commands[0])
+
     def test_release_builds_disable_debug_usb_by_default(self):
         options = {name: False for name in build.ALL_OPTIONS}
         commands = []

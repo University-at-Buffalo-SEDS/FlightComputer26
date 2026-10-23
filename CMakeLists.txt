@@ -159,7 +159,9 @@ option(ONBOARD_SD       "On-board logger storage"       ON)
 option(ENABLE_BOARD_WATCHDOG "Board-owned hardware watchdog and FC flight recovery" ON)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/board_watchdog.c Core/Src/fc_watchdog_recovery.c)
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/board_health.c)
+if(ENABLE_TELEMETRY)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/board_health.c)
+endif()
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     BOARD_WATCHDOG_ENABLE=$<BOOL:${ENABLE_BOARD_WATCHDOG}>)
 
