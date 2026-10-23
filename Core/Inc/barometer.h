@@ -87,6 +87,7 @@
 #define BARO_ENABLE_DELAY_MS 5u
 
 // STATUS bits (0x03)
+#define BARO_STATUS_CMD_RDY     (1u << 4)
 #define BARO_STATUS_TEMP_DRDY   (1u << 6)
 #define BARO_STATUS_PRESS_DRDY  (1u << 5)
 #define BARO_STATUS_BOTH_DRDY                                       \
@@ -162,10 +163,16 @@ enum baro_iir_coef : uint8_t {
 /* 0100 0010 : INT active high data ready */
 #define BARO_INT_CTRL_VAL 0x42
 
-// Valid pressure sanity range (Pa)
+// Ground-baseline sanity range (Pa): used only when capturing p0 on the pad
 #define BARO_MIN_PA 70000.0f
 #define BARO_MAX_PA 110000.0f
-
+ 
+// BMP390 measurement range (Pa): used to reject garbage samples in flight.
+// Much wider than the baseline range because apogee pressure is far below
+// pad pressure.
+#define BARO_SENSOR_MIN_PA 30000.0f
+#define BARO_SENSOR_MAX_PA 125000.0f
+ 
 // Altitude to pressure compression constant
 #define ALT_PRES_CONST 44330.0f
 #define INV_PRES_CONST (1.0f / ALT_PRES_CONST)
@@ -176,19 +183,25 @@ enum baro_iir_coef : uint8_t {
 #define INV_HYPSOMETRIC_EXPONENT    (1.0f / BARO_HYPSOMETRIC_EXPONENT)
 
 // Tunables to prevent drift
-
-// +/- band around 0 m to avoid chattering
-#define BARO_HYST_DEADBAND 0.5f 
-// recalibrate every ~5 m from the last baseline
-#define BARO_RESET_STEP_M 5.0f
+//
+// While the vehicle is "still" (altitude stays within BARO_STILL_BAND_M for
+// BARO_STILL_TIME_MS), within BARO_GROUND_BAND_M of 0 m, and not flagged
+// in-flight, the altitude zero is low-passed toward the current reading with
+// time constant BARO_GROUND_TAU_MS.
+ 
+#define BARO_STILL_BAND_M   0.15f     // Altitude window that counts as "not moving" (m). Keep above altitude noise
+#define BARO_STILL_TIME_MS  3000u     // How long altitude must stay inside the still window before tracking (ms)
+#define BARO_GROUND_BAND_M  0.5f      // Ground tracking only applies within +/- this band around 0 m (m)
+#define BARO_GROUND_TAU_MS  20000u    // Time constant for pulling the zero toward the current reading (ms)
+#define BARO_MAX_DT_MS      1000u     // A gap between altitude updates longer than this restarts the still window
 
 // Size of one DMA record
 #define BARO_DMA_BUF_SIZE 8
 
 // Condition to check if normal mode was entered
 #define is_in_normal_mode(rb)                                     \
-  (((rb) & BARO_PWR_MODE_MASK) == BARO_PWR_MODE_NORMAL) &&        \
-  (((rb) & BARO_PWR_ENABLE_SENSORS) == BARO_PWR_ENABLE_SENSORS)
+  ((((rb) & BARO_PWR_MODE_MASK) == BARO_PWR_MODE_NORMAL) &&       \
+   (((rb) & BARO_PWR_ENABLE_SENSORS) == BARO_PWR_ENABLE_SENSORS))
 
 
 // ==============================
@@ -220,8 +233,14 @@ struct baro_config {
 float baro_compensate_temp(uint32_t uncomp_temp);
 float baro_compensate_pres(uint32_t uncomp_press);
 
+/* Altitude above the pad. Call once per NEW pressure sample. */
 float baro_relative_alt(float pressure);
 float baro_get_alt(SPI_HandleTypeDef *hspi);
+
+/* Drift control */
+void baro_correct_altitude(float known_alt_m, float weight);
+void baro_set_in_flight(uint8_t flying);
+uint8_t baro_sample_was_fresh(void);
 
 /* Public synchronous getters */
 HAL_StatusTypeDef baro_fetch_temp(SPI_HandleTypeDef *hspi, float *temperature_c);
