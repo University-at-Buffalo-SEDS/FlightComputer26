@@ -94,19 +94,32 @@ int main(void) {
     float value=1.0f;
     sd_append_f32(0,&value,1);
     sd_append_string(0,"callback");
-    assert(clock_calls==2 && !line.lock);
+    assert(!line.lock);
+#ifdef TELEMETRY_ENABLED
+    assert(clock_calls==2);
     assert(strstr(sdbuf[0],"123000,456,IMU,\"1.0\",\"\",\"\",\"\",network,,,456,1000,1"));
     assert(strstr(sdbuf[0],"123000,456,Message,\"callback\",\"\",\"\",\"\",network,,,456,1000,2"));
+#else
+    assert(clock_calls==0);
+    assert(strstr(sdbuf[0],"456,456,IMU,\"1.0\",\"\",\"\",\"\",local,,,456,1000,1"));
+    assert(strstr(sdbuf[0],"456,456,Message,\"callback\",\"\",\"\",\"\",local,,,456,1000,2"));
+#endif
     fu16 before=line.off[0]; expect_contention=true;
     sd_append_f32(0,&value,1); sd_append_string(0,"busy");
     assert(line.off[0]==before && g_sd_lock_contention_drops==2);
     expect_contention=false; sd_accepting=false;
     sd_append_f32(0,&value,1); sd_append_string(0,"not ready");
-    assert(line.off[0]==before && g_sd_unavailable_drops==2 && clock_calls==4);
+    assert(line.off[0]==before && g_sd_unavailable_drops==2);
+#ifdef TELEMETRY_ENABLED
+    assert(clock_calls==4);
     sd_accepting=true; stop_during_clock=true;
     sd_append_string(0,"raced stop");
     assert(stop_flag && !line.lock && line.off[0]==before);
     stop_flag=false; stop_during_clock=false;
+#else
+    assert(clock_calls==0);
+    sd_accepting=true;
+#endif
     float raw[]={-32768.0f,0.0f,32767.0f}, converted[]={-2.0f,0.0f,1.999f};
     sd_append_sensor(1,raw,converted,3);
     assert(!line.lock && line.off[0]>before);
@@ -123,9 +136,13 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory() as directory:
             binary = pathlib.Path(directory) / "lock-order"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "Core/Inc"), "-x", "c", "-", "-o", str(binary)],
-                           input=harness, text=True, check=True)
-            subprocess.run([str(binary)], check=True)
+            for telemetry in (True, False):
+                with self.subTest(telemetry=telemetry):
+                    defines = ["-DTELEMETRY_ENABLED"] if telemetry else []
+                    subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", *defines,
+                                    "-I", str(ROOT / "Core/Inc"), "-x", "c", "-", "-o", str(binary)],
+                                   input=harness, text=True, check=True)
+                    subprocess.run([str(binary)], check=True)
 
 
 if __name__ == "__main__":
