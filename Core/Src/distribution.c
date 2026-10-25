@@ -3,6 +3,9 @@
 #include "platform.h"
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
+#ifdef TELEMETRY_ENABLED
+#include "flight_state_cache.h"
+#endif
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -345,17 +348,35 @@ update_ascent_biases(const uint8_t *data, size_t len)
 static inline SedsResult
 implicit_postinit(const uint8_t *data, size_t len)
 {
-  if (len != sizeof(uint8_t))
+  static bool armed_postinit_pending;
+  if (data == NULL || len != sizeof(uint8_t) || *data > G_Aborted)
   {
-    return SEDS_ERR;
+    return SEDS_HANDLER_ERROR;
   }
-  else if (*data == G_Armed)
+  if (*data != G_Armed)
+  {
+    armed_postinit_pending = false;
+  }
+  else if (!armed_postinit_pending && current() < Postinit &&
+           !(g_conf & option(Postinit_Requested)))
   {
     fc_msg post = fc_mask(Postinit_Signal);
-    tx_queue_send(&seds_syscall, &post, TX_NO_WAIT);
+    if (tx_queue_send(&seds_syscall, &post, TX_NO_WAIT) != TX_SUCCESS)
+      return SEDS_IO;
+    armed_postinit_pending = true;
   }
 
   return SEDS_OK;
+}
+
+/* Managed FLIGHT_STATE updates are delivered through this callback, even when
+ * their schema endpoints do not include FLIGHT_CONTROLLER. Acknowledge only
+ * after the recovery queue has accepted the intended Postinit request. */
+SedsResult flight_state_cache_apply_network_update(const SedsPacketView *packet)
+{
+  if (packet == NULL || packet->ty != SEDS_DT_FLIGHT_STATE)
+    return SEDS_HANDLER_ERROR;
+  return implicit_postinit(packet->payload, packet->payload_len);
 }
 
 static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
