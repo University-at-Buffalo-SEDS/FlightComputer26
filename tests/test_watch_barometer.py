@@ -3,6 +3,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 from pathlib import Path
 import struct
@@ -98,30 +99,40 @@ class BaroscopeTests(unittest.TestCase):
                     return [data[:-1]+b'!' if self.mismatch else data]
             p=Probe();self.assertEqual(fw.verify(p),20);p.mismatch=True
             with self.assertRaisesRegex(ValueError,'Firmware mismatch'):fw.verify(p)
-    def test_cli_uses_only_hotplug_uploads_and_probe_serial(self):
+    def test_cli_reads_core_ap_without_reset_halt_or_flash_hooks(self):
         calls=[]
         def run(command,**kwargs):
             calls.append(command)
-            i=command.index('-u');Path(command[i+3]).write_bytes(b'1234')
+            for c in command:
+                if c.startswith('dump_image '):Path(shlex.split(c)[1]).write_bytes(b'1234')
             return types.SimpleNamespace(returncode=0)
-        probe=scope.CubeProbe('fake-cli','TEST_SERIAL',runner=run)
+        probe=scope.OpenOCDProbe('fake-cli','TESTSERIAL',runner=run)
         self.assertEqual(probe.read_blocks([(0x20000100,4)]),[b'1234'])
-        self.assertIn('mode=HOTPLUG',calls[0]);self.assertIn('sn=TEST_SERIAL',calls[0])
-        self.assertFalse(any(x in calls[0] for x in ['-halt','-run','-rst','-w','-w32','reset=HWrst','shared']))
+        commands=calls[0][2::2]
+        self.assertIn('adapter serial TESTSERIAL',commands)
+        self.assertIn('target create fc.cpu cortex_m -dap fc.dap -ap-num 1',commands)
+        self.assertEqual(commands[-1],'shutdown')
+        self.assertFalse(any(re.search(r'\b(reset|halt|resume|mww|mwh|mwb|flash)\b',c) for c in commands))
+        self.assertFalse(any('board/' in c or 'target/' in c for c in commands))
+    def test_serial_cannot_inject_tcl_commands(self):
+        with self.assertRaisesRegex(ValueError,'Invalid ST-Link serial'):
+            scope.OpenOCDProbe('fake','123;reset run')
     def test_short_read_busy_and_timeout_never_retry_with_reset(self):
         for mode in ('short','busy','timeout'):
             calls=[]
             def run(command,**_):
                 calls.append(command)
                 if mode=='timeout':raise subprocess.TimeoutExpired(command,1)
-                if mode=='short':Path(command[-1]).write_bytes(b'x')
+                if mode=='short':
+                    for c in command:
+                        if c.startswith('dump_image '):Path(shlex.split(c)[1]).write_bytes(b'x')
                 return types.SimpleNamespace(returncode=1 if mode=='busy' else 0)
-            with self.assertRaises(RuntimeError):scope.CubeProbe('fake','TEST',runner=run).read_blocks([(0x20000100,4)])
+            with self.assertRaises(RuntimeError):scope.OpenOCDProbe('fake','TEST',runner=run).read_blocks([(0x20000100,4)])
             self.assertEqual(len(calls),1)
     def test_snapshot_allows_clock_and_imu_progress_rejects_torn_baro_and_halt(self):
         fw=types.SimpleNamespace(resolved={'meas':scope.Symbol(0x20000100,48),'uwTick':scope.Symbol(0x20000200,4),'last_tick':scope.Symbol(0x20000204,4)})
         for mode in ('good','torn','halt'):
-            p=scope.CubeProbe('unused','TEST')
+            p=scope.OpenOCDProbe('unused','TEST')
             def read(requests):
                 result=[];half=len(requests)//2
                 for i,(addr,size) in enumerate(requests):
@@ -147,9 +158,60 @@ class BaroscopeTests(unittest.TestCase):
         self.assertEqual(d['altitude_m'],1.25)
         self.assertEqual(d['before_bias_altitude_m'],1.5)
         self.assertAlmostEqual(d['predicted_velocity_m_s'],.1)
+    def test_continuous_acquisition_between_uploads_keeps_monitoring(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE',resolved={
+            'meas':scope.Symbol(0x20000100,48),
+            'last_tick':scope.Symbol(0x20000140,4),
+            'alt_bias':scope.Symbol(0x20000144,4),
+            'uwTick':scope.Symbol(0x20000200,4)})
+        probe=scope.OpenOCDProbe('unused','TEST')
+        sample=0
+        def read(requests):
+            nonlocal sample
+            result=[]
+            half=len(requests)//2
+            for i,(addr,size) in enumerate(requests):
+                tick=10000+sample*1000+(20 if i>=half else 0)
+                v=values(tick=tick,last=tick-1)
+                m=bytearray(v['meas'])
+                struct.pack_into('<f',m,16,100000.+sample+(1 if i>=half else 0))
+                v['meas']=m
+                v['alt_bias']=struct.pack('<f',tick/100000.)
+                data=bytearray(size)
+                for name,sym in fw.resolved.items():
+                    if addr<=sym.address and sym.address+sym.size<=addr+size:
+                        offset=sym.address-addr
+                        data[offset:offset+sym.size]=v[name]
+                result.append(bytes(data))
+            sample+=1
+            return result
+        probe.read_blocks=read
+        monitor=scope.Scope(fw,probe,1,10)
+        for _ in range(5):monitor.sample()
+        self.assertEqual(len(monitor.rows),5)
+        self.assertEqual([r['pressure_pa'] for r in monitor.rows],
+                         [100001.,100002.,100003.,100004.,100005.])
+        self.assertEqual([r['sample_tick_ms'] for r in monitor.rows],
+                         [10019,11019,12019,13019,14019])
+        self.assertTrue(all(not r['stale'] for r in monitor.rows))
+        self.assertFalse(monitor.stop.is_set())
     def test_invalid_measurement_is_not_published(self):
         v=values();v['meas']=bytes(48)
         with self.assertRaises(RuntimeError):scope.decode(v)
+    def test_inconsistent_read_retries_are_bounded_and_can_recover(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE')
+        probe=types.SimpleNamespace(snapshot=None)
+        monitor=scope.Scope(fw,probe,1,10)
+        with patch.object(probe,'snapshot',side_effect=[
+                scope.InconsistentRead('changing'),values()]) as read:
+            monitor.sample()
+            self.assertEqual(read.call_count,2)
+            self.assertFalse(monitor.latest['stale'])
+            self.assertEqual(len(monitor.rows),1)
+        with patch.object(probe,'snapshot',side_effect=scope.InconsistentRead('changing')) as read:
+            monitor.sample()
+            self.assertEqual(read.call_count,3)
+            self.assertTrue(monitor.latest['stale'])
         v=values();m=bytearray(v['meas']);struct.pack_into('<f',m,16,math.nan);v['meas']=m
         with self.assertRaises(RuntimeError):scope.decode(v)
     def test_scope_staleness_reset_history_bounds_and_error_gap(self):
