@@ -260,9 +260,19 @@ void dma_entry(ULONG _)
 {
   fu16 drdy_snapshot;
   fu16 relv_snapshot;
+  bool baro_level_seen = false;
 
   MrAnalog (WE_ARE_SO_BACK)
   {
+    /* Recover a high DRDY missed while EXTI was being enabled. Observe each
+     * high period once: BMP390 non-latched DRDY stays high for 2.5ms even
+     * after a data read, so repeatedly polling high would duplicate samples. */
+    bool baro_high = HAL_GPIO_ReadPin(BARO_EXTI_GPIO_Port, BARO_EXTI_Pin) == GPIO_PIN_SET;
+    if (baro_high && !baro_level_seen)
+    {
+      fetch_or(&flags.drdy, DMA_BARO_MASK, Rel);
+    }
+    baro_level_seen = baro_high;
     drdy_snapshot = load(&flags.drdy, Acq);
 
     if (load(&g_conf, Acq) & option(Using_Ascent_KF))

@@ -606,6 +606,19 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   sweetbench_start(8);
 
+  /* Sensor acquisition/publication must not depend on an IMU prediction
+   * completing. A missing IMU must not freeze otherwise healthy barometry. */
+  baro live_baro;
+  if (try_fetch_baro(&live_baro) && validate_baro(&live_baro, conf))
+  {
+    fc_lock(&meas_locks[Baro]);
+    meas.baro = live_baro;
+    fc_concede(&meas_locks[Baro]);
+    /* Retain the update for the evaluator's next barometer stage. */
+    tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
+    maybe_log_measm(Baro, &meas.baro);
+  }
+
   if (try_fetch_gyro(&suspect_gyro) && validate_gyro(&suspect_gyro, conf))
   {
     accum_gyro = suspect_gyro;
@@ -756,11 +769,23 @@ static inline void post_initialization(void)
         ++accl_ctr;
       }
     }
+    /* Postinit collects acceleration biases without stopping live pressure. */
+    if (try_fetch_baro(&meas.baro))
+    {
+      validate_baro(&meas.baro, conf);
+      maybe_log_measm(Baro, &meas.baro);
+    }
     watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
 
     tx_thread_relinquish();
   }
 
+  if (accl_ctr == 0U)
+  {
+    fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
+    message(id "postinit failed: no acceleration samples; telemetry continues", true);
+    return;
+  }
   accl_acc.x /= accl_ctr;
   accl_acc.y /= accl_ctr;
   accl_acc.z /= accl_ctr;
@@ -801,6 +826,10 @@ static inline void fill_sequence_states(void)
   MrAnalog (beyond(Startup) && (conf & option(Launch_Requested)));
 
   MrAnalog (request_ignition() == SEDS_OK) {
+    if (try_fetch_baro(&meas.baro))
+    {
+      maybe_log_measm(Baro, &meas.baro);
+    }
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     tx_thread_sleep(1U);
   }

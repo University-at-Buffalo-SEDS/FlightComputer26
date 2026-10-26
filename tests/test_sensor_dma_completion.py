@@ -9,6 +9,40 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SensorDmaCompletion(unittest.TestCase):
+    def test_missed_drdy_level_recovers_once_without_duplicate_reads(self):
+        source = (ROOT / 'Core/Src/dma.c').read_text()
+        start = source.index('    bool baro_high =')
+        end = source.index('    drdy_snapshot =', start)
+        production = source[start:end]
+        harness = r'''
+#include <assert.h>
+#include <stdbool.h>
+enum {BARO_EXTI_GPIO_Port=0,BARO_EXTI_Pin=0,GPIO_PIN_SET=1,DMA_BARO_MASK=4,Rel=0};
+static struct {unsigned drdy;} flags;
+static bool baro_level_seen;
+static int pin;
+static int HAL_GPIO_ReadPin(int port,int number){(void)port;(void)number;return pin;}
+static void fetch_or(unsigned *target,unsigned mask,int order){(void)order;*target|=mask;}
+static void poll(void){
+''' + production + r'''
+}
+int main(void){
+ pin=1;flags.drdy=8;poll();assert(flags.drdy==12);
+ flags.drdy=8; /* DMA consumed the pending barometer sample. */
+ for(int i=0;i<100;i++){poll();assert(flags.drdy==8);}
+ pin=0;poll();assert(flags.drdy==8);
+ pin=1;poll();assert(flags.drdy==12);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'test.c').write_text(harness)
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall',
+                            '-Wextra', '-Werror', str(path / 'test.c'), '-o',
+                            str(path / 'test')], check=True)
+            subprocess.run([str(path / 'test')], check=True)
+
     def test_completion_is_retained_before_wait_and_errors_are_bounded(self):
         source = (ROOT / "Core/Src/dma.c").read_text()
         callbacks = source[source.index("void HAL_SPI_TxRxCpltCallback"):
