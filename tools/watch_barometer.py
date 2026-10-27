@@ -12,11 +12,13 @@ import math
 from pathlib import Path
 import re
 import shutil
+import socket
 import struct
 import subprocess
 import tempfile
 import threading
 import time
+from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
 FLASH = (0x08000000, 0x08080000)
@@ -135,47 +137,118 @@ class InconsistentRead(RuntimeError):
     pass
 
 class OpenOCDProbe:
-    def __init__(self, executable, serial, frequency=1000, timeout=15, runner=subprocess.run):
+    def __init__(self, executable, serial, frequency=1000, timeout=15):
         if not re.fullmatch(r'[A-Za-z0-9]+',serial):
             raise ValueError('Invalid ST-Link serial number')
         self.executable, self.serial = executable, serial
-        self.frequency, self.timeout, self.runner = frequency, timeout, runner
+        self.frequency, self.timeout = frequency, timeout
+        self.process=None;self.connection=None;self.directory=None;self.log=None
 
-    def read_blocks(self, blocks):
-        with tempfile.TemporaryDirectory(prefix='fc-baroscope-read-') as tmp:
-            # Generic Cortex-M33 RAM access needs no STM32H5 flash driver.
-            # AP1 is the H523 core; AP0 is the debug-authentication interface.
-            # Never load a board config with reset/init or flash-loader hooks.
-            commands = ['source [find interface/stlink-dap.cfg]',
+    def commands(self):
+        # AP1 is the H523 core; AP0 is debug authentication. No board/flash
+        # hooks, halt/reset commands, or externally accessible debug servers.
+        return ['source [find interface/stlink-dap.cfg]',
                         'transport select dapdirect_swd',f'adapter serial {self.serial}',
                         f'adapter speed {self.frequency}',
                         'swd newdap fc cpu -expected-id 0x6ba02477',
                         'dap create fc.dap -chain-position fc.cpu',
                         'target create fc.cpu cortex_m -dap fc.dap -ap-num 1',
-                        'gdb_port disabled','telnet_port disabled','tcl_port disabled','init']
-            paths = []
-            for i,(address,size) in enumerate(blocks):
-                if size <= 0 or size > 2*1024*1024:
-                    raise ValueError('Invalid bounded memory read size')
-                path = Path(tmp)/f'{i}.bin'
-                paths.append(path)
-                # Quote Tcl metacharacters even when TMPDIR contains spaces.
-                quoted='"'+re.sub(r'([\\"$\[\]])',r'\\\1',str(path))+'"'
-                commands.append(f'dump_image {quoted} {hex(address)} {size}')
-            commands.append('shutdown')
+                        'bindto 127.0.0.1','gdb_port disabled','telnet_port disabled',
+                        'tcl_port 0','init','poll off']
+
+    def connect(self):
+        if self.connection is not None:return
+        try:
+            self.directory=tempfile.TemporaryDirectory(prefix='fc-baroscope-openocd-')
+            path=Path(self.directory.name)/'openocd.log'
+            self.log=path.open('w')
             command=[self.executable]
-            for c in commands:command+=['-c',c]
-            try:
-                result = self.runner(command, capture_output=True, text=True, timeout=self.timeout)
-            except subprocess.TimeoutExpired as e:
-                raise RuntimeError('ST-Link read timed out; probe may be busy/disconnected. No takeover/reset attempted.') from e
-            if result.returncode or any(not p.exists() for p in paths):
-                # Avoid forwarding arbitrary third-party diagnostic output into logs.
-                raise RuntimeError('ST-Link read failed: check power, SWD wiring, selected probe, or another debugger. No reset/takeover attempted.')
-            values = [p.read_bytes() for p in paths]
-            if any(len(value) != size for value,(_,size) in zip(values,blocks)):
-                raise RuntimeError('Short ST-Link read; sample discarded')
+            for c in self.commands():command+=['-c',c]
+            self.process=subprocess.Popen(command,stdin=subprocess.DEVNULL,
+                                          stdout=self.log,stderr=self.log)
+            deadline=time.monotonic()+self.timeout
+            while time.monotonic()<deadline:
+                if self.process.poll() is not None:break
+                match=re.search(r'Listening on port (\d+) for tcl connections',path.read_text())
+                if match:
+                    self.connection=socket.create_connection(('127.0.0.1',int(match[1])),timeout=self.timeout)
+                    self.connection.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,1)
+                    return
+                time.sleep(.02)
+            raise RuntimeError('ST-Link connection failed: check power, selected probe, or another debugger. No reset/takeover attempted.')
+        except BaseException:
+            self.close();raise
+
+    def close(self):
+        if self.connection is not None:
+            self.connection.close();self.connection=None
+        if self.process is not None:
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:self.process.kill();self.process.wait()
+            self.process=None
+        if self.log is not None:self.log.close();self.log=None
+        if self.directory is not None:self.directory.cleanup();self.directory=None
+
+    def request(self, command):
+        self.connect()
+        try:
+            # Catch Tcl failures explicitly; the RPC protocol itself carries no
+            # error status. One framed response serves the entire sample batch.
+            script='if {[catch {'+command+'} fc_result]} {format "ERROR:%s" $fc_result} else {format "OK:%s" $fc_result}'
+            self.connection.sendall(script.encode()+b'\x1a')
+            response=bytearray()
+            while not response.endswith(b'\x1a'):
+                chunk=self.connection.recv(65536)
+                if not chunk:raise RuntimeError('ST-Link session disconnected')
+                response.extend(chunk)
+                if len(response)>32*1024*1024:raise RuntimeError('Oversized ST-Link response')
+            value=response[:-1].decode().strip()
+            if value.startswith('ERROR:'):raise RuntimeError('OpenOCD read failed: '+value[6:200])
+            if not value.startswith('OK:'):raise RuntimeError('ST-Link memory read failed; sample discarded')
+            return value[3:]
+        except RuntimeError:
+            self.close();raise
+        except (OSError,UnicodeError):
+            self.close();raise RuntimeError('ST-Link read failed or timed out; sample discarded. No reset/takeover attempted.')
+
+    def read_blocks(self, blocks):
+        if not blocks:return []
+        if any(size<=0 or size>2*1024*1024 for _,size in blocks):
+            raise ValueError('Invalid bounded memory read size')
+        if sum(size for _,size in blocks)>4096:
+            # Startup flash verification stays on OpenOCD's binary dump path:
+            # older RPC servers cannot reliably send a huge Tcl response. Live
+            # RAM snapshots use the small in-memory RPC path below, no files.
+            with tempfile.TemporaryDirectory(prefix='fc-baroscope-verify-') as tmp:
+                commands=[];paths=[]
+                for i,(address,size) in enumerate(blocks):
+                    path=Path(tmp)/f'{i}.bin';paths.append(path)
+                    quoted='"'+re.sub(r'([\\"$\[\]])',r'\\\1',str(path))+'"'
+                    commands.append(f'dump_image {quoted} {hex(address)} {size}')
+                self.request('; '.join(commands)+'; set fc_dumped 1')
+                values=[path.read_bytes() for path in paths]
+                if any(len(data)!=size for data,(_,size) in zip(values,blocks)):
+                    raise RuntimeError('Short ST-Link flash read')
+                return values
+        commands=[];widths=[]
+        for address,size in blocks:
+            width=32 if address%4==0 and size%4==0 else 8
+            widths.append(width)
+            commands.append(f'lappend fc_blocks [read_memory {hex(address)} {width} {size//(width//8)}]')
+        result=self.request('set fc_blocks {}; '+'; '.join(commands)+'; join $fc_blocks "|"')
+        try:
+            parts=result.split('|')
+            if len(parts)!=len(blocks):raise ValueError('block count')
+            values=[]
+            for part,width,(_,size) in zip(parts,widths,blocks):
+                words=[int(v,0) for v in part.split()]
+                if len(words)!=size//(width//8):raise ValueError('short read')
+                values.append(struct.pack('<'+'I'*len(words),*words) if width==32 else bytes(words))
             return values
+        except (ValueError,struct.error):
+            self.close();raise RuntimeError('Short/invalid ST-Link read; sample discarded')
 
     def snapshot(self, firmware):
         names = list(firmware.resolved)
@@ -234,22 +307,126 @@ FIELDS = [('pressure_pa','Pressure','Pa'),('temperature_c','Temperature','°C'),
           ('bias_m','Altitude bias','m'),('predicted_altitude_m','Kalman prediction altitude','m'),
           ('predicted_velocity_m_s','Kalman prediction vertical velocity','m/s'),('baseline_pa','Pad pressure','Pa')]
 
-PAGE = r'''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>FC Barometer</title>
-<style>body{font:16px system-ui;background:#101722;color:#e2eaf5;margin:20px}header{max-width:1200px}#status{padding:10px;border:1px solid #688399;border-radius:8px}#panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:12px}article{background:#172435;border:1px solid #42566b;border-radius:10px;padding:12px}h2{font-size:16px;margin:0}strong{display:block;font:26px monospace;margin:8px 0}canvas{width:100%;height:170px}small{color:#a9b8cc}button{padding:10px}</style>
-<header><h1>FC Barometer</h1><p id="status">Waiting for ST-Link read…</p><p id="build"></p></header><main id="panels"></main>
+PAGE = r'''<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FC Barometer</title>
+<style>
+*{box-sizing:border-box}body{font:15px system-ui;background:#101722;color:#e2eaf5;margin:24px}header{max-width:1400px;margin:auto}h1{font-size:26px;margin:0 0 16px}#status{padding:12px;border:1px solid #688399;border-radius:8px}#build{font:11px monospace;color:#94a7bb;overflow-wrap:anywhere}#history{color:#a9b8cc}#panels{max-width:1400px;margin:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr));gap:14px}article{background:#172435;border:1px solid #42566b;border-radius:10px;padding:14px}.card-title,.dialog-title{display:flex;align-items:center;justify-content:space-between;gap:12px}h2{font-size:15px;margin:0}strong{display:block;font:26px monospace;margin:10px 0}canvas{display:block;width:100%;height:180px}article canvas{cursor:zoom-in}button,select{font:inherit;color:inherit;background:#203349;border:1px solid #59728d;border-radius:6px;padding:7px 10px;cursor:pointer}button:hover,select:hover{background:#2c4763}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #63d6c1;outline-offset:3px}.expand{font-size:12px}dialog{color:inherit;background:#172435;border:1px solid #59728d;border-radius:12px;width:min(1450px,96vw);max-width:96vw;max-height:96vh;padding:20px}dialog::backdrop{background:#060c16d9}dialog h2{font-size:20px}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:20px 0 12px}label{display:flex;align-items:center;gap:8px}.timeline{flex:1;min-width:220px}.timeline input{width:100%;accent-color:#63d6c1}#detail-canvas{height:clamp(260px,52vh,620px);touch-action:none;cursor:crosshair}#inspect{min-height:24px;font:14px monospace;color:#8be7d7}#stats{display:flex;flex-wrap:wrap;gap:12px 28px;border-top:1px solid #42566b;padding-top:14px;font:13px monospace}small{display:block;color:#a9b8cc;margin:10px 0}#view-range{font:13px monospace;color:#a9b8cc}@media(max-width:600px){body{margin:12px}dialog{padding:12px}.controls{gap:8px}.timeline{flex-basis:100%}#detail-canvas{height:42vh}}
+</style>
+<header><h1>FC Barometer</h1><p id="status">Waiting for ST-Link read…</p><p id="history"></p><p id="build"></p></header><main id="panels"></main>
+<dialog id="detail" aria-labelledby="detail-title">
+ <div class="dialog-title"><h2 id="detail-title"></h2><button id="close-detail">Close</button></div>
+ <div class="controls">
+  <label>Window <select id="span"><option value="30">30 seconds</option><option value="120">2 minutes</option><option value="600" selected>10 minutes</option><option value="1800">30 minutes</option><option value="3600">1 hour</option><option value="all">All retained data</option><option value="custom" hidden>Custom</option></select></label>
+  <button id="pause">Pause view</button><button id="live">Go live</button>
+  <label class="timeline">Pan <input id="pan" type="range" min="0" max="1" step="0.01" value="1" aria-label="End of visible time range"></label>
+ </div>
+ <div id="view-range"></div><canvas id="detail-canvas" aria-label="Expanded sensor history"></canvas>
+ <div id="inspect">Hover to inspect a sample. Scroll to zoom; drag to pan.</div>
+ <div id="stats"></div><small>Viewing can be paused while acquisition continues. Every accepted value is plotted directly; gaps mark stale or missing data.</small>
+</dialog>
 <script>
-let fields=[], busy=false;
-function graph(canvas, rows, key){const dpr=devicePixelRatio||1,w=canvas.clientWidth,h=170;canvas.width=w*dpr;canvas.height=h*dpr;const c=canvas.getContext('2d');c.scale(dpr,dpr);c.clearRect(0,0,w,h);const vals=rows.map(r=>r[key]).filter(Number.isFinite);if(!vals.length)return;let lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi){lo-=.5;hi+=.5}const t0=rows[0].elapsed_s,t1=Math.max(t0+1,rows.at(-1).elapsed_s);c.fillStyle='#a9b8cc';c.font='12px monospace';c.fillText(hi.toFixed(3),0,13);c.fillText(lo.toFixed(3),0,h-3);c.strokeStyle='#63d6c1';c.lineWidth=1.5;c.beginPath();let open=false;for(const row of rows){const v=row[key];if(!Number.isFinite(v)||row.stale){open=false;continue}const x=55+(w-60)*(row.elapsed_s-t0)/(t1-t0),y=18+(h-38)*(1-(v-lo)/(hi-lo));open?c.lineTo(x,y):c.moveTo(x,y);open=true}c.stroke();c.fillText('Last '+(t1-t0).toFixed(0)+' s',w/2-30,h-3)}
-async function refresh(){if(busy)return;busy=true;try{const r=await fetch('/data',{cache:'no-store'});const d=await r.json();document.querySelector('#status').textContent=d.status;document.querySelector('#build').textContent=d.build;if(!fields.length){fields=d.fields;for(const [key,label,unit] of fields){const a=document.createElement('article');a.innerHTML='<h2></h2><strong>—</strong><canvas></canvas>';a.querySelector('h2').textContent=label+' ('+unit+')';a.dataset.key=key;document.querySelector('#panels').append(a)}}for(const a of document.querySelectorAll('article')){const v=d.latest?.[a.dataset.key];a.querySelector('strong').textContent=Number.isFinite(v)?v.toFixed(4):'Unavailable';graph(a.querySelector('canvas'),d.rows,a.dataset.key)}}catch(e){document.querySelector('#status').textContent='Viewer disconnected; displayed values are stale'}finally{busy=false}}setInterval(refresh,1000);refresh();
-</script>'''
+let fields=[],busy=false,rows=[],cursor=null,latest=null,frame=null;
+const detail={key:null,span:600,end:null,follow:true,drag:null,plot:null};
+const $=id=>document.getElementById(id);
+function clock(t){t=Math.max(0,t);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=(t%60).toFixed(1).padStart(4,'0');return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${s}`}
+function number(v){return Number.isFinite(v)?Number(v.toPrecision(9)).toString():'Unavailable'}
+function lowerBound(data,time){let lo=0,hi=data.length;while(lo<hi){const mid=(lo+hi)>>>1;if(data[mid].elapsed_s<time)lo=mid+1;else hi=mid}return lo}
+function bounds(span,end){const last=rows.at(-1)?.elapsed_s||0,first=rows[0]?.elapsed_s||0;end=Math.max(first,Math.min(last,end??last));return {start:span==='all'?first:Math.max(first,end-span),end}}
+function seriesStats(data,key,start,end){
+ let count=0,first=null,last=null,min=Infinity,max=-Infinity,meanT=0,meanV=0,cov=0,varT=0;
+ for(let i=lowerBound(data,start);i<data.length&&data[i].elapsed_s<=end;i++){
+  const r=data[i],v=r[key];if(r.stale||!Number.isFinite(v))continue;
+  const t=r.elapsed_s-start;if(first===null)first=v;last=v;count++;min=Math.min(min,v);max=Math.max(max,v);
+  const dt=t-meanT;meanT+=dt/count;const dv=v-meanV;meanV+=dv/count;cov+=dt*(v-meanV);varT+=dt*(t-meanT);
+ }
+ return {count,first,last,min,max,delta:count?last-first:null,perHour:varT>0?cov/varT*3600:null};
+}
+function graph(canvas,key,start,end,inspectTime=null){
+ const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+ if(w<1||h<1)return null;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);
+ const c=canvas.getContext('2d');c.scale(dpr,dpr);c.clearRect(0,0,w,h);
+ const stats=seriesStats(rows,key,start,end),left=88,right=w-16,top=18,bottom=h-32;
+ c.font='11px monospace';c.fillStyle='#a9b8cc';
+ if(!stats.count){c.fillText('No valid samples in this range',12,h/2);return null}
+ let lo=stats.min,hi=stats.max;if(lo===hi){lo-=.5;hi+=.5}else{const pad=(hi-lo)*.05;lo-=pad;hi+=pad}
+ const t1=Math.max(start+.001,end),x=t=>left+(right-left)*(t-start)/(t1-start),y=v=>bottom-(bottom-top)*(v-lo)/(hi-lo);
+ c.strokeStyle='#30465d';c.lineWidth=1;c.beginPath();
+ for(let i=0;i<=4;i++){const py=top+(bottom-top)*i/4;c.moveTo(left,py);c.lineTo(right,py);c.fillText(number(hi-(hi-lo)*i/4),1,py+4)}
+ c.stroke();c.fillText(clock(start),left,h-8);c.textAlign='right';c.fillText(clock(end),right,h-8);c.textAlign='left';
+ c.save();c.beginPath();c.rect(left,top,right-left,bottom-top);c.clip();c.strokeStyle='#63d6c1';c.lineWidth=1.2;c.beginPath();let open=false;
+ // No averaging, smoothing, fitted curve, or point reduction: use every
+ // retained sample in the visible range and break the trace at data gaps.
+ for(let i=lowerBound(rows,start);i<rows.length&&rows[i].elapsed_s<=end;i++){
+  const r=rows[i],v=r[key];if(r.stale||!Number.isFinite(v)){open=false;continue}
+  open?c.lineTo(x(r.elapsed_s),y(v)):c.moveTo(x(r.elapsed_s),y(v));open=true;
+ }
+ c.stroke();
+ if(stats.count<=200){c.fillStyle='#63d6c1';for(let i=lowerBound(rows,start);i<rows.length&&rows[i].elapsed_s<=end;i++){const r=rows[i];if(r.stale||!Number.isFinite(r[key]))continue;c.beginPath();c.arc(x(r.elapsed_s),y(r[key]),1.8,0,Math.PI*2);c.fill()}}
+ if(inspectTime!==null){c.strokeStyle='#d8e6f4';c.setLineDash([4,4]);c.beginPath();c.moveTo(x(inspectTime),top);c.lineTo(x(inspectTime),bottom);c.stroke()}
+ c.restore();return {start,end,left,right,stats};
+}
+function renderDetail(){
+ if(!$('detail').open||!detail.key||!rows.length)return;
+ const b=bounds(detail.span,detail.follow?null:detail.end);detail.end=b.end;
+ detail.plot=graph($('detail-canvas'),detail.key,b.start,b.end);
+ $('pan').min=rows[0].elapsed_s;$('pan').max=rows.at(-1).elapsed_s;$('pan').value=b.end;
+ $('pause').textContent=detail.follow?'Pause view':'Resume live';
+ $('view-range').textContent=`${detail.follow?'Live':'Paused view'} · ${clock(b.start)} – ${clock(b.end)} elapsed since monitor start`;
+ const s=detail.plot?.stats,unit=fields.find(f=>f[0]===detail.key)?.[2]||'';
+ $('stats').textContent=s?`${s.count.toLocaleString()} samples    Δ ${number(s.delta)} ${unit}    Min ${number(s.min)}    Max ${number(s.max)}    Linear drift estimate ${number(s.perHour)} ${unit}/hour`:'No valid samples in this range';
+}
+function render(){
+ frame=null;const b=bounds(60,null);
+ for(const a of document.querySelectorAll('article')){const v=latest?.[a.dataset.key];a.querySelector('strong').textContent=number(v);graph(a.querySelector('canvas'),a.dataset.key,b.start,b.end)}
+ renderDetail();
+}
+function scheduleRender(){if(frame===null)frame=requestAnimationFrame(render)}
+function openDetail(key){detail.key=key;detail.follow=true;detail.end=null;detail.drag=null;const f=fields.find(f=>f[0]===key);$('detail-title').textContent=`${f[1]} (${f[2]})`;$('detail').showModal();$('inspect').textContent='Hover to inspect a sample. Scroll to zoom; drag to pan.';renderDetail()}
+function setFollowing(follow){detail.follow=follow;if(!follow)detail.end=rows.at(-1)?.elapsed_s||0;renderDetail()}
+$('close-detail').onclick=()=>$('detail').close();
+$('pause').onclick=()=>setFollowing(!detail.follow);$('live').onclick=()=>setFollowing(true);
+$('span').onchange=e=>{if(e.target.value!=='custom')detail.span=e.target.value==='all'?'all':Number(e.target.value);renderDetail()};
+$('pan').oninput=e=>{detail.follow=false;detail.end=Number(e.target.value);renderDetail()};
+function timeAt(event){const p=detail.plot;if(!p)return null;const rect=$('detail-canvas').getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-p.left)/(p.right-p.left)));return p.start+(p.end-p.start)*fraction}
+$('detail-canvas').addEventListener('wheel',e=>{
+ if(!detail.plot||rows.length<2)return;e.preventDefault();const p=detail.plot,anchor=timeAt(e),fraction=(anchor-p.start)/Math.max(.001,p.end-p.start),span=Math.max(1,Math.min(rows.at(-1).elapsed_s-rows[0].elapsed_s,(p.end-p.start)*Math.exp(e.deltaY*.002)));
+ detail.follow=false;detail.span=span;detail.end=anchor+span*(1-fraction);$('span').value='custom';renderDetail();
+},{passive:false});
+$('detail-canvas').onpointerdown=e=>{if(!detail.plot)return;detail.follow=false;detail.drag={x:e.clientX,end:detail.plot.end,span:detail.plot.end-detail.plot.start};$('detail-canvas').setPointerCapture(e.pointerId)};
+$('detail-canvas').onpointerup=e=>{detail.drag=null;if($('detail-canvas').hasPointerCapture(e.pointerId))$('detail-canvas').releasePointerCapture(e.pointerId)};
+$('detail-canvas').onpointercancel=()=>{detail.drag=null};
+$('detail-canvas').onpointermove=e=>{
+ if(!detail.plot||!rows.length)return;
+ if(detail.drag){detail.end=detail.drag.end-(e.clientX-detail.drag.x)*detail.drag.span/(detail.plot.right-detail.plot.left);renderDetail();return}
+ const t=timeAt(e),i=lowerBound(rows,t),candidates=[rows[i-1],rows[i]].filter(r=>r&&r.elapsed_s>=detail.plot.start&&r.elapsed_s<=detail.plot.end);
+ const r=candidates.sort((a,b)=>Math.abs(a.elapsed_s-t)-Math.abs(b.elapsed_s-t))[0];if(!r)return;
+ const f=fields.find(f=>f[0]===detail.key);$('inspect').textContent=`${clock(r.elapsed_s)} · ${r.stale?'Stale / missing sample':number(r[detail.key])+' '+f[2]}`;
+ graph($('detail-canvas'),detail.key,detail.plot.start,detail.plot.end,r.elapsed_s);
+};
+async function refresh(){
+ if(busy)return;busy=true;
+ try{
+  const response=await fetch('/data'+(cursor===null?'':'?after='+cursor),{cache:'no-store'});if(!response.ok)throw Error('HTTP');const d=await response.json();
+  if(d.reset)rows=[];for(const r of d.rows)rows.push(r);cursor=d.cursor;latest=d.latest;
+  if(rows.length>d.capacity)rows=rows.slice(-d.capacity);
+  if(rows.length)rows=rows.slice(lowerBound(rows,rows.at(-1).elapsed_s-d.history_s));
+  $('status').textContent=d.status;$('build').textContent=d.build;
+  $('history').textContent=rows.length?`${rows.length.toLocaleString()} retained samples · ${clock(rows[0].elapsed_s)} – ${clock(rows.at(-1).elapsed_s)} · Expand a graph to inspect history`:'Waiting for history';
+  if(!fields.length){fields=d.fields;for(const [key,label,unit] of fields){const a=document.createElement('article');a.innerHTML='<div class="card-title"><h2></h2><button class="expand">Expand ↗</button></div><strong>—</strong><canvas></canvas>';a.querySelector('h2').textContent=`${label} (${unit})`;a.dataset.key=key;a.querySelector('button').setAttribute('aria-label',`Expand ${label} graph`);a.querySelector('button').onclick=()=>openDetail(key);a.querySelector('canvas').onclick=()=>openDetail(key);$('panels').append(a)}}
+  scheduleRender();
+ }catch(error){$('status').textContent='Viewer disconnected; displayed values are stale'}finally{busy=false}
+}
+window.addEventListener('resize',scheduleRender);setInterval(refresh,100);refresh();
+</script></html>'''
 
 class Scope:
     def __init__(self, firmware, probe, rate, history, writer=None):
         self.firmware,self.probe,self.rate,self.writer = firmware,probe,rate,writer
-        self.rows=deque(maxlen=min(20000,max(2,math.ceil(history*rate))))
+        self.rows=deque(maxlen=min(100000,max(2,math.ceil(history*rate))))
         self.lock=threading.Lock();self.stop=threading.Event();self.start=time.monotonic()
         self.status='Waiting for first read';self.latest=None;self.verified=True
         self.last_sample=None;self.last_progress=self.start;self.last_uptime=None
+        self.cursor=0;self.history=history;self.accepted_at=None;self.read_duration_ms=None
 
     def sample(self):
         now=time.monotonic()
@@ -260,6 +437,7 @@ class Scope:
                     break
                 except InconsistentRead:
                     if attempt == 2:raise
+            completed=time.monotonic()
             if self.last_uptime is not None and ((row['uptime_ms']-self.last_uptime)&0xffffffff)>0x80000000:
                 self.status='MCU uptime restarted; stopping. Re-run to verify flash again.'
                 with self.lock:
@@ -267,12 +445,13 @@ class Scope:
                 self.stop.set();return
             self.last_uptime=row['uptime_ms']
             if row['sample_tick_ms'] != self.last_sample:
-                self.last_sample=row['sample_tick_ms'];self.last_progress=now
-            stale=row['barometer_age_ms'] is None or row['barometer_age_ms']>3000 or now-self.last_progress>3
-            row.update(elapsed_s=now-self.start,stale=stale)
+                self.last_sample=row['sample_tick_ms'];self.last_progress=completed
+            stale=row['barometer_age_ms'] is None or row['barometer_age_ms']>3000 or completed-self.last_progress>3
+            row.update(elapsed_s=completed-self.start,stale=stale)
             with self.lock:
                 self.latest=row
                 self.rows.append(row)
+                self.cursor+=1;self.accepted_at=completed;self.read_duration_ms=(completed-now)*1000
                 self.status=('STALE barometer: acquisition tick is not advancing' if stale else 'Running · read-only live values')
             if self.writer:self.writer.writerow(row)
         except (RuntimeError,ValueError,OSError) as error:
@@ -280,14 +459,22 @@ class Scope:
                 self.status=str(error)+' · last accepted values are stale'
                 if self.latest:self.latest=dict(self.latest,stale=True)
                 self.rows.append({'elapsed_s':now-self.start,'stale':True})
+                self.cursor+=1
 
     def run(self):
         while not self.stop.is_set():
             began=time.monotonic();self.sample();self.stop.wait(max(0,1/self.rate-(time.monotonic()-began)))
 
-    def payload(self):
+    def payload(self, after=None):
         with self.lock:
-            return {'status':self.status,'latest':self.latest,'rows':list(self.rows),'fields':FIELDS,
+            oldest=self.cursor-len(self.rows)
+            reset=after is None or after<oldest or after>self.cursor
+            rows=list(self.rows)
+            if not reset:rows=rows[after-oldest:]
+            return {'status':self.status,'latest':self.latest,'rows':rows,'fields':FIELDS,
+                    'cursor':self.cursor,'reset':reset,'capacity':self.rows.maxlen,'history_s':self.history,
+                    'read_duration_ms':self.read_duration_ms,
+                    'host_sample_age_ms':None if self.accepted_at is None else (time.monotonic()-self.accepted_at)*1000,
                     'build':f'{self.firmware.path} · ELF SHA256 {self.firmware.sha256}' + ('' if self.verified else ' · WARNING: firmware identity mismatch overridden')}
 
 def find_cli(explicit):
@@ -310,15 +497,16 @@ def main(argv=None):
     parser.add_argument('--openocd',help='OpenOCD executable (default: openocd on PATH)')
     parser.add_argument('--serial',help='ST-Link serial number; mandatory if several probes are present')
     parser.add_argument('--frequency',type=int,default=1000,help='SWD clock kHz (default 1000)')
-    parser.add_argument('--rate',type=float,default=1,help='Requested reads/second; actual rate depends on CLI (0.1–10)')
-    parser.add_argument('--history',type=int,default=600,help='Plot history seconds (bounded to 20000 samples)')
+    parser.add_argument('--rate',type=float,default=20,help='Requested reads/second (default 20; range 0.1–50)')
+    parser.add_argument('--history',type=int,default=3600,help='Retained history seconds (default 3600; bounded to 100000 samples)')
     parser.add_argument('--csv',type=Path,help='Write accepted samples to a new CSV file')
     parser.add_argument('--port',type=int,default=0,help='Local browser port; default chooses a free port')
     parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--allow-mismatched-firmware',action='store_true',help='DANGEROUS diagnostic override: selected symbols may not describe target RAM')
     args=parser.parse_args(argv)
-    if not .1<=args.rate<=10 or not 1<=args.history<=86400 or not 1<=args.frequency<=24000 or not 0<=args.port<=65535:
+    if not .1<=args.rate<=50 or not 1<=args.history<=86400 or not 1<=args.frequency<=24000 or not 0<=args.port<=65535:
         parser.error('Invalid rate/history/frequency/port')
+    probe=None
     try:
         if args.list_probes:
             result=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
@@ -353,8 +541,12 @@ def main(argv=None):
             scope=Scope(firmware,probe,args.rate,args.history,writer);scope.verified=matched
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
-                    if self.path=='/':data=PAGE.encode();kind='text/html; charset=utf-8'
-                    elif self.path=='/data':data=json.dumps(scope.payload(),allow_nan=False).encode();kind='application/json'
+                    url=urlsplit(self.path)
+                    if url.path=='/':data=PAGE.encode();kind='text/html; charset=utf-8'
+                    elif url.path=='/data':
+                        try:after=int(parse_qs(url.query)['after'][0]) if 'after' in parse_qs(url.query) else None
+                        except ValueError:self.send_error(400);return
+                        data=json.dumps(scope.payload(after),allow_nan=False).encode();kind='application/json'
                     else:self.send_error(404);return
                     self.send_response(200);self.send_header('Content-Type',kind);self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
                 def log_message(self,*_):pass
@@ -369,6 +561,8 @@ def main(argv=None):
     except KeyboardInterrupt:return 0
     except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:
         print('Barometer viewer:',error);return 1
+    finally:
+        if probe is not None:probe.close()
     return 0
 
 if __name__=='__main__':raise SystemExit(main())
