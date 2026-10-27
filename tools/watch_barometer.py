@@ -131,21 +131,40 @@ class Firmware:
                 raise ValueError(f'Firmware mismatch at flash region 0x{address:08x}; select the exact flashed ELF')
         return sum(len(data) for _,data in self.flash)
 
-class CubeProbe:
+class InconsistentRead(RuntimeError):
+    pass
+
+class OpenOCDProbe:
     def __init__(self, executable, serial, frequency=1000, timeout=15, runner=subprocess.run):
+        if not re.fullmatch(r'[A-Za-z0-9]+',serial):
+            raise ValueError('Invalid ST-Link serial number')
         self.executable, self.serial = executable, serial
         self.frequency, self.timeout, self.runner = frequency, timeout, runner
 
     def read_blocks(self, blocks):
         with tempfile.TemporaryDirectory(prefix='fc-baroscope-read-') as tmp:
-            command = [self.executable,'-c','port=SWD','mode=HOTPLUG',f'sn={self.serial}',f'freq={self.frequency}']
+            # Generic Cortex-M33 RAM access needs no STM32H5 flash driver.
+            # AP1 is the H523 core; AP0 is the debug-authentication interface.
+            # Never load a board config with reset/init or flash-loader hooks.
+            commands = ['source [find interface/stlink-dap.cfg]',
+                        'transport select dapdirect_swd',f'adapter serial {self.serial}',
+                        f'adapter speed {self.frequency}',
+                        'swd newdap fc cpu -expected-id 0x6ba02477',
+                        'dap create fc.dap -chain-position fc.cpu',
+                        'target create fc.cpu cortex_m -dap fc.dap -ap-num 1',
+                        'gdb_port disabled','telnet_port disabled','tcl_port disabled','init']
             paths = []
             for i,(address,size) in enumerate(blocks):
                 if size <= 0 or size > 2*1024*1024:
                     raise ValueError('Invalid bounded memory read size')
                 path = Path(tmp)/f'{i}.bin'
                 paths.append(path)
-                command += ['-u',hex(address),str(size),str(path)]
+                # Quote Tcl metacharacters even when TMPDIR contains spaces.
+                quoted='"'+re.sub(r'([\\"$\[\]])',r'\\\1',str(path))+'"'
+                commands.append(f'dump_image {quoted} {hex(address)} {size}')
+            commands.append('shutdown')
+            command=[self.executable]
+            for c in commands:command+=['-c',c]
             try:
                 result = self.runner(command, capture_output=True, text=True, timeout=self.timeout)
             except subprocess.TimeoutExpired as e:
@@ -176,11 +195,14 @@ class CubeProbe:
             raise RuntimeError('CPU halted; not resumed by this viewer')
         a={n:unpack(first,firmware.resolved[n].address,firmware.resolved[n].size) for n in names}
         b={n:unpack(second,firmware.resolved[n].address,firmware.resolved[n].size) for n in names}
-        # GPS/IMU members of meas update independently and do not invalidate a
-        # stable barometer read. Advancing HAL ticks also are expected.
+        # Probe uploads can take longer than a sensor period. Requiring
+        # equal values across both passes rejects a healthy, updating sensor
+        # indefinitely. Only compare payloads when they claim the SAME sample;
+        # otherwise retain the newer pass. This remains best-effort, not atomic.
         stable=[n for n in names if n not in ('uwTick','meas','imedsv')]
-        if a['meas'][12:24] != b['meas'][12:24] or any(a[n]!=b[n] for n in stable):
-            raise RuntimeError('Inconsistent live barometer read; sample discarded (CPU remains running)')
+        if a['last_tick'] == b['last_tick'] and (
+                a['meas'][12:24] != b['meas'][12:24] or any(a[n]!=b[n] for n in stable)):
+            raise InconsistentRead('Inconsistent live barometer read; sample discarded (CPU remains running)')
         if 'imedsv' in b and a['imedsv']!=b['imedsv']:
             del b['imedsv']  # Do not present a visibly changing multi-float prediction as coherent.
         return b
@@ -214,7 +236,7 @@ FIELDS = [('pressure_pa','Pressure','Pa'),('temperature_c','Temperature','°C'),
 
 PAGE = r'''<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>FC Barometer</title>
 <style>body{font:16px system-ui;background:#101722;color:#e2eaf5;margin:20px}header{max-width:1200px}#status{padding:10px;border:1px solid #688399;border-radius:8px}#panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:12px}article{background:#172435;border:1px solid #42566b;border-radius:10px;padding:12px}h2{font-size:16px;margin:0}strong{display:block;font:26px monospace;margin:8px 0}canvas{width:100%;height:170px}small{color:#a9b8cc}button{padding:10px}</style>
-<header><h1>FC Barometer</h1><p id="status">Waiting for ST-Link read…</p><p><small>Read-only HOTPLUG · no telemetry · no reset/halt/resume. Before-bias altitude is derived from the driver altitude + bias. Kalman values are predictions, not final corrected state. Raw ADC counts are unavailable in this build. Reads are best-effort consistent, not atomic.</small></p><p id="build"></p></header><main id="panels"></main>
+<header><h1>FC Barometer</h1><p id="status">Waiting for ST-Link read…</p><p id="build"></p></header><main id="panels"></main>
 <script>
 let fields=[], busy=false;
 function graph(canvas, rows, key){const dpr=devicePixelRatio||1,w=canvas.clientWidth,h=170;canvas.width=w*dpr;canvas.height=h*dpr;const c=canvas.getContext('2d');c.scale(dpr,dpr);c.clearRect(0,0,w,h);const vals=rows.map(r=>r[key]).filter(Number.isFinite);if(!vals.length)return;let lo=Math.min(...vals),hi=Math.max(...vals);if(lo===hi){lo-=.5;hi+=.5}const t0=rows[0].elapsed_s,t1=Math.max(t0+1,rows.at(-1).elapsed_s);c.fillStyle='#a9b8cc';c.font='12px monospace';c.fillText(hi.toFixed(3),0,13);c.fillText(lo.toFixed(3),0,h-3);c.strokeStyle='#63d6c1';c.lineWidth=1.5;c.beginPath();let open=false;for(const row of rows){const v=row[key];if(!Number.isFinite(v)||row.stale){open=false;continue}const x=55+(w-60)*(row.elapsed_s-t0)/(t1-t0),y=18+(h-38)*(1-(v-lo)/(hi-lo));open?c.lineTo(x,y):c.moveTo(x,y);open=true}c.stroke();c.fillText('Last '+(t1-t0).toFixed(0)+' s',w/2-30,h-3)}
@@ -232,7 +254,12 @@ class Scope:
     def sample(self):
         now=time.monotonic()
         try:
-            row=decode(self.probe.snapshot(self.firmware))
+            for attempt in range(3):
+                try:
+                    row=decode(self.probe.snapshot(self.firmware))
+                    break
+                except InconsistentRead:
+                    if attempt == 2:raise
             if self.last_uptime is not None and ((row['uptime_ms']-self.last_uptime)&0xffffffff)>0x80000000:
                 self.status='MCU uptime restarted; stopping. Re-run to verify flash again.'
                 with self.lock:
@@ -280,6 +307,7 @@ def main(argv=None):
     parser.add_argument('--inspect',action='store_true',help='Resolve ELF symbols only; no probe access')
     parser.add_argument('--list-probes',action='store_true',help='List USB ST-Link probes only, then exit')
     parser.add_argument('--programmer',help='STM32_Programmer_CLI executable')
+    parser.add_argument('--openocd',help='OpenOCD executable (default: openocd on PATH)')
     parser.add_argument('--serial',help='ST-Link serial number; mandatory if several probes are present')
     parser.add_argument('--frequency',type=int,default=1000,help='SWD clock kHz (default 1000)')
     parser.add_argument('--rate',type=float,default=1,help='Requested reads/second; actual rate depends on CLI (0.1–10)')
@@ -302,14 +330,15 @@ def main(argv=None):
         print('Initialized flash verification:',sum(len(x) for _,x in firmware.flash),'bytes across',len(firmware.flash),'regions')
         print('Symbols:',json.dumps({k:{'address':hex(v.address),'size':v.size} for k,v in firmware.resolved.items()},indent=2))
         if args.inspect:return 0
-        executable=find_cli(args.programmer)
+        executable=args.openocd or shutil.which('openocd')
+        if not executable:raise ValueError('OpenOCD not found; install OpenOCD and pass --openocd PATH')
         serial=args.serial
         if not serial:
-            listing=subprocess.run([executable,'--list','st-link'],capture_output=True,text=True,timeout=15)
+            listing=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
             serials=re.findall(r'ST-?LINK\s+SN\s*:\s*(\S+)',listing.stdout,re.I)
             if listing.returncode or len(serials)!=1:raise ValueError('Select one probe with --serial; use --list-probes to inspect USB probes')
             serial=serials[0]
-        probe=CubeProbe(executable,serial,args.frequency)
+        probe=OpenOCDProbe(executable,serial,args.frequency)
         matched=True
         try: verified=firmware.verify(probe);print('Matched all initialized ELF flash sections:',verified,'bytes')
         except ValueError:
