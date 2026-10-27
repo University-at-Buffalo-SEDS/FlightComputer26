@@ -140,6 +140,9 @@ static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
             persistent_store_set(UNDERGLOW_PERSIST_KEY, &stored,
                                  sizeof(stored)) != LAUNCHCORE_PERSIST_OK)
         {
+            /* GPIO already changed; an identical delivery must retry the
+             * failed flash write before reporting durable success. */
+            g_persist_has_value = false;
             g_av_bay_underglow_persist_errors++;
             return SEDS_HANDLER_ERROR;
         }
