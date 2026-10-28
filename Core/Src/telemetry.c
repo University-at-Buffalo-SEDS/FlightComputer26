@@ -130,8 +130,10 @@ volatile uint32_t g_telemetry_stack_size
 volatile uint32_t g_telemetry_stack_free_min
     __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
 extern volatile uint32_t g_fdcan_tx_fail_count;
+extern volatile uint32_t g_fdcan_tx_busy_count;
 extern volatile uint32_t g_fdcan_last_error;
 static uint32_t g_queue_observed_tx_fail_count = 0U;
+static uint32_t g_queue_observed_tx_busy_count = 0U;
 
 static void telemetry_sample_stack_margin(void) {
   const uint32_t *cursor =
@@ -176,21 +178,33 @@ static void telemetry_sample_active_stack_margin(void) {
 
 static void telemetry_record_queue_result(SedsResult result) {
   const uint32_t tx_fail_count = g_fdcan_tx_fail_count;
+  const uint32_t tx_busy_count = g_fdcan_tx_busy_count;
   const uint8_t new_fifo_full =
       (tx_fail_count != g_queue_observed_tx_fail_count &&
        (g_fdcan_last_error & HAL_FDCAN_ERROR_FIFO_FULL) != 0U) ? 1U : 0U;
   g_queue_observed_tx_fail_count = tx_fail_count;
+  const uint8_t new_busy =
+      tx_busy_count != g_queue_observed_tx_busy_count ? 1U : 0U;
+  g_queue_observed_tx_busy_count = tx_busy_count;
+  const uint8_t observed_backpressure = new_fifo_full || new_busy;
+  /* Queue service can retain refused work and return SEDS_OK. Observe the
+   * actual hardware refusal rather than requiring an aggregate SDK error. */
+  if (observed_backpressure != 0U) {
+    g_telemetry_link_backpressure++;
+  }
   if (result == SEDS_OK) {
     return;
   }
   g_telemetry_last_queue_result = (int32_t)result;
   /* SEDSNet presents a failed side callback as SEDS_HANDLER_ERROR. Confirm
-   * that it came from a newly observed FDCAN FIFO-full event before treating
-   * it as recoverable backpressure; genuine packet-handler failures remain
+   * that it came from a newly observed FDCAN FIFO-full or busy event before
+   * treating it as recoverable backpressure; genuine packet-handler failures remain
    * fatal queue errors. */
   if (result == SEDS_IO ||
-      (result == SEDS_HANDLER_ERROR && new_fifo_full != 0U)) {
-    g_telemetry_link_backpressure++;
+      (result == SEDS_HANDLER_ERROR && observed_backpressure != 0U)) {
+    if (observed_backpressure == 0U) {
+      g_telemetry_link_backpressure++;
+    }
     return;
   }
 
