@@ -562,7 +562,16 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
   }
 #endif
 
-  if (timer_probe(mems[dev].tim_gnd, rates.gnd))
+  const fu32 ground_period = rates.gnd;
+  bool central_baro_gate = false;
+#ifdef TELEMETRY_ENABLED
+  /* Fresh barometer frames already pass the shared per-type rate limiter.
+   * A second independent phase can consume a due turn before publication.
+   * Keep producer gating for deliberate recovery slowdowns and for the IMU's
+   * much faster acquisition path. The configured telemetry cap is unchanged. */
+  central_baro_gate = dev == Baro && ground_period <= FC_TELEMETRY_PERIOD_MS;
+#endif
+  if (central_baro_gate || timer_probe(mems[dev].tim_gnd, ground_period))
   {
     log_f32(mems[dev].kind_gnd, mems[dev].size, buf);
     recorded = true;
