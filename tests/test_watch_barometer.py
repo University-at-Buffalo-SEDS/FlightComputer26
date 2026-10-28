@@ -12,7 +12,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPT=Path(__file__).resolve().parents[1]/'tools'/'watch_barometer.py'
 if not SCRIPT.exists():SCRIPT=Path('/tmp/fc-baroscope.py')
@@ -99,36 +99,87 @@ class BaroscopeTests(unittest.TestCase):
                     return [data[:-1]+b'!' if self.mismatch else data]
             p=Probe();self.assertEqual(fw.verify(p),20);p.mismatch=True
             with self.assertRaisesRegex(ValueError,'Firmware mismatch'):fw.verify(p)
-    def test_cli_reads_core_ap_without_reset_halt_or_flash_hooks(self):
-        calls=[]
-        def run(command,**kwargs):
-            calls.append(command)
-            for c in command:
-                if c.startswith('dump_image '):Path(shlex.split(c)[1]).write_bytes(b'1234')
-            return types.SimpleNamespace(returncode=0)
-        probe=scope.OpenOCDProbe('fake-cli','TESTSERIAL',runner=run)
-        self.assertEqual(probe.read_blocks([(0x20000100,4)]),[b'1234'])
-        commands=calls[0][2::2]
+    def test_persistent_connection_reads_fragmented_replies_and_closes(self):
+        process=Mock();process.poll.return_value=None
+        connection=Mock()
+        connection.recv.side_effect=[b'OK:0x3433',b'3231\x1a',b'OK:0x38373635\x1a']
+        def start(command,**kwargs):
+            kwargs['stdout'].write('Listening on port 12345 for tcl connections\n')
+            kwargs['stdout'].flush()
+            return process
+        probe=scope.OpenOCDProbe('fake-cli','TESTSERIAL')
+        with patch.object(scope.subprocess,'Popen',side_effect=start) as popen, \
+             patch.object(scope.socket,'create_connection',return_value=connection) as connect:
+            self.assertEqual(probe.read_blocks([(0x20000100,4)]),[b'1234'])
+            self.assertEqual(probe.read_blocks([(0x20000104,4)]),[b'5678'])
+            self.assertEqual(popen.call_count,1)
+            self.assertEqual(connect.call_count,1)
+            commands=popen.call_args.args[0][2::2]
+            self.assertTrue(all(b'read_memory ' in call.args[0] for call in connection.sendall.call_args_list))
+            self.assertTrue(all(call.args[0].endswith(b'\x1a') for call in connection.sendall.call_args_list))
+            probe.close();probe.close()
+            process.terminate.assert_called_once()
+            connection.close.assert_called_once()
         self.assertIn('adapter serial TESTSERIAL',commands)
         self.assertIn('target create fc.cpu cortex_m -dap fc.dap -ap-num 1',commands)
-        self.assertEqual(commands[-1],'shutdown')
+        self.assertIn('bindto 127.0.0.1',commands)
+        self.assertIn('tcl_port 0',commands)
         self.assertFalse(any(re.search(r'\b(reset|halt|resume|mww|mwh|mwb|flash)\b',c) for c in commands))
         self.assertFalse(any('board/' in c or 'target/' in c for c in commands))
     def test_serial_cannot_inject_tcl_commands(self):
         with self.assertRaisesRegex(ValueError,'Invalid ST-Link serial'):
             scope.OpenOCDProbe('fake','123;reset run')
-    def test_short_read_busy_and_timeout_never_retry_with_reset(self):
-        for mode in ('short','busy','timeout'):
-            calls=[]
-            def run(command,**_):
-                calls.append(command)
-                if mode=='timeout':raise subprocess.TimeoutExpired(command,1)
-                if mode=='short':
-                    for c in command:
-                        if c.startswith('dump_image '):Path(shlex.split(c)[1]).write_bytes(b'x')
-                return types.SimpleNamespace(returncode=1 if mode=='busy' else 0)
-            with self.assertRaises(RuntimeError):scope.OpenOCDProbe('fake','TEST',runner=run).read_blocks([(0x20000100,4)])
-            self.assertEqual(len(calls),1)
+    def test_short_reads_and_rpc_errors_close_without_reset(self):
+        for result in ('0x1','0x1 0x2|0x3','not-memory'):
+            probe=scope.OpenOCDProbe('fake','TEST')
+            with patch.object(probe,'request',return_value=result) as request:
+                with self.assertRaisesRegex(RuntimeError,'Short/invalid'):
+                    probe.read_blocks([(0x20000100,8)])
+                self.assertEqual(request.call_count,1)
+        for response in (b'ERROR:busy\x1a',b'',TimeoutError()):
+            probe=scope.OpenOCDProbe('fake','TEST')
+            connection=Mock();probe.connection=connection
+            connection.recv.side_effect=[response]
+            with self.assertRaises(RuntimeError):probe.request('read_memory 0x20000100 32 1')
+            connection.close.assert_called_once()
+            self.assertIsNone(probe.connection)
+    def test_batched_word_and_unaligned_byte_reads_preserve_order(self):
+        probe=scope.OpenOCDProbe('fake','TEST')
+        with patch.object(probe,'request',return_value='0x04030201|5 6 7') as request:
+            self.assertEqual(probe.read_blocks([(0x20000100,4),(0x20000105,3)]),
+                             [bytes([1,2,3,4]),bytes([5,6,7])])
+            self.assertIn('read_memory 0x20000100 32 1',request.call_args.args[0])
+            self.assertIn('read_memory 0x20000105 8 3',request.call_args.args[0])
+    def test_large_flash_verification_uses_binary_dump_on_same_session(self):
+        probe=scope.OpenOCDProbe('fake','TEST')
+        expected=bytes(range(256))*300
+        def dump(command):
+            fields=shlex.split(command.split(';')[0])
+            self.assertEqual(fields[0],'dump_image')
+            self.assertEqual(int(fields[3]),len(expected))
+            Path(fields[1]).write_bytes(expected)
+            return '1'
+        with patch.object(probe,'request',side_effect=dump) as request:
+            self.assertEqual(probe.read_blocks([(0x08002200,len(expected))]),[expected])
+            self.assertEqual(request.call_count,1)
+            self.assertNotIn('read_memory',request.call_args.args[0])
+    @unittest.skipUnless(os.environ.get('FC_BAROSCOPE_RPC_TEST'),'Opt-in local OpenOCD RPC integration test')
+    def test_real_openocd_rpc_without_hardware(self):
+        class LocalProbe(scope.OpenOCDProbe):
+            def commands(self):
+                return ['adapter driver dummy','transport select jtag','adapter speed 1000',
+                        'bindto 127.0.0.1','gdb_port disabled','telnet_port disabled',
+                        'tcl_port 0','init',
+                        'proc read_memory {address width count} {lrepeat $count 0}']
+        probe=LocalProbe(shutil.which('openocd') or 'openocd','TEST')
+        try:
+            self.assertEqual(probe.read_blocks([(0x20000000,8),(0x20000003,3)]),
+                             [bytes(8),bytes(3)])
+            process=probe.process
+            for _ in range(20):self.assertEqual(probe.read_blocks([(0x20000000,4)]),[bytes(4)])
+            self.assertIs(probe.process,process)
+        finally:probe.close()
+        self.assertIsNone(probe.process)
     def test_snapshot_allows_clock_and_imu_progress_rejects_torn_baro_and_halt(self):
         fw=types.SimpleNamespace(resolved={'meas':scope.Symbol(0x20000100,48),'uwTick':scope.Symbol(0x20000200,4),'last_tick':scope.Symbol(0x20000204,4)})
         for mode in ('good','torn','halt'):
@@ -225,6 +276,61 @@ class BaroscopeTests(unittest.TestCase):
         p.snapshot=lambda _:(_ for _ in ()).throw(RuntimeError('probe disconnected'))
         s.sample();self.assertTrue(s.rows[-1]['stale']);self.assertIn('stale',s.status)
         self.assertLessEqual(len(s.rows),2)
+    def test_incremental_history_cursors_and_overrun_recovery(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE')
+        probe=types.SimpleNamespace(snapshot=lambda _:values())
+        monitor=scope.Scope(fw,probe,1,2)
+        monitor.sample()
+        first=monitor.payload()
+        self.assertTrue(first['reset']);self.assertEqual(first['cursor'],1)
+        monitor.sample()
+        delta=monitor.payload(first['cursor'])
+        self.assertFalse(delta['reset']);self.assertEqual(len(delta['rows']),1)
+        self.assertEqual(monitor.payload(delta['cursor'])['rows'],[])
+        for _ in range(3):monitor.sample()
+        resumed=monitor.payload(first['cursor'])
+        self.assertTrue(resumed['reset']);self.assertEqual(len(resumed['rows']),2)
+        self.assertTrue(monitor.payload(10000)['reset'])
+        self.assertGreaterEqual(resumed['read_duration_ms'],0)
+        self.assertGreaterEqual(resumed['host_sample_age_ms'],0)
+    def test_one_hour_of_direct_samples_is_retained_at_default_rate(self):
+        monitor=scope.Scope(types.SimpleNamespace(),None,20,3600)
+        self.assertEqual(monitor.rows.maxlen,72000)
+    @unittest.skipUnless(shutil.which('node'),'Node needed for browser graph calculations')
+    def test_browser_plots_spikes_directly_and_holds_paused_time_range(self):
+        script=scope.PAGE.split('<script>',1)[1].split('</script>',1)[0]
+        harness=r'''
+const assert=require('node:assert/strict'),vm=require('node:vm');
+const elements=new Map();
+const context={console,Promise,Math,Number,Intl,
+ setInterval(){},requestAnimationFrame(){},fetch:()=>new Promise(()=>{}),
+ window:{devicePixelRatio:1,addEventListener(){}},
+ document:{getElementById(id){if(!elements.has(id))elements.set(id,{addEventListener(){}});return elements.get(id)}}};
+vm.createContext(context);
+vm.runInContext(SCRIPT,context);
+vm.runInContext(`
+const strokes=[],c={strokeStyle:'',scale(){},clearRect(){},fillText(){},save(){},restore(){},rect(){},clip(){},arc(){},fill(){},setLineDash(){},
+ beginPath(){this.path=[]},moveTo(x,y){this.path.push(['move',x,y])},lineTo(x,y){this.path.push(['line',x,y])},stroke(){if(this.strokeStyle==='#63d6c1')strokes.push(this.path)}};
+const canvas={clientWidth:800,clientHeight:400,getContext:()=>c};
+rows=[{elapsed_s:0,pressure_pa:0},{elapsed_s:1,pressure_pa:100},{elapsed_s:2,pressure_pa:0}];
+const plot=graph(canvas,'pressure_pa',0,2);
+globalThis.result={count:plot.stats.count,min:plot.stats.min,max:plot.stats.max,path:strokes.at(-1)};
+`,context);
+assert.equal(context.result.count,3);assert.equal(context.result.max,100);
+assert.equal(context.result.path.length,3);
+assert(context.result.path[1][2]<context.result.path[0][2]);
+assert.equal(context.result.path[0][2],context.result.path[2][2]);
+vm.runInContext(`
+rows=Array.from({length:72000},(_,i)=>({elapsed_s:i/20,pressure_pa:2*i/20}));
+globalThis.longStats=seriesStats(rows,'pressure_pa',0,3600);
+globalThis.pausedBefore=bounds(10,20);rows.push({elapsed_s:4000,pressure_pa:8000});globalThis.pausedAfter=bounds(10,20);
+`,context);
+assert.equal(context.longStats.count,72000);
+assert(Math.abs(context.longStats.perHour-7200)<1e-6);
+assert.equal(context.pausedBefore.start,context.pausedAfter.start);
+assert.equal(context.pausedBefore.end,context.pausedAfter.end);
+'''.replace('SCRIPT',json.dumps(script))
+        subprocess.run([shutil.which('node'),'-e',harness],check=True,capture_output=True,text=True)
     @unittest.skipUnless(os.environ.get('FC_BAROSCOPE_ELF'),'Set FC_BAROSCOPE_ELF for actual build offline resolution')
     def test_actual_selected_build_offline_symbol_resolution(self):
         fw=scope.Firmware(os.environ['FC_BAROSCOPE_ELF'])
