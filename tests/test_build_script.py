@@ -269,5 +269,36 @@ class OtaBuildScriptTests(unittest.TestCase):
             self.assertEqual(address, build.APP_ADDR)
 
 
+    def test_delta_uses_the_configured_launchcore_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build_dir = root / "build"
+            build_dir.mkdir()
+            launchcore = root / "configured dependency with spaces"
+            tool = launchcore / "tools/mkdelta.py"
+            tool.parent.mkdir(parents=True)
+            tool.write_text("# selected tool fixture\n")
+            (build_dir / "CMakeCache.txt").write_text(
+                f"FETCHCONTENT_SOURCE_DIR_SEDSLAUNCHCORE:PATH={launchcore}\n")
+            (build_dir / "FlightComputer26.launchcore.img").write_bytes(b"old application")
+            def configured_build(selected_dir, _target):
+                (selected_dir / "FlightComputer26.launchcore.img").write_bytes(b"new application")
+            def delta(command, **kwargs):
+                self.assertEqual(command[1], str(tool))
+                self.assertEqual(Path(command[command.index("--base") + 1]).read_bytes(), b"old application")
+                self.assertEqual(Path(command[command.index("--target") + 1]).read_bytes(), b"new application")
+                Path(command[command.index("--output") + 1]).write_bytes(b"delta package")
+                return build.subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            with mock.patch.object(build, "detect_ota_layout", return_value=("delta", 0x2000)), \
+                 mock.patch.object(build, "board_macro_optional", side_effect=lambda key: {"FLASH_ERASE_SIZE": 0x800, "SLOT_A_SIZE": 0x74000}[key]), \
+                 mock.patch.object(build, "build", side_effect=configured_build), \
+                 mock.patch.object(build.subprocess, "run", side_effect=delta) as called:
+                artifact, address = build.select_artifact(build_dir, "ota")
+            self.assertEqual(called.call_count, 1)
+            self.assertEqual(artifact.read_bytes(), b"delta package")
+            self.assertEqual(address, "")
+            self.assertFalse((build_dir / ".FlightComputer26.ota-base.launchcore.img").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

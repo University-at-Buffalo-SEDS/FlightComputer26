@@ -434,6 +434,16 @@ def objcopy(buildir: Path, elf_name: str) -> Path:
         return bin_path
 
 
+def _cache_value(cache: Path, key: str) -> str | None:
+    if not cache.exists():
+        return None
+    prefix = f"{key}:"
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(prefix) and "=" in line:
+            return line.split("=", 1)[1].strip()
+    return None
+
+
 def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
         ota_layout, ota_secondary_size = detect_ota_layout()
         automatic_base = None
@@ -461,7 +471,12 @@ def select_artifact(buildir: Path, image: str) -> tuple[Path, str]:
         if image == "ota":
                 ota_path = buildir / f"{FIRMWARE_NAME}.seds"
                 if automatic_base is not None:
-                        delta_tool = buildir / "_deps" / "sedslaunchcore-src" / "tools" / "mkdelta.py"
+                        configured_launchcore = _cache_value(
+                            buildir / "CMakeCache.txt", "FETCHCONTENT_SOURCE_DIR_SEDSLAUNCHCORE"
+                        )
+                        launchcore_source = (Path(configured_launchcore) if configured_launchcore else
+                                             buildir / "_deps" / "sedslaunchcore-src")
+                        delta_tool = launchcore_source / "tools" / "mkdelta.py"
                         erase_size = board_macro_optional("FLASH_ERASE_SIZE")
                         slot_size = board_macro_optional("SLOT_A_SIZE")
                         if delta_tool.exists() and erase_size and slot_size:
