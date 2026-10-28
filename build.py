@@ -235,6 +235,8 @@ def require_tool(name: str) -> str:
 def parse(argv: list[str]):
         preset = DEFAULT_PRESET
         options = {opt: False for opt in ALL_OPTIONS}
+        options["allocator-tlsf"] = True
+        options["packet-store-compact"] = True
 
         for a in argv:
                 arg = "watchdog" if a.lower() == "--watchdog" else a.lower()
@@ -885,8 +887,8 @@ def make_parser() -> argparse.ArgumentParser:
         mode = p.add_mutually_exclusive_group()
         mode.add_argument("--release", action="store_true", help="Build with Release size optimization.")
         mode.add_argument("--debug", action="store_true", help="Debug build (default).")
-        p.add_argument("--allocator", choices=("threadx","tlsf"), default="threadx", help="SEDSnet heap allocator; ThreadX continues scheduling (default: threadx).")
-        p.add_argument("--packet-store", choices=("heap","compact"), default="heap", help="Experimental packet arena; uses main unless --sedsnet-ref is explicit.")
+        p.add_argument("--allocator", choices=("threadx","tlsf"), default="tlsf", help="SEDSnet heap allocator; ThreadX continues scheduling (default: tlsf).")
+        p.add_argument("--packet-store", choices=("heap","compact"), default="compact", help="Compact packet arena (default); uses main unless --sedsnet-ref is explicit.")
         p.add_argument("--sedsnet-ref", choices=("main","dev"), help="Fetch current branch commit, with an on-disk offline fallback.")
         watchdog = p.add_mutually_exclusive_group()
         watchdog.add_argument("--watchdog", dest="watchdog", action="store_true", default=True, help="Enable the task-progress hardware watchdog (default).")

@@ -37,6 +37,7 @@ endif()
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 include(cmake/packet_store.cmake)
+option(SEDSNET_COMPACT_PACKET_STORE "Use bounded SEDSnet packet stores" ON)
 include(cmake/tlsf_allocator.cmake)
 target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
     -T "${CMAKE_SOURCE_DIR}/STM32H523xx_FLASH.ld")
