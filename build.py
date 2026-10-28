@@ -765,7 +765,7 @@ def parse_test_options(argv: list[str]) -> tuple[bool, bool, bool]:
         return all_tests, release, ultra_soak
 
 
-def run_tests(argv: list[str]) -> None:
+def run_tests(argv: list[str], *, build_args: argparse.Namespace | None = None) -> None:
         all_tests, release, ultra_soak = parse_test_options(argv)
         results: list[tuple[str, str]] = []
         run_test_stage(results, "Python unit tests", lambda: subprocess.run([
@@ -787,28 +787,36 @@ def run_tests(argv: list[str]) -> None:
                 run_unacknowledged_can_simulation,
         )
         run_test_stage(results, "Docker readiness", require_docker)
-        preset = "release" if release else "debug"
+        preset = "Release" if release else "Debug"
+        build_subdir = (build_args.build_subdir or preset) if build_args else preset
+        buildir = BUILDDIR / build_subdir
         script = Path(__file__).resolve()
+        def build_test_image(image: str) -> None:
+                if build_args is None:
+                        # Preserve the legacy run_tests token interface.
+                        subprocess.run([sys.executable, str(script), preset.lower(), image], check=True)
+                else:
+                        # Use the same options as a normal modern build. Do not
+                        # silently replace the selected allocator/store with the
+                        # defaults of a fresh legacy child invocation.
+                        _, options = cli_build_options(build_args)
+                        configure(buildir, preset, options)
+                        select_artifact(buildir, image)
         run_test_stage(
                 results, "Factory firmware build",
-                lambda: subprocess.run(
-                        [sys.executable, str(script), preset, "factory"], check=True
-                ),
+                lambda: build_test_image("factory"),
         )
         run_test_stage(
                 results, "OTA package build",
-                lambda: subprocess.run(
-                        [sys.executable, str(script), preset, "ota"], check=True
-                ),
+                lambda: build_test_image("ota"),
         )
         run_test_stage(
                 results, "Firmware simulation",
                 lambda: run_full_simulation(
                         _TestUI(), PROJECT, "stm32h5",
-                        "Release" if release else "Debug"
+                        build_subdir
                 ),
         )
-        build_subdir = "Release" if release else "Debug"
         run_test_stage(
                 results, "Allocator stress and memory probes",
                 lambda: run_memory_profile(
@@ -921,7 +929,7 @@ def main() -> None:
         args = make_parser().parse_args(argv)
         if args.cmd == "test":
             tests = (["--release"] if args.release else []) + (["--all"] if args.all_tests else []) + (["--ultra-soak"] if args.ultra_soak else [])
-            run_tests(tests)
+            run_tests(tests, build_args=args)
             return
         preset, options = cli_build_options(args)
         buildir = BUILDDIR / (args.build_subdir or preset)

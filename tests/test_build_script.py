@@ -300,5 +300,41 @@ class OtaBuildScriptTests(unittest.TestCase):
             self.assertFalse((build_dir / ".FlightComputer26.ota-base.launchcore.img").exists())
 
 
+    def test_full_cli_preserves_allocator_store_and_selected_build_for_every_stage(self):
+        import os
+        import sys
+        from sim import run_full
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(Path.cwd()):
+            root = Path(directory)
+            commands = []
+            with contextlib.redirect_stdout(io.StringIO()), \
+                 mock.patch.object(build, "PROJECT", root), \
+                 mock.patch.object(build, "BUILDDIR", root / "build"), \
+                 mock.patch.object(sys, "argv", ["build.py", "--build-subdir", "Selected_Test", "test", "--all", "--full", "--release", "--allocator", "tlsf", "--packet-store", "compact", "--watchdog", "--sedsnet-ref", "dev", "--no-gps"]), \
+                 mock.patch.dict(os.environ, {}, clear=False), \
+                 mock.patch.object(build.subprocess, "run"), \
+                 mock.patch.object(build, "run_gtests"), \
+                 mock.patch.object(build, "run", side_effect=commands.append), \
+                 mock.patch.object(build, "select_artifact") as artifact, \
+                 mock.patch.object(run_full, "require_docker", return_value="docker"), \
+                 mock.patch.object(run_full, "run_full_simulation") as standalone, \
+                 mock.patch.object(run_full, "run_memory_profile") as memory, \
+                 mock.patch.object(run_full, "run_unacknowledged_can_simulation") as disconnected, \
+                 mock.patch.object(run_full, "run_network_simulation") as network:
+                build.main()
+            self.assertEqual(len(commands), 2, "factory and OTA must both use the selected build configuration")
+            for command in commands:
+                self.assertIn("-DTELEMETRY_USE_TLSF=ON", command)
+                self.assertIn("-DSEDSNET_COMPACT_PACKET_STORE=ON", command)
+                self.assertIn("-DENABLE_BOARD_WATCHDOG=ON", command)
+                self.assertIn("-DSEDSNET_GIT_REF=dev", command)
+                self.assertIn("-DEXTERNAL_GPS=OFF", command)
+                self.assertEqual(command[command.index("-B") + 1], str(root / "build/Selected_Test"))
+            self.assertEqual(artifact.call_args_list, [mock.call(root / "build/Selected_Test", "factory"), mock.call(root / "build/Selected_Test", "ota")])
+            for stage in [standalone, memory, disconnected, network]:
+                self.assertEqual(stage.call_count, 1)
+                self.assertEqual(stage.call_args.args[1:], (root, "stm32h5", "Selected_Test"))
+
+
 if __name__ == "__main__":
     unittest.main()
