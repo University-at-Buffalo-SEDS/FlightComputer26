@@ -20,11 +20,19 @@ typedef uint16_t fu16;
 #define sweetbench_catch(x) ((void)0)
 #define log_err(...) ((void)0)
 struct {ULONG fx_file_current_file_size;} file;
-struct {int lock; bool free; fu16 off[2];} line;
+struct {int lock; bool free,cur; fu16 off[2];} line;
 char sdbuf[2][128];
 uint32_t sd_buffer_records[2],g_sd_written_records,g_sd_flushed_records;
 uint32_t g_sd_write_errors,g_sd_shutdown_lost_records;
-bool sd_writer_slot,sd_retry_pending,sd_accepting,sd_file_open=true;
+uint32_t g_sd_shutdown_lost_events,g_sd_event_pending;
+bool sd_writer_slot,sd_retry_pending,sd_accepting;
+uint8_t sd_file_open=1;
+bool sd_launch_pending,sd_launch_active;
+bool sd_launch_completed,sd_cutoff_set,sd_cutoff_slot,sd_landed_seen;
+uint32_t sd_landed_tick,sd_cutoff_records,g_sd_launch_closed;
+uint16_t sd_cutoff_offset,sd_writer_skip;
+void sd_service_events(bool draining) {(void)draining;}
+void sd_handoff_tail(void) {}
 ULONG sd_retry_offset;
 int sdio_disk,fail_writes,fail_flush;
 unsigned sleeps,closes,opens;
@@ -96,11 +104,10 @@ int main(void){
 #include <stdlib.h>
 #include <assert.h>
 typedef unsigned UINT;
-#define TX_SUCCESS 0U
-#define TX_WAIT_FOREVER 0xffffffffU
 #define TX_TIMER_TICKS_PER_SECOND 1000U
 #define FX_SUCCESS 0U
-#define SD_FLUSH_INTERVAL 30000U
+#define SD_FLUSH_INTERVAL 1000U
+#define SD_POST_MARGIN 100U
 #define SDFlush 0
 #define WE_ARE_SO_BACK 0
 #define id "SD "
@@ -108,30 +115,38 @@ typedef unsigned UINT;
 #define load(p,o) stopped
 #define option(x) 1U
 #define log_err(...) ((void)0)
-struct {unsigned full;} line;
-bool stopped,sd_retry_pending;
-unsigned sema_calls,write_calls,sleep_calls,shutdown_calls;
+struct {unsigned full,off[2],cur,lock;bool free;} line;
+void fc_lock(unsigned *p){assert(!*p);*p=1;}
+void fc_unlock(unsigned *p){assert(*p);*p=0;}
+void sd_mark_launch_cutoff(void){}
+bool sd_cutoff_set;
+bool stopped,sd_launch_pending;
+unsigned sema_calls,write_calls,sleep_calls,shutdown_calls,clock_refreshes;
 unsigned g_sd_flushed_records,g_sd_written_records,g_sd_write_errors,sdio_disk;
-unsigned tx_semaphore_get(void *s,unsigned timeout){(void)s;(void)timeout;
- if(++sema_calls>1)exit(42);return TX_SUCCESS;}
+unsigned tx_semaphore_get(void *s,unsigned timeout){(void)s;assert(timeout==50);++sema_calls;exit(42);}
 int sd_pipeline_init(const char *s){(void)s;return 0;}
+void sd_refresh_clock(void){++clock_refreshes;}
+uint32_t now_ms(void){return 1;}
+void sd_service_events(bool draining){assert(!draining);}
+void sd_handoff_tail(void){}
 bool sd_try_write_line(void){
- if(++write_calls==1)return false; /* rotation/open failed before retry offset exists */
- stopped=true;return true;}
+ if(++write_calls==1)return false; /* rotation/open failed before a retry offset exists */
+ line.free=true;stopped=true;return true;}
 void tx_thread_sleep(unsigned ticks){assert(ticks>0);++sleep_calls;}
 void sd_pipeline_shutdown(const char *s){(void)s;++shutdown_calls;}
 bool timer_probe(unsigned timer,unsigned interval){(void)timer;(void)interval;return false;}
 unsigned fx_media_flush(void *m){(void)m;return 0;}
 ''' +task+r'''
-int main(void){sd_pipeline_task();assert(sema_calls==1&&write_calls==2&&sleep_calls==1&&shutdown_calls==1);}
+int main(void){sd_pipeline_task();assert(sema_calls==0&&write_calls==2&&sleep_calls==1&&shutdown_calls==1&&clock_refreshes==1);}
 '''
   with tempfile.TemporaryDirectory() as d:
    binary=pathlib.Path(d)/'pending'
-   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-x','c','-','-o',str(binary)],input=harness,text=True,check=True)
-   self.assertEqual(subprocess.run([str(binary)]).returncode,0)
+   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-x','c','-','-o',str(binary)],input=harness,text=True,check=True)
+   subprocess.run([str(binary)],check=True)
  def test_startup_retries_create_and_partial_header_without_recreating_semaphore(self):
   source=(ROOT/'Core/Src/sdpipeline.c').read_text()
-  funcs=source[source.index('static inline int sd_pipeline_init('):source.index('\nvoid sd_pipeline_task()')]
+  prepare=source[source.index('UINT sd_pipeline_prepare(void)'):source.index('/* Startup, file-part creation')]
+  funcs=prepare+source[source.index('static inline int sd_pipeline_init('):source.index('\nvoid sd_pipeline_task()')]
   harness=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -151,11 +166,20 @@ typedef unsigned UINT;
 #define load(...) stopped
 #define option(...) 1U
 #define log_err(...) ((void)0)
-struct {bool free;unsigned full;} line;
+struct {bool free;unsigned full,off[2];} line;
 struct {const char *fx_file_name;} file;
 uint32_t sd_buffer_records[2],g_sd_write_errors;
-bool sd_writer_slot,sd_retry_pending,sd_accepting,stopped,stop_on_sleep;
+bool sd_writer_slot,sd_retry_pending,sd_accepting,stopped,stop_on_sleep,sd_prepared;
 uint8_t sd_file_open;
+bool sd_launch_pending,sd_launch_active;
+bool sd_launch_completed,sd_cutoff_set,sd_cutoff_slot,sd_landed_seen;
+uint32_t sd_landed_tick,sd_cutoff_records,g_sd_launch_closed;
+uint16_t sd_cutoff_offset,sd_writer_skip;
+#define beyond(x) false
+#define current() 0
+#define Landed 10
+#define now_ms() 0
+#define sd_launch_landed(x) ((void)0)
 int sdio_disk,create_fail,header_fail;
 unsigned sema_creates,sema_deletes,creates,opens,writes,sleeps,shutdowns;
 char disk[512];unsigned position;
@@ -164,7 +188,7 @@ const char *unique_sd_filename(uint32_t suffix){(void)suffix;return "test.csv";}
 UINT tx_semaphore_create(unsigned *s,const char *name,unsigned value){assert(!*s);*s=1;++sema_creates;return 0;}
 UINT tx_semaphore_delete(unsigned *s){assert(*s);*s=0;++sema_deletes;return 0;}
 void tx_thread_sleep(unsigned ticks){assert(ticks==1000);++sleeps;if(stop_on_sleep)stopped=true;}
-void sd_pipeline_shutdown(const char *why){++shutdowns;sd_file_open=0;}
+void sd_pipeline_shutdown(const char *why){++shutdowns;sd_file_open=0;sd_accepting=false;}
 UINT fx_file_create(void *media,const char *name){++creates;if(create_fail){--create_fail;return 1;}return 0;}
 UINT fx_file_open(void *media,void *f,const char *name,unsigned mode){++opens;position=0;return 0;}
 UINT fx_file_seek(void *f,unsigned at){position=at;return 0;}
@@ -174,11 +198,14 @@ UINT fx_file_write(void *f,void *data,unsigned length){++writes;
 ''' +funcs+r'''
 int main(void){
  create_fail=2;header_fail=1;
+ assert(sd_pipeline_prepare()==TX_SUCCESS);
+ line.off[0]=11;sd_buffer_records[0]=1; /* acquisition before card mount */
  assert(sd_pipeline_init("test")==WE_ARE_SO_BACK);
+ assert(line.off[0]==11&&sd_buffer_records[0]==1);
  assert(sd_accepting&&sd_file_open==1&&sema_creates==1&&sema_deletes==0);
  assert(creates==3&&opens==1&&writes==2&&sleeps==3&&g_sd_write_errors==3);
  assert(position==strlen(SD_CSV_HEADER)&&!memcmp(disk,SD_CSV_HEADER,position));
- tx_semaphore_delete(&line.full);sd_file_open=0;sd_accepting=false;
+ tx_semaphore_delete(&line.full);sd_file_open=0;sd_accepting=false;sd_prepared=false;
  create_fail=99;stop_on_sleep=true;
  unsigned oldcreates=creates,oldsleeps=sleeps;
  assert(sd_pipeline_init("stop")==IT_IS_NOW_OVER);

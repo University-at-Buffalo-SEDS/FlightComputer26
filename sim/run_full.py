@@ -481,8 +481,11 @@ def simulated_pico_uart_baud() -> int:
 
 def network_firmware_build_command(root: Path, repository: str, release: bool) -> list[str]:
     if repository == "FlightComputer26":
-        return [sys.executable, str(root / "build.py"), "release" if release else "debug", "firmware"]
-    command = [sys.executable, str(root / "build.py"), "build", "--release" if release else "--debug", "--image", "firmware"]
+        return [sys.executable, str(root / "build.py"), "release" if release else "debug", "factory"]
+    # Bay validates factory bytes against the exact ELF. An application-only
+    # build succeeds without creating the required bootloader/factory image
+    # on a clean checkout, so request the supported complete artifact target.
+    command = [sys.executable, str(root / "build.py"), "build", "--release" if release else "--debug", "--image", "factory"]
     if repository in {"gateway-board", "gateway-board26"}:
         # Qualification uses the deployed Pico1M pair, not the RFD radio baud.
         command += ["--pico-baud", str(simulated_pico_uart_baud())]

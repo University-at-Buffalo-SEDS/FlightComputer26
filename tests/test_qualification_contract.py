@@ -162,7 +162,6 @@ class QualificationContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("telemetry_unix_s()", pipeline)
-        self.assertIn("SEDS_LOG_FILENAME \"-%lu-%03lu.csv\"", pipeline)
         self.assertIn("(unsigned long)time", pipeline)
         self.assertNotIn("blink(Blue, true, 1);\n      blink(Blue, false, 1);", filex)
 

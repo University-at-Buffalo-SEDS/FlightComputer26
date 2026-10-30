@@ -109,6 +109,11 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   /* USER CODE BEGIN App_ThreadX_Init */
 
   (void)tx_thread_stack_error_notify(thread_stack_error_handler);
+#ifdef SD_AVAILABLE
+  /* Optional storage failure must not stop flight/network startup. The SD task
+   * retries initialization and exposes unavailable/drop counters. */
+  (void)sd_pipeline_prepare();
+#endif
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
   ret = create_telemetry_task(memory_ptr);

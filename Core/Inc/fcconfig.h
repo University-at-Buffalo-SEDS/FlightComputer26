@@ -39,7 +39,7 @@
 #else
 #define SD_BUFFER_SIZE 32768
 #endif
-#define SD_FLUSH_INTERVAL   30000
+#define SD_FLUSH_INTERVAL   1000
 #define SD_MAX_MSG_SIZE      1024
 
 

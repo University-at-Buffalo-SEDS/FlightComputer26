@@ -14,14 +14,15 @@ class ManagedDispatchTests(unittest.TestCase):
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "ground_heartbeat_owner.h"
 typedef int SedsResult;
 enum {SEDS_OK=0, SEDS_HANDLER_ERROR=-9, SEDS_DT_HEARTBEAT=1,
  SEDS_DT_FLIGHT_STATE, SEDS_DT_GPS_DATA, SEDS_DT_FLIGHT_COMMAND,
  SEDS_DT_ASCENT_BIASES, SEDS_DT_AV_BAY_UNDERGLOW, SEDS_DT_FLIGHT_BUZZER};
 typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
-static unsigned commands;
-static int pulse_ground(void){return 0;}
+static unsigned commands, heartbeats;
+static int pulse_ground(void){heartbeats++;return 0;}
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p && n==1);commands++;return 42;}
@@ -36,6 +37,10 @@ int main(void){
  p.payload_len=1;p.payload=NULL;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  p.payload=&value;p.ty=SEDS_DT_FLIGHT_COMMAND;
  assert(on_fc_packet(&p,NULL)==42 && commands==1);
+ p.ty=SEDS_DT_HEARTBEAT;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
+ p.sender="DAQ";p.sender_len=3;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
+ p.sender="@addr:3561204631";p.sender_len=16;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==2);
+ p.sender="GS";p.sender_len=2;
  p.ty=999;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  assert(g_fc_endpoint_error_type==999 && g_fc_endpoint_error_result==SEDS_HANDLER_ERROR);
  p.sender_len=0;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
@@ -46,5 +51,5 @@ int main(void){
         with tempfile.TemporaryDirectory() as d:
             exe=Path(d)/'managed-dispatch'
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
-                '-fsanitize=address,undefined','-x','c','-','-o',str(exe)],input=code,text=True,check=True)
+                '-I',str(ROOT/'Core/Inc'),'-fsanitize=address,undefined','-x','c','-','-o',str(exe)],input=code,text=True,check=True)
             subprocess.run([str(exe)],check=True)

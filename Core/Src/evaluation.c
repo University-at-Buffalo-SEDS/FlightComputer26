@@ -73,6 +73,8 @@ static inline void flight_advance(state promotion)
     message(id "enter vigilant mode", false);
   }
 
+  if (promotion == Launch) fc_sd_capture_event(FC_LOG_LAUNCH_DETECTED, false);
+  if (promotion == Landed) sd_launch_landed(now_ms());
   log_metric(id "new flight state", promotion, true);
   log_flight_state(to_global_state(promotion));
 }
@@ -405,15 +407,14 @@ static inline void propel_kalman_state(fu32 conf)
   }
 
 #ifdef SD_AVAILABLE
-  if (timer_probe(KFLocal, rates.sd))
-  {
-    sd_append_f32(kind_sd, tmp, elements);
-  }
+  /* Preserve each completed filter output independently of radio/report
+   * throttling; the bounded SD path accounts for any storage refusal. */
+  sd_append_f32(kind_sd, tmp, elements);
 #endif
 
-  if (timer_probe(KFRemote, rates.gnd))
+  if (timer_probe_ground(KFRemote, rates.gnd))
   {
-    log_f32(kind_gnd, elements, tmp);
+    log_periodic_f32(kind_gnd, elements, tmp);
   }
 
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;

@@ -343,3 +343,6 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 target_compile_definitions(STM32_Drivers PRIVATE
     VECT_TAB_OFFSET=${FLIGHT_APP_VECTOR_OFFSET}U)
 include(cmake/launchcore_stm32.cmake)
+
+# Low-rate internal die temperature; no separate telemetry stream.
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/board_temperature.c)

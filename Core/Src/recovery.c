@@ -258,7 +258,9 @@ static inline void evaluation_configure(bool focus)
 
 static inline void manual_deployment(bool apogee, bool force)
 {
-  if (!fc_watchdog_can_actuate()) return;
+  if (!fc_watchdog_can_actuate()) {
+    fc_sd_capture_event(FC_LOG_PYRO_REJECTED, !apogee); return;
+  }
   if (apogee)
   {
     sm.flight = Descent;
@@ -363,6 +365,7 @@ static inline void enter_launch(bool noconfirm)
   g_conf &= ~option(Eval_Abort_Flag);
   g_conf &= ~option(Postinit_Requested);
 
+  fc_sd_capture_event(FC_LOG_LAUNCH_ACCEPTED, false);
   tx_thread_resume(&evaluation_task);
 }
 

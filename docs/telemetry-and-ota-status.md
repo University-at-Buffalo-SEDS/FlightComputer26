@@ -1,11 +1,15 @@
 # Telemetry logging and OTA status
 
-SD append operations capture network/local timestamps before taking the SD
-buffer lock. They use a nonblocking try-lock so a high-priority telemetry
+SD append operations capture monotonic timestamps and a bounded cached UTC
+mapping before taking the SD buffer lock. Only the SD worker queries the
+network clock; acquisition never waits for its mutex. They use a nonblocking try-lock so a high-priority telemetry
 callback cannot spin on a preempted lower-priority SD writer. Contention increments
 `g_sd_lock_contention_drops`; it drops a log record, not a flight/network task.
 The producer changes buffers only when the other buffer is available, avoiding
 overwriting an in-progress SD write. Host tests compile these production functions.
+
+See [SD flight recordings](sd-flight-recordings.md) for raw/filter cadence,
+GPIO audit events, launch files and durability limits.
 
 These fixes address demonstrated lock-order and buffer-ownership defects. They
 do not establish the cause of an observed 30–40-second telemetry pause where

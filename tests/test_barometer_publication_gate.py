@@ -25,7 +25,7 @@ static struct { uint32_t sd, gnd; } rates;
 static uint32_t now;
 static unsigned timer_calls, baro_publications, imu_publications;
 static bool producer_timer_ready;
-static bool timer_probe(unsigned timer, uint32_t interval) {
+static bool timer_probe_ground(unsigned timer, uint32_t interval) {
     (void)timer; (void)interval; ++timer_calls; return producer_timer_ready;
 }
 static void log_f32(uint32_t type, unsigned count, const void *data) {
@@ -35,6 +35,7 @@ static void log_f32(uint32_t type, unsigned count, const void *data) {
         if (type == SEDS_DT_IMU_DATA) ++imu_publications;
     }
 }
+#define log_periodic_f32 log_f32
 '''
         checks = r'''
 int main(void) {

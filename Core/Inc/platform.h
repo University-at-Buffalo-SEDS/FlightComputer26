@@ -241,6 +241,13 @@ extern uint8_t sdmmc_ready;
   log_telemetry_asynchronous((type), (buf), (amount),         \
                              sizeof(float))
 
+/* The caller owns the periodic rate gate before entering the router. Both
+ * numeric paths send directly; avoid applying a second, differently anchored
+ * rate gate to these already scheduled reports. */
+#define log_periodic_f32(type, amount, buf)                   \
+  log_telemetry_synchronous((type), (buf), (amount),          \
+                           sizeof(float))
+
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
 
 #define log_err_sync(fmt, ...)                                \
@@ -363,6 +370,11 @@ typedef enum SedsDataType_Debug {
 #define log_die(fmt, ...) Error_Handler()
 
 #endif /* USB_ENUMERATES */
+
+#ifndef log_periodic_f32
+#define log_periodic_f32(type, amount, buf) log_f32(type, amount, buf)
+#endif
+
 
 #define log_msg(msg) log_msg_sync(msg, 0)
 #define log_err log_err_sync

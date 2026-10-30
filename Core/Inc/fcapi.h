@@ -10,6 +10,7 @@
 #include "fccommon.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "fc_sd_events.h"
 
 
 /* DMA */
@@ -21,6 +22,7 @@ bool try_fetch_accl(f_xyz *);
 
 /* SD pipeline */
 
+UINT sd_pipeline_prepare(void);
 void sd_pipeline_task(void);
 void sd_append_f32(SedsDataType, const float *, fu8);
 void sd_append_sensor(unsigned sensor, const float *raw, const float *converted, fu8 count);
@@ -184,6 +186,36 @@ static inline bool timer_probe(timer u, fu32 timeout)
 }
 
 
+/* Periodic telemetry keeps its phase when a sample or send runs late. Skip
+ * missed slots in one step, rather than resetting the phase or bursting old
+ * reports. Acquisition, control and SD timers retain timer_probe semantics. */
+static inline bool timer_probe_periodic(timer u, fu32 timeout)
+{
+  const fu32 sample = now_ms();
+  const fu32 previous = local_time[u];
+  const fu32 elapsed = sample - previous;
+  if (timeout == 0)
+  {
+    local_time[u] = sample;
+    return true;
+  }
+  if (elapsed < timeout) return false;
+  local_time[u] = previous + (elapsed / timeout) * timeout;
+  return true;
+}
+
+
+/* Recovery may slow or disable ground reports. A producer-owned gate must
+ * also retain the board's compiled maximum rate before bypassing the generic
+ * publisher limiter. Acquisition, SD and control timers do not use this. */
+static inline bool timer_probe_ground(timer u, fu32 configured_period)
+{
+  if (configured_period == (fu32)UINT_FAST32_MAX) return false;
+  const fu32 minimum = FC_TELEMETRY_PERIOD_MS;
+  return timer_probe_periodic(u, configured_period < minimum ? minimum : configured_period);
+}
+
+
 /* Flight state helpers */
 
 static inline state current(void)
@@ -305,14 +337,14 @@ void deployment_pulse_start(bool reef);
 
 static inline bool release_parachute(bool force)
 {
-  if (!fc_watchdog_can_actuate()) return false;
+  if (!fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
   if (!force && !beyond(Armed))
   {
     log_metric("PD drogue blocked, state", current(), true);
-    return false;
+    fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false;
   }
 
-  if (!force && (g_conf & option(Parachute_Deployed))) return false;
+  if (!force && (g_conf & option(Parachute_Deployed))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
   deployment_pulse_start(false);
   log_metric("PD approx altitude", svec(0).alt, true);
 
@@ -324,20 +356,20 @@ static inline bool release_parachute(bool force)
 
 static inline bool expand_parachute(bool force)
 {
-  if (!fc_watchdog_can_actuate()) return false;
+  if (!fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   if (!force && !beyond(Launch))
   {
     log_metric("PR reef blocked, state %u", current(), true);
-    return false;
+    fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false;
   }
   
   if (!(load(&g_conf, Acq) & option(Parachute_Deployed)))
   {
     message("PR reef blocked: not drogue", true);
-    return false;
+    fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false;
   }
 
-  if (!force && (g_conf & option(Parachute_Expanded))) return false;
+  if (!force && (g_conf & option(Parachute_Expanded))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   deployment_pulse_start(true);
   log_metric("PR approx altitude", svec(0).alt, true);
 

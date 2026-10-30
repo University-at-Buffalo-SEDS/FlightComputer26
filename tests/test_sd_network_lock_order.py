@@ -45,7 +45,7 @@ int main(void) {
 
     def test_actual_sd_append_functions_do_not_invert_network_lock_or_spin(self):
         source = (ROOT / "Core/Src/sdpipeline.c").read_text()
-        functions = source[source.index("/* All producers share one bounded append path."):source.index("void sd_conclude(")]
+        functions = source[source.index("/* Only the SD worker queries the network clock."):source.index("void sd_conclude(")]
         harness = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -57,6 +57,7 @@ typedef unsigned short fu16;
 typedef uint32_t fu32;
 typedef int SedsDataType;
 #include "sd_record_format.h"
+void sd_mark_launch_cutoff(void) {}
 #include "sd_vector_format.h"
 struct { uint32_t sd; } rates = {5};
 #define F32_TO_STR_MAX_SIZE 128
@@ -66,7 +67,12 @@ struct { uint32_t sd; } rates = {5};
 struct { int lock; unsigned cur; fu16 off[2]; } line;
 char sdbuf[2][SD_BUFFER_SIZE];
 unsigned g_sd_format_errors, g_sd_lock_contention_drops, sd_csv_sequence;
-bool expect_contention, stop_during_clock, stop_flag;
+bool expect_contention, stop_during_lock, stop_flag;
+uint64_t uptime_now=456;
+uint32_t irq_mask;
+uint32_t __get_PRIMASK(void){return irq_mask;}
+void __disable_irq(void){irq_mask=1;}
+void __set_PRIMASK(uint32_t x){irq_mask=x;}
 bool sd_accepting=true;
 unsigned g_sd_unavailable_drops;
 int clock_calls;
@@ -76,14 +82,14 @@ int seds_ftoa4(char *out,fu16 n,const float *data,fu8 count) {
 const char *seds_f32(SedsDataType ty) { (void)ty; return "IMU"; }
 const char *seds_msg(SedsDataType ty) { (void)ty; return "Message"; }
 uint64_t telemetry_unix_ms(void) {
-    assert(!line.lock); ++clock_calls; if(stop_during_clock) stop_flag=true; return 123000;
+    assert(!line.lock); ++clock_calls; return 123000;
 }
-uint64_t board_uptime_ticks(void) { return 456; }
+uint64_t board_uptime_ticks(void) { return uptime_now; }
 void fc_lock(int *lock) { assert(!*lock); *lock=1; }
 void fc_concede(int *lock) { *lock=0; }
 bool fc_trylock(int *lock) {
     if (expect_contention || *lock) return false;
-    *lock=1; return true;
+    *lock=1; if(stop_during_lock) stop_flag=true; return true;
 }
 void sd_release_notify(fu16 written,fu16 rem) {
     assert(line.lock); assert(written < rem);
@@ -92,11 +98,12 @@ void sd_release_notify(fu16 written,fu16 rem) {
 ''' + functions + r'''
 int main(void) {
     float value=1.0f;
+    sd_refresh_clock();
     sd_append_f32(0,&value,1);
     sd_append_string(0,"callback");
     assert(!line.lock);
 #ifdef TELEMETRY_ENABLED
-    assert(clock_calls==2);
+    assert(clock_calls==1);
     assert(strstr(sdbuf[0],"123000,456,IMU,\"1.0\",\"\",\"\",\"\",network,,,456,1000,1"));
     assert(strstr(sdbuf[0],"123000,456,Message,\"callback\",\"\",\"\",\"\",network,,,456,1000,2"));
 #else
@@ -111,11 +118,11 @@ int main(void) {
     sd_append_f32(0,&value,1); sd_append_string(0,"not ready");
     assert(line.off[0]==before && g_sd_unavailable_drops==2);
 #ifdef TELEMETRY_ENABLED
-    assert(clock_calls==4);
-    sd_accepting=true; stop_during_clock=true;
+    assert(clock_calls==1);
+    sd_accepting=true; stop_during_lock=true;
     sd_append_string(0,"raced stop");
     assert(stop_flag && !line.lock && line.off[0]==before);
-    stop_flag=false; stop_during_clock=false;
+    stop_flag=false; stop_during_lock=false;
 #else
     assert(clock_calls==0);
     sd_accepting=true;
@@ -125,12 +132,21 @@ int main(void) {
     assert(!line.lock && line.off[0]>before);
     assert(strstr(sdbuf[0],"gyroscope_sample"));
     before=line.off[0];
-    sd_append_sensor(1,raw,converted,3); /* Same acquisition cadence: no duplicate. */
+    sd_append_sensor(1,raw,converted,3); /* Every consumed raw sample is retained. */
+    assert(line.off[0]>before);
+    before=line.off[0];
     sd_append_sensor(3,raw,converted,3); /* Invalid sensor cannot index timers. */
     assert(line.off[0]==before);
     expect_contention=true;
     sd_append_sensor(2,raw,converted,3);
     assert(!line.lock && line.off[0]==before && g_sd_lock_contention_drops==3);
+    /* Losing the writer's clock lease preserves uptime, labels local time,
+     * and never acquires the router lock from a producer. */
+    expect_contention=false; uptime_now=3000; line.off[0]=0;
+    sd_append_f32(0,&value,1);
+    assert(strstr(sdbuf[0],"3000,3000,IMU"));
+    assert(strstr(sdbuf[0],",local,,,3000,1000,"));
+    assert(!irq_mask);
     return 0;
 }
 '''

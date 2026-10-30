@@ -33,7 +33,8 @@ class CanHardwareContract(unittest.TestCase):
         config = (ROOT / "Core/Inc/fcconfig.h").read_text()
         distribution = (ROOT / "Core/Src/distribution.c").read_text()
         self.assertRegex(config, r"#define LOG_RATE_GND\s+FC_TELEMETRY_PERIOD_MS")
-        self.assertIn("timer_probe(mems[dev].tim_gnd, ground_period)", distribution)
+        self.assertIn("timer_probe_ground(mems[dev].tim_gnd, ground_period)", distribution)
+        self.assertIn("central_baro_gate = dev == Baro", distribution)
         self.assertNotIn("timer_probe(mems[dev].tim_gnd, ground_period * 2)", distribution)
 
     def test_matches_the_avionics_fd_bus(self):

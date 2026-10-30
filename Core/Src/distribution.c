@@ -1,3 +1,4 @@
+#include "ground_heartbeat_owner.h"
 /* Core/Src/distribution.c */
 
 #include "platform.h"
@@ -391,7 +392,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   switch (pkt->ty)
   {
     case SEDS_DT_HEARTBEAT:
-      return pulse_ground();
+      return ground_heartbeat_owner_matches(pkt->sender, pkt->sender_len)
+                 ? pulse_ground() : SEDS_OK;
     case SEDS_DT_FLIGHT_STATE:
       return implicit_postinit(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
@@ -571,9 +573,16 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
    * much faster acquisition path. The configured telemetry cap is unchanged. */
   central_baro_gate = dev == Baro && ground_period <= FC_TELEMETRY_PERIOD_MS;
 #endif
-  if (central_baro_gate || timer_probe(mems[dev].tim_gnd, ground_period))
+  if (central_baro_gate)
   {
+    /* Upstream central gate remains authoritative for fresh barometer data. */
     log_f32(mems[dev].kind_gnd, mems[dev].size, buf);
+    recorded = true;
+  }
+  else if (timer_probe_ground(mems[dev].tim_gnd, ground_period))
+  {
+    /* IMU/recovery reports own one phase-anchored producer gate. */
+    log_periodic_f32(mems[dev].kind_gnd, mems[dev].size, buf);
     recorded = true;
   }
 

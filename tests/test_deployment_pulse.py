@@ -14,6 +14,7 @@ class DeploymentPulseTests(unittest.TestCase):
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include "fc_sd_events.h"
 #define TX_TIMER_TICKS_PER_SECOND 1000
 #define CO2_ASSERT_INTERVAL 500
 #define REEF_ASSERT_INTERVAL 500
@@ -34,6 +35,7 @@ static void reef_high(void) {assert(mask); reef=1;}
 static void co2_low(void) {co2=0;}
 static void reef_low(void) {reef=0;}
 static void HAL_SuspendTick(void) {suspended++;}
+static unsigned HAL_GetTick(void) {return hal_ticks;}
 static void HAL_IncTick(void) {if (!freeze_hal) hal_ticks++;}
 '''
         main = r'''
@@ -59,7 +61,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory() as d:
             exe = str(Path(d)/'pulse')
-            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-x','c','-','-o',exe],input=stub+source+main,text=True,check=True)
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),'-x','c','-','-o',exe],input=stub+source+main,text=True,check=True)
             subprocess.run([exe],check=True)
 
     def test_pulse_armed_before_any_logging(self):
