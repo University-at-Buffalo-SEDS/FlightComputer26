@@ -512,7 +512,7 @@ def main(argv=None):
             result=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
             print(result.stdout);return result.returncode
         validate_layout(SOURCE_ROOT)
-        elf=args.elf or (args.build or SOURCE_ROOT/'build'/'Release')/'FlightComputer26.elf'
+        elf=args.elf or (args.build or SOURCE_ROOT/'build'/'Debug')/'FlightComputer26.elf'
         firmware=Firmware(elf)
         print('ELF:',firmware.path,'SHA256:',firmware.sha256)
         print('Initialized flash verification:',sum(len(x) for _,x in firmware.flash),'bytes across',len(firmware.flash),'regions')
