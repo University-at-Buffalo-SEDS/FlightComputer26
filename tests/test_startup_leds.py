@@ -25,8 +25,13 @@ class StartupLedTests(unittest.TestCase):
             "static void telemetry_can_rx", 1
         )[0]
         self.assertIn("led_toggle(light[Green].port, light[Green].pin)", tx_send)
-        self.assertIn("blink(Blue, true, 3);", source)
-        self.assertIn("blink(Green, false, 2);", source)
+        retry=source.split('while (init_telemetry_router() != SEDS_OK)',1)[1].split('g_telemetry_service_stage = 3U;',1)[0]
+        for required in ('can_bus_process_rx();','board_watchdog_progress(BOARD_WATCHDOG_NETWORK);','tx_thread_sleep(1U);'):
+            self.assertIn(required,retry)
+        for forbidden in ('blink(', 'HAL_GPIO_WritePin', 'request_ignition', 'dispatch_flight_cmd', 'seds_router_log'):
+            self.assertNotIn(forbidden,retry)
+        # Runtime retry/failure behavior is exercised by test_router_lifecycle's
+        # actual startup-loop fixture, not inferred from these source contracts.
         self.assertIn("av_bay_underglow_reapply();", source)
         startup = source.split("void telemetry_entry", 1)[1]
         self.assertNotIn("led_off(LED2_PORT, LED2_PIN);", startup)

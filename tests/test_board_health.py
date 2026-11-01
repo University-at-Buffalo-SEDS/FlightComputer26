@@ -1,5 +1,6 @@
 from pathlib import Path
 import json,re,subprocess,tempfile,unittest
+from checked_router_fixture import checked_hooks
 ROOT=Path(__file__).resolve().parents[1]
 class BoardHealthTests(unittest.TestCase):
  def test_actual_producer_is_bounded_exact_and_optional(self):
@@ -42,19 +43,19 @@ SedsResult seds_router_log_bytes_ex(SedsRouter *router,int dtype,const uint8_t *
  assert(router&&dtype==42&&length==96&&!stamp&&queue);
  assert(!mask&&lock_depth==1);++calls;memcpy(captured,data,sizeof(captured));return refuse?1:0;
 }
-''' +source+r'''
+''' +checked_hooks(ROOT)+'\n'+source+r'''
 int main(void){
  SedsRouter router=1;
  board_health_poll(NULL);assert(!calls);
 #ifdef TELEMETRY_ENABLED
  uptime=100;board_health_poll(&router);assert(!calls);
  uptime=4999;board_health_poll(&router);assert(!calls);
- uptime=5000;refuse=1;board_health_poll(&router);assert(calls==1);
+ uptime=5000;fixture_get_failure=1;board_health_poll(&router);assert(!calls&&!lock_depth&&lock_fails==1);fixture_get_failure=0;uptime=10000;refuse=1;board_health_poll(&router);assert(calls==1);
  for(unsigned i=0;i<1000;i++)board_health_poll(&router);
  assert(calls==1&&!lock_depth&&!mask); /* no pressure retry storm */
- uptime=10000;refuse=0;board_health_poll(&router);
+ uptime=15000;refuse=0;board_health_poll(&router);
  assert((captured[1]&0xffffff00U)==0x17bd0100U);
- assert(calls==2&&captured[23]==1&&captured[0]==1&&captured[4]==1000);
+ assert(calls==2&&captured[23]==2&&captured[0]==1&&captured[4]==1000);
  assert(captured[5]==123&&captured[6]==5&&captured[11]==34&&captured[12]==31);
 #ifdef TELEMETRY_USE_TLSF
  assert((captured[1]&1)&&captured[7]==100&&captured[8]==200&&captured[9]==4096&&captured[10]==7);

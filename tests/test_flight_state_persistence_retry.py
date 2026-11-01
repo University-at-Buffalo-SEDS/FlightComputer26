@@ -18,6 +18,7 @@ typedef struct { uint32_t ty; const uint8_t *payload; size_t payload_len; } Seds
 #define SEDS_HANDLER_ERROR 1
 #define SEDS_BAD_ARG 2
 void seds_router_disable_managed_variable(SedsRouter*,uint32_t);
+SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*,uint32_t,bool*);
 SedsResult seds_router_enable_network_variable(SedsRouter*,uint32_t,bool,bool);
 SedsResult seds_router_on_network_variable_update(SedsRouter*,uint32_t,SedsResult(*)(const SedsPacketView*,void*),void*);
 SedsResult seds_router_request_managed_variable(SedsRouter*,uint32_t);
@@ -77,11 +78,14 @@ SedsResult flight_state_cache_apply_network_update(const SedsPacketView *packet)
  return apply_result;
 }
 uint8_t board_recovery_managed_update_allowed(const SedsPacketView *packet) {(void)packet;return 1;}
-void seds_router_disable_managed_variable(SedsRouter *r,uint32_t ty) {assert(r&&ty==SEDS_DT_FLIGHT_STATE);callback=NULL;}
-SedsResult seds_router_enable_network_variable(SedsRouter *r,uint32_t ty,bool write,bool other) {
+void seds_router_disable_managed_variable(SedsRouter *r,uint32_t ty) {(void)r;(void)ty;assert(!"whole-service disable forbidden during selective retirement");}
+SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*r,uint32_t ty,bool*out_invalidated){assert(out_invalidated==NULL);assert(r&&ty==SEDS_DT_FLIGHT_STATE);return SEDS_OK;}
+
+static unsigned selective_enable_calls,selective_callback_calls;
+SedsResult seds_router_enable_network_variable(SedsRouter *r,uint32_t ty,bool write,bool other) {assert(++selective_enable_calls==1U);
  assert(r && ty==SEDS_DT_FLIGHT_STATE && write && !other);return SEDS_OK;
 }
-SedsResult seds_router_on_network_variable_update(SedsRouter *r,uint32_t ty,SedsResult(*fn)(const SedsPacketView*,void*),void *user) {
+SedsResult seds_router_on_network_variable_update(SedsRouter *r,uint32_t ty,SedsResult(*fn)(const SedsPacketView*,void*),void *user) {assert(++selective_callback_calls==1U);
  assert(r && ty==SEDS_DT_FLIGHT_STATE && fn && !user);callback=fn;return SEDS_OK;
 }
 SedsResult seds_router_request_managed_variable(SedsRouter *r,uint32_t ty) {

@@ -3,6 +3,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from checked_router_fixture import checked_hooks
+from router_lifecycle_fixture import function
 ROOT=Path(__file__).resolve().parents[1]
 
 def timer(name):
@@ -11,7 +13,7 @@ def timer(name):
 def run(rate,duplicate=False):
     platform=(ROOT/'Core/Inc/platform.h').read_text();a=platform.index('#define log_periodic_f32(');macro=platform[a:platform.index('\n\n',a)]
     if duplicate:macro=macro.replace('log_telemetry_synchronous','log_telemetry_asynchronous')
-    source=(ROOT/'Core/Src/telemetry.c').read_text();pub=source[source.index('SedsResult log_telemetry_synchronous'):source.index('SedsResult log_telemetry_string_asynchronous')]
+    source=(ROOT/'Core/Src/telemetry.c').read_text();pub='\n'.join(function(source,n)for n in ('log_telemetry_synchronous_locked','log_telemetry_synchronous','log_telemetry_asynchronous_locked','log_telemetry_asynchronous'))
     code=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -35,7 +37,7 @@ int init_telemetry_router(void){return SEDS_OK;}
 int seds_router_log_bytes(void *r,unsigned type,const void *p,size_t n){
  assert(r&&type==SEDS_DT_BAROMETER_DATA&&p&&n==3*sizeof(float)&&locks==1);++calls;return SEDS_OK;
 }
-'''+timer('timer_probe_periodic')+'\n'+timer('timer_probe_ground')+'\n'+pub+'\n'+macro+r'''
+'''+checked_hooks(ROOT)+'\n'+timer('timer_probe_periodic')+'\n'+timer('timer_probe_ground')+'\n'+pub+'\n'+macro+r'''
 static void opportunity(unsigned configured,unsigned tick){
  source_tick=tick;
  if(timer_probe_ground(0,configured)){

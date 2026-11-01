@@ -3,11 +3,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from checked_router_fixture import checked_hooks
+from router_lifecycle_fixture import function as actual_function
 ROOT=Path(__file__).resolve().parents[1]
 class ErrorFormatBoundsTests(unittest.TestCase):
     def test_long_message_and_error_paths(self):
         source=(ROOT/'Core/Src/telemetry.c').read_text()
-        function=re.search(r'static SedsResult log_error_impl\(.*?\n\}',source,re.S).group()
+        function='\n'.join(actual_function(source,n)for n in ('log_error_impl_locked','log_error_impl'))
         code=r'''
 #include <stdint.h>
 #include <stddef.h>
@@ -16,6 +18,7 @@ class ErrorFormatBoundsTests(unittest.TestCase):
 #include <string.h>
 #include <assert.h>
 typedef int SedsResult;
+#define TELEMETRY_ENABLED 1
 #define SEDS_OK 0
 #define SEDS_ERR 1
 #define SEDS_BAD_ARG 2
@@ -32,9 +35,10 @@ int seds_router_log_bytes_ex(void*r,int type,const uint8_t*data,size_t n,void*ts
 }
 int format(char*b,size_t n,const char*f,va_list args){if(fail_format)return -1;return vsnprintf(b,n,f,args);}
 #define vsnprintf format
-''' + function + r'''
+''' +checked_hooks(ROOT)+'\n'+ function + r'''
 static int report(unsigned queue,const char*f,...){va_list a;va_start(a,f);int result=log_error_impl(queue,f,a);va_end(a);return result;}
 int main(void){
+ fixture_get_failure=1;assert(report(1,"blocked")==SEDS_BAD_ARG&&!calls&&!locked);fixture_get_failure=0;
  char large[2049];memset(large,'X',2048);large[2048]=0;
  assert(report(1,"%s",large)==SEDS_OK);assert(length==512&&queued==1&&!locked);
  for(unsigned i=0;i<512;i++)assert(received[i]=='X');

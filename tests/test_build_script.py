@@ -301,6 +301,18 @@ class OtaBuildScriptTests(unittest.TestCase):
             self.assertFalse((build_dir / ".FlightComputer26.ota-base.launchcore.img").exists())
 
 
+    def test_default_test_prerequisite_failure_stops_before_native_discovery(self):
+        def fail(project):
+            self.assertEqual(project,build.PROJECT)
+            raise RuntimeError('precise SDK setup failure')
+        with mock.patch('runpy.run_path',return_value={'prepare_native_sdk':fail}), \
+             mock.patch.object(build.subprocess,'run') as native, \
+             mock.patch.object(build,'run_gtests') as gtests:
+            with self.assertRaisesRegex(RuntimeError,'Host SDK native prerequisite failed'):
+                build.run_tests([])
+        native.assert_not_called()
+        gtests.assert_not_called()
+
     def test_full_cli_preserves_allocator_store_and_selected_build_for_every_stage(self):
         import os
         import sys
@@ -308,12 +320,21 @@ class OtaBuildScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, contextlib.chdir(Path.cwd()):
             root = Path(directory)
             commands = []
+            stages=[]
+            def prepare(project):
+                self.assertEqual(project,root)
+                stages.append('sdk')
+            def unit_run(*args,**kwargs):
+                self.assertEqual(stages,['sdk'])
+                stages.append('python')
+                return build.subprocess.CompletedProcess(args[0],0)
             with contextlib.redirect_stdout(io.StringIO()), \
                  mock.patch.object(build, "PROJECT", root), \
                  mock.patch.object(build, "BUILDDIR", root / "build"), \
                  mock.patch.object(sys, "argv", ["build.py", "--build-subdir", "Selected_Test", "test", "--all", "--full", "--release", "--allocator", "tlsf", "--packet-store", "compact", "--watchdog", "--sedsnet-ref", "dev", "--no-gps"]), \
                  mock.patch.dict(os.environ, {}, clear=False), \
-                 mock.patch.object(build.subprocess, "run"), \
+                 mock.patch("runpy.run_path", return_value={"prepare_native_sdk":prepare}), \
+                 mock.patch.object(build.subprocess, "run", side_effect=unit_run), \
                  mock.patch.object(build, "run_gtests"), \
                  mock.patch.object(build, "run", side_effect=commands.append), \
                  mock.patch.object(build, "select_artifact") as artifact, \
@@ -323,6 +344,7 @@ class OtaBuildScriptTests(unittest.TestCase):
                  mock.patch.object(run_full, "run_unacknowledged_can_simulation") as disconnected, \
                  mock.patch.object(run_full, "run_network_simulation") as network:
                 build.main()
+            self.assertEqual(stages,['sdk','python'])
             self.assertEqual(len(commands), 2, "factory and OTA must both use the selected build configuration")
             for command in commands:
                 self.assertIn("-DTELEMETRY_USE_TLSF=ON", command)

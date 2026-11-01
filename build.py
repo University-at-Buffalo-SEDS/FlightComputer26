@@ -770,6 +770,10 @@ def parse_test_options(argv: list[str]) -> tuple[bool, bool, bool]:
 def run_tests(argv: list[str], *, build_args: argparse.Namespace | None = None) -> None:
         all_tests, release, ultra_soak = parse_test_options(argv)
         results: list[tuple[str, str]] = []
+        def prepare_sdk():
+                import runpy
+                runpy.run_path(str(PROJECT / "tests/native_sdk.py"))["prepare_native_sdk"](PROJECT)
+        run_test_stage(results, "Host SDK native prerequisite", prepare_sdk)
         run_test_stage(results, "Python unit tests", lambda: subprocess.run([
                 sys.executable, "-m", "unittest", "discover", "-s", "tests",
                 "-p", "test_*.py",

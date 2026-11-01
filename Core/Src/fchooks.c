@@ -360,6 +360,35 @@ void telemetry_unlock(void)
   fchook_unlock(&telemetry_mu);
 }
 
+/* C application ownership is checked separately from the unchanged Rust ABI
+ * hooks. Reuse the recursive ThreadX mutex without adding shadow owner state. */
+#ifdef TELEMETRY_ENABLED
+#include "tx_mutex.h"
+int telemetry_router_context_ready(void)
+{
+    return telemetry_mu.tx_mutex_id == TX_MUTEX_ID && __get_IPSR() == 0U && tx_thread_identify() != TX_NULL;
+}
+
+int telemetry_router_enter(void)
+{
+    if (!telemetry_router_context_ready()) return 0;
+    if (tx_mutex_get(&telemetry_mu, TX_WAIT_FOREVER) != TX_SUCCESS) {
+        ++lock_fails;
+        return 0;
+    }
+    return 1;
+}
+
+int telemetry_router_leave(void)
+{
+    if (tx_mutex_put(&telemetry_mu) != TX_SUCCESS) {
+        ++unlock_fails;
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 void *telemetryMalloc(size_t xSize)
 {
 #ifdef TELEMETRY_USE_TLSF

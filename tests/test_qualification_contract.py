@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import build
+from router_lifecycle_fixture import function as actual_function
 
 
 class QualificationContractTests(unittest.TestCase):
@@ -170,10 +171,10 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
             encoding="utf-8"
         )
-        body = telemetry.split("SedsResult log_telemetry_asynchronous", 1)[1]
-        lock = body.index("telemetry_lock();")
-        limiter = body.index("fc_telemetry_rate_allow")
-        self.assertLess(lock, limiter)
+        wrapper=actual_function(telemetry,'log_telemetry_asynchronous')
+        self.assertLess(wrapper.index('telemetry_router_enter()'),wrapper.index('log_telemetry_asynchronous_locked('))
+        self.assertLess(wrapper.index('log_telemetry_asynchronous_locked('),wrapper.index('telemetry_router_leave()'))
+        self.assertIn('fc_telemetry_rate_allow',actual_function(telemetry,'log_telemetry_asynchronous_locked'))
 
     def test_recovery_dependencies_exist_before_priority_zero_thread_starts(self):
         root = Path(build.__file__).resolve().parent
@@ -264,15 +265,13 @@ class QualificationContractTests(unittest.TestCase):
             "process_rx_queue_timeout",
             "process_all_queues_timeout",
         ):
-            body = telemetry[telemetry.index(f"SedsResult {function}") :]
-            body = body[: body.index("\n}")]
-            self.assertIn("telemetry_lock();", body, function)
-            self.assertIn("telemetry_unlock();", body, function)
-
-        rx = telemetry[telemetry.index("void rx_asynchronous") :]
-        rx = rx[: rx.index("static UNUSED_FUNCTION void rx_synchronous")]
-        self.assertIn("telemetry_lock();", rx)
-        self.assertIn("telemetry_unlock();", rx)
+            body=actual_function(telemetry,function)
+            self.assertLess(body.index('telemetry_router_enter()'),body.index(function+'_locked('),function)
+            self.assertLess(body.index(function+'_locked('),body.index('telemetry_router_leave()'),function)
+            self.assertIn('return SEDS_BAD_ARG;',body,function)
+        rx=actual_function(telemetry,'rx_asynchronous')
+        self.assertLess(rx.index('telemetry_router_enter()'),rx.index('rx_asynchronous_locked('))
+        self.assertLess(rx.index('rx_asynchronous_locked('),rx.index('telemetry_router_leave()'))
 
     def test_isolated_can_backpressure_is_not_reported_as_a_router_crash(self):
         root = Path(build.__file__).resolve().parent
