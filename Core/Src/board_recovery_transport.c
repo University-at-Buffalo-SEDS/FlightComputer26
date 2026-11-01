@@ -13,23 +13,13 @@ static uint8_t previous_result;
 static uint8_t authorized_owner(SedsRouter *router,const SedsPacketView *packet,
                                 const char *owner,size_t owner_len)
 {
- if (packet->sender==0) return 0U;
- if (packet->sender_len==owner_len && memcmp(packet->sender,owner,owner_len)==0) return 1U;
- if (packet->sender_len<7U || packet->sender_len>16U ||
-     memcmp(packet->sender,"@addr:",6U)!=0) return 0U;
- uint32_t address=0U;
- for (size_t i=6U;i<packet->sender_len;i++) {
-  unsigned digit=(unsigned char)packet->sender[i]-(unsigned)'0';
-  if (digit>9U || address>(UINT32_MAX-digit)/10U) return 0U;
-  address=address*10U+digit;
- }
- uint32_t primary=0U;
- return address!=0U && seds_router_resolve_hostname_address(router,owner,owner_len,&primary)==SEDS_OK &&
-        primary!=0U && address==primary;
+ return packet!=NULL && seds_router_sender_matches_hostname(router,
+     packet->sender,packet->sender_len,owner,owner_len);
 }
 static uint8_t authorized_primary(SedsRouter *router,const SedsPacketView *packet)
 {
- return authorized_owner(router,packet,"GS",2U);
+ return packet!=NULL && seds_router_sender_matches_hostname(router,
+     packet->sender,packet->sender_len,"GS",2U);
 }
 uint8_t board_recovery_manual_stop_source_allowed(SedsRouter *router,const SedsPacketView *packet)
 {

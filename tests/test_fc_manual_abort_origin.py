@@ -4,6 +4,7 @@ import subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[1]
 STUB=r'''
 #include <stdint.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <assert.h>
@@ -17,8 +18,14 @@ static SedsRouter router;
 static struct {SedsRouter*r;}g_router={&router};
 static unsigned stops;
 static void fc_recovery_manual_stop(void){++stops;}
-static int seds_router_resolve_hostname_address(SedsRouter*r,const char*n,size_t len,uint32_t*out){
- assert(r);if(len==2&&!memcmp(n,"GS",2))*out=1234;else if(len==4&&!memcmp(n,"RRLS",4))*out=2345;else assert(0);return 0;}
+static bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*owner,size_t owner_n){
+ assert(r);if(!s)return false;
+ /* Deliberate named/assigned SDK boundary stub; real compact/collision
+  * delegation is checked separately by test_fc_manual_stop_identity. */
+ if(n==owner_n&&!memcmp(s,owner,n))return true;
+ if(owner_n==2&&!memcmp(owner,"GS",2))return n==10&&!memcmp(s,"@addr:1234",10);
+ if(owner_n==4&&!memcmp(owner,"RRLS",4))return n==10&&!memcmp(s,"@addr:2345",10);
+ return false;}
 '''
 MAIN=r'''
 int main(void){
