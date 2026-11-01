@@ -20,6 +20,7 @@ class FlightLogTests(unittest.TestCase):
         code=r'''
 #include <assert.h>
 #include <stdatomic.h>
+#include <stddef.h>
 #include "fc_sd_events.h"
 #define TX_TIMER_TICKS_PER_SECOND 1000
 #define CO2_ASSERT_INTERVAL 5
@@ -32,6 +33,11 @@ class FlightLogTests(unittest.TestCase):
 atomic_uint_fast32_t g_conf;
 unsigned clock_ms, mask,co2,reef;
 bool permitted=true;
+bool fc_recovery_inhibits_pyro(void){return false;}
+struct {uint32_t ODR;} gpio;
+#define PYRO_PORT (&gpio)
+#define CO2_PIN 1U
+#define REEF_PIN 2U
 uint32_t __get_PRIMASK(void){return mask;}
 void __disable_irq(void){mask=1;}
 void __set_PRIMASK(uint32_t x){mask=x;}

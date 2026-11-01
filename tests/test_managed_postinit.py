@@ -31,7 +31,10 @@ enum { SEDS_OK=0, SEDS_ERR=-1, SEDS_HANDLER_ERROR=-9, SEDS_IO=-5,
  G_Idle=1, G_Armed=6, G_Aborted=15, Postinit=1, Postinit_Signal=100 };
 typedef struct { unsigned ty; const uint8_t *payload; size_t payload_len; } SedsPacketView;
 static int seds_syscall, queue_result, queued, current_state;
-static uint32_t g_conf;
+static uint32_t g_conf, epoch=1;
+static bool held;
+static uint32_t fc_recovery_epoch(void){return epoch;}
+static bool fc_recovery_holds_sequence(void){return held;}
 #define Postinit_Requested (1u<<8)
 #define option(x) (x)
 #define current() (current_state)
@@ -57,6 +60,10 @@ int main(void) {
  assert(flight_state_cache_apply_network_update(&p)==SEDS_OK && queued==2);
  current_state=0; g_conf=Postinit_Requested;
  assert(flight_state_cache_apply_network_update(&p)==SEDS_OK && queued==2);
+ current_state=0;g_conf=0;epoch++;
+ assert(flight_state_cache_apply_network_update(&p)==SEDS_OK&&queued==3);
+ held=true;assert(flight_state_cache_apply_network_update(&p)==SEDS_IO&&queued==3);
+ held=false;
  assert(flight_state_cache_apply_network_update(NULL)==SEDS_HANDLER_ERROR);
  p.payload=NULL; assert(flight_state_cache_apply_network_update(&p)==SEDS_HANDLER_ERROR);
  p.payload=&value; p.payload_len=2;

@@ -14,6 +14,9 @@ extern volatile uint32_t g_fc_watchdog_resume_rejected;
 extern volatile uint32_t g_fc_watchdog_checkpoints;
 void fc_watchdog_recovery_boot(uint32_t reset_flags);
 void fc_watchdog_checkpoint(void);
+bool fc_watchdog_hold_for_operator_reset(void);
+bool fc_watchdog_begin_new_flight(void);
+bool fc_watchdog_startup_reset_ready(void);
 bool fc_watchdog_record_deployment(bool reef);
 bool fc_watchdog_can_actuate(void);
 void kalman_resume_bindings(bool ascent);
@@ -22,6 +25,9 @@ void kalman_resume_bindings(bool ascent);
 #define g_fc_watchdog_resume_rejected 0U
 static inline void fc_watchdog_recovery_boot(uint32_t f) { (void)f; }
 static inline void fc_watchdog_checkpoint(void) {}
+static inline bool fc_watchdog_hold_for_operator_reset(void) { return true; }
+static inline bool fc_watchdog_begin_new_flight(void) { return true; }
+static inline bool fc_watchdog_startup_reset_ready(void) { return true; }
 static inline bool fc_watchdog_record_deployment(bool r) { (void)r; return true; }
 static inline bool fc_watchdog_can_actuate(void) { return true; }
 #endif

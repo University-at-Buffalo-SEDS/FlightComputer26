@@ -12,6 +12,8 @@
 #include "fctasks.h"
 #include "fccommon.h"
 #include "fcapi.h"
+#include "fc_recovery_owner.h"
+#include "board_recovery_transport.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include <string.h>
@@ -263,7 +265,7 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   {
     msg = decode_cmd(data + k);
 
-    st += msg != Invalid_Message
+    st += msg != Invalid_Message && fc_recovery_command_admissible((uint32_t)msg, false)
               ? tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)
               : INVALID_MESSAGE_STATUS;
   }
@@ -278,7 +280,7 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   g_network_flight_commands_received++;
   g_last_network_flight_command_id = data[0];
 
-  if (msg == Invalid_Message)
+  if (msg == Invalid_Message || !fc_recovery_command_admissible((uint32_t)msg, false))
   {
     st = INVALID_MESSAGE_STATUS;
   }
@@ -350,6 +352,13 @@ static inline SedsResult
 implicit_postinit(const uint8_t *data, size_t len)
 {
   static bool armed_postinit_pending;
+  static uint32_t armed_postinit_epoch;
+  const uint32_t epoch = fc_recovery_epoch();
+  if (armed_postinit_epoch != epoch) {
+    armed_postinit_pending = false;
+    armed_postinit_epoch = epoch;
+  }
+  if (fc_recovery_holds_sequence()) return SEDS_IO;
   if (data == NULL || len != sizeof(uint8_t) || *data > G_Aborted)
   {
     return SEDS_HANDLER_ERROR;
@@ -388,6 +397,9 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   }
 
   // led_toggle(LED1_PORT, LED1_PIN);
+  if ((pkt->ty == SEDS_DT_FLIGHT_STATE || pkt->ty == SEDS_DT_FLIGHT_COMMAND ||
+       pkt->ty == SEDS_DT_ASCENT_BIASES) && !board_recovery_managed_update_allowed(pkt))
+    return SEDS_PERMISSION_DENIED;
 
   switch (pkt->ty)
   {
@@ -721,8 +733,9 @@ static inline void data_streaming_mode(void)
 
   timer_update(Auxiliary);
 
-  MrAnalog ((conf & option(Postinit_Requested)) ||
-            (conf & option(Launch_Requested)))
+  MrAnalog (!fc_recovery_holds_sequence() &&
+            (fc_watchdog_can_actuate() || fc_recovery_requires_new_flight()) &&
+            ((conf & option(Postinit_Requested)) || (conf & option(Launch_Requested))))
   {
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     if (try_fetch_gyro(&meas.gyro))
@@ -765,12 +778,14 @@ static inline void data_streaming_mode(void)
 
 static inline void post_initialization(void)
 {
+  const uint32_t epoch = fc_recovery_epoch();
+  if (!fc_recovery_postinit_allowed(epoch)) return;
   f_xyz accl_acc = {0};
   fu32 accl_ctr = 0, gps_ctr = 0, gps_acc = 0;
 
   timer_update(Auxiliary);
 
-  MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION)
+  MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION || !fc_recovery_postinit_allowed(epoch))
   {
     fu32 conf = load(&g_conf, Acq);
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
@@ -798,9 +813,13 @@ static inline void post_initialization(void)
     tx_thread_relinquish();
   }
 
+  if (!fc_recovery_postinit_allowed(epoch)) return;
   if (accl_ctr == 0U)
   {
-    fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+    if (fc_recovery_postinit_allowed(epoch))
+      fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
+    __set_PRIMASK(mask);
     message(id "postinit failed: no acceleration samples; telemetry continues", true);
     return;
   }
@@ -808,16 +827,8 @@ static inline void post_initialization(void)
   accl_acc.y /= accl_ctr;
   accl_acc.z /= accl_ctr;
 
-  accel_to_quaternion(&accl_acc);
-
-  if (fetch_add(&sm.flight, 1, Acq) != Armed - 1)
-  {
-    store(&sm.flight, Armed, Rlx);
-    message(id "unexpected startup", true);
-  }
-
-  fetch_and(&g_conf, ~option(Postinit_Requested), Rel);
-  message(id "armed; await launch", true);
+  if (accel_to_quaternion(&accl_acc, epoch))
+    message(id "armed; await launch", true);
 }
 
 
@@ -841,9 +852,13 @@ static inline void fill_sequence_states(void)
       post_initialization();
     }
   }
-  MrAnalog (beyond(Startup) && (conf & option(Launch_Requested)));
+  MrAnalog (!fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
+            beyond(Startup) && (conf & option(Launch_Requested)));
 
-  MrAnalog (request_ignition() == SEDS_OK) {
+  const uint32_t flight_epoch = fc_recovery_epoch();
+  MrAnalog (false) {
+    if (flight_epoch != fc_recovery_epoch() || fc_recovery_inhibits_pyro()) return;
+    if (request_ignition() == SEDS_OK) break;
     if (try_fetch_baro(&meas.baro))
     {
       maybe_log_measm(Baro, &meas.baro);
@@ -862,16 +877,19 @@ void distribution_entry(ULONG _)
   if (!g_fc_watchdog_resumed && fc_watchdog_can_actuate()) {
     fill_sequence_states();
   }
-  while (!fc_watchdog_can_actuate()) {
-    /* Acquisition and telemetry are safe while deployment stays inhibited.
-     * Do not enter fill/launch or estimator-driven actuation in this state. */
+  while (!fc_watchdog_can_actuate() && !fc_recovery_requires_new_flight()) {
     data_streaming_mode();
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 4U);
   }
-
   MrAnalog (WE_ARE_SO_BACK)
   {
+    if (!fc_watchdog_can_actuate() || fc_recovery_inhibits_pyro() ||
+        (current() <= Armed && !(g_conf & option(Launch_Requested)))) {
+      fill_sequence_states();
+      imu = 0U;
+      continue;
+    }
     conf = load(&g_conf, Acq);
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION);
     if (conf & option(Eval_Abort_Flag)) board_watchdog_progress(BOARD_WATCHDOG_SAFETY);

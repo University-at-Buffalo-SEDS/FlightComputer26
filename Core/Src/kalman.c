@@ -8,6 +8,7 @@
 #include "fctasks.h"
 #include "fccommon.h"
 #include "fcapi.h"
+#include "fc_recovery_owner.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "testing.h"
@@ -146,7 +147,7 @@ static inline constexpr float isqrtf_quake(float x)
   return alias.f;
 }
 
-static inline void euler_to_quat(eul *ang)
+static inline void euler_to_quat(eul *ang, quat *out)
 {
   ang->phi *= 0.5f;
   ang->theta *= 0.5f;
@@ -164,31 +165,22 @@ static inline void euler_to_quat(eul *ang)
   float sinthecospsi = sinthe * cospsi;
   float costhesinpsi = costhe * sinpsi;
 
-  qv.q0 = cosphi * costhepsi + sinphi * sinthepsi;
-  qv.rho1 = sinphi * costhepsi - cosphi * sinthepsi;
-  qv.rho2 = cosphi * sinthecospsi + sinphi * costhesinpsi;
-  qv.rho3 = cosphi * costhesinpsi - sinphi * sinthecospsi;
+  out->q0 = cosphi * costhepsi + sinphi * sinthepsi;
+  out->rho1 = sinphi * costhepsi - cosphi * sinthepsi;
+  out->rho2 = cosphi * sinthecospsi + sinphi * costhesinpsi;
+  out->rho3 = cosphi * costhesinpsi - sinphi * sinthecospsi;
 
-  float norm = inorm4(qv.q0, qv.rho1, qv.rho2, qv.rho3);
+  float norm = inorm4(out->q0, out->rho1, out->rho2, out->rho3);
 
-  qv.q0 *= norm;
-  qv.rho1 *= norm;
-  qv.rho2 *= norm;
-  qv.rho3 *= norm;
+  out->q0 *= norm;
+  out->rho1 *= norm;
+  out->rho2 *= norm;
+  out->rho3 *= norm;
 
-  float init_quat[EKF_STATE];
-
-  *((quat *)init_quat) = qv;
-  init_quat[EKF_STATE - 2] = 0.0f;
-  init_quat[EKF_STATE - 1] = 0.0f;
-
-#ifdef SD_AVAILABLE
-  sd_append_f32(SEDS_DT_ASCENT_STATE, init_quat, EKF_STATE);
-#endif
-  log_f32(SEDS_DT_ASCENT_STATE, EKF_STATE, init_quat);
 }
 
-void accel_to_quaternion(const f_xyz *accl)
+
+bool accel_to_quaternion(const f_xyz *accl, uint32_t epoch)
 {
   conditional eul ang, rep_in_deg;
 
@@ -201,12 +193,30 @@ void accel_to_quaternion(const f_xyz *accl)
   rep_in_deg.theta = deg(ang.theta);
   rep_in_deg.psi = deg(ang.psi);
 
+  quat candidate;
+  euler_to_quat(&ang, &candidate);
+  const uint32_t mask = __get_PRIMASK(); __disable_irq();
+  if (!fc_recovery_postinit_allowed(epoch) || current() != Postinit) {
+    __set_PRIMASK(mask); return false;
+  }
+  qv = candidate;
+  sm.flight = Armed;
+  g_conf &= ~option(Postinit_Requested);
+  __set_PRIMASK(mask);
+  /* Report only a committed calibration; no SDK/SD work in the commit guard. */
 #ifdef SD_AVAILABLE
   sd_append_f32(SEDS_DT_EULER_ANGLES, (float *)&rep_in_deg, 3);
 #endif
   log_f32(SEDS_DT_EULER_ANGLES, 3, &rep_in_deg);
-
-  euler_to_quat(&ang);
+  float init_quat[EKF_STATE];
+  *((quat *)init_quat) = candidate;
+  init_quat[EKF_STATE - 2] = 0.0f;
+  init_quat[EKF_STATE - 1] = 0.0f;
+#ifdef SD_AVAILABLE
+  sd_append_f32(SEDS_DT_ASCENT_STATE, init_quat, EKF_STATE);
+#endif
+  log_f32(SEDS_DT_ASCENT_STATE, EKF_STATE, init_quat);
+  return true;
 }
 
 static inline pure float *mxoff(const matrix *prev)

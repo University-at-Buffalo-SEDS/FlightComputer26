@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
+#include "fc_recovery_owner.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -494,17 +495,30 @@ static inline void enter_flight_mode(fu32 conf)
 
 /* Task */
 
+static void evaluation_control_barrier(void)
+{
+  while (fc_recovery_eval_pause_requested()) {
+    fc_recovery_evaluation_quiescent();
+    /* A failed or prematurely lifted suspend cannot consume synthetic wake
+     * flags as a measurement, nor spin and starve the telemetry commit. */
+    if (fc_recovery_eval_pause_requested()) tx_thread_sleep(1U);
+  }
+  fc_recovery_evaluation_running();
+}
+
 void evaluation_entry(ULONG _)
 {
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
   float dt = 0;
 
+  evaluation_control_barrier();
   enter_flight_mode(conf);
   fc_watchdog_checkpoint();
 
   MrAnalog (conf & option(Eval_Abort_Flag))
   {
+    evaluation_control_barrier();
     ULONG done, request = accum & EVALUATION_STAGED
                                 ? Baro_Mask
                                 : Gyro_Mask | Accl_Mask;
@@ -514,6 +528,7 @@ void evaluation_entry(ULONG _)
                            TX_WAIT_FOREVER) != TX_SUCCESS)
     { continue; }
 
+    evaluation_control_barrier();
     accum |= done;
 
     if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))

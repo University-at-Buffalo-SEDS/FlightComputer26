@@ -10,12 +10,23 @@ class WatchdogRecoveryTests(unittest.TestCase):
         source = source.replace('g_pfnVectors, (uint32_t)((uintptr_t)__data_source_end - (uintptr_t)g_pfnVectors)', 'test_image, sizeof(test_image)')
         source = source.replace('section(".fc_watchdog_retained"), ', '')
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
+        a=source.index('bool fc_watchdog_hold_for_operator_reset(void)')
+        b=source.index('static bool action_history_ready',a)
+        stop=source[a:b]
+        stop=stop.replace('    retained.stop_seal = OPERATOR_STOP_SEAL;', '    test_crash_point(1);\n    retained.stop_seal = OPERATOR_STOP_SEAL;')
+        stop=stop.replace('    __DSB();', '    __DSB(); test_crash_point(2);')
+        stop=stop.replace('    if (retained.stop_seal != OPERATOR_STOP_SEAL)', '    if (corrupt_stop_store) retained.stop_seal = 0U;\n    if (retained.stop_seal != OPERATOR_STOP_SEAL)')
+        stop=stop.replace('    retained.flight[0].seal = 0U;', '    retained.flight[0].seal = 0U; test_crash_point(3);')
+        source=source[:a]+stop+source[b:]
+        source=source.replace('    r->crc = flight_crc(r);', '    r->crc = flight_crc(r);\n    test_stop_after_crc();')
+
         stub = r'''
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <assert.h>
+#include <setjmp.h>
 #define BOARD_WATCHDOG_ENABLE 1
 #define RECORD_TEST 1
 #define STATE_HISTORY 8
@@ -73,6 +84,13 @@ static UINT tx_thread_preemption_change(TX_THREAD *thread, UINT requested, UINT 
 static uint32_t mask, now, frozen, bindings;
 static void __NOP(void) {if (!frozen) rtc.SSR--; rtc.ICSR |= RTC_ICSR_INITF;}
 static void __DMB(void) {}
+static void __DSB(void) {}
+static bool fc_recovery_inhibits_pyro(void){return false;}
+static jmp_buf crash_point;
+static unsigned failpoint;
+static bool inject_stop_after_crc,corrupt_stop_store;
+static void test_stop_after_crc(void);
+static void test_crash_point(unsigned point){if(failpoint==point)longjmp(crash_point,1);}
 static uint32_t __get_PRIMASK(void) {return mask;}
 static void __disable_irq(void) {mask=1;}
 static void __set_PRIMASK(uint32_t v) {mask=v;}
@@ -89,8 +107,11 @@ const fc_resume_region fc_resume_barometer[]={{baro,sizeof(baro)},{NULL,0}};
 static void kalman_resume_bindings(bool ascent) {bindings=ascent?1:2;}
 '''
         main = r'''
+static void test_stop_after_crc(void) {
+ if(inject_stop_after_crc){inject_stop_after_crc=false;unsigned old=mask;mask=1;fc_watchdog_hold_for_operator_reset();mask=old;}
+}
 static void reset_runtime(void) {
- mask=0;now=25;g_conf=0;memset(&sm,0,sizeof(sm));
+ mask=0;failpoint=0;inject_stop_after_crc=false;corrupt_stop_store=false;now=25;g_conf=0;memset(&sm,0,sizeof(sm));
  memset(states,0,sizeof(states));memset(covariance,0,sizeof(covariance));
  memset(baro,0,sizeof(baro));memset(local_time,0,sizeof(local_time));
  image_id=actions=next_slot=sequence=action_slot=action_sequence=0;
@@ -121,6 +142,45 @@ int main(void) {
   assert(bindings==(phase<Descent?1:2));
   assert(!(g_conf & (CO2_Asserted|REEF_Asserted|Ascent_KF_Staged)));
  }
+ /* Crash before the first Stop store is pre-admission; after the first
+  * completed retained store or either partial invalidation old flight is denied. */
+ for(unsigned point=1;point<=3;point++) {
+  cold_boot();flight(4);flight(4);failpoint=point;
+  if(setjmp(crash_point)==0){mask=1;fc_watchdog_hold_for_operator_reset();assert(0);}
+  failpoint=0;reset_runtime();fc_watchdog_recovery_boot(1);
+  if(point==1)assert(g_fc_watchdog_resumed);else assert(!g_fc_watchdog_resumed&&!fc_watchdog_can_actuate());
+ }
+ /* An injected failed retained-store readback reports failure before changing
+  * either checkpoint seal. The owner/transport fixtures prove no NVM follows. */
+ cold_boot();flight(4);uint32_t before0=retained.flight[0].seal,before1=retained.flight[1].seal;
+ corrupt_stop_store=true;mask=1;assert(!fc_watchdog_hold_for_operator_reset());mask=0;
+ assert(retained.flight[0].seal==before0&&retained.flight[1].seal==before1);
+ corrupt_stop_store=false;
+ /* A writer finishing CRC after Stop cannot republish an old flight seal. */
+ cold_boot();flight(4);unsigned old_count=g_fc_watchdog_checkpoints;
+ inject_stop_after_crc=true;fc_watchdog_checkpoint();
+ assert(g_fc_watchdog_checkpoints==old_count&&retained.stop_seal!=0U);
+ assert(!retained.flight[0].seal&&!retained.flight[1].seal);
+ reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
+ /* Unknown/corrupt Stop seal and old layout's leading record magic fail closed. */
+ cold_boot();flight(4);retained.stop_seal=0xdeadbeef;
+ reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
+ cold_boot();flight(4);retained.stop_seal=RECORD_SEAL;
+ reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
+ /* Verified Startup leaves the seal armed. Only a new authorized flight
+  * appends a newer zero action mask; old fired evidence stays in the other slot. */
+ cold_boot();flight(4);assert(fc_watchdog_record_deployment(false));
+ unsigned old_slot=action_slot^1U;action_record old_action=retained.action[old_slot];
+ mask=1;fc_watchdog_hold_for_operator_reset();mask=0;
+ reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
+ assert(retained.stop_seal!=0U&&action_valid(&retained.action[old_slot]));
+ assert(fc_watchdog_startup_reset_ready()); /* owner must separately prove NVM/safe Startup */
+ assert(retained.stop_seal!=0U); /* Startup itself never rearms */
+ mask=1;assert(fc_watchdog_begin_new_flight());mask=0;
+ assert(retained.stop_seal==0U&&action_sequence==old_action.sequence+1U);
+ assert(memcmp(&old_action,&retained.action[old_slot],sizeof old_action)==0);
+ flight(Armed);reset_runtime();fc_watchdog_recovery_boot(1);
+ assert(g_fc_watchdog_resumed&&sm.flight==Armed&&!(g_conf&Parachute_Deployed));
  /* Interrupted new checkpoint cannot displace the last committed record. */
  cold_boot();flight(3);flight(4);retained.flight[1].seal=0;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(sm.flight==3 && g_fc_watchdog_resumed);
@@ -134,6 +194,7 @@ int main(void) {
  cold_boot();flight(4);fc_watchdog_record_deployment(false);
  retained.action[action_slot^1U].crc^=1;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
+ assert(!fc_watchdog_startup_reset_ready());
  /* Wrong firmware / corrupt payload / missing record / stale record all inhibit. */
  cold_boot();flight(4);test_image[0]^=1;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());

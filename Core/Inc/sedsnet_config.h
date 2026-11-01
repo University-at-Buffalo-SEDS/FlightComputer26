@@ -57,3 +57,8 @@
 /* Retired runtime-rate IDs remain reserved to preserve wire compatibility. */
 
 #define SEDS_DT_BOARD_HEALTH ((SedsDataType)215170867U)
+
+#define SEDS_EP_BOARD_RECOVERY_FC ((uint32_t)2003U)
+#define SEDS_EP_BOARD_RECOVERY SEDS_EP_BOARD_RECOVERY_FC
+#define SEDS_DT_BOARD_RECOVERY_REQUEST ((uint32_t)200U)
+#define SEDS_DT_BOARD_STATE_STATUS ((uint32_t)201U)

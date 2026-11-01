@@ -66,6 +66,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/fc_recovery_owner.c
     ${CMAKE_SOURCE_DIR}/Core/Src/deployment_pulse.c
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/can_tx_queue.c
@@ -346,3 +347,12 @@ include(cmake/launchcore_stm32.cmake)
 
 # Low-rate internal die temperature; no separate telemetry stream.
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/board_temperature.c)
+
+# Read-only application state query; reset/recovery is explicitly unsupported
+# until an actual board control-owner adapter is qualified.
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/Core/Src/board_recovery_query.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/board_recovery_wire.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/board_recovery_boot.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/board_recovery_floor.c
+    "$<$<BOOL:${ENABLE_TELEMETRY}>:${CMAKE_SOURCE_DIR}/Core/Src/board_recovery_transport.c>")

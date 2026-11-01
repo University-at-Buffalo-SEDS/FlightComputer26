@@ -3,11 +3,13 @@
 #include "fcapi.h"
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
+#include "fc_recovery_owner.h"
 #include <string.h>
 #if BOARD_WATCHDOG_ENABLE
 #define RECORD_SEAL 0x46575231U
 #define PAYLOAD_CAPACITY 2048U
 #define ACTION_SEAL 0x46414331U
+#define OPERATOR_STOP_SEAL UINT32_C(0x4d535450)
 #define RECOVERY_MAX_GAP_MS 60000U
 
 typedef struct {
@@ -16,6 +18,7 @@ typedef struct {
 } flight_record;
 typedef struct { uint32_t seal, sequence, image, actions, crc; } action_record;
 static struct {
+    volatile uint32_t stop_seal; /* Any nonzero/unknown seal fails closed. */
     flight_record flight[2];
     action_record action[2];
 } retained __attribute__((section(".fc_watchdog_retained"), aligned(8)));
@@ -37,6 +40,7 @@ volatile uint32_t g_fc_watchdog_resumed;
 volatile uint32_t g_fc_watchdog_resume_rejected;
 volatile uint32_t g_fc_watchdog_checkpoints;
 volatile uint32_t g_fc_watchdog_resume_gap_ms;
+_Static_assert(offsetof(__typeof__(retained), stop_seal) % sizeof(uint32_t) == 0U, "Atomic aligned Stop seal");
 static uint32_t image_id, actions, next_slot, sequence, action_slot, action_sequence;
 static bool clock_ready;
 
@@ -142,7 +146,7 @@ static bool live_state_valid(void)
     float pressure; memcpy(&pressure, fc_resume_barometer[0].data, sizeof(pressure));
     return pressure > 0.0f;
 }
-bool fc_watchdog_can_actuate(void) { return g_fc_watchdog_resume_rejected == 0U; }
+bool fc_watchdog_can_actuate(void) { return g_fc_watchdog_resume_rejected == 0U && retained.stop_seal == 0U; }
 static void save_actions(void)
 {
     action_record *r = &retained.action[action_slot];
@@ -151,6 +155,63 @@ static void save_actions(void)
     r->crc = action_crc(r); __DMB(); r->seal = ACTION_SEAL; __DMB();
     action_slot ^= 1U;
 }
+/* Caller holds the same short IRQ guard as the pulse-start boundary. The
+ * FIRST aligned store survives an IWDG at every later reset/Stop crash point.
+ * Existing fired-action records remain intact. No flash, CRC or SDK here. */
+bool fc_watchdog_hold_for_operator_reset(void)
+{
+    retained.stop_seal = OPERATOR_STOP_SEAL;
+    __DSB(); /* Complete the retained store before any output or unmask. */
+    __DMB();
+    if (retained.stop_seal != OPERATOR_STOP_SEAL) return false;
+    retained.flight[0].seal = 0U;
+    retained.flight[1].seal = 0U;
+    __DMB();
+    return retained.stop_seal == OPERATOR_STOP_SEAL;
+}
+
+static bool action_history_ready(unsigned *latest)
+{
+    const bool first = action_valid(&retained.action[0]);
+    const bool second = action_valid(&retained.action[1]);
+    if ((!first && !second) ||
+        (retained.action[0].seal != 0U && !first) ||
+        (retained.action[1].seal != 0U && !second)) return false;
+    *latest = second && (!first || newer(retained.action[1].sequence,
+                                        retained.action[0].sequence)) ? 1U : 0U;
+    return true;
+}
+bool fc_watchdog_startup_reset_ready(void)
+{
+    unsigned latest;
+    return clock_ready && payload_transfer(NULL, false) != 0U &&
+           action_history_ready(&latest);
+}
+
+/* Only the control owner may call this after verified Startup AND a new
+ * authorized flight admission. Old checkpoint seals cannot pair with a new
+ * per-flight action mask. The other bounded journal slot retains old evidence. */
+bool fc_watchdog_begin_new_flight(void)
+{
+    unsigned latest;
+    if (!clock_ready || payload_transfer(NULL, false) == 0U ||
+        !action_history_ready(&latest)) return false;
+    /* Stop-rejected boot never restored these RAM cursors. Recover ordering
+     * before appending a new-flight zero mask, never supersede history at seq1. */
+    action_sequence = retained.action[latest].sequence;
+    action_slot = latest ^ 1U;
+    retained.flight[0].seal = 0U;
+    retained.flight[1].seal = 0U;
+    actions = 0U;
+    save_actions();
+    g_fc_watchdog_resumed = 0U;
+    g_fc_watchdog_resume_rejected = 0U;
+    __DMB();
+    retained.stop_seal = 0U; /* LAST: never clear at Stop or Startup success. */
+    __DMB();
+    return true;
+}
+
 bool fc_watchdog_record_deployment(bool reef)
 {
     if (!fc_watchdog_can_actuate()) return false;
@@ -170,6 +231,7 @@ void fc_watchdog_recovery_boot(uint32_t flags)
         save_actions();
         return;
     }
+    if (retained.stop_seal != 0U) goto reject;
     unsigned chosen = 0U, journal = 0U;
     const bool valid0 = flight_valid(&retained.flight[0], size);
     const bool valid1 = flight_valid(&retained.flight[1], size);
@@ -211,7 +273,7 @@ reject:
 }
 void fc_watchdog_checkpoint(void)
 {
-    if (!clock_ready || !fc_watchdog_can_actuate() || !(g_conf & option(Launch_Requested))) return;
+    if (!clock_ready || !fc_watchdog_can_actuate() || fc_recovery_inhibits_pyro() || !(g_conf & option(Launch_Requested))) return;
     /* Keep control from terminating/resetting the writer mid-transaction.
      * Interrupts remain enabled during CRC work so CAN and pulse timing run. */
     TX_THREAD *thread = tx_thread_identify();
@@ -226,9 +288,14 @@ void fc_watchdog_checkpoint(void)
     r->size = payload_transfer(r->payload, false);
     __set_PRIMASK(mask);
     r->crc = flight_crc(r);
-    __DMB(); r->seal = RECORD_SEAL; __DMB();
-    next_slot ^= 1U;
-    g_fc_watchdog_checkpoints++;
+    const uint32_t publish_mask = __get_PRIMASK();
+    __disable_irq();
+    if (retained.stop_seal == 0U && !fc_recovery_inhibits_pyro()) {
+        __DMB(); r->seal = RECORD_SEAL; __DMB();
+        next_slot ^= 1U;
+        g_fc_watchdog_checkpoints++;
+    }
+    __set_PRIMASK(publish_mask);
     tx_thread_preemption_change(thread, old_threshold, &discarded);
 }
 #endif

@@ -26,6 +26,11 @@ enum { BOARD_WATCHDOG_ACQUISITION=1, BOARD_WATCHDOG_SAFETY=2,
 #define MrAnalog(x) while (x)
 #define WE_ARE_SO_BACK 0
 static int fc_watchdog_can_actuate(void) { return allowed; }
+static int fc_recovery_requires_new_flight(void){return 0;}
+static int fc_recovery_inhibits_pyro(void){return 0;}
+#define Armed 2
+#define Launch_Requested 8
+static unsigned current(void){return 3;}
 static void fill_sequence_states(void) { assert(allowed); fills++; }
 static void data_streaming_mode(void) { assert(!allowed); streams++; allowed=1; }
 static void board_watchdog_progress(unsigned mask) { (void)mask; }
@@ -58,7 +63,7 @@ int main(void) {
         startup = source[source.index("void recovery_entry"):
                          source.index("tx_timer_activate(&monotonic_checks)")]
         block = startup[startup.index("if (g_fc_watchdog_resumed)\n"):]
-        self.assertIn("sensor_init_supervised(Wild_Mask);\n  if (g_fc_watchdog_resumed)", block)
+        self.assertIn("sensor_init_supervised(Wild_Mask);\n  if (g_fc_watchdog_resumed && !fc_recovery_inhibits_pyro())", block)
         distribution = (ROOT / "Core/Src/distribution.c").read_text()
         streaming = distribution[distribution.index("static inline void data_streaming_mode"):
                                  distribution.index("/* Stage 1")]

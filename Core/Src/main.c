@@ -29,6 +29,7 @@
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
+#include "board_recovery_boot.h"
 #endif
 #include "resilient_storage.h"
 #define HAL_SD_Init flight_sd_init
@@ -147,6 +148,8 @@ int main(void)
 #ifdef TELEMETRY_ENABLED
   av_bay_underglow_restore();
   flight_buzzer_restore();
+  /* Establish recovery identity before cached state restore and control tasks. */
+  (void)board_recovery_boot_generation();
   flight_state_cache_restore();
 #endif
 

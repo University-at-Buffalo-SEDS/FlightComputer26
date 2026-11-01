@@ -1,9 +1,11 @@
 #include "platform.h"
 #include "fc_watchdog_recovery.h"
+#include "fc_recovery_owner.h"
 #include "fcstructs.h"
 #include "fccommon.h"
 #include "fcconfig.h"
 #include "fc_sd_events.h"
+#include <stddef.h>
 
 extern atomic_uint_fast32_t g_conf;
 
@@ -67,7 +69,7 @@ void deployment_pulse_start(bool reef)
     volatile uint32_t *remaining = reef ? &reef_ticks : &co2_ticks;
     /* Repeated commands during a pulse must not extend its on-time. */
     bool started = false;
-    if (*remaining == 0U && fc_watchdog_can_actuate() &&
+    if (*remaining == 0U && !fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
         fc_watchdog_record_deployment(reef)) {
         started = true;
         *remaining = reef ? REEF_ASSERT_INTERVAL : CO2_ASSERT_INTERVAL;
@@ -82,6 +84,26 @@ void deployment_pulse_start(bool reef)
     fc_sd_capture_event(started ? FC_LOG_PYRO_HIGH :
                         (*remaining ? FC_LOG_PYRO_ACTIVE : FC_LOG_PYRO_REJECTED), reef);
     __set_PRIMASK(mask);
+}
+
+/* The only urgent Stop effects are LOW writes and deadline retirement. The
+ * caller holds the identical IRQ guard used by every HIGH/pulse-start path. */
+void deployment_pulse_cancel_locked(void)
+{
+    co2_ticks = 0U;
+    reef_ticks = 0U;
+    co2_low();
+    reef_low();
+    g_conf &= ~option(CO2_Asserted | REEF_Asserted);
+}
+
+bool deployment_pulse_safe_outputs_locked(uint32_t *mask)
+{
+    if (mask == NULL) return false;
+    const uint32_t pins = PYRO_PORT->ODR;
+    *mask = ((pins & CO2_PIN) ? 1U : 0U) |
+            ((pins & REEF_PIN) ? 2U : 0U);
+    return *mask == 0U && co2_ticks == 0U && reef_ticks == 0U;
 }
 
 void fc_runtime_tick(void)

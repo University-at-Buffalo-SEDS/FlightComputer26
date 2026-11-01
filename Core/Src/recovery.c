@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
+#include "fc_recovery_owner.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -177,12 +178,89 @@ static inline void sensor_init_supervised(sens_init sn)
 }
 
 
+/* Cooperative evaluator/reset owner. Never terminate a task at an arbitrary
+ * lock/Kalman point. No SDK/NVM/logging occurs in these owner hooks. */
+static volatile uint8_t evaluation_quiescent = 1U;
+bool fc_recovery_control_ready(void) { return g_recovery_receive_loop_ready != 0U; }
+bool fc_recovery_control_is_startup(void) { return current() == Startup; }
+void fc_recovery_evaluation_running(void) { evaluation_quiescent = 0U; }
+void fc_recovery_evaluation_quiescent(void)
+{
+  evaluation_quiescent = 1U;
+  __DMB();
+  (void)tx_thread_suspend(&evaluation_task);
+}
+void fc_recovery_control_wake(void)
+{
+  const uint32_t mask = __get_PRIMASK(); __disable_irq();
+  /* Do not abort a sensor-init sleep or any unrelated wait. */
+  if (g_recovery_receive_loop_ready &&
+      recovery_task.tx_thread_state == TX_QUEUE_SUSP &&
+      recovery_task.tx_thread_suspend_control_block == &seds_syscall)
+    (void)tx_thread_wait_abort(&recovery_task);
+  __set_PRIMASK(mask);
+}
+bool fc_recovery_control_quiesce(void)
+{
+  const UINT state = evaluation_task.tx_thread_state;
+  if (state == TX_SUSPENDED && !evaluation_quiescent) {
+    /* A previously reset thread enters its barrier before flight-mode setup. */
+    (void)tx_thread_resume(&evaluation_task);
+    return false;
+  }
+  if (state != TX_COMPLETED && state != TX_TERMINATED &&
+      !(state == TX_SUSPENDED && evaluation_quiescent)) {
+    (void)tx_event_flags_set(&eval_stage, Baro_Mask | Gyro_Mask | Accl_Mask, TX_OR);
+    return false;
+  }
+  if (load(&meas_locks[IMU].lock, Acq) || load(&meas_locks[Baro].lock, Acq))
+    return false;
+  if (state != TX_TERMINATED && tx_thread_terminate(&evaluation_task) != TX_SUCCESS)
+    return false;
+  if (tx_thread_reset(&evaluation_task) != TX_SUCCESS) return false;
+  evaluation_quiescent = 1U;
+  if (fc_recovery_holds_sequence()) {
+    (void)tx_queue_flush(&seds_syscall);
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
+    g_last_network_flight_command_msg = Invalid_Message;
+#endif
+  }
+  return true;
+}
+void fc_recovery_control_mark_eval_stopped(void) { g_conf |= option(Eval_Abort_Flag); }
+bool fc_recovery_control_finalize_startup(void)
+{
+  if (!evaluation_quiescent || evaluation_task.tx_thread_state != TX_SUSPENDED ||
+      !fc_watchdog_startup_reset_ready()) return false;
+  /* Preserve calibration/biases, samples, clocks, rates, recording shutdown,
+   * failure thresholds and historical deployment bits until a NEW flight. */
+  g_conf &= ~option(Postinit_Requested | Launch_Requested | In_Aborted_State |
+                    Graceful_Reset | Ascent_KF_Staged | Defer_Baro_Fallback |
+                    Eval_Abort_Flag);
+  g_conf |= option(Using_Ascent_KF);
+  sm.flight = Startup;
+  sm.global_state = G_Startup;
+  sm.confidence = 0;
+  sm.kf_deviations = 0;
+  baro_conf.rezero = 0;
+  return true;
+}
+bool fc_recovery_control_new_flight_ready(void)
+{
+  return current() == Armed && !(g_conf & option(Postinit_Requested));
+}
+void fc_recovery_control_new_flight(void)
+{
+  g_conf &= ~option(Parachute_Deployed | Parachute_Expanded | CO2_Asserted | REEF_Asserted);
+}
+
 /* Critical conditions */
 
 static inline void abortion_due_failures(void)
 {
-  tx_thread_terminate(&evaluation_task);
-  tx_thread_reset(&evaluation_task);
+  /* Ordinary flight recovery uses the same lock-safe evaluator handoff.
+   * An explicit Stop/reset never resurrects this older autonomous intent. */
+  if (!fc_recovery_request_sensor_restart()) return;
 
   g_conf |= option(Graceful_Reset);
   g_conf &= ~option(Defer_Baro_Fallback);
@@ -195,8 +273,8 @@ static inline void abortion_due_failures(void)
   {
     smon.to_abort = TO_ABORT * 10;
 
-    fc_msg cmd = fc_mask(Launch_Signal);
-    tx_queue_send(&seds_syscall, &cmd, TX_WAIT_FOREVER);
+    /* The cooperative control owner will resume after quiescence; no
+     * self-blocking send to this owner's potentially full queue. */
   }
   else
   {
@@ -232,6 +310,7 @@ static inline void barometer_fallback_vigilant(void)
 static inline void evaluation_configure(bool focus)
 {
   UINT eval_old_pt, eval_new_pt;
+  if (fc_recovery_eval_pause_requested()) return;
 
   if (g_conf & option(Eval_Abort_Flag))
   {
@@ -258,7 +337,7 @@ static inline void evaluation_configure(bool focus)
 
 static inline void manual_deployment(bool apogee, bool force)
 {
-  if (!fc_watchdog_can_actuate()) {
+  if (fc_recovery_inhibits_pyro() || !fc_watchdog_can_actuate()) {
     fc_sd_capture_event(FC_LOG_PYRO_REJECTED, !apogee); return;
   }
   if (apogee)
@@ -327,7 +406,6 @@ static inline void enter_postinit(bool noconfirm)
 
 static inline void enter_launch(bool noconfirm)
 {
-  if (!fc_watchdog_can_actuate()) return;
   if (!beyond(Startup))
   {
     message(id "Launch blocked: no Postinit", true);
@@ -344,6 +422,8 @@ static inline void enter_launch(bool noconfirm)
   }
 
 #endif
+
+  if (!fc_recovery_admit_new_flight(noconfirm)) return;
 
   if (g_conf & option(In_Aborted_State))
   {
@@ -418,9 +498,7 @@ static inline void process_action(fc_msg cmd, bool internal)
       return evaluation_configure(true);
 
     case Evaluation_Abort:
-      g_conf |= option(Eval_Abort_Flag);
-      tx_thread_terminate(&evaluation_task);
-      tx_thread_reset(&evaluation_task);
+      fc_recovery_request_eval_stop();
       break;
 
     case Advance_State:
@@ -589,9 +667,24 @@ static inline void process_gps_code(fc_msg code)
   }
 }
 
+bool fc_recovery_command_admissible(uint32_t command, bool internal)
+{
+  const fc_msg cmd = (fc_msg)command;
+  if (fc_recovery_holds_sequence()) return cmd == Evaluation_Abort;
+  if (!fc_recovery_requires_new_flight()) return true;
+  switch (cmd) {
+    case Launch_Signal: return !internal;
+    case Deploy_Parachute: case Expand_Parachute:
+    case Evaluation_Focus: case Evaluation_Relax:
+    case Advance_State: case Rewind_State: return false;
+    default: return true;
+  }
+}
+
 static inline void decode_flight_message(fc_msg msg)
 {
   bool internal = msg == fc_mask(msg);
+  if (!fc_recovery_command_admissible((uint32_t)fc_unmask(msg), internal)) return;
 
   if (internal)
   {
@@ -625,6 +718,7 @@ static inline void decode_flight_message(fc_msg msg)
 static inline conditional void autostart_on_timeout(void)
 {
 #ifndef FAKESTATION
+  if (fc_recovery_inhibits_pyro()) return;
   static fu8 test_stage = 0;
 
   if (test_stage < 2)
@@ -660,7 +754,7 @@ static void fc_timer_routine(ULONG _)
     g_conf |= option(Lost_GroundStation);
     g_conf |= option(Reset_Failures);
 
-    if (g_conf & option(In_Aborted_State))
+    if (!fc_recovery_inhibits_pyro() && (g_conf & option(In_Aborted_State)))
     {
       smon.to_abort *= 10;
 
@@ -715,7 +809,7 @@ void recovery_entry(ULONG st)
     baro_conf.rezero = 0; /* retain the launch pressure, even above ground */
   /* Sensor telemetry remains available when recovery rejects actuation. */
   sensor_init_supervised(Wild_Mask);
-  if (g_fc_watchdog_resumed) {
+  if (g_fc_watchdog_resumed && !fc_recovery_inhibits_pyro()) {
     if (current() >= Descent && (g_conf & option(Using_Ascent_KF)))
       descent_initialize(g_conf);
     timer_update(AscentKF);
@@ -735,6 +829,18 @@ void recovery_entry(ULONG st)
   MrAnalog (WE_ARE_SO_BACK)
   {
     fc_msg msg;
+    fc_recovery_control_service();
+    if (fc_recovery_take_sensor_restart()) {
+      if (beyond(Armed) || (g_conf & option(Lost_GroundStation)))
+        decode_flight_message(fc_mask(Launch_Signal));
+      continue;
+    }
+    if (fc_recovery_control_pending()) {
+      board_watchdog_progress(BOARD_WATCHDOG_CONTROL);
+      tx_thread_sleep(1U); /* Let evaluator/telemetry acknowledge; never spin. */
+      continue;
+    }
+    const uint32_t command_epoch = fc_recovery_epoch();
 
     recovery_update_stack_profile();
     /* Thread suspension */
@@ -746,6 +852,8 @@ void recovery_entry(ULONG st)
       continue;
     }
 
+    fc_recovery_control_service();
+    if (command_epoch != fc_recovery_epoch()) continue;
     g_recovery_commands_dequeued++;
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
     const bool network_command = msg == g_last_network_flight_command_msg;

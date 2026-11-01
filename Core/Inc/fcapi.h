@@ -50,7 +50,7 @@ void ascent_predict(const float, fu32);
 void ascent_update(void);
 void ascent_initialize(fu32);
 
-void accel_to_quaternion(const f_xyz *);
+bool accel_to_quaternion(const f_xyz *, uint32_t epoch);
 
 
 /* Evaluation */

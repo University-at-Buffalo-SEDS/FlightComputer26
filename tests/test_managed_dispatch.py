@@ -16,12 +16,13 @@ class ManagedDispatchTests(unittest.TestCase):
 #include <stdint.h>
 #include "ground_heartbeat_owner.h"
 typedef int SedsResult;
-enum {SEDS_OK=0, SEDS_HANDLER_ERROR=-9, SEDS_DT_HEARTBEAT=1,
+enum {SEDS_PERMISSION_DENIED=-11, SEDS_OK=0, SEDS_HANDLER_ERROR=-9, SEDS_DT_HEARTBEAT=1,
  SEDS_DT_FLIGHT_STATE, SEDS_DT_GPS_DATA, SEDS_DT_FLIGHT_COMMAND,
  SEDS_DT_ASCENT_BIASES, SEDS_DT_AV_BAY_UNDERGLOW, SEDS_DT_FLIGHT_BUZZER};
 typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
 static unsigned commands, heartbeats;
+static uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}

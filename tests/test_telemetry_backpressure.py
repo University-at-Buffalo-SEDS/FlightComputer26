@@ -9,8 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 class TelemetryBackpressureTests(unittest.TestCase):
     def test_retained_busy_work_is_observed_without_masking_real_handler_errors(self):
         source = (ROOT / "Core/Src/telemetry.c").read_text()
-        body = source.split("static void telemetry_record_queue_result", 1)[1].split(
-            "static const SedsLocalEndpointDesc", 1)[0]
+        start = source.index("static void telemetry_record_queue_result")
+        body_start = source.index("{", start)
+        end, depth = body_start + 1, 1
+        while depth:
+            depth += (source[end] == "{") - (source[end] == "}")
+            end += 1
+        body = source[start + len("static void telemetry_record_queue_result"):end]
         declarations = r'''
 #include <stdint.h>
 #include <assert.h>

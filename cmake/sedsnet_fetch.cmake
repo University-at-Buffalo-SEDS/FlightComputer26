@@ -1,4 +1,6 @@
 include(FetchContent)
+include("${CMAKE_CURRENT_LIST_DIR}/fc_sedsnet_artifact.cmake")
+fc_select_sedsnet_staticlib()
 
 set(SEDSNET_SCHEMA_FILE "${CMAKE_SOURCE_DIR}/config/sedsnet.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -30,6 +32,7 @@ FetchContent_Declare(
                   -P ${CMAKE_SOURCE_DIR}/cmake/prepare_sedsnet.cmake
 )
 FetchContent_MakeAvailable(sedsnet)
+fc_verify_sedsnet_staticlib("${sedsnet_SOURCE_DIR}")
 
 # Copy the board schema during configure, before Ninja calculates whether the
 # Rust archive is stale. Deleting/touching files from a build-time dependency

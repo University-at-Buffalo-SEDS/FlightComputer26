@@ -14,6 +14,7 @@ class DeploymentPulseTests(unittest.TestCase):
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <assert.h>
+#include <stddef.h>
 #include "fc_sd_events.h"
 #define TX_TIMER_TICKS_PER_SECOND 1000
 #define CO2_ASSERT_INTERVAL 500
@@ -26,6 +27,11 @@ class DeploymentPulseTests(unittest.TestCase):
 atomic_uint_fast32_t g_conf;
 static unsigned mask, co2, reef, hal_ticks, suspended, freeze_hal;
 static bool fc_watchdog_can_actuate(void) { return true; }
+static bool fc_recovery_inhibits_pyro(void){return false;}
+static struct {uint32_t ODR;} gpio;
+#define PYRO_PORT (&gpio)
+#define CO2_PIN 1U
+#define REEF_PIN 2U
 static bool fc_watchdog_record_deployment(bool reef) { (void)reef; return true; }
 static uint32_t __get_PRIMASK(void) {return mask;}
 static void __disable_irq(void) {mask=1;}

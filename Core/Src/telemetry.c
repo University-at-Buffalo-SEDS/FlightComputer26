@@ -7,6 +7,8 @@
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "flight_state_cache.h"
+#include "fc_recovery_owner.h"
+#include "board_recovery_transport.h"
 #include "telemetry_rate.h"
 #include "ota_stream.h"
 #include "sim_network_probe.h"
@@ -214,7 +216,16 @@ static void telemetry_record_queue_result(SedsResult result) {
   g_telemetry_queue_errors++;
 }
 
+static SedsResult Board_Recovery_handler(const SedsPacketView *, void *);
+static SedsResult Manual_Abort_handler(const SedsPacketView *, void *);
 static const SedsLocalEndpointDesc locals[] = {
+  { .endpoint = SEDS_EP_ABORT, .packet_handler = Manual_Abort_handler, .user = NULL },
+      {
+          .endpoint = SEDS_EP_BOARD_RECOVERY,
+          .packet_handler = Board_Recovery_handler,
+          .packed_handler = NULL,
+          .user = NULL,
+      },
   { .endpoint = SEDS_EP_FLIGHT_CONTROLLER, .packet_handler = on_fc_packet, .user = NULL },
 };
 
@@ -556,6 +567,7 @@ SedsResult telemetry_poll_discovery(void) {
     }
   }
   (void)av_bay_underglow_poll(g_router.r);
+  fc_recovery_network_service();
   (void)flight_state_cache_poll(g_router.r);
   /* This also enforces the two-second startup-buzz deadline. It must run
    * before discovery succeeds so an unplugged CAN bus cannot hold the buzzer
@@ -687,6 +699,7 @@ static SedsResult init_telemetry_router_locked(void) {
     return result;
   }
   g_router.r = r;
+  board_recovery_transport_set_router(r);
   (void)flight_state_cache_init(r);
   g_telemetry_service_stage = 33U;
   g_router.created = 1U;
@@ -697,6 +710,27 @@ static SedsResult init_telemetry_router_locked(void) {
 }
 
 
+
+static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)
+{
+  (void)user;
+  static const char manual[] = "SEDS_MANUAL_ABORT_V1:";
+  if (packet == NULL || packet->ty != SEDS_DT_ABORT) return SEDS_BAD_ARG;
+  /* Legacy/unmarked and automatic ABORT never acquire a new FC effect. */
+  if (packet->payload == NULL || packet->payload_len != sizeof(manual)-1U ||
+      memcmp(packet->payload, manual, sizeof(manual)-1U) != 0) return SEDS_OK;
+  if (!board_recovery_manual_stop_source_allowed(g_router.r, packet))
+    return SEDS_PERMISSION_DENIED;
+  fc_recovery_manual_stop();
+  return SEDS_OK; /* Admission only: actual GPIO/evaluator readback is QUERY. */
+}
+
+static SedsResult Board_Recovery_handler(const SedsPacketView *packet, void *user)
+{
+  (void)user;
+  return board_recovery_handle(g_router.r, packet, SEDS_EP_BOARD_RECOVERY,
+      (uint32_t)(((uint64_t)tx_time_get() * 1000U) / TX_TIMER_TICKS_PER_SECOND));
+}
 
 SedsResult init_telemetry_router(void) {
   SedsResult result;
