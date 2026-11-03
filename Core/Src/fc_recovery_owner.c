@@ -34,7 +34,8 @@ uint32_t fc_recovery_epoch(void) { return owner.epoch; }
 bool fc_recovery_reset_failed(void) { return owner.phase == RESET_FAILED; }
 bool fc_recovery_holds_sequence(void)
 {
-    return !persistent_store_controls_ready() || owner.commissioning_hold || owner.manual_stop || owner.reset_inhibit ||
+    return (!owner.admitted_flight && !persistent_store_controls_ready()) ||
+           owner.commissioning_hold || owner.manual_stop || owner.reset_inhibit ||
            (!owner.verified_startup && !fc_watchdog_can_actuate());
 }
 bool fc_recovery_requires_new_flight(void) { return owner.new_flight; }
