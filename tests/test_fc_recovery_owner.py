@@ -11,6 +11,7 @@ STUB=r'''
 #include <string.h>
 #include "fc_recovery_owner.h"
 #include "fc_sd_events.h"
+static uint8_t board_recovery_manual_time_retired(uint64_t source){(void)source;return 0;}
 #define TX_TIMER_TICKS_PER_SECOND 1000
 #define CO2_ASSERT_INTERVAL 500
 #define REEF_ASSERT_INTERVAL 500
@@ -26,6 +27,9 @@ static struct {uint32_t ODR;} gpio;
 #define PYRO_PORT (&gpio)
 static unsigned irq,highs,lows,commits,finals,wakes,arms,historical;
 static bool quiet,ready=true,durable,io_error,stop_in_io,arm_ready,seal_error;
+static bool store_ready=true;
+static bool persistent_store_controls_ready(void){return store_ready;}
+static bool persistent_store_publish_commission_complete(void){return store_ready;}
 static uint8_t actual=5;
 static uint32_t seal;
 static uint32_t __get_PRIMASK(void){return irq;}
@@ -63,7 +67,13 @@ static void reset_complete(void){
  assert(fc_recovery_request_startup(epoch)==0&&commits==1&&finals==1);
 }
 int main(int argc,char**argv){assert(argc==2);
- if(!strcmp(argv[1],"success")){
+ if(!strcmp(argv[1],"store_unready")){
+  store_ready=false;
+  assert(fc_recovery_holds_sequence()&&fc_recovery_inhibits_pyro());
+  deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==0&&!gpio.ODR);
+  assert(!fc_recovery_abort_latched()); /* Inhibit does not invent automatic Abort. */
+  fc_recovery_manual_stop();assert(fc_recovery_abort_latched()&&seal&&!gpio.ODR);
+ }else if(!strcmp(argv[1],"success")){
   deployment_pulse_start(false);assert(highs==1&&gpio.ODR==1);
   reset_complete();assert(!gpio.ODR&&!co2_ticks&&!reef_ticks);
   assert(fc_recovery_inhibits_pyro()&&seal&&historical==1);
@@ -158,5 +168,5 @@ class FCRecoveryOwnerTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as tmp:
    p=Path(tmp);src=p/'test.c';src.write_text(STUB+actual+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),str(src),'-o',str(exe)],check=True)
-   for case in ['success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
+   for case in ['store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
     with self.subTest(case=case):subprocess.run([str(exe),case],check=True)

@@ -12,6 +12,7 @@
 #include "sd_record_format.h"
 #include "sd_file_limit.h"
 #include "fc_sd_events.h"
+#include "resilient_storage.h"
 
 #define id "SD "
 
@@ -71,6 +72,7 @@ volatile uint32_t g_sd_flushed_records;
 volatile uint32_t g_sd_shutdown_lost_records;
 volatile uint32_t g_sd_shutdown_lost_events;
 volatile uint32_t g_sd_write_errors;
+volatile uint32_t g_sd_max_write_ms;
 
 uncached char sdbuf[2][SD_BUFFER_SIZE] = {0};
 
@@ -334,8 +336,29 @@ static inline __attribute__((cold)) int sd_pipeline_open(const char *surprise);
 static inline __attribute__((cold)) int sd_pipeline_init(const char *surprise);
 static inline __attribute__((cold)) void sd_pipeline_shutdown(const char *unluck);
 
+static inline bool sd_io_failed(UINT status)
+{
+    if (status == FX_SUCCESS) {
+        if (flight_sd_note_progress()) return false;
+        ++g_sd_write_errors; return true; /* retain row/offset; no fake FX status */
+    }
+    ++g_sd_write_errors;
+    flight_sd_note_io_failure(status);
+    return true;
+}
+static inline bool sd_flush_close_current(void)
+{
+    if (sd_io_failed(fx_media_flush(&sdio_disk))) return false;
+    const UINT closed = fx_file_close(&file);
+    if (closed == FX_SUCCESS) sd_file_open = 0U; /* actual logical handle state */
+    if (sd_io_failed(closed)) return false;
+    g_sd_flushed_records = g_sd_written_records;
+    return true;
+}
+
 static inline bool sd_try_write_line(void)
 {
+    if (flight_sd_prepare_io() != FX_SUCCESS) return false;
 resume_segment:
     fc_lock(&line.lock);
     const fu16 total = line.off[sd_writer_slot];
@@ -346,10 +369,7 @@ resume_segment:
     if (boundary && write_len == 0U && !sd_retry_pending) {
         if (sd_file_open == 2U && sd_pipeline_open("landed:") != WE_ARE_SO_BACK)
         { ++g_sd_write_errors; return false; }
-        if (sd_file_open && (fx_media_flush(&sdio_disk) != FX_SUCCESS ||
-                            fx_file_close(&file) != FX_SUCCESS))
-        { ++g_sd_write_errors; return false; }
-        g_sd_flushed_records = g_sd_written_records;
+        if (sd_file_open && !sd_flush_close_current()) return false;
         sd_file_open = 0U;
         sd_launch_active = sd_launch_pending = false;
         sd_launch_completed = true;
@@ -376,9 +396,7 @@ resume_segment:
         if (sd_file_open && (sd_launch_pending ||
             sd_log_part_needs_rotation(file.fx_file_current_file_size, write_len)))
         {
-            if (fx_media_flush(&sdio_disk) != FX_SUCCESS || fx_file_close(&file) != FX_SUCCESS)
-            { ++g_sd_write_errors; return false; }
-            g_sd_flushed_records = g_sd_written_records;
+            if (!sd_flush_close_current()) return false;
             sd_file_open = false;
         }
         if (sd_launch_pending) { sd_launch_active = true; sd_launch_pending = false; }
@@ -387,12 +405,16 @@ resume_segment:
         sd_retry_offset = file.fx_file_current_file_size;
         sd_retry_pending = true;
     }
+    const uint32_t write_started = now_ms();
     sweetbench_start(12);
     UINT st = fx_file_seek(&file, sd_retry_offset);
+    if (st == FX_SUCCESS && !flight_sd_io_verified()) { ++g_sd_write_errors; return false; }
     if (st == FX_SUCCESS)
         st = fx_file_write(&file, sdbuf[sd_writer_slot] + sd_writer_skip, write_len);
     sweetbench_catch(12);
-    if (st != FX_SUCCESS) { ++g_sd_write_errors; return false; }
+    const uint32_t write_duration = (uint32_t)(now_ms() - write_started);
+    if (write_duration > g_sd_max_write_ms) g_sd_max_write_ms = write_duration;
+    if (sd_io_failed(st)) return false;
 
     fc_lock(&line.lock);
     if (boundary) {
@@ -448,16 +470,21 @@ static inline void sd_pipeline_shutdown(const char *unluck)
     }
     g_sd_shutdown_lost_events += g_sd_event_pending;
     g_sd_shutdown_lost_records += sd_buffer_records[0] + sd_buffer_records[1];
+    /* Do not issue another FileX operation after a transport failure until
+     * the retained card's identity and DMA ownership have been re-established.
+     * An explicit stop remains bounded; failed close leaves its handle owned. */
+    if (flight_sd_prepare_io() != FX_SUCCESS) return;
     UINT st = fx_media_flush(&sdio_disk);
-    if (st == FX_SUCCESS) g_sd_flushed_records = g_sd_written_records;
-    else ++g_sd_write_errors;
-    if (sd_file_open && (st = fx_file_close(&file)) != FX_SUCCESS) {
-        ++g_sd_write_errors; log_err(id "fclose %s %u", unluck, st);
+    if (sd_io_failed(st)) return;
+    g_sd_flushed_records = g_sd_written_records;
+    if (sd_file_open) {
+        st = fx_file_close(&file);
+        if (st == FX_SUCCESS) sd_file_open = false;
+        if (sd_io_failed(st)) { log_err(id "fclose %s %u", unluck, st); return; }
     }
     sd_file_open = false;
-    if ((st = fx_media_close(&sdio_disk)) != FX_SUCCESS) {
-        ++g_sd_write_errors; log_err(id "mclose %s %u", unluck, st);
-    }
+    st = fx_media_close(&sdio_disk);
+    if (sd_io_failed(st)) log_err(id "mclose %s %u", unluck, st);
 }
 
 static inline int sd_pipeline_init(const char *surprise)
@@ -489,6 +516,7 @@ static inline int sd_pipeline_init(const char *surprise)
 
 static inline int sd_pipeline_open(const char *surprise)
 {
+    if (flight_sd_prepare_io() != FX_SUCCESS) return IT_IS_NOW_OVER;
     UINT st;
     if (!sd_file_open)
     {
@@ -497,26 +525,32 @@ static inline int sd_pipeline_open(const char *surprise)
             file.fx_file_name = unique_sd_filename(suffix);
             st = fx_file_create(&sdio_disk, file.fx_file_name);
             if (st != FX_ALREADY_CREATED) break;
+            if (!flight_sd_io_verified()) { flight_sd_note_io_failure(st); return IT_IS_NOW_OVER; }
         }
         if (st != FX_SUCCESS)
         {
+            flight_sd_note_io_failure(st);
             if (!sd_accepting) log_err(id "fcreate %s %u", surprise, st);
             return IT_IS_NOW_OVER;
         }
+        if (!flight_sd_io_verified()) return IT_IS_NOW_OVER;
         st = fx_file_open(&sdio_disk, &file, file.fx_file_name, FX_OPEN_FOR_WRITE);
         if (st != FX_SUCCESS)
         {
+            flight_sd_note_io_failure(st);
             if (!sd_accepting) log_err(id "fopen %s %u", surprise, st);
             return IT_IS_NOW_OVER;
         }
         sd_file_open = 2U;
+        if (!flight_sd_io_verified()) return IT_IS_NOW_OVER;
     }
     if (sd_file_open == 2U)
     {
         static const char header[] = SD_CSV_HEADER;
         st = fx_file_seek(&file, 0U);
+        if (st == FX_SUCCESS && !flight_sd_io_verified()) return IT_IS_NOW_OVER;
         if (st == FX_SUCCESS) st = fx_file_write(&file, (void *)header, sizeof(header) - 1U);
-        if (st != FX_SUCCESS) return IT_IS_NOW_OVER;
+        if (sd_io_failed(st)) return IT_IS_NOW_OVER;
         sd_file_open = 1U;
     }
     return WE_ARE_SO_BACK;
@@ -546,6 +580,10 @@ void sd_pipeline_task()
         fc_lock(&line.lock);
         sd_mark_launch_cutoff();
         fc_unlock(&line.lock);
+        if (flight_sd_prepare_io() != FX_SUCCESS) {
+            tx_thread_sleep((TX_TIMER_TICKS_PER_SECOND + 19U) / 20U);
+            continue;
+        }
         sd_service_events(false);
         const bool flush_due = timer_probe(SDFlush, SD_FLUSH_INTERVAL);
         if (flush_due || sd_launch_pending || sd_cutoff_set || line.off[line.cur] >= SD_POST_MARGIN)
@@ -564,8 +602,8 @@ void sd_pipeline_task()
         if (flush_due)
         {
             st = fx_media_flush(&sdio_disk);
-            if (st == FX_SUCCESS) g_sd_flushed_records = g_sd_written_records;
-            else { ++g_sd_write_errors; log_err(id "flush %s %u", surprise, st); }
+            if (!sd_io_failed(st)) g_sd_flushed_records = g_sd_written_records;
+            else log_err(id "flush %s %u", surprise, st);
         }
     }
     sd_pipeline_shutdown(surprise);

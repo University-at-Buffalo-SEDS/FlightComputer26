@@ -15,6 +15,45 @@ TX_SEMAPHORE sd_tx_semaphore;
 TX_SEMAPHORE sd_rx_semaphore;
 
 extern SD_HandleTypeDef hsd1;
+/* Only the FileX owner creates/releases these boot-long completion objects.
+ * A failed mount must not recreate an already-live semaphore. */
+static unsigned dma_semaphores;
+UINT flight_sd_dma_prepare(void)
+{
+  if (!(dma_semaphores & 1U)) {
+    if (tx_semaphore_create(&sd_rx_semaphore, "sd rx", 0U) != TX_SUCCESS) return FX_IO_ERROR;
+    dma_semaphores |= 1U;
+  }
+  if (!(dma_semaphores & 2U)) {
+    if (tx_semaphore_create(&sd_tx_semaphore, "sd tx", 0U) != TX_SUCCESS) return FX_IO_ERROR;
+    dma_semaphores |= 2U;
+  }
+  return FX_SUCCESS;
+}
+void flight_sd_dma_release(void)
+{
+  if (dma_semaphores & 1U) (void)tx_semaphore_delete(&sd_rx_semaphore);
+  if (dma_semaphores & 2U) (void)tx_semaphore_delete(&sd_tx_semaphore);
+  dma_semaphores = 0U;
+}
+static UINT drain_completion(TX_SEMAPHORE *semaphore)
+{
+  /* One DMA is outstanding, but tolerate a bounded stale/duplicate backlog.
+   * Overflow refuses retry; it never lets an old completion own new data. */
+  for (unsigned attempt = 0U; attempt < 8U; ++attempt) {
+    const UINT status = tx_semaphore_get(semaphore, TX_NO_WAIT);
+    if (status == TX_NO_INSTANCE) return FX_SUCCESS;
+    if (status != TX_SUCCESS) return FX_IO_ERROR;
+  }
+  return FX_IO_ERROR;
+}
+UINT flight_sd_dma_drain(void)
+{
+  if ((dma_semaphores & 1U) && drain_completion(&sd_rx_semaphore) != FX_SUCCESS) return FX_IO_ERROR;
+  if ((dma_semaphores & 2U) && drain_completion(&sd_tx_semaphore) != FX_SUCCESS) return FX_IO_ERROR;
+  return FX_SUCCESS;
+}
+
 #if (FX_STM32_SD_INIT == 1)
 extern void MX_SDMMC1_SD_Init(void);
 #endif

@@ -256,6 +256,12 @@ void fc_recovery_control_new_flight(void)
 
 /* Critical conditions */
 
+static inline bool flight_mission_active(void)
+{
+  return beyond(Armed) || (g_conf & option(Lost_GroundStation)) ||
+         fc_recovery_flight_is_admitted();
+}
+
 static inline void abortion_due_failures(void)
 {
   /* Ordinary flight recovery uses the same lock-safe evaluator handoff.
@@ -268,8 +274,7 @@ static inline void abortion_due_failures(void)
   smon.gps_delayed = 0;
   smon.gps_malform = 0;
 
-  if (beyond(Armed) ||
-      g_conf & option(Lost_GroundStation))
+  if (flight_mission_active())
   {
     smon.to_abort = TO_ABORT * 10;
 
@@ -831,7 +836,7 @@ void recovery_entry(ULONG st)
     fc_msg msg;
     fc_recovery_control_service();
     if (fc_recovery_take_sensor_restart()) {
-      if (beyond(Armed) || (g_conf & option(Lost_GroundStation)))
+      if (flight_mission_active())
         decode_flight_message(fc_mask(Launch_Signal));
       continue;
     }

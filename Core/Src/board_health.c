@@ -16,7 +16,7 @@ extern uint32_t board_health_can_rx_drops(void);
 extern int telemetry_router_enter(void);
 extern int telemetry_router_leave(void);
 #ifdef SD_AVAILABLE
-extern volatile uint32_t g_sd_enqueued_records, g_sd_written_records, g_sd_flushed_records, g_sd_format_errors, g_sd_lock_contention_drops, g_sd_unavailable_drops, g_sd_shutdown_lost_records, g_sd_write_errors;
+extern volatile uint32_t g_sd_enqueued_records, g_sd_written_records, g_sd_flushed_records, g_sd_format_errors, g_sd_lock_contention_drops, g_sd_unavailable_drops, g_sd_shutdown_lost_records, g_sd_write_errors, g_sd_max_write_ms;
 #endif
 
 void board_health_poll(SedsRouter *router)
@@ -47,6 +47,7 @@ void board_health_poll(SedsRouter *router)
   words[16] = g_sd_enqueued_records; words[17] = g_sd_written_records;
   words[18] = g_sd_format_errors + g_sd_lock_contention_drops + g_sd_unavailable_drops + g_sd_shutdown_lost_records;
   words[19] = g_sd_flushed_records; words[20] = g_sd_write_errors;
+  words[1] |= 128U; words[21] = g_sd_max_write_ms;
 #endif
   __set_PRIMASK(saved);
   words[11] = (uint32_t)seds_memory_admission_rejected();

@@ -1,6 +1,7 @@
 """Exercise LaunchCore's real delta installer with the FC flash geometry."""
 import json
 from pathlib import Path
+from native_sdk import configured_dependency_source
 import re
 import struct
 import subprocess
@@ -36,7 +37,7 @@ class FlightOtaTests(unittest.TestCase):
         self.assertIn("ota_stream_poll();", (ROOT / "Core/Src/telemetry.c").read_text())
 
     def test_delta_install_retry_and_confirmation_preserve_settings(self):
-        core = ROOT / "build/Release/_deps/sedslaunchcore-src"
+        core = configured_dependency_source(ROOT, "sedslaunchcore", "SDK_FREE_LAUNCHCORE_SOURCE")
         if not (core / "tools/mkdelta.py").exists():
             self.skipTest("Run ./build.py release to fetch LaunchCore for the installer test")
         with tempfile.TemporaryDirectory() as directory:

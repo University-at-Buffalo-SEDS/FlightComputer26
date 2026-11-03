@@ -3,7 +3,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 class SdWriterRetryTests(unittest.TestCase):
  def test_partial_failure_retains_buffer_and_shutdown_drains_tail(self):
   source=(ROOT/'Core/Src/sdpipeline.c').read_text()
-  funcs=source[source.index('static inline bool sd_try_write_line(void)'):source.index('static inline int sd_pipeline_init(')]
+  funcs=source[source.index('static inline bool sd_io_failed(UINT status)'):source.index('static inline int sd_pipeline_init(')]
   harness=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -15,6 +15,13 @@ typedef unsigned UINT;
 typedef unsigned long ULONG;
 typedef uint16_t fu16;
 #define FX_SUCCESS 0
+
+unsigned flight_sd_prepare_io(void){return 0U;}
+void flight_sd_note_io_failure(unsigned status){(void)status;}
+bool flight_sd_note_progress(void){return true;}
+bool flight_sd_io_verified(void){return true;}
+uint32_t g_sd_max_write_ms;
+uint32_t now_ms(void){return 0U;}
 #define id "SD "
 #define sweetbench_start(x) ((void)0)
 #define sweetbench_catch(x) ((void)0)
@@ -106,6 +113,12 @@ int main(void){
 typedef unsigned UINT;
 #define TX_TIMER_TICKS_PER_SECOND 1000U
 #define FX_SUCCESS 0U
+
+unsigned flight_sd_prepare_io(void){return 0U;}
+void flight_sd_note_io_failure(unsigned status){(void)status;}
+bool flight_sd_note_progress(void){return true;}
+bool flight_sd_io_verified(void){return true;}
+bool sd_io_failed(unsigned status){return status!=0U;}
 #define SD_FLUSH_INTERVAL 1000U
 #define SD_POST_MARGIN 100U
 #define SDFlush 0
@@ -157,6 +170,12 @@ typedef unsigned UINT;
 #define TX_SUCCESS 0U
 #define TX_TIMER_TICKS_PER_SECOND 1000U
 #define FX_SUCCESS 0U
+
+unsigned flight_sd_prepare_io(void){return 0U;}
+void flight_sd_note_io_failure(unsigned status){(void)status;}
+bool flight_sd_note_progress(void){return true;}
+bool flight_sd_io_verified(void){return true;}
+bool sd_io_failed(unsigned status){return status!=0U;}
 #define FX_ALREADY_CREATED 2U
 #define FX_OPEN_FOR_WRITE 3U
 #define WE_ARE_SO_BACK 0

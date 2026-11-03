@@ -28,6 +28,7 @@ static uint32_t last_command,g_conf,phase=Flight;
 static bool last_internal;
 static struct {unsigned gps_delayed,gps_malform,to_abort;} smon;
 bool fc_recovery_holds_sequence(void){return held;}
+bool fc_recovery_flight_is_admitted(void){return false;}
 bool fc_recovery_requires_new_flight(void){return new_flight;}
 bool fc_recovery_request_sensor_restart(void){++restarts;return restart_allowed;}
 bool beyond(unsigned state){return phase>state;}
@@ -73,6 +74,7 @@ class ControlEpochGateTests(unittest.TestCase):
         actual='\n'.join(extract(source,signature)for signature in [
             'bool fc_recovery_command_admissible(',
             'static inline void decode_flight_message(',
+            'static inline bool flight_mission_active(',
             'static inline void abortion_due_failures('])
         with tempfile.TemporaryDirectory() as directory:
             p=Path(directory);src=p/'gates.c';src.write_text('#include <stdint.h>\n'+enum+STUB+actual+MAIN);exe=p/'gates'

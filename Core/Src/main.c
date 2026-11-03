@@ -1,3 +1,6 @@
+#include "fc_recovery_owner.h"
+#include "board_commissioning.h"
+#include "board_recovery_floor.h"
 /* USER CODE BEGIN Header */
 /**
  ******************************************************************************
@@ -19,6 +22,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
 #include "main.h"
+#include "persistent_store.h"
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
 
@@ -146,10 +150,14 @@ int main(void)
   /* Replace the temporary startup indication with the persisted LaunchCore
    * state before ThreadX and network-variable synchronization begin. */
 #ifdef TELEMETRY_ENABLED
-  av_bay_underglow_restore();
-  flight_buzzer_restore();
+  (void)persistent_store_boot_begin();
   /* Establish recovery identity before cached state restore and control tasks. */
   (void)board_recovery_boot_generation();
+  (void)board_recovery_floor_prime_boot(); /* Cached failure stays queryable/inhibited. */
+  board_commissioning_probe_boot();
+  if(board_commissioning_pending())fc_recovery_restore_commissioning_hold();
+  av_bay_underglow_restore();
+  flight_buzzer_restore();
   flight_state_cache_restore();
 #endif
 

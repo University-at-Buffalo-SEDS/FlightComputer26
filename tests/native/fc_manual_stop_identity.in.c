@@ -10,6 +10,7 @@ static unsigned stop_calls,callbacks,floor_checks;
 static SedsResult handler_result;
 static char callback_sender[80];
 static void fc_recovery_manual_stop(void){++stop_calls;}
+static void fc_recovery_manual_stop_original_utc(uint64_t source){(void)source;fc_recovery_manual_stop();}
 /* The real floor is deliberately modelled as denying ordinary commands.
  * This tests that the actual manual handler never calls that gate, not NVM. */
 static uint8_t board_recovery_command_time_allowed(uint64_t timestamp){(void)timestamp;++floor_checks;return 0;}

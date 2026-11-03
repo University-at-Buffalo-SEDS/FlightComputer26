@@ -1,4 +1,5 @@
 #include "ota_stream.h"
+#include "persistent_store.h"
 
 #include "board_config.h"
 #include "launchcore/storage.h"
@@ -149,12 +150,20 @@ static SedsResult ota_stream_event(const SedsP2pStreamEventView *event, void *us
   if (event->stream_id != state.stream_id) return SEDS_ERR;
   if (event->kind == SEDS_P2P_STREAM_DATA) {
     const uint8_t opcode = event->payload_len != 0U ? event->payload[0] : 0U;
-    return send_response(opcode, handle_data(event->payload, event->payload_len));
+    if (!persistent_store_enter()) return SEDS_ERR;
+    const ota_stream_status_t status = handle_data(event->payload, event->payload_len);
+    /* SDK callbacks hold router ownership. Release flash before calling back
+     * into the SDK so another flash owner cannot invert these locks. */
+    if (!persistent_store_leave()) return SEDS_ERR;
+    return send_response(opcode, status);
   }
   if (event->kind == SEDS_P2P_STREAM_CLOSED ||
       event->kind == SEDS_P2P_STREAM_RESET) {
-    if (state.active) (void)launchcore_delta_update_abort();
-    state.active = false;
+    if (!persistent_store_enter()) return SEDS_ERR;
+    const launchcore_status_t status = state.active ? launchcore_delta_update_abort() : LAUNCHCORE_OK;
+    if (status == LAUNCHCORE_OK) state.active = false;
+    const bool released = persistent_store_leave();
+    if (!released || status != LAUNCHCORE_OK) return SEDS_ERR;
     state.connected = false;
     state.stream_id = 0U;
   }
@@ -166,8 +175,11 @@ uint32_t ota_stream_max_patch_size(void) { return BOARD_DELTA_SIZE; }
 SedsResult ota_stream_init(SedsRouter *router)
 {
   if (router == NULL) return SEDS_BAD_ARG;
+  if (!persistent_store_enter()) return SEDS_ERR;
   launchcore_storage_set_driver(&launchcore_board_storage_driver);
-  if (launchcore_storage_init() != LAUNCHCORE_STORAGE_OK) return SEDS_ERR;
+  const launchcore_storage_status_t status = launchcore_storage_init();
+  const bool released = persistent_store_leave();
+  if (!released || status != LAUNCHCORE_STORAGE_OK) return SEDS_ERR;
   state = (ota_stream_state_t){.router = router, .initialized_ms = telemetry_now_ms()};
   return seds_router_bind_p2p_stream_port(router, OTA_STREAM_PORT,
                                           ota_stream_event, NULL);
@@ -176,6 +188,10 @@ SedsResult ota_stream_init(SedsRouter *router)
 void ota_stream_poll(void)
 {
   const uint64_t now = telemetry_now_ms();
+  if (!persistent_store_enter()) {
+    g_ota_confirm_status = (int32_t)LAUNCHCORE_ERR_FLASH;
+    return;
+  }
   if (!state.boot_confirmed && state.confirm_attempts < OTA_CONFIRM_MAX_ATTEMPTS &&
       now - state.initialized_ms >= OTA_CONFIRM_DELAY_MS &&
       (state.confirm_attempts == 0U || now - state.last_confirm_ms >= OTA_CONFIRM_RETRY_MS)) {
@@ -188,4 +204,8 @@ void ota_stream_poll(void)
   }
   if (state.reset_requested && now - state.reset_requested_ms >= OTA_RESET_DELAY_MS)
     NVIC_SystemReset();
+  if (!persistent_store_leave()) {
+    state.boot_confirmed = false;
+    g_ota_confirm_status = (int32_t)LAUNCHCORE_ERR_FLASH;
+  }
 }

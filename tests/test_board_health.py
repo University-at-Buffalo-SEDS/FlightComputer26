@@ -62,7 +62,7 @@ int main(void){
 #else
  assert(!(captured[1]&1)&&!captured[7]&&!captured[8]&&!captured[9]&&!captured[10]);
 #endif
- if(captured[1]&16)assert(captured[16]==0xf00d1234U); /* no float rounding */
+ if(captured[1]&16){assert(captured[16]==0xf00d1234U);assert((captured[1]&128U)&&captured[21]==20U);} /* no float rounding */
  uptime=(UINT64_C(1)<<42)+20000;board_health_poll(&router);
  assert(calls==3&&captured[2]==20000&&captured[3]==1024);
  uptime=(UINT64_C(1)<<42)+UINT32_MAX-2U;board_health_poll(&router);assert(calls==4);

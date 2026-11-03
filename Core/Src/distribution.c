@@ -397,8 +397,10 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   }
 
   // led_toggle(LED1_PORT, LED1_PIN);
-  if ((pkt->ty == SEDS_DT_FLIGHT_STATE || pkt->ty == SEDS_DT_FLIGHT_COMMAND ||
-       pkt->ty == SEDS_DT_ASCENT_BIASES) && !board_recovery_managed_update_allowed(pkt))
+  if (pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))
+    return SEDS_PERMISSION_DENIED;
+  if ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES) &&
+      !board_recovery_controller_update_allowed(pkt))
     return SEDS_PERMISSION_DENIED;
 
   switch (pkt->ty)

@@ -32,6 +32,9 @@ extern "C" {
 
 extern TX_SEMAPHORE sd_tx_semaphore;
 extern TX_SEMAPHORE sd_rx_semaphore;
+UINT flight_sd_dma_prepare(void);
+void flight_sd_dma_release(void);
+UINT flight_sd_dma_drain(void);
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
@@ -73,13 +76,10 @@ extern TX_SEMAPHORE sd_rx_semaphore;
  * e.g. create a semaphore used for transfer notification */
 /* USER CODE BEGIN FX_STM32_SD_PRE_INIT_TX */
 
-#define FX_STM32_SD_PRE_INIT(_media_ptr)                do { \
-                                                          if ((tx_semaphore_create(&sd_rx_semaphore, "sd rx transfer semaphore", 0) != TX_SUCCESS) || \
-                                                              (tx_semaphore_create(&sd_tx_semaphore, "sd tx transfer semaphore", 0) != TX_SUCCESS))  \
-                                                          { \
-                                                            _media_ptr->fx_media_driver_status = FX_IO_ERROR; \
-                                                          } \
-                                                        } while(0)
+#define FX_STM32_SD_PRE_INIT(_media_ptr) do { \
+  if (flight_sd_dma_prepare() != FX_SUCCESS) \
+    (_media_ptr)->fx_media_driver_status = FX_IO_ERROR; \
+} while (0)
 
 /* USER CODE END FX_STM32_SD_PRE_INIT_TX */
 
@@ -94,10 +94,7 @@ extern TX_SEMAPHORE sd_rx_semaphore;
 
 /* USER CODE BEGIN FX_STM32_SD_POST_DEINIT_TX */
 
-#define FX_STM32_SD_POST_DEINIT(_media_ptr)             do { \
-                                                          tx_semaphore_delete(&sd_rx_semaphore); \
-                                                          tx_semaphore_delete(&sd_tx_semaphore); \
-                                                        } while(0)
+#define FX_STM32_SD_POST_DEINIT(_media_ptr) flight_sd_dma_release()
 
 /* USER CODE END FX_STM32_SD_POST_DEINIT_TX */
 

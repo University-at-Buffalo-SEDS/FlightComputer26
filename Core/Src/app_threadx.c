@@ -20,6 +20,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "app_threadx.h"
+#include "persistent_store.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -108,6 +109,8 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
 
   /* USER CODE BEGIN App_ThreadX_Init */
 
+  /* A failed storage owner leaves controls inhibited; network still starts. */
+  (void)persistent_store_runtime_start();
   (void)tx_thread_stack_error_notify(thread_stack_error_handler);
 #ifdef SD_AVAILABLE
   /* Optional storage failure must not stop flight/network startup. The SD task

@@ -23,6 +23,9 @@ typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
 static unsigned commands, heartbeats;
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){return p!=NULL;}
+/* Existing receipt-only fixture: controller readiness is conservative too;
+ * actual station/floor/clock policy is covered by its dedicated source test. */
+static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}

@@ -147,6 +147,7 @@ if (ENABLE_TELEMETRY)
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_buzzer.c
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_state_cache.c
         ${CMAKE_SOURCE_DIR}/Core/Src/persistent_store.c
+    Core/Src/board_commissioning.c
     )
 
     include(cmake/sedsnet_fetch.cmake)

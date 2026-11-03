@@ -9,7 +9,7 @@ class LandedWindow(unittest.TestCase):
  def test_exact_deadline_wrap_repeated_transition_and_retry_split(self):
   source=(ROOT/'Core/Src/sdpipeline.c').read_text()
   clocks=source[source.index('void sd_launch_landed('):source.index('static bool sd_writer_slot;')]
-  writer=source[source.index('static inline bool sd_try_write_line(void)'):source.index('static inline void sd_pipeline_shutdown(',source.index('static inline bool sd_try_write_line(void)'))]
+  writer=source[source.index('static inline bool sd_io_failed(UINT status)'):source.index('static inline void sd_pipeline_shutdown(',source.index('static inline bool sd_try_write_line(void)'))]
   code=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -28,7 +28,11 @@ struct {unsigned lock;fu16 off[2];bool free,cur;} line;
 char sdbuf[2][64],normal[128],launch[128]="header\n";
 char *disk=launch;
 unsigned pos=7,flushed,closed,opened,mask,tick;
-unsigned sd_buffer_records[2],g_sd_written_records,g_sd_flushed_records,g_sd_write_errors;
+unsigned sd_buffer_records[2],g_sd_written_records,g_sd_flushed_records,g_sd_write_errors,g_sd_max_write_ms;
+UINT flight_sd_prepare_io(void){return FX_SUCCESS;}
+void flight_sd_note_io_failure(UINT status){(void)status;}
+bool flight_sd_note_progress(void){return true;}
+bool flight_sd_io_verified(void){return true;}
 bool sd_launch_pending,sd_launch_active=true,sd_writer_slot,sd_retry_pending;
 bool sd_landed_seen,sd_launch_completed,sd_cutoff_set,sd_cutoff_slot;
 uint32_t sd_landed_tick,sd_cutoff_records,g_sd_launch_closed;

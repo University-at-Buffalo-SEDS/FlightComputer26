@@ -9,6 +9,8 @@ typedef int launchcore_persist_status_t;
 #define LAUNCHCORE_PERSIST_OK 0
 #define LAUNCHCORE_PERSIST_NOT_FOUND 1
 #define LAUNCHCORE_PERSIST_STORAGE_ERROR 2
+#include <stdbool.h>
+bool persistent_store_completed_boundary_ready(void);
 int persistent_store_init(void);
 int persistent_store_get(uint32_t,void*,size_t*);
 int persistent_store_set(uint32_t,const void*,size_t);
@@ -23,6 +25,7 @@ static uint8_t disk[16];
 static unsigned writes;
 static int write_error,read_error,wrong_read,copy_before_error;
 static void put(uint8_t *p,uint64_t n){for(unsigned i=0;i<8;i++)p[i]=(uint8_t)(n>>(i*8));}
+bool persistent_store_completed_boundary_ready(void){return false;}
 int persistent_store_init(void){return 0;}
 int persistent_store_get(uint32_t key,void *value,size_t *n){
  assert(key==0x4252464cU && *n==16);

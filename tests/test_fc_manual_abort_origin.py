@@ -18,6 +18,7 @@ static SedsRouter router;
 static struct {SedsRouter*r;}g_router={&router};
 static unsigned stops;
 static void fc_recovery_manual_stop(void){++stops;}
+static void fc_recovery_manual_stop_original_utc(uint64_t source){(void)source;fc_recovery_manual_stop();}
 static bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*owner,size_t owner_n){
  assert(r);if(!s)return false;
  /* Deliberate named/assigned SDK boundary stub; real compact/collision

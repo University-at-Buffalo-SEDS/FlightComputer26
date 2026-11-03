@@ -130,7 +130,7 @@ int main(void){
 
     def test_launch_rotation_retains_old_retry_and_failed_transition(self):
         src=(ROOT/'Core/Src/sdpipeline.c').read_text()
-        funcs=src[src.index('static inline bool sd_try_write_line(void)'):src.index('static inline void sd_pipeline_shutdown(',src.index('static inline bool sd_try_write_line(void)'))]
+        funcs=src[src.index('static inline bool sd_io_failed(UINT status)'):src.index('static inline void sd_pipeline_shutdown(',src.index('static inline bool sd_io_failed(UINT status)'))]
         code=r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -139,6 +139,13 @@ int main(void){
 #include "sd_file_limit.h"
 #define WE_ARE_SO_BACK 0
 #define FX_SUCCESS 0
+
+unsigned flight_sd_prepare_io(void){return 0U;}
+void flight_sd_note_io_failure(unsigned status){(void)status;}
+bool flight_sd_note_progress(void){return true;}
+bool flight_sd_io_verified(void){return true;}
+uint32_t g_sd_max_write_ms;
+uint32_t now_ms(void){return 0U;}
 #define sweetbench_start(x) ((void)0)
 #define sweetbench_catch(x) ((void)0)
 typedef unsigned UINT;

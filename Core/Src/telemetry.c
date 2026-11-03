@@ -1,3 +1,4 @@
+#include "board_commissioning.h"
 
 #ifdef TELEMETRY_ENABLED
 extern int telemetry_router_enter(void);
@@ -642,6 +643,7 @@ static SedsResult telemetry_poll_discovery_locked(void) {
     }
   }
   (void)av_bay_underglow_poll(g_router.r);
+  board_commissioning_service();
   fc_recovery_network_service();
   (void)flight_state_cache_poll(g_router.r);
   /* This also enforces the two-second startup-buzz deadline. It must run
@@ -838,11 +840,12 @@ static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)
   static const char manual[] = "SEDS_MANUAL_ABORT_V1:";
   if (packet == NULL || packet->ty != SEDS_DT_ABORT) return SEDS_BAD_ARG;
   /* Legacy/unmarked and automatic ABORT never acquire a new FC effect. */
-  if (packet->payload == NULL || packet->payload_len != sizeof(manual)-1U ||
-      memcmp(packet->payload, manual, sizeof(manual)-1U) != 0) return SEDS_OK;
+  if(packet->payload==NULL)return SEDS_OK;
+  bool known=packet->payload_len==sizeof manual&&!memcmp(packet->payload,manual,sizeof manual-1U)&&packet->payload[sizeof manual-1U]=='K';
+  if(!known&&(packet->payload_len!=sizeof manual-1U||memcmp(packet->payload,manual,sizeof manual-1U)))return SEDS_OK;
   if (!board_recovery_manual_stop_source_allowed(g_router.r, packet))
     return SEDS_PERMISSION_DENIED;
-  fc_recovery_manual_stop();
+  if(known)fc_recovery_manual_stop_original_utc(packet->timestamp);else fc_recovery_manual_stop();
   return SEDS_OK; /* Admission only: actual GPIO/evaluator readback is QUERY. */
 }
 

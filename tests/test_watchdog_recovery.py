@@ -97,6 +97,12 @@ static void __set_PRIMASK(uint32_t v) {mask=v;}
 static uint32_t now_ms(void) {return now;}
 static uint32_t g_conf,local_time[Time_Users];
 static struct {uint32_t flight,idx,global_state,confidence;} sm;
+static unsigned admission_seeds;
+extern volatile uint32_t g_fc_watchdog_resumed;
+static bool fc_recovery_restore_admitted_flight(void) {
+ assert(g_fc_watchdog_resumed && sm.flight>=Armed && sm.flight<=Recovery);
+ assert(g_conf & Launch_Requested);++admission_seeds;return true;
+}
 static float states[8], covariance[6], baro[3], statistics[2];
 typedef struct {void *data; uint32_t size;} fc_resume_region;
 #define R(x) {(void*)&(x),sizeof(x)}
@@ -111,7 +117,7 @@ static void test_stop_after_crc(void) {
  if(inject_stop_after_crc){inject_stop_after_crc=false;unsigned old=mask;mask=1;fc_watchdog_hold_for_operator_reset();mask=old;}
 }
 static void reset_runtime(void) {
- mask=0;failpoint=0;inject_stop_after_crc=false;corrupt_stop_store=false;now=25;g_conf=0;memset(&sm,0,sizeof(sm));
+ admission_seeds=0;mask=0;failpoint=0;inject_stop_after_crc=false;corrupt_stop_store=false;now=25;g_conf=0;memset(&sm,0,sizeof(sm));
  memset(states,0,sizeof(states));memset(covariance,0,sizeof(covariance));
  memset(baro,0,sizeof(baro));memset(local_time,0,sizeof(local_time));
  image_id=actions=next_slot=sequence=action_slot=action_sequence=0;
@@ -219,6 +225,8 @@ int main(void) {
  assert(!fc_watchdog_can_actuate());
 }
 '''
+        import re
+        main = re.sub(r'(fc_watchdog_recovery_boot\([^;]+;)', r'\1assert(admission_seeds == (g_fc_watchdog_resumed ? 1U : 0U));', main)
         with tempfile.TemporaryDirectory() as directory:
             exe = str(Path(directory)/'recovery')
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-x','c','-','-o',exe],input=stub+source+main,text=True,check=True)

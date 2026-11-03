@@ -25,6 +25,7 @@ typedef int SedsResult;
 typedef int SedsRouter;
 typedef int launchcore_storage_driver_t;
 typedef int launchcore_status_t;
+typedef int launchcore_storage_status_t;
 typedef int ota_stream_status_t;
 enum { SEDS_OK, SEDS_BAD_ARG, SEDS_ERR };
 enum { LAUNCHCORE_OK, LAUNCHCORE_ERR_NO_SPACE, LAUNCHCORE_ERR_BAD_STATE,
@@ -39,24 +40,32 @@ enum { SEDS_P2P_STREAM_ACCEPTED, SEDS_P2P_STREAM_DATA,
 typedef struct { int kind; uint32_t stream_id; const uint8_t *payload; size_t payload_len; } SedsP2pStreamEventView;
 const launchcore_storage_driver_t launchcore_board_storage_driver=1;
 static unsigned resets, aborted, written, confirmed;
+static bool locked, fail_enter, fail_leave;
+static unsigned enters, leaves;
+static bool persistent_store_enter(void) {
+ ++enters; assert(!locked); if(fail_enter) return false; locked=true; return true;
+}
+static bool persistent_store_leave(void) {
+ ++leaves; assert(locked); locked=false; return !fail_leave;
+}
 static int confirmation_result;
 static uint64_t now;
 static uint8_t reply[13];
-static void launchcore_storage_set_driver(const launchcore_storage_driver_t *d) { assert(d); }
-static int launchcore_storage_init(void) { return 0; }
+static void launchcore_storage_set_driver(const launchcore_storage_driver_t *d) { assert(d && locked); }
+static int launchcore_storage_init(void) { assert(locked); return 0; }
 static uint64_t telemetry_now_ms(void) { return now; }
-static void NVIC_SystemReset(void) { ++resets; }
-static int launchcore_delta_update_begin(uint32_t n) { written=0; return n>16384 ? LAUNCHCORE_ERR_NO_SPACE : LAUNCHCORE_OK; }
-static int launchcore_delta_update_write(const void *p,size_t n) { assert(p); written+=n; return 0; }
-static int launchcore_delta_update_finish(void) { return 0; }
-static int launchcore_delta_update_abort(void) { ++aborted; return 0; }
-static int launchcore_confirm_boot(void) { ++confirmed; return confirmation_result; }
+static void NVIC_SystemReset(void) { assert(locked); ++resets; }
+static int launchcore_delta_update_begin(uint32_t n) { assert(locked); written=0; return n>16384 ? LAUNCHCORE_ERR_NO_SPACE : LAUNCHCORE_OK; }
+static int launchcore_delta_update_write(const void *p,size_t n) { assert(p && locked); written+=n; return 0; }
+static int launchcore_delta_update_finish(void) { assert(locked); return 0; }
+static int launchcore_delta_update_abort(void) { assert(locked); ++aborted; return 0; }
+static int launchcore_confirm_boot(void) { assert(locked); ++confirmed; return confirmation_result; }
 static int seds_router_send_p2p_stream(SedsRouter *r,uint32_t id,const void *p,size_t n) {
-  assert(r && id && n==13); memcpy(reply,p,n); return 0;
+  assert(r && id && n==13 && !locked); memcpy(reply,p,n); return 0;
 }
 static int seds_router_bind_p2p_stream_port(SedsRouter *r,unsigned port,
   SedsResult (*cb)(const SedsP2pStreamEventView*,void*),void *user) {
-  assert(r && port==4510 && cb && user==NULL); return 0;
+  assert(r && port==4510 && cb && user==NULL && !locked); return 0;
 }
 uint32_t ota_stream_max_patch_size(void);
 ''' + source + r'''
@@ -105,6 +114,26 @@ int main(void) {
   ota_stream_poll(); assert(confirmed==3);
   now=1000000; ota_stream_poll(); assert(confirmed==3);
   assert(g_ota_confirm_attempts==3 && g_ota_confirm_status==LAUNCHCORE_ERR_METADATA);
+  unsigned before=confirmed;
+  fail_enter=true;
+  assert(ota_stream_init(&router)==SEDS_ERR);
+  ota_stream_poll(); assert(confirmed==before && !locked);
+  e.kind=SEDS_P2P_STREAM_DATA; e.stream_id=state.stream_id;
+  e.payload=begin; e.payload_len=sizeof(begin);
+  assert(ota_stream_event(&e,NULL)==SEDS_ERR && !locked);
+  e.kind=SEDS_P2P_STREAM_RESET;
+  assert(ota_stream_event(&e,NULL)==SEDS_ERR && !locked);
+  fail_enter=false; fail_leave=true;
+  assert(ota_stream_init(&router)==SEDS_ERR && !locked);
+  fail_leave=false; assert(ota_stream_init(&router)==SEDS_OK);
+  e.kind=SEDS_P2P_STREAM_ACCEPTED; e.stream_id=10;
+  assert(ota_stream_event(&e,NULL)==SEDS_OK);
+  e.kind=SEDS_P2P_STREAM_DATA;
+  fail_leave=true;
+  memset(reply,0x55,sizeof(reply));
+  assert(ota_stream_event(&e,NULL)==SEDS_ERR && !locked && reply[0]==0x55);
+  fail_leave=false;
+  assert(enters>=leaves && !locked);
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

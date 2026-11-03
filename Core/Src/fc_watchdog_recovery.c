@@ -267,6 +267,9 @@ void fc_watchdog_recovery_boot(uint32_t flags)
     sequence = r->sequence; next_slot = chosen ^ 1U;
     g_fc_watchdog_resume_gap_ms = gap;
     g_fc_watchdog_resumed = 1U;
+    /* Only the validated active-flight restore above can seed this proof.
+     * Stop/commissioning/storage ownership can still refuse it. */
+    (void)fc_recovery_restore_admitted_flight();
     return;
 reject:
     g_fc_watchdog_resume_rejected = 1U;
