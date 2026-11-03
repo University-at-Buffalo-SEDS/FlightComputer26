@@ -668,13 +668,25 @@ static SedsResult telemetry_poll_discovery_locked(void) {
 #endif
 }
 
+#ifdef TELEMETRY_ENABLED
+bool fc_recovery_ota_reset_boundary_ready(void)
+{
+  /* The SDK lock hooks use this same recursive ThreadX mutex. A nested
+   * application/SDK caller must not reset even after one successful put. */
+  return __get_IPSR() == 0U && tx_thread_identify() == &telemetry_task &&
+         telemetry_mu.tx_mutex_owner == TX_NULL &&
+         telemetry_mu.tx_mutex_ownership_count == 0U;
+}
+#endif
 SedsResult telemetry_poll_discovery(void) {
 #ifdef TELEMETRY_ENABLED
   if (!telemetry_router_enter()) return SEDS_BAD_ARG;
 #endif
   SedsResult result = telemetry_poll_discovery_locked();
 #ifdef TELEMETRY_ENABLED
-  if (!telemetry_router_leave() && result == SEDS_OK) return SEDS_ERR;
+  if (!telemetry_router_leave()) return result == SEDS_OK ? SEDS_ERR : result;
+  /* Reset-only drain: flash/confirmation remain at their original poll site. */
+  ota_stream_reset_poll();
 #endif
   return result;
 }

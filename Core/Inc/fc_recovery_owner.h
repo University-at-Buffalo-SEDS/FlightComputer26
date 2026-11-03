@@ -44,4 +44,11 @@ bool fc_recovery_command_admissible(uint32_t command, bool internal);
 bool fc_recovery_request_sensor_restart(void);
 bool fc_recovery_take_sensor_restart(void);
 void fc_recovery_restore_commissioning_hold(void);
+/* RESET-only OTA observation. No authority for flash or generic resources.
+ * Call retire only while the existing short IRQ owner is held. */
+void fc_recovery_ota_reset_retire_locked(void);
+bool fc_recovery_ota_reset_capture(uint32_t *epoch);
+bool fc_recovery_ota_reset_commit(uint32_t epoch);
+/* Actual ThreadX owner metadata, read-only under final IRQ guard. */
+bool fc_recovery_ota_reset_boundary_ready(void);
 #endif

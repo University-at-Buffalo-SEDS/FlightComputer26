@@ -79,6 +79,13 @@ static uint32_t seal;
 static uint32_t __get_PRIMASK(void){return irq;}
 static void __disable_irq(void){irq=1;}
 static void __set_PRIMASK(uint32_t n){irq=n;}
+/* This wire/owner fixture has no OTA job or telemetry reset worker. Its
+ * actual recovery/pulse callers still hold their real modeled IRQ owner. */
+static void ota_stream_retire_reset_locked(void){assert(irq);}
+static bool ota_stream_take_reset_locked(uint32_t epoch){(void)epoch;assert(irq);return false;}
+bool fc_recovery_ota_reset_boundary_ready(void){assert(irq);return false;}
+static void NVIC_SystemReset(void){assert(!"wire fixture must never reset MCU");}
+
 static void co2_high(void){assert(irq);gpio.ODR|=1;++highs;}
 static void reef_high(void){assert(irq);gpio.ODR|=2;++highs;}
 static void co2_low(void){gpio.ODR&=~1U;++lows;}

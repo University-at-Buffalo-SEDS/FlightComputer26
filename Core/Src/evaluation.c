@@ -68,11 +68,12 @@ static inline void flight_advance(state promotion)
 {
   sm.confidence = 0;
 
-  if (fetch_add(&sm.flight, 1, AcqRel) != promotion - 1)
-  {
-    store(&sm.flight, promotion, Rel);
-    message(id "enter vigilant mode", false);
-  }
+  const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+  fc_recovery_ota_reset_retire_locked();
+  const bool wrong_sequence = fetch_add(&sm.flight, 1, AcqRel) != promotion - 1;
+  if (wrong_sequence) store(&sm.flight, promotion, Rel);
+  __set_PRIMASK(reset_mask);
+  if (wrong_sequence) message(id "enter vigilant mode", false);
 
   if (promotion == Launch) fc_sd_capture_event(FC_LOG_LAUNCH_DETECTED, false);
   if (promotion == Landed) sd_launch_landed(now_ms());
@@ -487,7 +488,12 @@ static inline void enter_flight_mode(fu32 conf)
 
 #ifdef DESCENT_TEST
     descent_initialize(conf);
-    store(&sm.flight, Apogee, Rel);
+{
+      const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+      fc_recovery_ota_reset_retire_locked();
+      store(&sm.flight, Apogee, Rel);
+      __set_PRIMASK(reset_mask);
+    }
 #endif
   }
 }

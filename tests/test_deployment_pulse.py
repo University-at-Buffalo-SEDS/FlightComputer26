@@ -36,6 +36,7 @@ static bool fc_watchdog_record_deployment(bool reef) { (void)reef; return true; 
 static uint32_t __get_PRIMASK(void) {return mask;}
 static void __disable_irq(void) {mask=1;}
 static void __set_PRIMASK(uint32_t v) {mask=v;}
+static void fc_recovery_ota_reset_retire_locked(void) {assert(mask); }
 static void co2_high(void) {assert(mask); co2=1;}
 static void reef_high(void) {assert(mask); reef=1;}
 static void co2_low(void) {co2=0;}

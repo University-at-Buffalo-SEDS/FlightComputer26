@@ -46,6 +46,9 @@ static uint32_t current(void){return sm.flight;}
 static uint32_t __get_PRIMASK(void){return irq;}
 static void __disable_irq(void){irq=1;}
 static void __set_PRIMASK(uint32_t n){irq=n;}
+/* This extracted controller fixture omits its IRQ-owning caller. */
+static unsigned ota_reset_retire_calls;
+static void fc_recovery_ota_reset_retire_locked(void){++ota_reset_retire_calls;}
 static void __DMB(void){}
 static bool fc_recovery_holds_sequence(void){return held;}
 static bool fc_watchdog_startup_reset_ready(void){return reset_ready;}
@@ -76,6 +79,7 @@ int main(void){
  reset_ready=true;assert(fc_recovery_control_finalize_startup()&&sm.flight==Startup);
  assert((g_conf&(Manual_Biases|SD_Pipeline_Reset|Parachute_Deployed|Parachute_Expanded))==(Manual_Biases|SD_Pipeline_Reset|Parachute_Deployed|Parachute_Expanded));
  assert(!(g_conf&(Eval_Abort_Flag|Launch_Requested))&&baro_conf.rezero==0);
+ assert(ota_reset_retire_calls==1);
  assert(calibration==123.5f&&clock_samples[0]==11&&clock_samples[2]==33);
  sm.flight=Postinit;assert(!fc_recovery_control_new_flight_ready());
  sm.flight=Armed;g_conf|=Postinit_Requested;assert(!fc_recovery_control_new_flight_ready());

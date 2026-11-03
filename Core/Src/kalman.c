@@ -200,6 +200,7 @@ bool accel_to_quaternion(const f_xyz *accl, uint32_t epoch)
     __set_PRIMASK(mask); return false;
   }
   qv = candidate;
+  fc_recovery_ota_reset_retire_locked();
   sm.flight = Armed;
   g_conf &= ~option(Postinit_Requested);
   __set_PRIMASK(mask);

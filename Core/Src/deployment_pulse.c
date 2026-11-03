@@ -71,6 +71,7 @@ void deployment_pulse_start(bool reef)
     bool started = false;
     if (*remaining == 0U && !fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
         fc_watchdog_record_deployment(reef)) {
+        fc_recovery_ota_reset_retire_locked();
         started = true;
         *remaining = reef ? REEF_ASSERT_INTERVAL : CO2_ASSERT_INTERVAL;
         if (reef) {

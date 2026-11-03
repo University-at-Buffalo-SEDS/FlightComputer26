@@ -54,7 +54,19 @@ static uint8_t reply[13];
 static void launchcore_storage_set_driver(const launchcore_storage_driver_t *d) { assert(d && locked); }
 static int launchcore_storage_init(void) { assert(locked); return 0; }
 static uint64_t telemetry_now_ms(void) { return now; }
-static void NVIC_SystemReset(void) { assert(locked); ++resets; }
+static unsigned irq;
+static uint32_t __get_PRIMASK(void) { return irq; }
+static void __disable_irq(void) { irq=1; }
+static void __set_PRIMASK(uint32_t value) { irq=value; }
+static void NVIC_SystemReset(void) { assert(!locked && irq); ++resets; }
+static bool fc_recovery_ota_reset_capture(uint32_t *epoch) { unsigned before=irq; irq=1; *epoch=1; irq=before; return true; }
+bool ota_stream_take_reset_locked(uint32_t epoch);
+static bool fc_recovery_ota_reset_commit(uint32_t epoch) {
+ unsigned before=irq; irq=1;
+ bool valid=ota_stream_take_reset_locked(epoch);
+ if(valid) NVIC_SystemReset();
+ irq=before; return valid;
+}
 static int launchcore_delta_update_begin(uint32_t n) { assert(locked); written=0; return n>16384 ? LAUNCHCORE_ERR_NO_SPACE : LAUNCHCORE_OK; }
 static int launchcore_delta_update_write(const void *p,size_t n) { assert(p && locked); written+=n; return 0; }
 static int launchcore_delta_update_finish(void) { assert(locked); return 0; }
@@ -97,8 +109,8 @@ int main(void) {
   assert(send(8,chunk,13)==OTA_STREAM_OK && written==120); /* Final partial quadword. */
   assert(send(8,finish,1)==OTA_STREAM_OK);
   assert(send(8,begin,sizeof(begin))==OTA_STREAM_BAD_STATE);
-  now=249; ota_stream_poll(); assert(resets==0);
-  now=250; ota_stream_poll(); assert(resets==1);
+  now=249; ota_stream_poll(); ota_stream_reset_poll(); assert(resets==0);
+  now=250; ota_stream_poll(); ota_stream_reset_poll(); assert(resets==1);
   now=0; assert(ota_stream_init(&router)==SEDS_OK);
   now=5000; ota_stream_poll(); assert(confirmed==1);
   now=50000; ota_stream_poll(); assert(confirmed==1); /* Success is latched. */

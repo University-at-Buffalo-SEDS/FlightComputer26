@@ -64,6 +64,7 @@ bool fc_recovery_postinit_allowed(uint32_t value){return value==epoch;}
 uint32_t __get_PRIMASK(void){return irq;}
 void __disable_irq(void){irq=1;}
 void __set_PRIMASK(uint32_t value){irq=value;}
+static void fc_recovery_ota_reset_retire_locked(void){assert(irq);}
 float fcos(float x){
  if(cancel_during_math){cancel_during_math=false;++epoch;sm.flight=Startup;g_conf=0;}
  return cosf(x);

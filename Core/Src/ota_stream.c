@@ -1,5 +1,6 @@
 #include "ota_stream.h"
 #include "persistent_store.h"
+#include "fc_recovery_owner.h"
 
 #include "board_config.h"
 #include "launchcore/storage.h"
@@ -34,10 +35,32 @@ typedef struct {
   bool active;
   bool connected;
   bool boot_confirmed;
-  bool reset_requested;
+  uint32_t reset_epoch;
+  volatile bool reset_eligible;
+  volatile bool reset_requested;
 } ota_stream_state_t;
 
 static ota_stream_state_t state;
+/* These helpers share the FC IRQ owner with every invalidating mutation.
+ * Retirement is sticky for this transfer; only a fresh BEGIN can capture. */
+void ota_stream_retire_reset_locked(void)
+{
+  state.reset_eligible = false;
+  state.reset_requested = false;
+}
+bool ota_stream_take_reset_locked(uint32_t epoch)
+{
+  const bool valid = state.reset_eligible && state.reset_requested &&
+                     state.reset_epoch == epoch;
+  ota_stream_retire_reset_locked();
+  return valid;
+}
+static void retire_reset(void)
+{
+  const uint32_t mask = __get_PRIMASK(); __disable_irq();
+  ota_stream_retire_reset_locked();
+  __set_PRIMASK(mask);
+}
 volatile uint32_t g_ota_confirm_attempts;
 volatile int32_t g_ota_confirm_status;
 
@@ -89,6 +112,14 @@ static ota_stream_status_t handle_data(const uint8_t *payload, size_t len)
   if (opcode == OTA_OP_BEGIN_DELTA) {
     if (len != 5U || state.active) return OTA_STREAM_BAD_STATE;
     const uint32_t size = read_u32_le(&payload[1]);
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+    ota_stream_retire_reset_locked();
+    uint32_t epoch;
+    if (fc_recovery_ota_reset_capture(&epoch)) {
+      state.reset_epoch = epoch;
+      state.reset_eligible = true;
+    }
+    __set_PRIMASK(mask);
     launchcore_status_t result = launchcore_delta_update_begin(size);
     if (result == LAUNCHCORE_OK) {
       state.active = true;
@@ -120,8 +151,14 @@ static ota_stream_status_t handle_data(const uint8_t *payload, size_t len)
     launchcore_status_t result = launchcore_delta_update_finish();
     if (result == LAUNCHCORE_OK) {
       state.active = false;
-      state.reset_requested = true;
-      state.reset_requested_ms = telemetry_now_ms();
+      const uint64_t requested_ms = telemetry_now_ms();
+      const uint32_t mask = __get_PRIMASK(); __disable_irq();
+      /* Never adopt a new owner after the synchronous FINISH operation. */
+      if (state.reset_eligible) {
+        state.reset_requested_ms = requested_ms;
+        state.reset_requested = true;
+      }
+      __set_PRIMASK(mask);
     }
     return map_status(result);
   }
@@ -150,16 +187,17 @@ static SedsResult ota_stream_event(const SedsP2pStreamEventView *event, void *us
   if (event->stream_id != state.stream_id) return SEDS_ERR;
   if (event->kind == SEDS_P2P_STREAM_DATA) {
     const uint8_t opcode = event->payload_len != 0U ? event->payload[0] : 0U;
-    if (!persistent_store_enter()) return SEDS_ERR;
+    if (!persistent_store_enter()) { retire_reset(); return SEDS_ERR; }
     const ota_stream_status_t status = handle_data(event->payload, event->payload_len);
     /* SDK callbacks hold router ownership. Release flash before calling back
      * into the SDK so another flash owner cannot invert these locks. */
-    if (!persistent_store_leave()) return SEDS_ERR;
+    if (!persistent_store_leave()) { retire_reset(); return SEDS_ERR; }
     return send_response(opcode, status);
   }
   if (event->kind == SEDS_P2P_STREAM_CLOSED ||
       event->kind == SEDS_P2P_STREAM_RESET) {
-    if (!persistent_store_enter()) return SEDS_ERR;
+    retire_reset(); /* Terminal retires reset even if storage is unavailable. */
+    if (!persistent_store_enter()) { retire_reset(); return SEDS_ERR; }
     const launchcore_status_t status = state.active ? launchcore_delta_update_abort() : LAUNCHCORE_OK;
     if (status == LAUNCHCORE_OK) state.active = false;
     const bool released = persistent_store_leave();
@@ -179,7 +217,7 @@ SedsResult ota_stream_init(SedsRouter *router)
   launchcore_storage_set_driver(&launchcore_board_storage_driver);
   const launchcore_storage_status_t status = launchcore_storage_init();
   const bool released = persistent_store_leave();
-  if (!released || status != LAUNCHCORE_STORAGE_OK) return SEDS_ERR;
+  if (!released || status != LAUNCHCORE_STORAGE_OK) { retire_reset(); return SEDS_ERR; }
   state = (ota_stream_state_t){.router = router, .initialized_ms = telemetry_now_ms()};
   return seds_router_bind_p2p_stream_port(router, OTA_STREAM_PORT,
                                           ota_stream_event, NULL);
@@ -188,7 +226,13 @@ SedsResult ota_stream_init(SedsRouter *router)
 void ota_stream_poll(void)
 {
   const uint64_t now = telemetry_now_ms();
+  if (state.reset_eligible) {
+    uint32_t epoch;
+    if (!fc_recovery_ota_reset_capture(&epoch) || epoch != state.reset_epoch ||
+        (state.reset_requested && now < state.reset_requested_ms)) retire_reset();
+  }
   if (!persistent_store_enter()) {
+    retire_reset();
     g_ota_confirm_status = (int32_t)LAUNCHCORE_ERR_FLASH;
     return;
   }
@@ -202,10 +246,23 @@ void ota_stream_poll(void)
     g_ota_confirm_status = (int32_t)status;
     state.boot_confirmed = status == LAUNCHCORE_OK;
   }
-  if (state.reset_requested && now - state.reset_requested_ms >= OTA_RESET_DELAY_MS)
-    NVIC_SystemReset();
   if (!persistent_store_leave()) {
     state.boot_confirmed = false;
     g_ota_confirm_status = (int32_t)LAUNCHCORE_ERR_FLASH;
+    retire_reset();
+    return;
   }
+}
+
+void ota_stream_reset_poll(void)
+{
+  if (!state.reset_requested) return;
+  /* Snapshot clock outside the final owner. No flash/SDK operation here. */
+  const uint64_t now = telemetry_now_ms();
+  if (now < state.reset_requested_ms) {
+    retire_reset();
+    return;
+  }
+  if (now - state.reset_requested_ms >= OTA_RESET_DELAY_MS)
+    (void)fc_recovery_ota_reset_commit(state.reset_epoch);
 }

@@ -5,6 +5,9 @@
 #include "persistent_store.h"
 #include "board_recovery_floor.h"
 #include <stddef.h>
+#ifdef TELEMETRY_ENABLED
+#include "ota_stream.h"
+#endif
 
 enum { RESET_IDLE, RESET_REQUESTED, RESET_WAIT_EVAL, RESET_NETWORK,
        RESET_COMMITTING, RESET_FINAL, RESET_FAILED };
@@ -23,6 +26,7 @@ static bool reset_active(void)
 }
 static void advance_epoch(void)
 {
+    fc_recovery_ota_reset_retire_locked();
     owner.admitted_flight = false;
     if (owner.epoch != UINT32_MAX) ++owner.epoch;
 }
@@ -100,7 +104,10 @@ bool fc_recovery_restore_admitted_flight(void)
     const bool valid = !owner.new_flight && !owner.legacy_stop &&
         !reset_active() && owner.phase != RESET_FAILED &&
         !fc_recovery_holds_sequence();
-    if (valid) owner.admitted_flight = true;
+    if (valid) {
+        fc_recovery_ota_reset_retire_locked();
+        owner.admitted_flight = true;
+    }
     __set_PRIMASK(mask);
     return valid;
 }
@@ -110,6 +117,7 @@ bool fc_recovery_request_sensor_restart(void)
     const uint32_t mask = __get_PRIMASK(); __disable_irq();
     if (fc_recovery_inhibits_pyro()) { __set_PRIMASK(mask); return false; }
     if (owner.sensor_restart == 0U) {
+        fc_recovery_ota_reset_retire_locked();
         owner.restart_epoch = owner.epoch;
         owner.sensor_restart = 1U;
     }
@@ -132,6 +140,7 @@ void fc_recovery_request_eval_stop(void)
 {
     const uint32_t mask = __get_PRIMASK();
     __disable_irq();
+    fc_recovery_ota_reset_retire_locked();
     owner.admitted_flight = false;
     if (reset_active() || owner.sensor_restart != 0U) {
         advance_epoch();
@@ -154,6 +163,7 @@ bool fc_recovery_prepare_startup(uint32_t expected)
         expected == UINT32_MAX || expected != owner.epoch || reset_active()) {
         __set_PRIMASK(mask); return false;
     }
+    fc_recovery_ota_reset_retire_locked();
     owner.admitted_flight = false;
     const bool retained = fc_watchdog_hold_for_operator_reset();
     deployment_pulse_cancel_locked();
@@ -187,6 +197,7 @@ int32_t fc_recovery_request_startup(uint32_t expected)
     }
     if (reset_active()) { __set_PRIMASK(mask); return -14; }
     if (owner.phase == RESET_FAILED) { __set_PRIMASK(mask); return -9; }
+    fc_recovery_ota_reset_retire_locked();
     owner.admitted_flight = false;
     if (!fc_watchdog_hold_for_operator_reset()) {
         owner.reset_inhibit = true;
@@ -288,7 +299,10 @@ bool fc_recovery_admit_new_flight(bool internal)
     const uint32_t mask = __get_PRIMASK(); __disable_irq();
     if (!owner.new_flight) {
         const bool allowed = !fc_recovery_holds_sequence() && fc_watchdog_can_actuate();
-        if (allowed && !internal) owner.admitted_flight = true;
+        if (allowed && !internal) {
+            fc_recovery_ota_reset_retire_locked();
+            owner.admitted_flight = true;
+        }
         __set_PRIMASK(mask); return allowed;
     }
     if (internal || !owner.verified_startup || fc_recovery_holds_sequence() ||
@@ -310,6 +324,7 @@ bool fc_recovery_admit_new_flight(bool internal)
  * caused merely by virgin/unknown media. No retained-RAM persistence claim. */
 void fc_recovery_restore_commissioning_hold(void){
  const uint32_t mask=__get_PRIMASK();__disable_irq();
+ fc_recovery_ota_reset_retire_locked();
  owner.admitted_flight=false;
  owner.commissioning_hold=true;owner.commission_epoch=owner.epoch;
  owner.manual_stop=true;owner.reset_inhibit=true;owner.new_flight=true;
@@ -347,6 +362,7 @@ bool board_recovery_commission_finish(uint32_t expected,uint32_t actual){
 }
 void board_recovery_commission_retain(void){
  const uint32_t mask=__get_PRIMASK();__disable_irq();
+ fc_recovery_ota_reset_retire_locked();
  owner.admitted_flight=false;
  owner.commissioning_hold=true;owner.manual_stop=true;owner.reset_inhibit=true;
  owner.new_flight=true;owner.verified_startup=false;owner.stop_handled=false;
@@ -355,3 +371,53 @@ void board_recovery_commission_retain(void){
 }
 
 void fc_recovery_manual_stop(void){fc_recovery_manual_stop_original_utc(0U);}
+
+/* These functions reuse the FC owner; a false mission accessor is never an
+ * OTA permit. No output/state change is performed to make Startup eligible. */
+void fc_recovery_ota_reset_retire_locked(void)
+{
+#ifdef TELEMETRY_ENABLED
+    ota_stream_retire_reset_locked();
+#endif
+}
+#ifdef TELEMETRY_ENABLED
+static bool ota_reset_safe_locked(void)
+{
+    uint32_t outputs;
+    return owner.epoch != 0U && owner.epoch != UINT32_MAX &&
+        !owner.admitted_flight && !owner.new_flight && !owner.legacy_stop &&
+        !fc_recovery_holds_sequence() && !fc_recovery_control_pending() &&
+        !fc_recovery_reset_failed() && fc_recovery_control_ready() &&
+        fc_recovery_control_is_startup() &&
+        deployment_pulse_safe_outputs_locked(&outputs);
+}
+#endif
+bool fc_recovery_ota_reset_capture(uint32_t *epoch)
+{
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+#ifdef TELEMETRY_ENABLED
+    const bool valid = epoch != NULL && ota_reset_safe_locked();
+    if (valid) *epoch = owner.epoch;
+#else
+    (void)epoch;
+    const bool valid = false;
+#endif
+    __set_PRIMASK(mask);
+    return valid;
+}
+bool fc_recovery_ota_reset_commit(uint32_t epoch)
+{
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+#ifdef TELEMETRY_ENABLED
+    const bool valid = fc_recovery_ota_reset_boundary_ready() &&
+                       epoch == owner.epoch && ota_reset_safe_locked() &&
+                       ota_stream_take_reset_locked(epoch);
+    if (valid) NVIC_SystemReset();
+    else fc_recovery_ota_reset_retire_locked();
+#else
+    (void)epoch;
+    const bool valid = false;
+#endif
+    __set_PRIMASK(mask);
+    return valid;
+}

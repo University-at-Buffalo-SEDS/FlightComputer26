@@ -41,6 +41,7 @@ struct {uint32_t ODR;} gpio;
 uint32_t __get_PRIMASK(void){return mask;}
 void __disable_irq(void){mask=1;}
 void __set_PRIMASK(uint32_t x){mask=x;}
+static void fc_recovery_ota_reset_retire_locked(void){assert(mask);}
 uint32_t HAL_GetTick(void){return clock_ms;}
 void HAL_IncTick(void){++clock_ms;}
 void HAL_SuspendTick(void){}

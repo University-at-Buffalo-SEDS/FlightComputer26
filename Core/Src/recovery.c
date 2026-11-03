@@ -238,6 +238,7 @@ bool fc_recovery_control_finalize_startup(void)
                     Graceful_Reset | Ascent_KF_Staged | Defer_Baro_Fallback |
                     Eval_Abort_Flag);
   g_conf |= option(Using_Ascent_KF);
+  fc_recovery_ota_reset_retire_locked();
   sm.flight = Startup;
   sm.global_state = G_Startup;
   sm.confidence = 0;
@@ -347,7 +348,12 @@ static inline void manual_deployment(bool apogee, bool force)
   }
   if (apogee)
   {
-    sm.flight = Descent;
+    {
+      const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+      fc_recovery_ota_reset_retire_locked();
+      sm.flight = Descent;
+      __set_PRIMASK(reset_mask);
+    }
     release_parachute(force);
 #ifdef TELEMETRY_ENABLED
     av_bay_underglow_signal(2U);
@@ -357,7 +363,12 @@ static inline void manual_deployment(bool apogee, bool force)
   }
   else if (expand_parachute(force))
   {
-    sm.flight = Reefing;
+    {
+      const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+      fc_recovery_ota_reset_retire_locked();
+      sm.flight = Reefing;
+      __set_PRIMASK(reset_mask);
+    }
 #ifdef TELEMETRY_ENABLED
     av_bay_underglow_signal(4U);
 #else
@@ -398,11 +409,12 @@ static inline void enter_postinit(bool noconfirm)
 
 #endif
 
-  if (++sm.flight != Postinit)
-  {
-    sm.flight = Postinit;
-    message(id "Postinit: wrong sequence", true);
-  }
+  const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+  fc_recovery_ota_reset_retire_locked();
+  const bool wrong_sequence = ++sm.flight != Postinit;
+  if (wrong_sequence) sm.flight = Postinit;
+  __set_PRIMASK(reset_mask);
+  if (wrong_sequence) message(id "Postinit: wrong sequence", true);
 
   baro_conf.rezero = 1;
   g_conf |= option(Postinit_Requested);
@@ -507,11 +519,21 @@ static inline void process_action(fc_msg cmd, bool internal)
       break;
 
     case Advance_State:
+      {
+      const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+      fc_recovery_ota_reset_retire_locked();
       saturating_incr(sm.flight, Recovery);
+      __set_PRIMASK(reset_mask);
+    }
       break;
 
     case Rewind_State:
+      {
+      const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
+      fc_recovery_ota_reset_retire_locked();
       saturating_decr(sm.flight, Startup);
+      __set_PRIMASK(reset_mask);
+    }
       break;
 
     case Log_Rate_Limit:

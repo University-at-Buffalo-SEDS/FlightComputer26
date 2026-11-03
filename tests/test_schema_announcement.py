@@ -46,6 +46,8 @@ static void fc_recovery_network_service(void) {}
 static void ota_stream_poll(void) {}
 static void board_commissioning_service(void) {}
 static unsigned locked;
+static unsigned reset_drains;
+static void ota_stream_reset_poll(void) {assert(!locked); ++reset_drains;}
 static void telemetry_lock(void) {assert(!locked);++locked;}
 static void telemetry_unlock(void) {assert(locked==1);--locked;}
 ''' +checked_hooks(ROOT)+'\n'+ poll + r'''
@@ -69,7 +71,7 @@ int main(void) {
  poll_result=SEDS_OK;
  /* Successful router recreation resets bootstrap advertisement ownership. */
  g_discovery_schema_announced=0; g_discovery_schema_retry_ms=0;
- fail=SEDS_OK; telemetry_poll_discovery(); assert(attempts==4 && requests==0);
+ fail=SEDS_OK; telemetry_poll_discovery(); assert(attempts==4 && requests==0 && reset_drains>0);
 }
 
 '''

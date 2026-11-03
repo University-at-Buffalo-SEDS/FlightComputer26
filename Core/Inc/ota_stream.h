@@ -2,6 +2,7 @@
 
 #include "sedsnet_config.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 #define OTA_STREAM_PORT 4510U
 #define OTA_STREAM_MAX_CHUNK 112U
@@ -19,4 +20,9 @@ typedef enum {
 
 SedsResult ota_stream_init(SedsRouter *router);
 void ota_stream_poll(void);
+/* Only actual telemetry worker after successful outer router release. */
+void ota_stream_reset_poll(void);
+/* Existing IRQ owner held; bounded RAM only, never SDK/store/clock. */
+void ota_stream_retire_reset_locked(void);
+bool ota_stream_take_reset_locked(uint32_t epoch);
 uint32_t ota_stream_max_patch_size(void);
