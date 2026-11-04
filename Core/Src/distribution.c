@@ -13,7 +13,9 @@
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fc_recovery_owner.h"
+#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 #include "board_recovery_transport.h"
+#endif
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include <string.h>

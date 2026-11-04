@@ -74,6 +74,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/abort_unwind.c
     ${CMAKE_SOURCE_DIR}/Core/Src/panic_match.c
     ${CMAKE_SOURCE_DIR}/Core/Src/resilient_storage.c
+    # Local durable state and recovery ownership do not depend on networking.
+    ${CMAKE_SOURCE_DIR}/Core/Src/flight_state_cache.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/persistent_store.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/board_commissioning.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c
 
     ${CMAKE_SOURCE_DIR}/Drivers/CMSIS/DSP/Source/FastMathFunctions/arm_atan2_f32.c
@@ -145,9 +149,6 @@ if (ENABLE_TELEMETRY)
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_rate.c
         ${CMAKE_SOURCE_DIR}/Core/Src/av_bay_underglow.c
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_buzzer.c
-        ${CMAKE_SOURCE_DIR}/Core/Src/flight_state_cache.c
-        ${CMAKE_SOURCE_DIR}/Core/Src/persistent_store.c
-    Core/Src/board_commissioning.c
     )
 
     include(cmake/sedsnet_fetch.cmake)
@@ -190,6 +191,12 @@ endif()
 option(ALLOC_TEST       "Test exported allocator."      OFF)
 option(TEST_DESCENT     "Start at Apogee."              OFF)
 option(FAKESTATION      "Emulate GS commands."          OFF)
+if(FAKESTATION AND NOT ENABLE_TELEMETRY)
+    message(FATAL_ERROR
+        "FAKESTATION requires ENABLE_TELEMETRY=ON and the real SDK packet ABI. "
+        "For SDK-free hardware/sensor Debug builds, leave FAKESTATION=OFF. "
+        "This legacy fixture does not grant trusted GS command authority.")
+endif()
 
 message(STATUS "Command compatibility:  ${TELEMETRY_COMPAT}")
 message(STATUS "External GPS:           ${EXTERNAL_GPS}")

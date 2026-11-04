@@ -1,14 +1,18 @@
 #include "flight_state_cache.h"
 #include "main.h"
+#ifdef TELEMETRY_ENABLED
 #include "sedsnet_config.h"
 #include "board_recovery_transport.h"
+#endif
 
 #include "persistent_store.h"
 
 #include <stddef.h>
 #include <string.h>
 
+#ifdef TELEMETRY_ENABLED
 extern volatile uint32_t g_telemetry_discovery_seen;
+#endif
 
 #define FLIGHT_STATE_PERSIST_KEY 0x46535445u
 #define FLIGHT_STATE_MAX_VALUE 15U
@@ -21,8 +25,9 @@ volatile uint32_t g_flight_state_cache_updates __attribute__((used, externally_v
 volatile uint32_t g_flight_state_cache_errors __attribute__((used, externally_visible)) = 0U;
 
 static bool g_restore_attempted;
-static bool g_persist_ready;
 static bool g_has_value;
+#ifdef TELEMETRY_ENABLED
+static bool g_persist_ready;
 static bool g_network_value_seen;
 static uint8_t g_persisted_state = UINT8_MAX;
 static uint32_t g_last_refresh_ms;
@@ -45,6 +50,8 @@ flight_state_cache_apply_network_update(const SedsPacketView *packet)
 }
 
 
+#endif /* TELEMETRY_ENABLED */
+
 void flight_state_cache_restore(void)
 {
     if (g_restore_attempted) return;
@@ -55,7 +62,9 @@ void flight_state_cache_restore(void)
         g_flight_state_cache_errors++;
         return;
     }
+#ifdef TELEMETRY_ENABLED
     g_persist_ready = true;
+#endif
 
     uint8_t state = 0U;
     size_t size = sizeof(state);
@@ -71,7 +80,9 @@ void flight_state_cache_restore(void)
 
     g_has_value = true;
     g_flight_state_cache_value = state;
+#ifdef TELEMETRY_ENABLED
     g_persisted_state = state;
+#endif
     g_flight_state_cache_restores++;
 }
 
@@ -99,8 +110,11 @@ int32_t flight_state_cache_reset_startup(void)
         ++g_flight_state_cache_errors;
         return -9;
     }
+#ifdef TELEMETRY_ENABLED
     g_persist_ready = true;
+#endif
     ++g_flight_state_cache_writes;
+#ifdef TELEMETRY_ENABLED
     if (clear_managed_cache() != SEDS_OK) {
         ++g_flight_state_cache_errors;
         return -9;
@@ -108,11 +122,13 @@ int32_t flight_state_cache_reset_startup(void)
     g_persisted_state = startup;
     g_network_value_seen = false;
     g_last_refresh_ms = HAL_GetTick();
+#endif
     g_flight_state_cache_value = startup;
     g_has_value = true;
     return 0;
 }
 
+#ifdef TELEMETRY_ENABLED
 static SedsResult persist_update(const SedsPacketView *packet, void *user)
 {
     (void)user;
@@ -194,3 +210,5 @@ SedsResult flight_state_cache_poll(SedsRouter *router)
     return seds_router_request_managed_variable(router, SEDS_DT_FLIGHT_STATE);
 }
 
+
+#endif /* TELEMETRY_ENABLED */
