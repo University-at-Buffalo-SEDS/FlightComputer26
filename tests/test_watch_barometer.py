@@ -1,4 +1,6 @@
 import importlib.util
+import csv
+import io
 import json
 import math
 import os
@@ -126,6 +128,37 @@ class BaroscopeTests(unittest.TestCase):
         self.assertIn('tcl_port 0',commands)
         self.assertFalse(any(re.search(r'\b(reset|halt|resume|mww|mwh|mwb|flash)\b',c) for c in commands))
         self.assertFalse(any('board/' in c or 'target/' in c for c in commands))
+    def test_connection_failure_preserves_actual_openocd_error_after_cleanup(self):
+        process=Mock();process.poll.return_value=1
+        def start(command,**kwargs):
+            kwargs['stdout'].write('OpenOCD startup\nError: libusb_open() failed with LIBUSB_ERROR_ACCESS\n')
+            kwargs['stdout'].flush()
+            return process
+        probe=scope.OpenOCDProbe('fake','TEST')
+        with patch.object(scope.subprocess,'Popen',side_effect=start):
+            with self.assertRaisesRegex(RuntimeError,'LIBUSB_ERROR_ACCESS'):probe.connect()
+        self.assertIsNone(probe.directory)
+        self.assertIsNone(probe.process)
+
+    def test_flagless_selection_verifies_flash_instead_of_assuming_debug_or_newest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            debug=root/'build'/'Debug';debug.mkdir(parents=True)
+            release=root/'build'/'Release';release.mkdir()
+            old=fixture(debug/'FlightComputer26.elf')
+            fixture(release/'FlightComputer26.elf')
+            raw=bytearray((release/'FlightComputer26.elf').read_bytes());raw[0x200]=255
+            (release/'FlightComputer26.elf').write_bytes(raw)
+            os.utime(old.path,ns=(1,1))
+            paths=scope.local_firmware_paths(root)
+            self.assertEqual(paths[0].parent,release)
+            probe=types.SimpleNamespace(read_blocks=lambda requests:[dict(old.flash)[requests[0][0]]])
+            selected,size=scope.matching_firmware(probe,paths)
+            self.assertEqual(selected.path,old.path)
+            self.assertEqual(size,20)
+            with self.assertRaisesRegex(ValueError,'No local ELF matches'):
+                scope.matching_firmware(probe,[paths[0]])
+
     def test_serial_cannot_inject_tcl_commands(self):
         with self.assertRaisesRegex(ValueError,'Invalid ST-Link serial'):
             scope.OpenOCDProbe('fake','123;reset run')
@@ -209,6 +242,79 @@ class BaroscopeTests(unittest.TestCase):
         self.assertEqual(d['altitude_m'],1.25)
         self.assertEqual(d['before_bias_altitude_m'],1.5)
         self.assertAlmostEqual(d['predicted_velocity_m_s'],.1)
+    def test_imu_offsets_units_and_fc_bench_outputs(self):
+        v=values();m=bytearray(v['meas'])
+        struct.pack_into('<6f',m,24,1,2,3,-4,-5,-6);v['meas']=bytes(m)
+        v['g_fc_monitor']=struct.pack('<6I6f',scope.MONITOR_MAGIC,0,2,9999,5,2,10,20,1,0,0,0)
+        row=scope.decode(v)
+        self.assertEqual([row[f'accel_{axis}'] for axis in 'xyz'],[1,2,3])
+        self.assertEqual([row[f'gyro_{axis}_dps'] for axis in 'xyz'],[-4,-5,-6])
+        self.assertEqual(row['fc_kalman_altitude_m'],10)
+        self.assertEqual(row['fc_kalman_velocity_m_s'],20)
+    def test_bench_control_writes_only_versioned_mailbox_command_word(self):
+        probe=scope.OpenOCDProbe('unused','TEST')
+        firmware=types.SimpleNamespace(resolved={'g_fc_monitor':scope.Symbol(0x20000100,48)})
+        with patch.object(probe,'read_blocks',return_value=[struct.pack('<I',scope.MONITOR_MAGIC)]),patch.object(probe,'request') as request:
+            probe.monitor_command(firmware,7,True,True)
+            self.assertEqual(request.call_args.args[0],'mww 0x20000104 0xe0000007')
+            probe.monitor_command(firmware,8,False)
+            self.assertEqual(request.call_args.args[0],'mww 0x20000104 0x80000008')
+            probe.monitor_command(firmware,9,False,mode=False)
+            self.assertEqual(request.call_args.args[0],'mww 0x20000104 0x9')
+        with patch.object(probe,'read_blocks',return_value=[bytes(4)]),patch.object(probe,'request') as request:
+            with self.assertRaisesRegex(ValueError,'ABI'):probe.monitor_command(firmware,9,True)
+            request.assert_not_called()
+    def test_kalman_start_stop_reset_are_queued_and_leased_by_sample_owner(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE')
+        probe=types.SimpleNamespace(snapshot=lambda _:values(),monitor_command=Mock())
+        monitor=scope.Scope(fw,probe,20,10,kalman_control=True)
+        for action,enabled,reset in [('start',True,False),('reset',True,True),('stop',False,False)]:
+            monitor.kalman_action(action);monitor.sample()
+            self.assertEqual(probe.monitor_command.call_args.args[2:],(enabled,reset))
+        monitor.kalman_sent-=1;monitor.sample()
+        self.assertEqual(probe.monitor_command.call_args.args[2:],(False,False))
+        calls=probe.monitor_command.call_count;monitor.sample()
+        self.assertEqual(probe.monitor_command.call_count,calls)
+        monitor.kalman_action('reset');monitor.sample()
+        self.assertEqual(probe.monitor_command.call_args.args[2:],(False,True))
+        monitor.kalman_action('start');monitor.sample();monitor.kalman_sent-=1;monitor.sample()
+        self.assertGreater(probe.monitor_command.call_count,calls+1)
+        with self.assertRaises(ValueError):scope.Scope(fw,probe,20,10).kalman_action('start')
+    def test_slow_sampling_renews_monitor_lease_while_filter_is_stopped(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE')
+        probe=types.SimpleNamespace(snapshot=lambda _:values(),monitor_command=Mock())
+        monitor=scope.Scope(fw,probe,.1,10,kalman_control=True)
+        import threading
+        timer=threading.Timer(.8,monitor.stop.set)
+        timer.start()
+        try:monitor.run()
+        finally:timer.cancel()
+        self.assertEqual(len(monitor.rows),1)
+        self.assertGreaterEqual(probe.monitor_command.call_count,2)
+        self.assertEqual(probe.monitor_command.call_args.args[2:],(False,False))
+
+    def test_csv_roundtrip_replay_seek_pause_speed_and_recorded_estimates(self):
+        fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE')
+        monitor=scope.Scope(fw,types.SimpleNamespace(snapshot=lambda _:values()),20,10)
+        monitor.sample();row=dict(monitor.latest,elapsed_s=0,fc_kalman_altitude_m=12.5,accel_x=3)
+        monitor.rows.clear()
+        for t in (0,1,2):monitor.rows.append(dict(row,elapsed_s=t))
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'session.csv';p.write_text(monitor.export_csv())
+            replay=scope.ReplayScope(p,10)
+            first=replay.payload();self.assertEqual(first['latest']['accel_x'],3)
+            self.assertEqual(first['latest']['fc_kalman_altitude_m'],12.5)
+            replay.playback_action('seek',2)
+            end=replay.payload(first['cursor']);self.assertTrue(end['reset']);self.assertEqual(len(end['rows']),3)
+            replay.playback_action('restart');self.assertEqual(replay.payload()['replay']['position'],0)
+            replay.playback_action('speed',2);replay.playback_action('play');replay.anchor-=.6
+            self.assertGreaterEqual(replay.payload()['replay']['position'],1.2)
+            replay.playback_action('pause');position=replay.position
+            self.assertEqual(replay.payload()['replay']['position'],position)
+            self.assertEqual(len(list(csv.DictReader(io.StringIO(replay.export_csv())))),3)
+            with self.assertRaises(ValueError):replay.kalman_action('start')
+            for value in (math.nan,math.inf):
+                with self.assertRaises(ValueError):replay.playback_action('seek',value)
     def test_continuous_acquisition_between_uploads_keeps_monitoring(self):
         fw=types.SimpleNamespace(path='fake.elf',sha256='FAKE',resolved={
             'meas':scope.Symbol(0x20000100,48),

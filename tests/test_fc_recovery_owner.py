@@ -67,7 +67,18 @@ static void reset_complete(void){
  assert(fc_recovery_request_startup(epoch)==0&&commits==1&&finals==1);
 }
 int main(int argc,char**argv){assert(argc==2);
- if(!strcmp(argv[1],"store_unready")){
+ if(!strcmp(argv[1],"monitor_any_state")){
+  deployment_pulse_start(false);assert(highs==1&&gpio.ODR);
+  owner.admitted_flight=true;store_ready=false; /* Monitoring also works after a storage fault. */
+  irq=1;assert(fc_recovery_monitor_enter());irq=0;
+  assert(actual==5&&!gpio.ODR&&fc_recovery_holds_sequence());
+  assert(fc_recovery_control_pending()&&!fc_recovery_monitor_ready());
+  deployment_pulse_start(true);assert(highs==1);
+  fc_recovery_control_service();assert(!fc_recovery_monitor_ready());
+  quiet=true;fc_recovery_control_service();assert(fc_recovery_monitor_ready());
+  assert(!fc_recovery_control_pending()&&fc_recovery_inhibits_pyro());
+  deployment_pulse_start(false);assert(highs==1&&!gpio.ODR);
+ }else if(!strcmp(argv[1],"store_unready")){
   store_ready=false;
   assert(fc_recovery_holds_sequence()&&fc_recovery_inhibits_pyro());
   deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==0&&!gpio.ODR);
@@ -168,5 +179,5 @@ class FCRecoveryOwnerTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as tmp:
    p=Path(tmp);src=p/'test.c';src.write_text(STUB+actual+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),str(src),'-o',str(exe)],check=True)
-   for case in ['store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
+   for case in ['monitor_any_state','store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
     with self.subTest(case=case):subprocess.run([str(exe),case],check=True)

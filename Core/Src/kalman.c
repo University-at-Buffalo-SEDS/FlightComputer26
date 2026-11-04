@@ -12,6 +12,7 @@
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "testing.h"
+#include "fc_monitor_bench.h"
 
 
 #ifdef PARALLEL_PREDICT_UPDATE
@@ -425,6 +426,31 @@ void ascent_initialize(fu32 conf)
   fetch_or(&g_conf, option(Using_Ascent_KF), Rel);
 }
 
+
+static bool monitor_finite(float value)
+{
+  union { float value; uint32_t bits; } cast = {.value = value};
+  return (cast.bits & 0x7f800000U) != 0x7f800000U;
+}
+bool kalman_monitor_initialize(void)
+{
+  const f_xyz a = meas.accl;
+  if (!monitor_finite(a.x) || !monitor_finite(a.y) || !monitor_finite(a.z) ||
+      !monitor_finite(meas.baro.alt) || a.x*a.x+a.y*a.y+a.z*a.z < 0.01f) return false;
+  eul angles;
+  fatan2(a.y, a.z, &angles.phi);
+  vnorm2(a.y, a.z, &angles.psi);
+  fatan2(-a.x, angles.psi, &angles.theta);
+  angles.psi = 0;
+  euler_to_quat(&angles, &qv);
+  sm.idx = 0;
+  ascent_initialize(load(&g_conf, Acq) | option(Using_Ascent_KF));
+  for (unsigned i = 0; i < STATE_HISTORY; ++i) {
+    sv[i].alt = meas.baro.alt; sv[i].vel = 0;
+  }
+  imedsv.alt = meas.baro.alt;
+  return true;
+}
 
 void ascent_predict(const float dt, fu32 conf)
 {

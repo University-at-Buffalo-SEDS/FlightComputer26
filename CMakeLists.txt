@@ -36,6 +36,7 @@ endif()
 
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE Core/Src/fc_monitor_bench.c)
 include(cmake/packet_store.cmake)
 option(SEDSNET_COMPACT_PACKET_STORE "Use bounded SEDSnet packet stores" ON)
 include(cmake/tlsf_allocator.cmake)

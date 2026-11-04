@@ -18,6 +18,7 @@
 #endif
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "fc_monitor_bench.h"
 #include <string.h>
 
 #define id "DI "
@@ -742,17 +743,20 @@ static inline void data_streaming_mode(void)
             ((conf & option(Postinit_Requested)) || (conf & option(Launch_Requested))))
   {
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
-    if (try_fetch_gyro(&meas.gyro))
+    const bool fresh_gyro = try_fetch_gyro(&meas.gyro);
+    if (fresh_gyro)
     {
       imu |= Gyro_Mask;
       validate_gyro(&meas.gyro, conf);
     }
-    if (try_fetch_accl(&meas.accl))
+    const bool fresh_accel = try_fetch_accl(&meas.accl);
+    if (fresh_accel)
     {
       imu |= Accl_Mask;
       validate_accl(&meas.accl, conf);
     }
-    if (try_fetch_baro(&meas.baro))
+    const bool fresh_baro = try_fetch_baro(&meas.baro);
+    if (fresh_baro)
     {
       validate_baro(&meas.baro, conf);
       maybe_log_measm(Baro, &meas.baro);
@@ -769,6 +773,7 @@ static inline void data_streaming_mode(void)
     {
       imu = 0;
     }
+    fc_monitor_bench_sample(fresh_gyro, fresh_accel, fresh_baro);
     watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
 
     tx_thread_relinquish();

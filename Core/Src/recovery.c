@@ -4,6 +4,7 @@
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
 #include "fc_recovery_owner.h"
+#include "fc_monitor_bench.h"
 #include "fctypes.h"
 #include "fcstructs.h"
 #include "fctasks.h"
@@ -856,6 +857,7 @@ void recovery_entry(ULONG st)
   MrAnalog (WE_ARE_SO_BACK)
   {
     fc_msg msg;
+    fc_monitor_bench_poll();
     fc_recovery_control_service();
     if (fc_recovery_take_sensor_restart()) {
       if (flight_mission_active())

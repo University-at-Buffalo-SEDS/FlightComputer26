@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Read-only FC barometer plots over ST-Link; no telemetry or Python packages needed."""
+"""FC sensor plots, automatic firmware monitor mode, and saved CSV replay."""
 from __future__ import annotations
 import argparse
+from bisect import bisect_left, bisect_right
 from collections import deque
 import csv
 from dataclasses import dataclass
 import hashlib
+import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
@@ -25,6 +27,13 @@ FLASH = (0x08000000, 0x08080000)
 RAM = (0x20000000, 0x20044000)
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 DHCSR = 0xE000EDF0  # Read only: S_HALT bit; never written.
+MONITOR_MAGIC = 0x46434d32
+
+def csv_data(rows):
+    output=io.StringIO(newline='')
+    columns=['elapsed_s','stale','uptime_ms','sample_tick_ms','barometer_age_ms']+[x[0] for x in FIELDS]+['driver_altitude_m']
+    writer=csv.DictWriter(output,fieldnames=columns);writer.writeheader();writer.writerows(rows)
+    return output.getvalue()
 
 def validate_layout(root):
     """Reject same-size field reorders; -g0 ELF has no member-level DWARF."""
@@ -111,7 +120,7 @@ class Firmware:
                 merged.append((address,data))
         self.flash = merged
         self.required = {'meas':48, 'uwTick':4, 'last_tick':4}
-        self.optional = {'gnd_lvl_pressure':4,'alt_bias':4,'prev_rel_alt':4,'imedsv':36}
+        self.optional = {'gnd_lvl_pressure':4,'alt_bias':4,'prev_rel_alt':4,'imedsv':36,'g_fc_monitor':48}
         self.resolved = {}
         for name, size in (self.required | self.optional).items():
             matches = self.symbols.get(name, []) or [v for n, vals in self.symbols.items()
@@ -132,6 +141,26 @@ class Firmware:
             if actual != expected:
                 raise ValueError(f'Firmware mismatch at flash region 0x{address:08x}; select the exact flashed ELF')
         return sum(len(data) for _,data in self.flash)
+
+def local_firmware_paths(root=SOURCE_ROOT):
+    paths=list((root/'build').glob('*/FlightComputer26.elf'))
+    paths.sort(key=lambda path:path.stat().st_mtime_ns,reverse=True)
+    if not paths:raise ValueError('No local firmware ELF found; build the firmware or pass --elf PATH')
+    return paths
+
+def matching_firmware(probe, paths):
+    errors=[]
+    for path in paths:
+        try:
+            firmware=Firmware(path)
+            return firmware,firmware.verify(probe)
+        except ValueError as error:errors.append(f'{path}: {error}')
+    raise ValueError('No local ELF matches flashed firmware:\n'+'\n'.join(errors))
+
+def describe_firmware(firmware):
+    print('ELF:',firmware.path,'SHA256:',firmware.sha256)
+    print('Initialized flash verification:',sum(len(x) for _,x in firmware.flash),'bytes across',len(firmware.flash),'regions')
+    print('Symbols:',json.dumps({k:{'address':hex(v.address),'size':v.size} for k,v in firmware.resolved.items()},indent=2))
 
 class InconsistentRead(RuntimeError):
     pass
@@ -175,7 +204,8 @@ class OpenOCDProbe:
                     self.connection.setsockopt(socket.IPPROTO_TCP,socket.TCP_NODELAY,1)
                     return
                 time.sleep(.02)
-            raise RuntimeError('ST-Link connection failed: check power, selected probe, or another debugger. No reset/takeover attempted.')
+            details='\n'.join(path.read_text(errors='replace').splitlines()[-16:])
+            raise RuntimeError('ST-Link connection failed. OpenOCD output:\n'+(details or 'No output before startup timeout'))
         except BaseException:
             self.close();raise
 
@@ -250,6 +280,16 @@ class OpenOCDProbe:
         except (ValueError,struct.error):
             self.close();raise RuntimeError('Short/invalid ST-Link read; sample discarded')
 
+    def monitor_command(self, firmware, sequence, enabled, reset=False, mode=True):
+        symbol=firmware.resolved.get('g_fc_monitor')
+        if symbol is None:raise ValueError('FC monitor mode requires updated firmware')
+        if struct.unpack('<I',self.read_blocks([(symbol.address,4)])[0])[0]!=MONITOR_MAGIC:
+            raise ValueError('Unsupported FC monitor control ABI')
+        word=(sequence & 0x1fffffff) | (0x80000000 if mode else 0) | (0x20000000 if enabled else 0) | (0x40000000 if reset else 0)
+        # The only supported RAM write is this versioned, firmware-owned
+        # bench mailbox. Never edit g_conf, task state, outputs, or registers.
+        self.request(f'mww {hex(symbol.address+4)} {hex(word)}')
+
     def snapshot(self, firmware):
         names = list(firmware.resolved)
         ranges = sorted([(s.address,s.size) for s in firmware.resolved.values()]+[(DHCSR,4)])
@@ -272,12 +312,15 @@ class OpenOCDProbe:
         # equal values across both passes rejects a healthy, updating sensor
         # indefinitely. Only compare payloads when they claim the SAME sample;
         # otherwise retain the newer pass. This remains best-effort, not atomic.
-        stable=[n for n in names if n not in ('uwTick','meas','imedsv')]
+        stable=[n for n in names if n not in ('uwTick','meas','imedsv','g_fc_monitor')]
         if a['last_tick'] == b['last_tick'] and (
                 a['meas'][12:24] != b['meas'][12:24] or any(a[n]!=b[n] for n in stable)):
             raise InconsistentRead('Inconsistent live barometer read; sample discarded (CPU remains running)')
         if 'imedsv' in b and a['imedsv']!=b['imedsv']:
             del b['imedsv']  # Do not present a visibly changing multi-float prediction as coherent.
+        if ('g_fc_monitor' in b and a['g_fc_monitor'][12:16]==b['g_fc_monitor'][12:16]
+                and a['g_fc_monitor']!=b['g_fc_monitor']):
+            del b['g_fc_monitor']
         return b
 
 def decode(values):
@@ -294,6 +337,16 @@ def decode(values):
             'driver_altitude_m':f('prev_rel_alt'),'predicted_altitude_m':f('imedsv',12),
             'predicted_velocity_m_s':f('imedsv',16),'uptime_ms':tick,'sample_tick_ms':last,
             'barometer_age_ms':age if age < 0x80000000 else None}
+    for i,axis in enumerate('xyz'):
+        data[f'accel_{axis}']=f('meas',24+4*i)
+        data[f'gyro_{axis}_dps']=f('meas',36+4*i)
+    for name in ('fc_kalman_altitude_m','fc_kalman_velocity_m_s','fc_quaternion_w','fc_quaternion_x','fc_quaternion_y','fc_quaternion_z'):
+        data[name]=None
+    if 'g_fc_monitor' in values:
+        magic,status=struct.unpack_from('<I',values['g_fc_monitor'])[0],struct.unpack_from('<I',values['g_fc_monitor'],8)[0]
+        if magic==MONITOR_MAGIC and status==2:
+            for offset,name in enumerate(('fc_kalman_altitude_m','fc_kalman_velocity_m_s','fc_quaternion_w','fc_quaternion_x','fc_quaternion_y','fc_quaternion_z')):
+                data[name]=f('g_fc_monitor',24+offset*4)
     if data['pressure_pa'] is None or not 0 < data['pressure_pa'] <= 150000 or data['temperature_c'] is None:
         raise RuntimeError('Barometer not initialized or invalid; sample discarded')
     if data['driver_altitude_m'] is not None and data['bias_m'] is not None:
@@ -306,13 +359,20 @@ FIELDS = [('pressure_pa','Pressure','Pa'),('temperature_c','Temperature','°C'),
           ('altitude_m','Measured altitude','m'),('before_bias_altitude_m','Before bias (derived)','m'),
           ('bias_m','Altitude bias','m'),('predicted_altitude_m','Kalman prediction altitude','m'),
           ('predicted_velocity_m_s','Kalman prediction vertical velocity','m/s'),('baseline_pa','Pad pressure','Pa')]
+FIELDS += [(f'accel_{axis}',f'Accelerometer {axis.upper()}','driver units') for axis in 'xyz']
+FIELDS += [(f'gyro_{axis}_dps',f'Gyroscope {axis.upper()}','°/s') for axis in 'xyz']
+FIELDS += [('fc_kalman_altitude_m','FC bench Kalman altitude','m'),('fc_kalman_velocity_m_s','FC bench Kalman vertical velocity','m/s')]
+FIELDS += [(f'fc_quaternion_{axis}',f'FC bench quaternion {axis}','') for axis in 'wxyz']
 
 PAGE = r'''<!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FC Barometer</title>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FC Sensors</title>
 <style>
+#replay-controls[hidden]{display:none}#replay-controls{max-width:1400px;margin:16px auto}
+.controls a{color:#8be7d7;text-underline-offset:3px}
 *{box-sizing:border-box}body{font:15px system-ui;background:#101722;color:#e2eaf5;margin:24px}header{max-width:1400px;margin:auto}h1{font-size:26px;margin:0 0 16px}#status{padding:12px;border:1px solid #688399;border-radius:8px}#build{font:11px monospace;color:#94a7bb;overflow-wrap:anywhere}#history{color:#a9b8cc}#panels{max-width:1400px;margin:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr));gap:14px}article{background:#172435;border:1px solid #42566b;border-radius:10px;padding:14px}.card-title,.dialog-title{display:flex;align-items:center;justify-content:space-between;gap:12px}h2{font-size:15px;margin:0}strong{display:block;font:26px monospace;margin:10px 0}canvas{display:block;width:100%;height:180px}article canvas{cursor:zoom-in}button,select{font:inherit;color:inherit;background:#203349;border:1px solid #59728d;border-radius:6px;padding:7px 10px;cursor:pointer}button:hover,select:hover{background:#2c4763}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #63d6c1;outline-offset:3px}.expand{font-size:12px}dialog{color:inherit;background:#172435;border:1px solid #59728d;border-radius:12px;width:min(1450px,96vw);max-width:96vw;max-height:96vh;padding:20px}dialog::backdrop{background:#060c16d9}dialog h2{font-size:20px}.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:20px 0 12px}label{display:flex;align-items:center;gap:8px}.timeline{flex:1;min-width:220px}.timeline input{width:100%;accent-color:#63d6c1}#detail-canvas{height:clamp(260px,52vh,620px);touch-action:none;cursor:crosshair}#inspect{min-height:24px;font:14px monospace;color:#8be7d7}#stats{display:flex;flex-wrap:wrap;gap:12px 28px;border-top:1px solid #42566b;padding-top:14px;font:13px monospace}small{display:block;color:#a9b8cc;margin:10px 0}#view-range{font:13px monospace;color:#a9b8cc}@media(max-width:600px){body{margin:12px}dialog{padding:12px}.controls{gap:8px}.timeline{flex-basis:100%}#detail-canvas{height:42vh}}
 </style>
-<header><h1>FC Barometer</h1><p id="status">Waiting for ST-Link read…</p><p id="history"></p><p id="build"></p></header><main id="panels"></main>
+<header><h1>FC Sensors</h1><p id="status">Waiting for ST-Link read…</p><div class="controls"><a href="/export.csv" download="fc-sensors.csv">Save retained CSV</a><button id="kf-start" disabled>Start FC Kalman</button><button id="kf-stop" disabled>Stop FC Kalman</button><button id="kf-reset" disabled>Reset FC Kalman</button><span id="kf-status"></span></div><p id="history"></p><p id="build"></p></header><main id="panels"></main>
+<div id="replay-controls" class="controls" hidden><button id="replay-play">Play replay</button><button id="replay-reset">Restart replay</button><label>Speed <select id="replay-speed"><option value="0.25">0.25×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="10">10×</option></select></label><label class="timeline">Seek <input id="replay-seek" type="range" min="0" max="1" step="0.01" value="0"></label><span id="replay-time"></span></div>
 <dialog id="detail" aria-labelledby="detail-title">
  <div class="dialog-title"><h2 id="detail-title"></h2><button id="close-detail">Close</button></div>
  <div class="controls">
@@ -325,7 +385,7 @@ PAGE = r'''<!doctype html>
  <div id="stats"></div><small>Viewing can be paused while acquisition continues. Every accepted value is plotted directly; gaps mark stale or missing data.</small>
 </dialog>
 <script>
-let fields=[],busy=false,rows=[],cursor=null,latest=null,frame=null;
+let fields=[],busy=false,rows=[],cursor=null,latest=null,frame=null,replayPlaying=false;
 const detail={key:null,span:600,end:null,follow:true,drag:null,plot:null};
 const $=id=>document.getElementById(id);
 function clock(t){t=Math.max(0,t);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=(t%60).toFixed(1).padStart(4,'0');return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${s}`}
@@ -381,6 +441,10 @@ function render(){
  renderDetail();
 }
 function scheduleRender(){if(frame===null)frame=requestAnimationFrame(render)}
+async function kalman(action){try{const r=await fetch('/kalman',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});const d=await r.json();if(!r.ok)throw Error(d.error);$('kf-status').textContent=d.status}catch(e){$('kf-status').textContent=e.message}}
+$('kf-start').onclick=()=>kalman('start');$('kf-stop').onclick=()=>kalman('stop');$('kf-reset').onclick=()=>kalman('reset');
+async function playback(action,value){try{const r=await fetch('/playback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,value})});if(!r.ok)throw Error('Replay request failed')}catch(e){$('status').textContent=e.message}}
+$('replay-play').onclick=()=>playback(replayPlaying?'pause':'play');$('replay-reset').onclick=()=>playback('restart');$('replay-speed').onchange=e=>playback('speed',Number(e.target.value));$('replay-seek').oninput=e=>playback('seek',Number(e.target.value));
 function openDetail(key){detail.key=key;detail.follow=true;detail.end=null;detail.drag=null;const f=fields.find(f=>f[0]===key);$('detail-title').textContent=`${f[1]} (${f[2]})`;$('detail').showModal();$('inspect').textContent='Hover to inspect a sample. Scroll to zoom; drag to pan.';renderDetail()}
 function setFollowing(follow){detail.follow=follow;if(!follow)detail.end=rows.at(-1)?.elapsed_s||0;renderDetail()}
 $('close-detail').onclick=()=>$('detail').close();
@@ -411,6 +475,10 @@ async function refresh(){
   if(rows.length>d.capacity)rows=rows.slice(-d.capacity);
   if(rows.length)rows=rows.slice(lowerBound(rows,rows.at(-1).elapsed_s-d.history_s));
   $('status').textContent=d.status;$('build').textContent=d.build;
+  for(const id of ['kf-start','kf-stop','kf-reset'])$(id).disabled=!d.kalman.control_available;
+  $('kf-status').textContent=d.kalman.status;
+  $('replay-controls').hidden=!d.replay;
+  if(d.replay){replayPlaying=d.replay.playing;$('replay-play').textContent=replayPlaying?'Pause replay':'Play replay';$('replay-seek').min=d.replay.start;$('replay-seek').max=d.replay.end;$('replay-seek').value=d.replay.position;$('replay-time').textContent=clock(d.replay.position)+' / '+clock(d.replay.end)}
   $('history').textContent=rows.length?`${rows.length.toLocaleString()} retained samples · ${clock(rows[0].elapsed_s)} – ${clock(rows.at(-1).elapsed_s)} · Expand a graph to inspect history`:'Waiting for history';
   if(!fields.length){fields=d.fields;for(const [key,label,unit] of fields){const a=document.createElement('article');a.innerHTML='<div class="card-title"><h2></h2><button class="expand">Expand ↗</button></div><strong>—</strong><canvas></canvas>';a.querySelector('h2').textContent=`${label} (${unit})`;a.dataset.key=key;a.querySelector('button').setAttribute('aria-label',`Expand ${label} graph`);a.querySelector('button').onclick=()=>openDetail(key);a.querySelector('canvas').onclick=()=>openDetail(key);$('panels').append(a)}}
   scheduleRender();
@@ -420,20 +488,42 @@ window.addEventListener('resize',scheduleRender);setInterval(refresh,100);refres
 </script></html>'''
 
 class Scope:
-    def __init__(self, firmware, probe, rate, history, writer=None):
+    def __init__(self, firmware, probe, rate, history, writer=None, kalman_control=False):
         self.firmware,self.probe,self.rate,self.writer = firmware,probe,rate,writer
         self.rows=deque(maxlen=min(100000,max(2,math.ceil(history*rate))))
         self.lock=threading.Lock();self.stop=threading.Event();self.start=time.monotonic()
         self.status='Waiting for first read';self.latest=None;self.verified=True
         self.last_sample=None;self.last_progress=self.start;self.last_uptime=None
         self.cursor=0;self.history=history;self.accepted_at=None;self.read_duration_ms=None
+        self.kalman_control=kalman_control;self.kalman_enabled=False;self.kalman_reset=False
+        self.kalman_sequence=0;self.kalman_sent=0;self.kalman_dirty=kalman_control
+        self.kalman_status='FC bench control unavailable in this firmware'
+
+    def kalman_action(self, action):
+        if not self.kalman_control:raise ValueError('FC estimator control requires matching updated firmware and monitor mode')
+        if action not in ('start','stop','reset'):raise ValueError('Unknown Kalman action')
+        with self.lock:
+            if action!='reset':self.kalman_enabled=action=='start'
+            self.kalman_reset=action=='reset'
+            self.kalman_dirty=True
+            self.kalman_status='FC estimator request pending'
+
+    def renew_kalman(self):
+        with self.lock:
+            due=self.kalman_dirty or time.monotonic()-self.kalman_sent>=.5
+            if not self.kalman_control or not due:return
+            self.kalman_sequence=(self.kalman_sequence+1)&0x1fffffff or 1
+            self.probe.monitor_command(self.firmware,self.kalman_sequence,self.kalman_enabled,self.kalman_reset)
+            self.kalman_sent=time.monotonic();self.kalman_dirty=False;self.kalman_reset=False
 
     def sample(self):
         now=time.monotonic()
         try:
+            self.renew_kalman()
             for attempt in range(3):
                 try:
-                    row=decode(self.probe.snapshot(self.firmware))
+                    snapshot=self.probe.snapshot(self.firmware)
+                    row=decode(snapshot)
                     break
                 except InconsistentRead:
                     if attempt == 2:raise
@@ -452,7 +542,10 @@ class Scope:
                 self.latest=row
                 self.rows.append(row)
                 self.cursor+=1;self.accepted_at=completed;self.read_duration_ms=(completed-now)*1000
-                self.status=('STALE barometer: acquisition tick is not advancing' if stale else 'Running · read-only live values')
+                self.status=('STALE barometer: acquisition tick is not advancing' if stale else 'Running · live sensor values')
+                if 'g_fc_monitor' in snapshot and struct.unpack_from('<I',snapshot['g_fc_monitor'])[0]==MONITOR_MAGIC:
+                    state=struct.unpack_from('<I',snapshot['g_fc_monitor'],8)[0]
+                    self.kalman_status={0:('Monitor mode · FC estimator stopped' if self.kalman_control else 'FC estimator stopped'),1:'FC bench estimator waiting for fresh sensors',2:'FC bench estimator running',3:'Entering monitor mode · waiting for flight evaluator to stop'}.get(state,'Unknown FC bench status')
             if self.writer:self.writer.writerow(row)
         except (RuntimeError,ValueError,OSError) as error:
             with self.lock:
@@ -462,8 +555,17 @@ class Scope:
                 self.cursor+=1
 
     def run(self):
+        next_sample=0.0
         while not self.stop.is_set():
-            began=time.monotonic();self.sample();self.stop.wait(max(0,1/self.rate-(time.monotonic()-began)))
+            now=time.monotonic()
+            if now>=next_sample:
+                self.sample();next_sample=now+1/self.rate
+            else:
+                try:self.renew_kalman()
+                except (OSError,RuntimeError,ValueError) as error:
+                    with self.lock:self.status=str(error)
+            # Renew the session even with slow sampling or a stopped estimator.
+            self.stop.wait(min(.25,max(0,next_sample-time.monotonic())))
 
     def payload(self, after=None):
         with self.lock:
@@ -475,7 +577,81 @@ class Scope:
                     'cursor':self.cursor,'reset':reset,'capacity':self.rows.maxlen,'history_s':self.history,
                     'read_duration_ms':self.read_duration_ms,
                     'host_sample_age_ms':None if self.accepted_at is None else (time.monotonic()-self.accepted_at)*1000,
+                    'kalman':{'control_available':self.kalman_control,'status':self.kalman_status},
                     'build':f'{self.firmware.path} · ELF SHA256 {self.firmware.sha256}' + ('' if self.verified else ' · WARNING: firmware identity mismatch overridden')}
+
+    def export_csv(self):
+        with self.lock:rows=list(self.rows)
+        return csv_data(rows)
+
+class ReplayScope(Scope):
+    """Replay recorded values as-is, with no probe, writes, or refiltering."""
+    def __init__(self, path, history):
+        path=Path(path).resolve()
+        super().__init__(type('Recording',(),{'path':path,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()})(),None,20,history)
+        self.recorded=[]
+        allowed={'elapsed_s','uptime_ms','sample_tick_ms','barometer_age_ms','driver_altitude_m'} | {f[0] for f in FIELDS}
+        with path.open(newline='') as source:
+            reader=csv.DictReader(source)
+            if not reader.fieldnames or 'elapsed_s' not in reader.fieldnames:raise ValueError('Recording must contain elapsed_s')
+            for line in reader:
+                row={}
+                for name,value in line.items():
+                    if name=='stale':row[name]=str(value or '').lower() in ('1','true','yes')
+                    elif name in allowed:
+                        row[name]=float(value) if value else None
+                        if row[name] is not None and not math.isfinite(row[name]):row[name]=None
+                if row.get('elapsed_s') is None:raise ValueError('Recording contains invalid elapsed time')
+                if self.recorded and row['elapsed_s']<self.recorded[-1]['elapsed_s']:raise ValueError('Recording time must be nondecreasing')
+                row.setdefault('stale',False);self.recorded.append(row)
+        if not self.recorded:raise ValueError('Recording is empty')
+        self.times=[r['elapsed_s'] for r in self.recorded]
+        self.position=self.times[0];self.playing=False;self.speed=1.;self.anchor=time.monotonic();self.generation=0
+        self.kalman_status='Recorded FC estimates; hardware control disabled during replay'
+
+    def advance(self):
+        now=time.monotonic()
+        if self.playing:
+            self.position=min(self.times[-1],self.position+(now-self.anchor)*self.speed)
+            if self.position>=self.times[-1]:self.playing=False
+        self.anchor=now
+
+    def playback_action(self, action, value=None):
+        with self.lock:
+            self.advance()
+            if action=='play':self.playing=True
+            elif action=='pause':self.playing=False
+            elif action=='restart':self.position=self.times[0];self.playing=False;self.generation+=1
+            elif action in ('seek','speed'):
+                value=float(value)
+                if not math.isfinite(value):raise ValueError('Invalid replay value')
+                if action=='seek':self.position=max(self.times[0],min(self.times[-1],value));self.generation+=1
+                elif .1<=value<=20:self.speed=value
+                else:raise ValueError('Replay speed must be 0.1–20')
+            else:raise ValueError('Unknown replay action')
+
+    def run(self):self.stop.wait()
+
+    def payload(self, after=None):
+        with self.lock:
+            self.advance()
+            end=bisect_right(self.times,self.position)
+            start=max(0,end-100000,bisect_left(self.times,self.position-self.history))
+            base=self.generation*(len(self.recorded)+1)
+            reset=after is None or not base+start<=after<=base+end
+            rows=self.recorded[start if reset else after-base:end]
+            return {'status':'Replay playing' if self.playing else 'Replay paused',
+                    'latest':self.recorded[end-1] if end else None,'rows':rows,'fields':FIELDS,
+                    'cursor':base+end,'reset':reset,'capacity':100000,'history_s':self.history,
+                    'read_duration_ms':None,'host_sample_age_ms':None,
+                    'kalman':{'control_available':False,'status':self.kalman_status},
+                    'replay':{'playing':self.playing,'position':self.position,'start':self.times[0],'end':self.times[-1],'speed':self.speed},
+                    'build':f'Recording: {self.firmware.path} · SHA256 {self.firmware.sha256}'}
+
+    def export_csv(self):
+        # Replay export preserves the complete loaded recording, including
+        # samples after the current playhead, rather than silently truncating it.
+        return csv_data(self.recorded)
 
 def find_cli(explicit):
     if explicit:return str(Path(explicit).expanduser().resolve())
@@ -491,6 +667,7 @@ def main(argv=None):
     target=parser.add_mutually_exclusive_group()
     target.add_argument('--elf',type=Path,help='Exact currently flashed application ELF (symbols retained)')
     target.add_argument('--build',type=Path,help='Current build directory containing FlightComputer26.elf')
+    target.add_argument('--replay',type=Path,help='Replay a saved monitor CSV without connecting to hardware')
     parser.add_argument('--inspect',action='store_true',help='Resolve ELF symbols only; no probe access')
     parser.add_argument('--list-probes',action='store_true',help='List USB ST-Link probes only, then exit')
     parser.add_argument('--programmer',help='STM32_Programmer_CLI executable')
@@ -500,6 +677,9 @@ def main(argv=None):
     parser.add_argument('--rate',type=float,default=20,help='Requested reads/second (default 20; range 0.1–50)')
     parser.add_argument('--history',type=int,default=3600,help='Retained history seconds (default 3600; bounded to 100000 samples)')
     parser.add_argument('--csv',type=Path,help='Write accepted samples to a new CSV file')
+    parser.add_argument('--kalman-control',action='store_true',help=argparse.SUPPRESS)
+    parser.add_argument('--read-only',action='store_true',help='Observe without requesting monitor mode or resetting the FC on exit')
+    parser.add_argument('--enable-kalman',action='store_true',help='Start the FC estimator immediately after automatic monitor-mode entry')
     parser.add_argument('--port',type=int,default=0,help='Local browser port; default chooses a free port')
     parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--allow-mismatched-firmware',action='store_true',help='DANGEROUS diagnostic override: selected symbols may not describe target RAM')
@@ -511,38 +691,69 @@ def main(argv=None):
         if args.list_probes:
             result=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
             print(result.stdout);return result.returncode
-        validate_layout(SOURCE_ROOT)
-        elf=args.elf or (args.build or SOURCE_ROOT/'build'/'Debug')/'FlightComputer26.elf'
-        firmware=Firmware(elf)
-        print('ELF:',firmware.path,'SHA256:',firmware.sha256)
-        print('Initialized flash verification:',sum(len(x) for _,x in firmware.flash),'bytes across',len(firmware.flash),'regions')
-        print('Symbols:',json.dumps({k:{'address':hex(v.address),'size':v.size} for k,v in firmware.resolved.items()},indent=2))
-        if args.inspect:return 0
-        executable=args.openocd or shutil.which('openocd')
-        if not executable:raise ValueError('OpenOCD not found; install OpenOCD and pass --openocd PATH')
-        serial=args.serial
-        if not serial:
-            listing=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
-            serials=re.findall(r'ST-?LINK\s+SN\s*:\s*(\S+)',listing.stdout,re.I)
-            if listing.returncode or len(serials)!=1:raise ValueError('Select one probe with --serial; use --list-probes to inspect USB probes')
-            serial=serials[0]
-        probe=OpenOCDProbe(executable,serial,args.frequency)
-        matched=True
-        try: verified=firmware.verify(probe);print('Matched all initialized ELF flash sections:',verified,'bytes')
-        except ValueError:
-            if not args.allow_mismatched_firmware:raise
-            matched=False
-            print('WARNING: firmware mismatch explicitly overridden; all displayed interpretations are unverified')
+        control=args.kalman_control or args.enable_kalman
+        if args.replay:
+            if control or args.csv or args.inspect:raise ValueError('--replay cannot be combined with hardware control, --csv, or --inspect')
+            scope=ReplayScope(args.replay,args.history)
+        else:
+            validate_layout(SOURCE_ROOT)
+            paths=[args.elf] if args.elf else [args.build/'FlightComputer26.elf'] if args.build else local_firmware_paths()
+            if args.inspect:
+                describe_firmware(Firmware(paths[0]));return 0
+            executable=args.openocd or shutil.which('openocd')
+            if not executable:raise ValueError('OpenOCD not found; install OpenOCD and pass --openocd PATH')
+            serial=args.serial
+            if not serial:
+                listing=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
+                serials=re.findall(r'ST-?LINK\s+SN\s*:\s*(\S+)',listing.stdout,re.I)
+                if listing.returncode or len(serials)!=1:raise ValueError('Select one probe with --serial; use --list-probes to inspect USB probes')
+                serial=serials[0]
+            probe=OpenOCDProbe(executable,serial,args.frequency)
+            matched=True
+            try:
+                firmware,verified=matching_firmware(probe,paths)
+                describe_firmware(firmware)
+                print('Matched all initialized ELF flash sections:',verified,'bytes')
+            except ValueError:
+                if not args.allow_mismatched_firmware:raise
+                matched=False;firmware=Firmware(paths[0]);describe_firmware(firmware)
+                print('WARNING: firmware mismatch explicitly overridden; all displayed interpretations are unverified')
+            if args.read_only and control:raise ValueError('--read-only cannot enable Kalman control')
+            control=matched and not args.read_only and 'g_fc_monitor' in firmware.resolved
+            if control:
+                address=firmware.resolved['g_fc_monitor'].address
+                control=struct.unpack('<I',probe.read_blocks([(address,4)])[0])[0]==MONITOR_MAGIC
+            if (args.enable_kalman or args.kalman_control) and not control:
+                raise ValueError('FC estimator control requires matching updated firmware')
         csv_file=None
         try:
             writer=None
             if args.csv:
-                csv_file=args.csv.open('x',newline='');writer=csv.DictWriter(csv_file,fieldnames=['elapsed_s','stale','uptime_ms','sample_tick_ms','barometer_age_ms']+[x[0] for x in FIELDS]+['driver_altitude_m']);writer.writeheader()
-            scope=Scope(firmware,probe,args.rate,args.history,writer);scope.verified=matched
+                csv_file=args.csv.open('x',newline='',buffering=1);writer=csv.DictWriter(csv_file,fieldnames=['elapsed_s','stale','uptime_ms','sample_tick_ms','barometer_age_ms']+[x[0] for x in FIELDS]+['driver_altitude_m']);writer.writeheader()
+            if not args.replay:
+                scope=Scope(firmware,probe,args.rate,args.history,writer,control);scope.verified=matched
+                if args.enable_kalman:scope.kalman_action('start')
             class Handler(BaseHTTPRequestHandler):
+                def do_POST(self):
+                    if self.path not in ('/kalman','/playback'):self.send_error(404);return
+                    if self.headers.get('Origin') not in (None,f'http://127.0.0.1:{self.server.server_port}'):
+                        self.send_error(403);return
+                    try:
+                        length=int(self.headers.get('Content-Length','0'))
+                        if not 0<length<=128:raise ValueError('Invalid request size')
+                        request=json.loads(self.rfile.read(length))
+                        if self.path=='/playback':
+                            if not isinstance(scope,ReplayScope):raise ValueError('No recording loaded')
+                            scope.playback_action(request['action'],request.get('value'))
+                        else:scope.kalman_action(request['action'])
+                        data=json.dumps({'status':'Request accepted'}).encode();status=200
+                    except (ValueError,KeyError,TypeError) as error:
+                        data=json.dumps({'error':str(error)}).encode();status=400
+                    self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
                 def do_GET(self):
                     url=urlsplit(self.path)
                     if url.path=='/':data=PAGE.encode();kind='text/html; charset=utf-8'
+                    elif url.path=='/export.csv':data=scope.export_csv().encode();kind='text/csv; charset=utf-8'
                     elif url.path=='/data':
                         try:after=int(parse_qs(url.query)['after'][0]) if 'after' in parse_qs(url.query) else None
                         except ValueError:self.send_error(400);return
@@ -552,10 +763,14 @@ def main(argv=None):
                 def log_message(self,*_):pass
             with ThreadingHTTPServer(('127.0.0.1',args.port),Handler) as server:
                 worker=threading.Thread(target=scope.run,daemon=True);worker.start()
-                url=f'http://127.0.0.1:{server.server_port}/';print('Viewer:',url,'(Ctrl-C to stop; target is never resumed/reset)')
+                url=f'http://127.0.0.1:{server.server_port}/';print('Viewer:',url,'(Ctrl-C to stop; FC resets on exit)' if control else '(Ctrl-C to stop)')
                 if not args.no_browser:webbrowser.open(url)
                 try:server.serve_forever(poll_interval=.25)
-                finally:scope.stop.set();worker.join(timeout=17)
+                finally:
+                    scope.stop.set();worker.join(timeout=17)
+                    if control:
+                        try:probe.monitor_command(firmware,scope.kalman_sequence+1,False,mode=False)
+                        except (OSError,RuntimeError,ValueError):pass  # Firmware lease expires within two seconds.
         finally:
             if csv_file:csv_file.close()
     except KeyboardInterrupt:return 0

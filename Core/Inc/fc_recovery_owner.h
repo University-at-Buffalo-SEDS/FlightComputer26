@@ -20,6 +20,9 @@ bool fc_recovery_abort_latched(void);
 void deployment_pulse_cancel_locked(void);
 bool deployment_pulse_safe_outputs_locked(uint32_t *mask);
 bool fc_recovery_holds_sequence(void);
+/* Runtime monitor admission; caller serializes with the IRQ owner. */
+bool fc_recovery_monitor_enter(void);
+bool fc_recovery_monitor_ready(void);
 bool fc_recovery_requires_new_flight(void);
 bool fc_recovery_reset_failed(void);
 bool fc_recovery_postinit_allowed(uint32_t epoch);

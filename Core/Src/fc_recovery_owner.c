@@ -17,6 +17,7 @@ static volatile struct {
     bool manual_stop, reset_inhibit, new_flight, verified_startup;
     bool stop_handled, legacy_stop, commissioning_hold;
     bool admitted_flight; /* current owner epoch; not the evaluator init flag */
+    bool monitor_mode, monitor_ready; /* released only by a full MCU reset */
 } owner = {.epoch = 1U};
 _Static_assert(sizeof owner <= 32U, "Bounded single FC recovery mailbox");
 
@@ -34,10 +35,19 @@ uint32_t fc_recovery_epoch(void) { return owner.epoch; }
 bool fc_recovery_reset_failed(void) { return owner.phase == RESET_FAILED; }
 bool fc_recovery_holds_sequence(void)
 {
-    return (!owner.admitted_flight && !persistent_store_controls_ready()) ||
+    return owner.monitor_mode || (!owner.admitted_flight && !persistent_store_controls_ready()) ||
            owner.commissioning_hold || owner.manual_stop || owner.reset_inhibit ||
            (!owner.verified_startup && !fc_watchdog_can_actuate());
 }
+bool fc_recovery_monitor_enter(void)
+{
+    if (owner.monitor_mode) return true;
+    fc_recovery_ota_reset_retire_locked();
+    owner.monitor_mode = true;
+    deployment_pulse_cancel_locked();
+    return true;
+}
+bool fc_recovery_monitor_ready(void) { return owner.monitor_ready; }
 bool fc_recovery_requires_new_flight(void) { return owner.new_flight; }
 bool fc_recovery_abort_latched(void)
 {
@@ -50,7 +60,8 @@ bool fc_recovery_inhibits_pyro(void)
 }
 bool fc_recovery_control_pending(void)
 {
-    return reset_active() || owner.sensor_restart == 1U || owner.legacy_stop ||
+    return (owner.monitor_mode && !owner.monitor_ready) ||
+           reset_active() || owner.sensor_restart == 1U || owner.legacy_stop ||
            (owner.manual_stop && !owner.stop_handled);
 }
 bool fc_recovery_eval_pause_requested(void)
@@ -236,12 +247,14 @@ void fc_recovery_control_service(void)
         deployment_pulse_cancel_locked();
         owner.phase = RESET_WAIT_EVAL;
     }
-    const bool need_stop = owner.sensor_restart == 1U || owner.legacy_stop ||
+    const bool need_stop = (owner.monitor_mode && !owner.monitor_ready) ||
+        owner.sensor_restart == 1U || owner.legacy_stop ||
         (owner.manual_stop && !owner.stop_handled) || owner.phase == RESET_WAIT_EVAL;
     __set_PRIMASK(mask);
     if (need_stop && fc_recovery_control_quiesce()) {
         fc_recovery_control_mark_eval_stopped();
         mask = __get_PRIMASK(); __disable_irq();
+        if (owner.monitor_mode) owner.monitor_ready = true;
         owner.legacy_stop = false;
         if (owner.sensor_restart == 1U) {
             owner.sensor_restart = owner.restart_epoch == owner.epoch &&
