@@ -28,7 +28,7 @@ enum {Startup,Postinit,Armed,Launch};
 enum {Eval_Abort_Flag=1U,Postinit_Requested=2U,Launch_Requested=4U,In_Aborted_State=8U,
 Graceful_Reset=16U,Ascent_KF_Staged=32U,Defer_Baro_Fallback=64U,Using_Ascent_KF=128U,
 Parachute_Deployed=256U,Parachute_Expanded=512U,CO2_Asserted=1024U,REEF_Asserted=2048U,
-Manual_Biases=4096U,SD_Pipeline_Reset=8192U,G_Startup=0};
+Manual_Biases=4096U,SD_Pipeline_Reset=8192U,Lost_GroundStation=16384U,G_Startup=0};
 typedef unsigned UINT;
 typedef struct {unsigned tx_thread_state;void *tx_thread_suspend_control_block;} TX_THREAD;
 static TX_THREAD evaluation_task,recovery_task;

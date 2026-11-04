@@ -99,9 +99,15 @@ int main(void) {
         end=owner.index('bool fc_recovery_requires_new_flight',start)
         gate=owner[start:end]
         harness='''#include <stdbool.h>
+#include <stdint.h>
 #include <assert.h>
 static struct {bool monitor_mode,monitor_ready,admitted_flight,commissioning_hold,manual_stop,reset_inhibit,verified_startup;} owner={.verified_startup=true};
-static unsigned cancelled;
+static unsigned cancelled,irq;
+static uint32_t __get_PRIMASK(void) {return irq;}
+static void __disable_irq(void) {irq=1;}
+static void __set_PRIMASK(uint32_t mask) {irq=mask;}
+static bool reset_active(void) {return false;}
+static bool fc_recovery_control_monitor_preflight(void) {return true;}
 static bool persistent_store_controls_ready(void) {return true;}
 static bool fc_watchdog_can_actuate(void) {return true;}
 static void deployment_pulse_cancel_locked(void) {cancelled++;}
@@ -109,8 +115,10 @@ static void fc_recovery_ota_reset_retire_locked(void) {}
 '''+gate+'''
 int main(void) {
  assert(!fc_recovery_holds_sequence());
- owner.admitted_flight=true;assert(fc_recovery_monitor_enter());
- assert(fc_recovery_holds_sequence() && cancelled==1);
+ owner.admitted_flight=true;assert(!fc_recovery_monitor_enter());
+ assert(!fc_recovery_holds_sequence() && cancelled==0 && irq==0);
+ owner.admitted_flight=false;assert(fc_recovery_monitor_enter());
+ assert(fc_recovery_holds_sequence() && cancelled==1 && irq==0);
  assert(!fc_recovery_monitor_ready());
  assert(fc_recovery_monitor_enter() && cancelled==1);
  return 0;

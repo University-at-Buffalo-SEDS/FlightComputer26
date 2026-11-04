@@ -20,7 +20,7 @@ bool fc_recovery_abort_latched(void);
 void deployment_pulse_cancel_locked(void);
 bool deployment_pulse_safe_outputs_locked(uint32_t *mask);
 bool fc_recovery_holds_sequence(void);
-/* Runtime monitor admission; caller serializes with the IRQ owner. */
+/* Explicit preflight monitor admission; preserves/restores IRQ exclusion. */
 bool fc_recovery_monitor_enter(void);
 bool fc_recovery_monitor_ready(void);
 bool fc_recovery_requires_new_flight(void);
@@ -38,6 +38,8 @@ bool fc_recovery_control_quiesce(void);
 void fc_recovery_control_mark_eval_stopped(void);
 bool fc_recovery_control_finalize_startup(void);
 bool fc_recovery_control_is_startup(void);
+/* RAM-only actual FSM/config proof; caller holds the IRQ owner. */
+bool fc_recovery_control_monitor_preflight(void);
 bool fc_recovery_control_new_flight_ready(void);
 void fc_recovery_control_new_flight(void);
 void fc_recovery_control_wake(void);

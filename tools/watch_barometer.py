@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FC sensor plots, automatic firmware monitor mode, and saved CSV replay."""
+"""Read-only FC sensor plots, explicit preflight bench control, and CSV replay."""
 from __future__ import annotations
 import argparse
 from bisect import bisect_left, bisect_right
@@ -545,7 +545,7 @@ class Scope:
                 self.status=('STALE barometer: acquisition tick is not advancing' if stale else 'Running · live sensor values')
                 if 'g_fc_monitor' in snapshot and struct.unpack_from('<I',snapshot['g_fc_monitor'])[0]==MONITOR_MAGIC:
                     state=struct.unpack_from('<I',snapshot['g_fc_monitor'],8)[0]
-                    self.kalman_status={0:('Monitor mode · FC estimator stopped' if self.kalman_control else 'FC estimator stopped'),1:'FC bench estimator waiting for fresh sensors',2:'FC bench estimator running',3:'Entering monitor mode · waiting for flight evaluator to stop'}.get(state,'Unknown FC bench status')
+                    self.kalman_status={0:('Monitor mode · FC estimator stopped' if self.kalman_control else 'FC estimator stopped'),1:'FC bench estimator waiting for fresh sensors',2:'FC bench estimator running',3:'Entering monitor mode · waiting for flight evaluator to stop',4:'Bench entry refused by flight/recovery owner'}.get(state,'Unknown FC bench status')
             if self.writer:self.writer.writerow(row)
         except (RuntimeError,ValueError,OSError) as error:
             with self.lock:
@@ -677,21 +677,27 @@ def main(argv=None):
     parser.add_argument('--rate',type=float,default=20,help='Requested reads/second (default 20; range 0.1–50)')
     parser.add_argument('--history',type=int,default=3600,help='Retained history seconds (default 3600; bounded to 100000 samples)')
     parser.add_argument('--csv',type=Path,help='Write accepted samples to a new CSV file')
-    parser.add_argument('--kalman-control',action='store_true',help=argparse.SUPPRESS)
-    parser.add_argument('--read-only',action='store_true',help='Observe without requesting monitor mode or resetting the FC on exit')
-    parser.add_argument('--enable-kalman',action='store_true',help='Start the FC estimator immediately after automatic monitor-mode entry')
+    parser.add_argument('--bench','--kalman-control',dest='kalman_control',action='store_true',help='Explicitly request preflight bench mode; holds deployment outputs and resets FC on exit')
+    parser.add_argument('--read-only',action='store_true',help='Read-only observation (the default); incompatible with --bench')
+    parser.add_argument('--enable-kalman',action='store_true',help='With --bench, start the FC estimator after preflight monitor admission')
     parser.add_argument('--port',type=int,default=0,help='Local browser port; default chooses a free port')
     parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--allow-mismatched-firmware',action='store_true',help='DANGEROUS diagnostic override: selected symbols may not describe target RAM')
     args=parser.parse_args(argv)
     if not .1<=args.rate<=50 or not 1<=args.history<=86400 or not 1<=args.frequency<=24000 or not 0<=args.port<=65535:
         parser.error('Invalid rate/history/frequency/port')
+    if args.enable_kalman and not args.kalman_control:
+        parser.error('--enable-kalman requires explicit --bench')
+    if args.read_only and args.kalman_control:
+        parser.error('--read-only cannot request --bench')
+    if args.kalman_control and (args.inspect or args.list_probes):
+        parser.error('--bench requires a live preflight session')
     probe=None
     try:
         if args.list_probes:
             result=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
             print(result.stdout);return result.returncode
-        control=args.kalman_control or args.enable_kalman
+        control=args.kalman_control
         if args.replay:
             if control or args.csv or args.inspect:raise ValueError('--replay cannot be combined with hardware control, --csv, or --inspect')
             scope=ReplayScope(args.replay,args.history)
@@ -719,7 +725,7 @@ def main(argv=None):
                 matched=False;firmware=Firmware(paths[0]);describe_firmware(firmware)
                 print('WARNING: firmware mismatch explicitly overridden; all displayed interpretations are unverified')
             if args.read_only and control:raise ValueError('--read-only cannot enable Kalman control')
-            control=matched and not args.read_only and 'g_fc_monitor' in firmware.resolved
+            control=control and matched and not args.read_only and 'g_fc_monitor' in firmware.resolved
             if control:
                 address=firmware.resolved['g_fc_monitor'].address
                 control=struct.unpack('<I',probe.read_blocks([(address,4)])[0])[0]==MONITOR_MAGIC
@@ -763,7 +769,7 @@ def main(argv=None):
                 def log_message(self,*_):pass
             with ThreadingHTTPServer(('127.0.0.1',args.port),Handler) as server:
                 worker=threading.Thread(target=scope.run,daemon=True);worker.start()
-                url=f'http://127.0.0.1:{server.server_port}/';print('Viewer:',url,'(Ctrl-C to stop; FC resets on exit)' if control else '(Ctrl-C to stop)')
+                url=f'http://127.0.0.1:{server.server_port}/';print('Viewer:',url,'(Ctrl-C to stop; an admitted preflight bench session resets on exit)' if control else '(Ctrl-C to stop)')
                 if not args.no_browser:webbrowser.open(url)
                 try:server.serve_forever(poll_interval=.25)
                 finally:

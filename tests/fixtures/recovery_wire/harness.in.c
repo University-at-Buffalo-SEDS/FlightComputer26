@@ -146,6 +146,8 @@ static bool fc_watchdog_startup_reset_ready(void){return seal&&flight_state_cach
 static volatile uint8_t evaluation_quiescent = 1U;
 bool fc_recovery_control_ready(void) { return g_recovery_receive_loop_ready != 0U; }
 bool fc_recovery_control_is_startup(void) { return current() == Startup; }
+/* This transport/owner fixture does not authorize bench entry. */
+bool fc_recovery_control_monitor_preflight(void) { return false; }
 void fc_recovery_evaluation_running(void) { evaluation_quiescent = 0U; }
 void fc_recovery_evaluation_quiescent(void)
 {

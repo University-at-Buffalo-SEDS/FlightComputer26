@@ -1,4 +1,4 @@
-/* Runtime monitor lease. Any state can enter; leaving resets the MCU.
+/* Explicit preflight monitor lease. Leaving an admitted session resets the MCU.
  * The distribution task owns the EKF behind the normal recovery/output hold. */
 #include "fcapi.h"
 #include "fctasks.h"
@@ -43,6 +43,7 @@ void fc_monitor_bench_poll(void)
     __disable_irq();
     entered = fc_recovery_monitor_enter();
     __set_PRIMASK(mask);
+    if (!entered) { g_fc_monitor.status = 4; return; }
   }
   if (!fc_recovery_monitor_ready()) g_fc_monitor.status = 3;
 }

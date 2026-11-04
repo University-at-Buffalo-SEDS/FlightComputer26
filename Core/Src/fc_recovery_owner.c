@@ -41,10 +41,18 @@ bool fc_recovery_holds_sequence(void)
 }
 bool fc_recovery_monitor_enter(void)
 {
-    if (owner.monitor_mode) return true;
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+    if (owner.monitor_mode) { __set_PRIMASK(mask); return true; }
+    /* Raw ownership also covers accepted Launch before its FSM/flag update,
+     * and a validated watchdog restore. A refusal has no control effects. */
+    if (owner.admitted_flight || reset_active() ||
+        !fc_recovery_control_monitor_preflight()) {
+        __set_PRIMASK(mask); return false;
+    }
     fc_recovery_ota_reset_retire_locked();
     owner.monitor_mode = true;
     deployment_pulse_cancel_locked();
+    __set_PRIMASK(mask);
     return true;
 }
 bool fc_recovery_monitor_ready(void) { return owner.monitor_ready; }

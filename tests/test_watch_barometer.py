@@ -16,7 +16,7 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
-SCRIPT=Path(__file__).resolve().parents[1]/'tools'/'watch_barometer.py'
+SCRIPT=Path(os.environ.get('FC_WATCH_CAUSAL_SCRIPT',str(Path(__file__).resolve().parents[1]/'tools'/'watch_barometer.py')))
 if not SCRIPT.exists():SCRIPT=Path('/tmp/fc-baroscope.py')
 spec=importlib.util.spec_from_file_location('fc_baroscope',SCRIPT)
 scope=importlib.util.module_from_spec(spec);sys.modules[spec.name]=scope;spec.loader.exec_module(scope)
@@ -50,6 +50,59 @@ def values(tick=10000,last=9990):
             'alt_bias':struct.pack('<f',.25),'prev_rel_alt':struct.pack('<f',1.25),'imedsv':struct.pack('<9f',0,0,0,1.1,.1,0,0,0,0)}
 
 class BaroscopeTests(unittest.TestCase):
+    def _run_actual_main_monitor_boundary(self, options=(), mismatch=False):
+        # Exercise actual CLI/main/Scope.sample/shutdown. Only physical probe
+        # access and server scheduling are mocked; no hardware is opened.
+        with tempfile.TemporaryDirectory() as tmp:
+            fw=fixture(Path(tmp)/'fc.elf')
+            fw.resolved['g_fc_monitor']=scope.Symbol(0x20000400,48)
+            observed=values();observed['g_fc_monitor']=struct.pack('<6I6f',scope.MONITOR_MAGIC,0,0,100,0,0,0,0,1,0,0,0)
+            probe=Mock();probe.snapshot.return_value=observed
+            probe.read_blocks.return_value=[struct.pack('<I',scope.MONITOR_MAGIC)]
+            class Worker:
+                def __init__(self,target,**kwargs):self.target=target
+                def start(self):self.target.__self__.sample()
+                def join(self,**kwargs):pass
+            class Server:
+                server_port=9876
+                def __init__(self,*args):pass
+                def __enter__(self):return self
+                def __exit__(self,*args):pass
+                def serve_forever(self,**kwargs):pass
+            matching={'side_effect':ValueError('firmware mismatch')} if mismatch else {'return_value':(fw,20)}
+            with patch.object(scope,'OpenOCDProbe',return_value=probe),patch.object(scope,'matching_firmware',**matching),patch.object(scope,'Firmware',return_value=fw),patch.object(scope,'describe_firmware'),patch.object(scope,'ThreadingHTTPServer',Server),patch.object(scope.threading,'Thread',Worker),patch('builtins.print'):
+                result=scope.main(['--elf',str(fw.path),'--serial','TEST','--openocd','mock-probe','--no-browser',*options])
+            return result,probe
+
+    def test_actual_main_default_matching_firmware_never_writes_monitor(self):
+        result,probe=self._run_actual_main_monitor_boundary()
+        self.assertEqual(result,0)
+        probe.snapshot.assert_called_once()
+        probe.monitor_command.assert_not_called()
+        probe.request.assert_not_called()
+
+    def test_actual_main_explicit_bench_renews_and_exits_only_command_mailbox(self):
+        result,probe=self._run_actual_main_monitor_boundary(['--bench'])
+        self.assertEqual(result,0)
+        self.assertEqual(probe.monitor_command.call_count,2)
+        self.assertEqual(probe.monitor_command.call_args_list[0].args[2:],(False,False))
+        self.assertEqual(probe.monitor_command.call_args_list[1].kwargs,{'mode':False})
+        probe.request.assert_not_called()
+
+    def test_actual_main_mismatch_override_cannot_enable_bench(self):
+        result,probe=self._run_actual_main_monitor_boundary(['--bench','--allow-mismatched-firmware'],mismatch=True)
+        self.assertEqual(result,1)
+        probe.monitor_command.assert_not_called()
+        probe.request.assert_not_called()
+
+    def test_explicit_bench_conflicts_refuse_before_probe_access(self):
+        with patch.object(scope,'OpenOCDProbe') as probe:
+            for options in [['--enable-kalman'],['--bench','--read-only'],['--bench','--inspect']]:
+                with self.subTest(options=options),self.assertRaises(SystemExit) as error:
+                    scope.main(options)
+                self.assertEqual(error.exception.code,2)
+            probe.assert_not_called()
+
     def test_current_headers_preserve_supported_float_offsets(self):
         root=Path(os.environ.get('FC_BAROSCOPE_SOURCE',str(SCRIPT.parent.parent)))
         header=root/'Core/Inc/fcstructs.h'
