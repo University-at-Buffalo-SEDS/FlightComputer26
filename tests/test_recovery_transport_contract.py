@@ -15,5 +15,5 @@ class RecoveryTransportTests(unittest.TestCase):
     rendered=rendered.replace('@'+tag+'@',actual)
    (p/'harness.c').write_text(rendered)
    subprocess.run(['cc','-DEXPECTED_CAP=32','-DTELEMETRY_ENABLED=1','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(fixture),'-I'+str(ROOT/'Core/Inc'),'-I'+str(ROOT/'Core/Src'),'-I'+str(sdk/'C-Headers'),'-I'+str(lc/'bootloader/include'),*[str(ROOT/'Core/Src'/name)for name in names],str(ROOT/'Bootloader/storage_dispatch.c'),str(lc/'bootloader/src/persist.c'),str(lc/'bootloader/src/crc32.c'),str(p/'harness.c'),'-o',str(exe)],check=True)
-   for case in ['io','pending','stale','query_fault','authority','duplicate','unsupported_idle','virgin','floor']:
+   for case in ['corrupt_boot','deleted_identity','deleted_floor','io','pending','stale','query_fault','authority','duplicate','unsupported_idle','virgin','floor']:
     with self.subTest(case=case):subprocess.run([str(exe),case],check=True)
