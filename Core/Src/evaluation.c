@@ -354,29 +354,14 @@ static inline void vigilant_watchdog(fu32 mode, state now, float dt)
     return;
   }
 
-  if (now < Descent && falling(alt, vel, dt, STATE_HISTORY - 1))
+  /* State correction only: hand over to detect_descent and detect_reefing,
+   * which own the drogue and main deployments. Advancing past Apogee here
+   * would skip both of them. */
+  if (now < Apogee && falling(alt, vel, dt, STATE_HISTORY - 1))
   {
-    /* Use vigilant for state correction only */
-    // release_parachute(maybe_force(mode, alt, now));
-
     descent_initialize(mode);
-    flight_advance(Descent);
+    flight_advance(Apogee);
     extremes.max_alt = maxd(alt, extremes.max_alt);
-
-    now = Descent;
-    tx_thread_sleep(URGENT_DEPLOYMENT_DELAY);
-  }
-
-  bool reef_window = now >= Descent && now < Reefing;
-  bool reef_prereq = alt <= REEF_TARGET_ALT &&
-                     (vel < 0.0f || alt < svec(4).alt);
-
-  if (reef_window && reef_prereq)
-  {
-    /* Use vigilant for state correction only */
-    // expand_parachute(false);
-
-    flight_advance(Reefing);
   }
 }
 
