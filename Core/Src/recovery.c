@@ -348,9 +348,10 @@ static inline void evaluation_configure(bool focus)
                               &eval_old_pt);
 }
 
-static inline void manual_deployment(bool apogee, bool force)
+static inline void manual_deployment(bool apogee, bool force, bool manual)
 {
-  if (fc_recovery_inhibits_pyro() || !fc_watchdog_can_actuate()) {
+  if (manual ? fc_recovery_inhibits_manual_pyro()
+             : fc_recovery_inhibits_pyro() || !fc_watchdog_can_actuate()) {
     fc_sd_capture_event(FC_LOG_PYRO_REJECTED, !apogee); return;
   }
   if (apogee)
@@ -361,14 +362,14 @@ static inline void manual_deployment(bool apogee, bool force)
       sm.flight = Descent;
       __set_PRIMASK(reset_mask);
     }
-    release_parachute(force);
+    release_parachute(force, manual);
 #ifdef TELEMETRY_ENABLED
     av_bay_underglow_signal(2U);
 #else
     blink(Blue, false, 2);
 #endif
   }
-  else if (expand_parachute(force))
+  else if (expand_parachute(force, manual))
   {
     {
       const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
@@ -488,18 +489,18 @@ static inline void process_action(fc_msg cmd, bool internal)
 #ifdef LUNATIC_STATE
 
     case Deploy_Parachute:
-      return manual_deployment(true, true);
+      return manual_deployment(true, true, !internal);
 
     case Expand_Parachute:
-      return manual_deployment(false, true);
+      return manual_deployment(false, true, !internal);
 
 #else
 
     case Deploy_Parachute:
-      return manual_deployment(true, false);
+      return manual_deployment(true, false, !internal);
 
     case Expand_Parachute:
-      return manual_deployment(false, false);
+      return manual_deployment(false, false, !internal);
 
 #endif /* LUNATIC_STATE */
 
@@ -704,7 +705,12 @@ static inline void process_gps_code(fc_msg code)
 bool fc_recovery_command_admissible(uint32_t command, bool internal)
 {
   const fc_msg cmd = (fc_msg)command;
-  if (fc_recovery_holds_sequence()) return cmd == Evaluation_Abort;
+  if (fc_recovery_holds_sequence()) {
+    /* Only the operator's deploy commands may pass a rejected watchdog resume. */
+    return cmd == Evaluation_Abort ||
+           (!internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute) &&
+            !fc_recovery_inhibits_manual_pyro());
+  }
   if (!fc_recovery_requires_new_flight()) return true;
   switch (cmd) {
     case Launch_Signal: return !internal;

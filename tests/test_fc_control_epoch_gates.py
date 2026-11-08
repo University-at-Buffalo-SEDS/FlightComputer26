@@ -27,7 +27,9 @@ static unsigned reports,gps,actions,configs,unknown,restarts,messages;
 static uint32_t last_command,g_conf,phase=Flight;
 static bool last_internal;
 static struct {unsigned gps_delayed,gps_malform,to_abort;} smon;
+static bool manual_inhibited=true;
 bool fc_recovery_holds_sequence(void){return held;}
+bool fc_recovery_inhibits_manual_pyro(void){return manual_inhibited;}
 bool fc_recovery_flight_is_admitted(void){return false;}
 bool fc_recovery_requires_new_flight(void){return new_flight;}
 bool fc_recovery_request_sensor_restart(void){++restarts;return restart_allowed;}
@@ -48,6 +50,16 @@ int main(void){
  }
  assert(!reports&&!gps&&!actions&&!configs&&!unknown);
  decode_flight_message(Evaluation_Abort);assert(actions==1&&last_command==Evaluation_Abort&&!last_internal);
+ /* Held only by a rejected watchdog resume: operator deploy commands pass,
+  * internal deploys and every other flight command stay fenced. */
+ new_flight=false;manual_inhibited=false;
+ decode_flight_message(fc_mask(Deploy_Parachute));decode_flight_message(fc_mask(Expand_Parachute));
+ decode_flight_message(Launch_Signal);decode_flight_message(Postinit_Signal);decode_flight_message(Advance_State);
+ assert(actions==1);
+ decode_flight_message(Deploy_Parachute);assert(actions==2&&last_command==Deploy_Parachute&&!last_internal);
+ decode_flight_message(Expand_Parachute);assert(actions==3&&last_command==Expand_Parachute);
+ manual_inhibited=true;decode_flight_message(Deploy_Parachute);assert(actions==3);
+ new_flight=true;actions=1;
  restart_allowed=false;smon.gps_delayed=7;smon.gps_malform=8;g_conf=123;
  abortion_due_failures();assert(restarts==1&&smon.gps_delayed==7&&smon.gps_malform==8&&g_conf==123&&!messages);
  held=false;

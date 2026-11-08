@@ -81,11 +81,11 @@ static void refused(void){
 int main(int argc,char **argv){assert(argc==2);actual=Startup;
  if(!strcmp(argv[1],"accepted")){
   assert(fc_recovery_admit_new_flight(false));assert(owner.admitted_flight);
-  deployment_pulse_start(false);assert(gpio.ODR==1);store_ready=false;
+  deployment_pulse_start(false,false);assert(gpio.ODR==1);store_ready=false;
   refused();assert(fc_recovery_flight_is_admitted());
  }else if(!strcmp(argv[1],"restored")){
   assert(fc_recovery_restore_admitted_flight());assert(owner.admitted_flight);
-  actual=Ascent;deployment_pulse_start(true);assert(gpio.ODR==2);refused();
+  actual=Ascent;deployment_pulse_start(true,false);assert(gpio.ODR==2);refused();
  }else if(!strcmp(argv[1],"current")){
   actual=Ascent;assert(!owner.admitted_flight);refused();
  }else if(!strcmp(argv[1],"requested")){

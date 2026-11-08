@@ -175,7 +175,7 @@ int main(void) {
  reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
  /* Verified Startup leaves the seal armed. Only a new authorized flight
   * appends a newer zero action mask; old fired evidence stays in the other slot. */
- cold_boot();flight(4);assert(fc_watchdog_record_deployment(false));
+ cold_boot();flight(4);assert(fc_watchdog_record_deployment(false,false));
  unsigned old_slot=action_slot^1U;action_record old_action=retained.action[old_slot];
  mask=1;fc_watchdog_hold_for_operator_reset();mask=0;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
@@ -191,13 +191,13 @@ int main(void) {
  cold_boot();flight(3);flight(4);retained.flight[1].seal=0;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(sm.flight==3 && g_fc_watchdog_resumed);
  /* Deployment journal is newer than an estimator record: no repeat pulse. */
- cold_boot();flight(4);fc_watchdog_record_deployment(false);
+ cold_boot();flight(4);fc_watchdog_record_deployment(false,false);
  reset_runtime();fc_watchdog_recovery_boot(1);
  assert(sm.flight==Descent && (g_conf & Parachute_Deployed) && !(g_conf & CO2_Asserted));
- fc_watchdog_record_deployment(true);reset_runtime();fc_watchdog_recovery_boot(1);
+ fc_watchdog_record_deployment(true,false);reset_runtime();fc_watchdog_recovery_boot(1);
  assert(sm.flight==Reefing && (g_conf & Parachute_Expanded));
  /* Corrupt journal must not fall back to pre-deployment history. */
- cold_boot();flight(4);fc_watchdog_record_deployment(false);
+ cold_boot();flight(4);fc_watchdog_record_deployment(false,false);
  retained.action[action_slot^1U].crc^=1;
  reset_runtime();fc_watchdog_recovery_boot(1);assert(!fc_watchdog_can_actuate());
  assert(!fc_watchdog_startup_reset_ready());
@@ -223,6 +223,25 @@ int main(void) {
  reset_runtime();fc_watchdog_recovery_boot(1);assert(g_fc_watchdog_resumed && g_fc_watchdog_resume_gap_ms==31);
  cold_boot();frozen=1;reset_runtime();fc_watchdog_recovery_boot(1);
  assert(!fc_watchdog_can_actuate());
+ /* A rejected resume blocks automatic pyro and checkpoints, but the
+  * operator's manual deploy is journaled after the newest prior record. */
+ cold_boot();flight(4);assert(fc_watchdog_record_deployment(false,false));
+ uint32_t prior=retained.action[action_slot^1U].sequence;rtc.SSR-=60001;
+ reset_runtime();fc_watchdog_recovery_boot(1);
+ assert(g_fc_watchdog_resume_rejected&&!fc_watchdog_can_actuate()&&fc_watchdog_can_actuate_manual());
+ assert(!fc_watchdog_record_deployment(true,false));
+ assert(fc_watchdog_record_deployment(true,true));
+ {unsigned latest;assert(action_history_ready(&latest));
+  assert(retained.action[latest].sequence==prior+1U&&retained.action[latest].actions==3U);}
+ assert(fc_watchdog_record_deployment(false,true));
+ {unsigned latest;assert(action_history_ready(&latest)&&retained.action[latest].sequence==prior+2U);}
+ unsigned before=g_fc_watchdog_checkpoints;fc_watchdog_checkpoint();assert(g_fc_watchdog_checkpoints==before);
+ /* Stop still refuses the manual path. */
+ mask=1;assert(fc_watchdog_hold_for_operator_reset());mask=0;
+ assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,true));
+ cold_boot();flight(4);mask=1;fc_watchdog_hold_for_operator_reset();mask=0;
+ reset_runtime();fc_watchdog_recovery_boot(1);
+ assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,true));
 }
 '''
         import re

@@ -5,6 +5,7 @@
 /* All shared control state is serialized by the same short single-core IRQ
  * exclusion as deployment_pulse_start. These accessors perform no I/O. */
 bool fc_recovery_inhibits_pyro(void);
+bool fc_recovery_inhibits_manual_pyro(void);
 bool fc_recovery_eval_pause_requested(void);
 void fc_recovery_evaluation_quiescent(void);
 void fc_recovery_control_service(void);

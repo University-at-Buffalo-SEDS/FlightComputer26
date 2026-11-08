@@ -62,15 +62,16 @@ void fc_sd_consume_event(void)
     __set_PRIMASK(mask);
 }
 
-void deployment_pulse_start(bool reef)
+void deployment_pulse_start(bool reef, bool manual)
 {
     const uint32_t mask = __get_PRIMASK();
     __disable_irq();
     volatile uint32_t *remaining = reef ? &reef_ticks : &co2_ticks;
     /* Repeated commands during a pulse must not extend its on-time. */
     bool started = false;
-    if (*remaining == 0U && !fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
-        fc_watchdog_record_deployment(reef)) {
+    const bool permitted = manual ? !fc_recovery_inhibits_manual_pyro() :
+                           !fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate();
+    if (*remaining == 0U && permitted && fc_watchdog_record_deployment(reef, manual)) {
         fc_recovery_ota_reset_retire_locked();
         started = true;
         *remaining = reef ? REEF_ASSERT_INTERVAL : CO2_ASSERT_INTERVAL;

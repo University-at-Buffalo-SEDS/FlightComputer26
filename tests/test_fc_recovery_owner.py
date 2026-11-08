@@ -42,8 +42,12 @@ static void reef_low(void){gpio.ODR&=~2U;++lows;}
 static void HAL_SuspendTick(void){}
 static void HAL_IncTick(void){}
 static uint32_t HAL_GetTick(void){return 100;}
-static bool fc_watchdog_can_actuate(void){return seal==0;}
-static bool fc_watchdog_record_deployment(bool reef){historical|=reef?2:1;return true;}
+static bool resume_rejected;
+static bool fc_watchdog_can_actuate(void){return seal==0&&!resume_rejected;}
+static bool fc_watchdog_can_actuate_manual(void){return seal==0;}
+static bool fc_watchdog_record_deployment(bool reef,bool manual){
+ if(!(manual?fc_watchdog_can_actuate_manual():fc_watchdog_can_actuate()))return false;
+ historical|=reef?2:1;return true;}
 static bool fc_watchdog_hold_for_operator_reset(void){assert(irq);if(seal_error)return false;seal=1;return true;}
 static bool fc_watchdog_begin_new_flight(void){assert(irq);seal=0;++arms;return true;}
 bool fc_recovery_control_ready(void){return ready;}
@@ -74,36 +78,36 @@ int main(int argc,char**argv){assert(argc==2);
   actual=0;irq=1;assert(fc_recovery_monitor_enter());assert(irq==1);irq=0;
   assert(!gpio.ODR&&fc_recovery_holds_sequence());
   assert(fc_recovery_control_pending()&&!fc_recovery_monitor_ready());
-  deployment_pulse_start(true);assert(highs==0);
+  deployment_pulse_start(true,false);assert(highs==0);
   fc_recovery_control_service();assert(!fc_recovery_monitor_ready());
   quiet=true;fc_recovery_control_service();assert(fc_recovery_monitor_ready());
   assert(!fc_recovery_control_pending()&&fc_recovery_inhibits_pyro());
-  deployment_pulse_start(false);assert(highs==0&&!gpio.ODR);
+  deployment_pulse_start(false,false);assert(highs==0&&!gpio.ODR);
  }else if(!strcmp(argv[1],"store_unready")){
   store_ready=false;
   assert(fc_recovery_holds_sequence()&&fc_recovery_inhibits_pyro());
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==0&&!gpio.ODR);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==0&&!gpio.ODR);
   assert(!fc_recovery_abort_latched()); /* Inhibit does not invent automatic Abort. */
   fc_recovery_manual_stop();assert(fc_recovery_abort_latched()&&seal&&!gpio.ODR);
  }else if(!strcmp(argv[1],"success")){
-  deployment_pulse_start(false);assert(highs==1&&gpio.ODR==1);
+  deployment_pulse_start(false,false);assert(highs==1&&gpio.ODR==1);
   reset_complete();assert(!gpio.ODR&&!co2_ticks&&!reef_ticks);
   assert(fc_recovery_inhibits_pyro()&&seal&&historical==1);
-  deployment_pulse_start(false);assert(highs==1); /* Startup never rearms */
+  deployment_pulse_start(false,false);assert(highs==1); /* Startup never rearms */
   assert(!fc_recovery_admit_new_flight(true)&&arms==0);
   assert(!fc_recovery_admit_new_flight(false)&&arms==0);
   arm_ready=true;assert(fc_recovery_admit_new_flight(false)&&arms==1&&fc_recovery_epoch()==3);
-  deployment_pulse_start(false);assert(highs==2);
+  deployment_pulse_start(false,false);assert(highs==2);
   assert(fc_recovery_request_startup(1)==-10); /* old ticket crosses new flight */
  }else if(!strcmp(argv[1],"stop_before_high")){
-  fc_recovery_manual_stop();deployment_pulse_start(false);deployment_pulse_start(true);
+  fc_recovery_manual_stop();deployment_pulse_start(false,false);deployment_pulse_start(true,false);
   assert(highs==0&&gpio.ODR==0&&seal&&fc_recovery_abort_latched());
  }else if(!strcmp(argv[1],"stop_after_high")){
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==2);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==2);
   fc_recovery_manual_stop();assert(!gpio.ODR&&!co2_ticks&&!reef_ticks&&seal);
   unsigned stopped=lows;
   for(unsigned i=0;i<1000;i++)fc_runtime_tick();
-  deployment_pulse_start(false);assert(highs==2&&lows==stopped);
+  deployment_pulse_start(false,false);assert(highs==2&&lows==stopped);
  }else if(!strcmp(argv[1],"stop_during_io")){
   assert(fc_recovery_request_startup(1)==-14);quiet=true;fc_recovery_control_service();
   stop_in_io=true;fc_recovery_network_service();fc_recovery_control_service();
@@ -158,16 +162,28 @@ int main(int argc,char**argv){assert(argc==2);
   owner.epoch=UINT32_MAX;assert(fc_recovery_request_startup(UINT32_MAX)==-10);
   fc_recovery_manual_stop();fc_recovery_manual_stop();assert(fc_recovery_epoch()==UINT32_MAX&&seal&&!gpio.ODR);
  }else if(!strcmp(argv[1],"manual_barrier_failure")){
-  deployment_pulse_start(false);seal_error=true;fc_recovery_manual_stop();
+  deployment_pulse_start(false,false);seal_error=true;fc_recovery_manual_stop();
   assert(!gpio.ODR&&fc_recovery_inhibits_pyro()&&fc_recovery_reset_failed()&&fc_recovery_abort_latched());
   quiet=true;fc_recovery_control_service();fc_recovery_network_service();assert(!commits&&!finals);
  }else if(!strcmp(argv[1],"barrier_failure")){
-  deployment_pulse_start(false);seal_error=true;
+  deployment_pulse_start(false,false);seal_error=true;
   assert(!fc_recovery_prepare_startup(1));
   assert(!gpio.ODR&&fc_recovery_inhibits_pyro()&&fc_recovery_reset_failed());
   assert(fc_recovery_request_startup(1)==-9);
   quiet=true;fc_recovery_control_service();fc_recovery_network_service();
   assert(commits==0&&finals==0);
+ }else if(!strcmp(argv[1],"rejected_resume_manual")){
+  resume_rejected=true;
+  assert(fc_recovery_holds_sequence()&&fc_recovery_inhibits_pyro()&&!fc_recovery_inhibits_manual_pyro());
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==0&&!gpio.ODR);
+  deployment_pulse_start(false,true);assert(highs==1&&gpio.ODR==1&&historical==1);
+  deployment_pulse_start(true,true);assert(highs==2&&gpio.ODR==3&&historical==3);
+  assert(fc_recovery_abort_latched()); /* automatic sequence stays held */
+ }else if(!strcmp(argv[1],"rejected_resume_other_holds")){
+  resume_rejected=true;store_ready=false;assert(fc_recovery_inhibits_manual_pyro());
+  deployment_pulse_start(false,true);assert(highs==0);
+  store_ready=true;fc_recovery_manual_stop();assert(fc_recovery_inhibits_manual_pyro());
+  deployment_pulse_start(false,true);deployment_pulse_start(true,true);assert(highs==0&&!gpio.ODR);
  }else if(!strcmp(argv[1],"masked_caller")){
   irq=1;fc_recovery_manual_stop();assert(irq==1&&seal&&!gpio.ODR);
  }else assert(!"unknown case");
@@ -180,5 +196,5 @@ class FCRecoveryOwnerTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as tmp:
    p=Path(tmp);src=p/'test.c';src.write_text(STUB+actual+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),str(src),'-o',str(exe)],check=True)
-   for case in ['monitor_preflight','store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
+   for case in ['monitor_preflight','store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','rejected_resume_manual','rejected_resume_other_holds','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
     with self.subTest(case=case):subprocess.run([str(exe),case],check=True)

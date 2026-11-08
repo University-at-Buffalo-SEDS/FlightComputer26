@@ -28,11 +28,12 @@ atomic_uint_fast32_t g_conf;
 static unsigned mask, co2, reef, hal_ticks, suspended, freeze_hal;
 static bool fc_watchdog_can_actuate(void) { return true; }
 static bool fc_recovery_inhibits_pyro(void){return false;}
+static bool fc_recovery_inhibits_manual_pyro(void){return false;}
 static struct {uint32_t ODR;} gpio;
 #define PYRO_PORT (&gpio)
 #define CO2_PIN 1U
 #define REEF_PIN 2U
-static bool fc_watchdog_record_deployment(bool reef) { (void)reef; return true; }
+static bool fc_watchdog_record_deployment(bool reef, bool manual) { (void)reef; (void)manual; return true; }
 static uint32_t __get_PRIMASK(void) {return mask;}
 static void __disable_irq(void) {mask=1;}
 static void __set_PRIMASK(uint32_t v) {mask=v;}
@@ -49,13 +50,13 @@ static void HAL_IncTick(void) {if (!freeze_hal) hal_ticks++;}
 int main(void) {
     assert(!co2 && !reef);
     fc_runtime_tick(); assert(suspended==1 && hal_ticks==1);
-    deployment_pulse_start(false);
+    deployment_pulse_start(false,false);
     assert(co2 && (g_conf & CO2_Asserted) && !mask);
     /* Neither command task nor TIM6 needs to run to finish the pulse. */
     freeze_hal=1;
     for (unsigned i=0;i<250;i++) fc_runtime_tick();
-    deployment_pulse_start(false); /* retry cannot prolong pulse */
-    deployment_pulse_start(true);
+    deployment_pulse_start(false,false); /* retry cannot prolong pulse */
+    deployment_pulse_start(true,false);
     for (unsigned i=0;i<249;i++) fc_runtime_tick();
     assert(co2 && reef);
     fc_runtime_tick(); assert(!co2 && reef && !(g_conf & CO2_Asserted));
@@ -73,7 +74,7 @@ int main(void) {
 
     def test_pulse_armed_before_any_logging(self):
         s=(ROOT/'Core/Inc/fcapi.h').read_text()
-        for name, call in [('release_parachute','deployment_pulse_start(false)'),('expand_parachute','deployment_pulse_start(true)')]:
+        for name, call in [('release_parachute','deployment_pulse_start(false, manual)'),('expand_parachute','deployment_pulse_start(true, manual)')]:
             f=s[s.index('static inline bool '+name):]
             f=f[:f.index('\n}\n')]
             self.assertLess(f.index(call),f.index('approx altitude'))

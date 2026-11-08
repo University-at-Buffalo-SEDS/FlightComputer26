@@ -89,7 +89,9 @@ static void descent_initialize(fu32 c) { (void)c; }
 static state current(void) { return load(&sm.flight, Acq); }
 static bool beyond(state b) { return current() > b; }
 static bool fc_watchdog_can_actuate(void) { return true; }
-static void deployment_pulse_start(bool reef) {
+static bool fc_watchdog_can_actuate_manual(void) { return true; }
+static void deployment_pulse_start(bool reef, bool manual) {
+  (void)manual;
   if (reef) { mains++; main_alt = svec(0).alt; g_conf |= option(Parachute_Expanded); }
   else { drogue++; drogue_alt = svec(0).alt; g_conf |= option(Parachute_Deployed); }
 }

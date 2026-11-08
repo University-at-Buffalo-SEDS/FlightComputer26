@@ -63,7 +63,7 @@ static void controller_probe(SedsRouter*r,const char*kind){
  persistent_store_note_failure();
  assert(!persistent_store_controls_ready());
  assert(fc_recovery_flight_is_admitted()&&!fc_recovery_holds_sequence()&&!fc_recovery_inhibits_pyro());
- deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==2&&gpio.ODR==3);
+ deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==2&&gpio.ODR==3);
  /* Actual distribution callback keeps ordinary controller mutation closed. */
  assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued);
  /* Actual manual-ABORT transport remains separate from storage/controller gates. */
@@ -75,7 +75,7 @@ static void controller_probe(SedsRouter*r,const char*kind){
  assert(Manual_Abort_handler(&stop,NULL)==SEDS_OK);
  assert(fc_recovery_abort_latched()&&!fc_recovery_flight_is_admitted()&&fc_recovery_inhibits_pyro());
  assert(!gpio.ODR&&!co2_ticks&&!reef_ticks&&seal);
- deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==2);
+ deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==2);
  puts("actual strict-store runtime fault preserves admitted pyro; ordinary controller denied; marked manual GS Abort LOW PASS");
  return;
 
@@ -90,7 +90,7 @@ static void controller_probe(SedsRouter*r,const char*kind){
    assert(!fc_recovery_admit_new_flight(false)&&!fc_recovery_admit_new_flight(true)&&!fc_recovery_flight_is_admitted());
    uint8_t launch=1;SedsPacketView command={.ty=SEDS_DT_FLIGHT_COMMAND,.sender="GS",.sender_len=2,.payload=&launch,.payload_len=1,.timestamp=10002};
    assert(on_fc_packet_impl(&command,NULL)==SEDS_PERMISSION_DENIED&&!queued&&!highs);
-   deployment_pulse_start(false);deployment_pulse_start(true);assert(!highs&&!gpio.ODR);
+   deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(!highs&&!gpio.ODR);
    static const uint8_t marker[]="SEDS_MANUAL_ABORT_V1:K";
    command.ty=SEDS_DT_ABORT;command.payload=marker;command.payload_len=sizeof(marker)-1U;g_router.r=r;
    assert(Manual_Abort_handler(&command,NULL)==SEDS_OK&&fc_recovery_abort_latched()&&!gpio.ODR);

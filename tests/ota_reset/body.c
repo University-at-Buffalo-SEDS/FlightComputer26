@@ -28,7 +28,7 @@ int main(int argc,char **argv){assert(argc==2);
  else if(!strcmp(argv[1],"reset_request_same_epoch")){assert(fc_recovery_request_startup(before)==-14&&fc_recovery_epoch()==before);}
  else if(!strcmp(argv[1],"legacy_eval_stop_same_epoch")){fc_recovery_request_eval_stop();assert(owner.legacy_stop&&fc_recovery_epoch()==before);}
  else if(!strcmp(argv[1],"phase_aba_same_epoch")){startup_phase_aba();assert(fc_recovery_epoch()==before);}
- else if(!strcmp(argv[1],"pyro_high_low")){deployment_pulse_start(false);assert(gpio.ODR);for(unsigned i=0;i<500;i++)fc_runtime_tick();assert(!gpio.ODR);}
+ else if(!strcmp(argv[1],"pyro_high_low")){deployment_pulse_start(false,false);assert(gpio.ODR);for(unsigned i=0;i<500;i++)fc_runtime_tick();assert(!gpio.ODR);}
  else if(!strcmp(argv[1],"terminal")){SedsP2pStreamEventView e={SEDS_P2P_STREAM_CLOSED,7,NULL,0};assert(ota_stream_event(&e,NULL)==SEDS_OK);}
  else if(!strcmp(argv[1],"expired_newjob")){startup_phase_aba();assert(!state.reset_eligible);ota_now=300;telemetry_poll_discovery();assert(!ota_nvics);begin_job();finish_job();ota_now=550;telemetry_poll_discovery();assert(ota_nvics==1);return 0;}
  else if(!strcmp(argv[1],"held_router")){telemetry_mu.tx_mutex_owner=&telemetry_task;telemetry_mu.tx_mutex_ownership_count=1;}

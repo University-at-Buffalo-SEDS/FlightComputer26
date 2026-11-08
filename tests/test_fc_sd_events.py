@@ -34,6 +34,7 @@ atomic_uint_fast32_t g_conf;
 unsigned clock_ms, mask,co2,reef;
 bool permitted=true;
 bool fc_recovery_inhibits_pyro(void){return false;}
+bool fc_recovery_inhibits_manual_pyro(void){return false;}
 struct {uint32_t ODR;} gpio;
 #define PYRO_PORT (&gpio)
 #define CO2_PIN 1U
@@ -46,7 +47,7 @@ uint32_t HAL_GetTick(void){return clock_ms;}
 void HAL_IncTick(void){++clock_ms;}
 void HAL_SuspendTick(void){}
 bool fc_watchdog_can_actuate(void){return permitted;}
-bool fc_watchdog_record_deployment(bool r){(void)r;return permitted;}
+bool fc_watchdog_record_deployment(bool r,bool m){(void)r;(void)m;return permitted;}
 void reef_high(void){assert(mask);reef=1;}
 void co2_high(void){assert(mask);co2=1;}
 void reef_low(void){reef=0;}
@@ -55,18 +56,18 @@ void co2_low(void){co2=0;}
 int main(void){
  fc_sd_event event,again;
  clock_ms=0xfffffffeU;
- deployment_pulse_start(false);
+ deployment_pulse_start(false,false);
  assert(fc_sd_peek_event(&event)&&event.kind==FC_LOG_PYRO_HIGH&&event.tick==0xfffffffeU);
  /* A failed/blocked consumer must leave the head owned and timestamp intact. */
  clock_ms=0xffffffffU;assert(fc_sd_peek_event(&again));
  assert(event.tick==again.tick&&event.kind==again.kind);
  fc_sd_consume_event();
- deployment_pulse_start(false);assert(g_sd_event_pending==1);
+ deployment_pulse_start(false,false);assert(g_sd_event_pending==1);
  assert(fc_sd_peek_event(&event)&&event.kind==FC_LOG_PYRO_ACTIVE);fc_sd_consume_event();
  for(unsigned i=0;i<5;i++)fc_runtime_tick();
  assert(!co2&&g_deployment_pulse_completions==1);
  assert(fc_sd_peek_event(&event)&&event.kind==FC_LOG_PYRO_LOW&&event.tick==4);fc_sd_consume_event();
- permitted=false;deployment_pulse_start(true);
+ permitted=false;deployment_pulse_start(true,false);
  assert(!reef&&fc_sd_peek_event(&event)&&event.kind==FC_LOG_PYRO_REJECTED&&event.reef);fc_sd_consume_event();
  for(unsigned i=0;i<32;i++){clock_ms=i;fc_sd_capture_event(FC_LOG_PYRO_HIGH,true);}
  assert(g_sd_event_pending==32&&g_sd_event_queue_peak==32);

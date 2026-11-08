@@ -333,11 +333,11 @@ log_metric(const char *msg, fi32 metric, bool critical)
 
 /* Deployment routines */
 
-void deployment_pulse_start(bool reef);
+void deployment_pulse_start(bool reef, bool manual);
 
-static inline bool release_parachute(bool force)
+static inline bool release_parachute(bool force, bool manual)
 {
-  if (!fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
+  if (!(manual ? fc_watchdog_can_actuate_manual() : fc_watchdog_can_actuate())) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
   if (!force && !beyond(Armed))
   {
     log_metric("PD drogue blocked, state", current(), true);
@@ -345,7 +345,7 @@ static inline bool release_parachute(bool force)
   }
 
   if (!force && (g_conf & option(Parachute_Deployed))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
-  deployment_pulse_start(false);
+  deployment_pulse_start(false, manual);
   log_metric("PD approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
@@ -354,9 +354,9 @@ static inline bool release_parachute(bool force)
   return true;
 }
 
-static inline bool expand_parachute(bool force)
+static inline bool expand_parachute(bool force, bool manual)
 {
-  if (!fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
+  if (!(manual ? fc_watchdog_can_actuate_manual() : fc_watchdog_can_actuate())) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   if (!force && !beyond(Launch))
   {
     log_metric("PR reef blocked, state %u", current(), true);
@@ -370,7 +370,7 @@ static inline bool expand_parachute(bool force)
   }
 
   if (!force && (g_conf & option(Parachute_Expanded))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
-  deployment_pulse_start(true);
+  deployment_pulse_start(true, manual);
   log_metric("PR approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);

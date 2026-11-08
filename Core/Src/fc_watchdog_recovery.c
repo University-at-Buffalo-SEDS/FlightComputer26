@@ -147,6 +147,8 @@ static bool live_state_valid(void)
     return pressure > 0.0f;
 }
 bool fc_watchdog_can_actuate(void) { return g_fc_watchdog_resume_rejected == 0U && retained.stop_seal == 0U; }
+/* A rejected resume alone never refuses the operator's manual deploy; Stop does. */
+bool fc_watchdog_can_actuate_manual(void) { return retained.stop_seal == 0U; }
 static void save_actions(void)
 {
     action_record *r = &retained.action[action_slot];
@@ -212,9 +214,18 @@ bool fc_watchdog_begin_new_flight(void)
     return true;
 }
 
-bool fc_watchdog_record_deployment(bool reef)
+bool fc_watchdog_record_deployment(bool reef, bool manual)
 {
-    if (!fc_watchdog_can_actuate()) return false;
+    if (!fc_watchdog_can_actuate()) {
+        if (!manual || !fc_watchdog_can_actuate_manual()) return false;
+        /* A rejected boot never restored the journal cursors: append after the
+         * newest valid record. With no valid journal no resume can use it. */
+        unsigned latest;
+        if (!action_history_ready(&latest)) return true;
+        action_sequence = retained.action[latest].sequence;
+        action_slot = latest ^ 1U;
+        actions = retained.action[latest].actions;
+    }
     actions |= reef ? 2U : 1U;
     save_actions(); /* caller holds IRQ mask; commit precedes GPIO assertion */
     return true;

@@ -209,7 +209,7 @@ static inline void detect_descent(fu32 mode)
 
   if (sm.confidence >= MIN_SAMP_DESCENT)
   {
-    release_parachute(false);
+    release_parachute(false, false);
     flight_advance(Descent);
 
     log_metric(id "apogee guess", (fi32) extremes.max_alt, false);
@@ -226,7 +226,7 @@ static inline void detect_reefing(fu32 mode)
 
   if (sm.confidence >= MIN_SAMP_REEF)
   {
-    expand_parachute(false);
+    expand_parachute(false, false);
     flight_advance(Reefing);
   }
 }

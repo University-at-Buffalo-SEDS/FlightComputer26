@@ -14,21 +14,21 @@ EXTRA=r'''
   assert(!fc_recovery_holds_sequence()&&!fc_recovery_inhibits_pyro());
   assert(fc_recovery_flight_is_admitted());
   assert(fc_recovery_admit_new_flight(true)); /* existing admitted mission resume */
-  deployment_pulse_start(false);deployment_pulse_start(true);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);
   assert(highs==2&&gpio.ODR==3&&co2_ticks&&reef_ticks);
   fc_recovery_manual_stop();
   assert(fc_recovery_abort_latched()&&fc_recovery_inhibits_pyro());
   assert(!fc_recovery_flight_is_admitted()&&!gpio.ODR&&!co2_ticks&&!reef_ticks&&seal);
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(highs==2);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==2);
  }else if(!strcmp(argv[1],"first_internal_not_authority")){
   assert(fc_recovery_admit_new_flight(true));
   assert(!fc_recovery_flight_is_admitted());
   store_ready=false;assert(fc_recovery_holds_sequence()&&fc_recovery_inhibits_pyro());
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(!highs&&!gpio.ODR);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(!highs&&!gpio.ODR);
  }else if(!strcmp(argv[1],"prelaunch_store_failure")){
   store_ready=false;assert(!fc_recovery_admit_new_flight(false));
   assert(!fc_recovery_admit_new_flight(true)&&!fc_recovery_flight_is_admitted());
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(!highs&&!gpio.ODR);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(!highs&&!gpio.ODR);
   fc_recovery_manual_stop();assert(fc_recovery_abort_latched()&&seal&&!gpio.ODR);
  }else if(!strcmp(argv[1],"new_internal_still_refused")){
   reset_complete();arm_ready=true;
@@ -41,7 +41,7 @@ EXTRA=r'''
   quiet=true;io_error=true;fc_recovery_control_service();fc_recovery_network_service();fc_recovery_control_service();
   assert(fc_recovery_reset_failed()&&finals==0&&seal);
   arm_ready=true;assert(!fc_recovery_admit_new_flight(false)&&!fc_recovery_admit_new_flight(true));
-  deployment_pulse_start(false);deployment_pulse_start(true);assert(!highs&&!gpio.ODR);
+  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(!highs&&!gpio.ODR);
  }else
 '''
 class PostlaunchStoreContinuityTests(unittest.TestCase):

@@ -66,6 +66,15 @@ bool fc_recovery_inhibits_pyro(void)
 {
     return fc_recovery_holds_sequence() || owner.new_flight;
 }
+/* The operator's manual deploy: every hold above except a rejected watchdog
+ * resume (Stop's retained seal still refuses). Automatic pyro keeps
+ * fc_recovery_inhibits_pyro(). */
+bool fc_recovery_inhibits_manual_pyro(void)
+{
+    return owner.monitor_mode || (!owner.admitted_flight && !persistent_store_controls_ready()) ||
+           owner.commissioning_hold || owner.manual_stop || owner.reset_inhibit ||
+           owner.new_flight || !fc_watchdog_can_actuate_manual();
+}
 bool fc_recovery_control_pending(void)
 {
     return (owner.monitor_mode && !owner.monitor_ready) ||

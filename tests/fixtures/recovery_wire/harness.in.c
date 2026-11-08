@@ -93,7 +93,8 @@ static void reef_low(void){gpio.ODR&=~2U;++lows;}
 static void HAL_SuspendTick(void){}
 static void HAL_IncTick(void){}
 static bool fc_watchdog_can_actuate(void){return seal==0;}
-static bool fc_watchdog_record_deployment(bool reef){historical|=reef?2:1;return true;}
+static bool fc_watchdog_can_actuate_manual(void){return seal==0;}
+static bool fc_watchdog_record_deployment(bool reef,bool manual){(void)manual;historical|=reef?2:1;return true;}
 static bool fc_watchdog_hold_for_operator_reset(void){assert(irq);if(seal_error)return false;seal=1;return true;}
 static bool fc_watchdog_begin_new_flight(void){assert(irq);seal=0;++arms;return true;}
 bool fc_recovery_control_new_flight_ready(void){assert(irq);return arm_ready;}
