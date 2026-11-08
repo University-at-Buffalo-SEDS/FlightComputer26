@@ -138,23 +138,11 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
     }
   }
 
-  lsb_to_g = (float)(1u << (valid.rng + 0x01)) / 32768.0f * 1.5f;
-
-#ifdef SCALE_HEURISTIC
-  lsb_to_g *= FC26_LINEAR_SCALE;
-#endif
-
-  /* Bandwith of low pass filter (datasheet 5.3.10) */
-  st = accl_write_reg(hspi, ACCL_CONF, (uint8_t)valid.mode);
-  if (st != HAL_OK) {
-    return st;
-  }
-
-  /* Set range (datasheet 5.3.11) */
-  st = accl_write_reg(hspi, ACCL_RANGE, (uint8_t)valid.rng);
-  if (st != HAL_OK) {
-    return st;
-  }
+  /* Power on before configuring. The accelerometer starts in suspend mode
+   * after a soft reset, where back-to-back configuration writes are not
+   * reliably accepted: the range write was dropped, leaving the sensor at
+   * its +/-6 g reset range so boost saturated near 6 g (datasheet 4.1.1,
+   * 5.3.20; Bosch bmi08x driver order). */
 
   /* Enable active mode (datasheet 5.3.20) */
   st = accl_write_reg(hspi, ACCL_PWR_CONF, (uint8_t)Active_Mode);
@@ -170,7 +158,38 @@ accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf)
     return st;
   }
 
+  HAL_Delay(ACCL_WAIT_MS);
+
+  /* Bandwith of low pass filter (datasheet 5.3.10) */
+  st = accl_write_reg(hspi, ACCL_CONF, (uint8_t)valid.mode);
+  if (st != HAL_OK) {
+    return st;
+  }
+
   HAL_Delay(1);
+
+  /* Set range (datasheet 5.3.11) */
+  st = accl_write_reg(hspi, ACCL_RANGE, (uint8_t)valid.rng);
+  if (st != HAL_OK) {
+    return st;
+  }
+
+  HAL_Delay(1);
+
+  /* Scale by the range the sensor actually reports, so a refused write can
+   * never silently mis-scale readings. */
+  uint8_t range = 0x00;
+  st = accl_read_reg(hspi, ACCL_RANGE, &range);
+  if (st != HAL_OK) {
+    return st;
+  }
+  range &= ACCL_RANGE_MASK;
+  if (range != (uint8_t)valid.rng) {
+    log_err("ACCL: range %u, expected %u", (unsigned)range,
+            (unsigned)valid.rng);
+  }
+
+  lsb_to_g = accl_lsb_to_mps2(range);
 
   /* Set interrupt pin INT1 (PC4) to raise on new data */
   st = accl_write_reg(hspi, ACCL_INT_CONF, ACCL_INT_CONF_VAL);

@@ -85,9 +85,11 @@ struct accl_config {
 
 /* ------ Helper definitions ------ */
 
-#define SCALE_HEURISTIC
-
-#define FC26_LINEAR_SCALE 2.4607705003298646087
+/* BMI088 accel: 1.5 * 2^(range + 1) g full scale over a signed 16-bit
+ * sample (datasheet 5.3.11). Readings are consumed in m/s^2. */
+#define ACCL_RANGE_MASK    0x03u
+#define accl_lsb_to_mps2(rng)                                          \
+  ((float)(1u << ((unsigned)(rng) + 0x01u)) / 32768.0f * 1.5f * 9.80665f)
 
 #define accl_cmd_read(reg)  ((uint8_t)((reg) | 0x80u))
 #define accl_cmd_write(reg) ((uint8_t)((reg) & 0x7F))
@@ -102,6 +104,8 @@ struct accl_config {
 
 typedef struct coords f_xyz;
 
+/* Accelerometer sample scale in m/s^2 per LSB, from the range read back
+ * from the sensor during init. */
 extern float lsb_to_g;
 
 HAL_StatusTypeDef accl_init(SPI_HandleTypeDef *hspi, const struct accl_config *conf);
