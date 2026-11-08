@@ -34,7 +34,7 @@ static SedsResult dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p&&n==1);
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){assert(p&&n==1);biases++;return SEDS_OK;}
 #include "ground_heartbeat_owner.h"
 '''
-  for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_controller_update_allowed']:
+  for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed']:
    if name+'(' in transport:code+='\n'+function(transport,name)
   code+='\n'+function(distribution,'on_fc_packet_impl')+r'''
 int main(void){
@@ -42,10 +42,11 @@ int main(void){
  for(unsigned r=0;r<2;r++)for(unsigned h=0;h<2;h++)for(unsigned a=0;a<2;a++)for(unsigned s=0;s<4;s++)for(unsigned k=0;k<3;k++)for(unsigned t=0;t<6;t++){
   ready=r;healthy=h;active=a;p.sender=senders[s];p.sender_len=strlen(p.sender);p.ty=types[k];p.timestamp=times[t];
   bool expected=ready&&healthy&&(!active?(k!=0||s==0):((k==0?s==0:s<=1)&&t==0));unsigned before=commands+biases+states;SedsResult result=on_fc_packet_impl(&p,NULL);
-  assert((result==SEDS_OK)==expected);assert(commands+biases+states==before+(expected?1U:0U));count++;
+  /* A non-station FSTATE report is ignored (delivery not failed) but never applied. */
+  bool ignorable=k==0&&s!=0;assert((result==SEDS_OK)==(expected||ignorable));assert(commands+biases+states==before+(expected?1U:0U));count++;
  }
  ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=19000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED&&commands==before);clock_ok=true;
- p.ty=SEDS_DT_FLIGHT_STATE;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED);p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
+ p.ty=SEDS_DT_FLIGHT_STATE;before=states;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&states==before);p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
  assert(on_fc_packet_impl(NULL,NULL)==SEDS_HANDLER_ERROR);p.sender_len=0;assert(on_fc_packet_impl(&p,NULL)==SEDS_HANDLER_ERROR);
  printf("actual FC source/type/readiness/floor/time matrix %u PASS\n",count);return 0;}
 '''

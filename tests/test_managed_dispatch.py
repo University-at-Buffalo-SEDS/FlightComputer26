@@ -23,6 +23,7 @@ typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
 static unsigned commands, heartbeats;
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){return p!=NULL;}
+static uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *p){(void)p;return 0;}
 /* Existing receipt-only fixture: controller readiness is conservative too;
  * actual station/floor/clock policy is covered by its dedicated source test. */
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p){return p!=NULL;}

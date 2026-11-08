@@ -71,6 +71,12 @@ int main(void) {
         header = (ROOT / 'Core/Inc/board_recovery_transport.h').read_text()
         self.assertIn('board_recovery_managed_report_ignorable(const SedsPacketView *packet);', header)
 
+    def test_fc_endpoint_handler_does_not_fail_its_own_report(self):
+        body = function((ROOT / 'Core/Src/distribution.c').read_text(), 'on_fc_packet_impl')
+        gate = body.index('if (pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))')
+        self.assertIn('return board_recovery_managed_report_ignorable(pkt) ? SEDS_OK : SEDS_PERMISSION_DENIED;',
+                      body[gate:gate + 300])
+
 
 if __name__ == '__main__':
     unittest.main()
