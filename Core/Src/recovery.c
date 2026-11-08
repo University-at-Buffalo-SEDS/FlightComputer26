@@ -793,14 +793,8 @@ static void fc_timer_routine(ULONG _)
 #ifdef TELEMETRY_ENABLED
     g_conf |= option(Lost_GroundStation);
     g_conf |= option(Reset_Failures);
-
-    if (!fc_recovery_inhibits_pyro() && (g_conf & option(In_Aborted_State)))
-    {
-      smon.to_abort *= 10;
-
-      fc_msg cmd = fc_mask(Launch_Signal);
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
-    }
+    /* No self-Launch while aborted: it resumed evaluation from an unadmitted
+     * internal launch and requested an ignition no board acts on. */
 #else
     autostart_on_timeout();
 #endif
