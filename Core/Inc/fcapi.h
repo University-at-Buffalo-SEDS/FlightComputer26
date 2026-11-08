@@ -105,27 +105,6 @@ static inline void restore_spi1_irq(void)
 }
 
 
-/* Ignition */
-
-#ifdef TELEMETRY_ENABLED
-
-static inline SedsResult request_ignition(void)
-{
-  const fu8 igniter_seq = IGNITION_COMMAND;
-  return log_valve_board_command(igniter_seq);
-}
-
-#else 
-
-static inline fu8 request_ignition(void)
-{
-  log_critical("Debug ignition requested");
-  return SEDS_OK;
-}
-
-#endif /* TELEMETRY_ENABLED */
-
-
 /* Blocking indicator (panic, debug) */
 
 extern const led_gpio light[];

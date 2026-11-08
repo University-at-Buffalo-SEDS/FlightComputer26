@@ -20,7 +20,6 @@
 #define LAUNCH_SITE_LON -102.046f
 #define LAUNCH_SITE_SEA	890.016f
 
-#define IGNITION_COMMAND 14
 
 
 /* Logging */

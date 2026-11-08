@@ -864,17 +864,9 @@ static inline void fill_sequence_states(void)
   MrAnalog (!fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
             beyond(Startup) && (conf & option(Launch_Requested)));
 
-  const uint32_t flight_epoch = fc_recovery_epoch();
-  MrAnalog (false) {
-    if (flight_epoch != fc_recovery_epoch() || fc_recovery_inhibits_pyro()) return;
-    if (request_ignition() == SEDS_OK) break;
-    if (try_fetch_baro(&meas.baro))
-    {
-      maybe_log_measm(Baro, &meas.baro);
-    }
-    board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
-    tx_thread_sleep(1U);
-  }
+  /* Ignition is owned by the Valve and Actuator boards; the FC only follows
+   * Launch into flight mode. */
+  if (fc_recovery_inhibits_pyro()) return;
   message(id "ignition; flight mode", true);
 }
 
