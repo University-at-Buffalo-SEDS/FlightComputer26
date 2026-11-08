@@ -32,6 +32,18 @@ class OtaBuildScriptTests(unittest.TestCase):
         self.assertIn("-DUSB_ENUM=OFF", command)
         self.assertNotIn("-DUSB_ENUM=ON", command)
 
+    def test_normal_configure_resets_a_cached_sedsnet_offline_flag(self):
+        options = {name: False for name in build.ALL_OPTIONS}
+        commands = []
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(build, "PROJECT", Path(directory)):
+                with mock.patch.object(build, "run", side_effect=commands.append):
+                    build.configure(Path(directory) / "build", "Release", options)
+                    build.configure(Path(directory) / "build", "Release",
+                                    {**options, "sedsnet-offline": True})
+        self.assertIn("-DSEDSNET_OFFLINE=OFF", commands[0])
+        self.assertIn("-DSEDSNET_OFFLINE=ON", commands[1])
+
     def test_release_builds_always_enable_size_and_lto_flags(self):
         source = Path(build.__file__).read_text(encoding="utf-8")
         self.assertIn(

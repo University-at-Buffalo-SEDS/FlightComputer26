@@ -15,6 +15,7 @@ import tomllib
 
 MINIMUM = (4, 3, 6)
 BUILD_FLAGS = ['build', '--crate-type', 'staticlib']
+REQUIRED_APIS = ('seds_endpoint_identity', 'seds_dtype_identity', 'seds_router_sender_matches_hostname')
 
 
 def sha(path: Path) -> str:
@@ -231,6 +232,9 @@ def select_source(root, cache, env):
             '--ref', ref, '--repository', repository]
     for path in [*fallbacks, root / 'build/_deps/sedsnet-src', root / 'third_party/SEDSnet']:
         argv += ['--fallback', str(path)]
+    # Same identity APIs the firmware configure requires: never pick a stale cache.
+    for api in REQUIRED_APIS:
+        argv += ['--require-api', api]
     truth = lambda value: str(value).lower() in ('1', 'true', 'on', 'yes')
     offline = any(truth(configured.get(key, '')) for key in
                   ('SEDSNET_OFFLINE', 'FETCHCONTENT_FULLY_DISCONNECTED',

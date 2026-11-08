@@ -179,6 +179,8 @@ class NativeSDKSetupTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--ref') + 1], 'dev')
         self.assertIn('--offline', argv)
         self.assertIn(str(old), argv)
+        self.assertIn('seds_endpoint_identity', argv)
+        self.assertEqual(argv[argv.index('--require-api') + 1], 'seds_endpoint_identity')
         with patch.object(sdk, 'run', side_effect=AssertionError('explicit source must never fetch')):
             self.assertEqual(sdk.select_source(self.root, self.root / 'build/host-sdk', self.env), self.source)
 

@@ -77,6 +77,10 @@ class SourceSelectionTests(unittest.TestCase):
         local.mkdir()
         for name in ('CMakeLists.txt', 'Cargo.toml', 'build.rs'):
             (local / name).write_text('')
+        (local / 'C-Headers').mkdir()
+        (local / 'C-Headers/sedsnet.h').write_text(
+            'int seds_endpoint_identity(void);\nint seds_dtype_identity(void);\n'
+            'int seds_router_sender_matches_hostname(void);\n')
         def configure(*args):
             result = subprocess.run(['cmake', '-S', str(project), '-B', str(self.root / 'build'), *args],
                                     text=True, capture_output=True)
@@ -104,6 +108,34 @@ class SourceSelectionTests(unittest.TestCase):
         incomplete.mkdir()
         self.assertIn('Ignoring missing or incomplete', configure(
             f'-DFETCHCONTENT_SOURCE_DIR_SEDSNET={incomplete}'))
+
+    def test_offline_skips_stale_cache_lacking_required_api(self):
+        apis = ('seds_endpoint_identity', 'seds_router_sender_matches_hostname')
+        stale = self.root / 'stale'
+        current = self.root / 'current'
+        for path, header in ((stale, 'int seds_router_new(void);\n'),
+                             (current, ''.join(f'int {api}(void);\n' for api in apis))):
+            (path / 'C-Headers').mkdir(parents=True)
+            for name in ('CMakeLists.txt', 'Cargo.toml', 'build.rs'):
+                (path / name).write_text('')
+            (path / 'C-Headers/sedsnet.h').write_text(header)
+        self.assertEqual(source.select_source(self.cache, 'unavailable', [stale, current],
+                                              offline=True, require_apis=apis), current)
+        with self.assertRaisesRegex(RuntimeError, 'required API'):
+            source.select_source(self.cache, 'unavailable', [stale], offline=True, require_apis=apis)
+
+    def test_offline_reuses_previously_fetched_compatible_revision(self):
+        (self.remote / 'C-Headers').mkdir()
+        (self.remote / 'C-Headers/sedsnet.h').write_text('int seds_endpoint_identity(void);\n')
+        self.commit()
+        fetched = source.select_source(self.cache, str(self.remote), [])
+        (self.cache / 'last-source.txt').unlink()
+        stale = self.root / 'stale'
+        stale.mkdir()
+        for name in ('CMakeLists.txt', 'Cargo.toml', 'build.rs'):
+            (stale / name).write_text('')
+        self.assertEqual(source.select_source(self.cache, 'unavailable', [stale], offline=True,
+                                              require_apis=('seds_endpoint_identity',)), fetched)
 
     def test_offline_without_source_fails_clearly(self):
         with self.assertRaisesRegex(RuntimeError, 'No usable SEDSnet source'):

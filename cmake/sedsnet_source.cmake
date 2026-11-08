@@ -38,6 +38,9 @@ if(NOT FETCHCONTENT_SOURCE_DIR_SEDSNET)
             --fallback "${SEDSNET_DIR}"
             --fallback "${CMAKE_SOURCE_DIR}/third_party/SEDSnet"
             --fallback "${CMAKE_SOURCE_DIR}/SEDSnet"
+            --require-api seds_endpoint_identity
+            --require-api seds_dtype_identity
+            --require-api seds_router_sender_matches_hostname
             ${_sedsnet_offline_arg}
         RESULT_VARIABLE _sedsnet_result
         OUTPUT_VARIABLE _sedsnet_source OUTPUT_STRIP_TRAILING_WHITESPACE)
