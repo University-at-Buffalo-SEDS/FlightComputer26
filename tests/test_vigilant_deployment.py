@@ -1,7 +1,8 @@
 """Actual evaluator FSM and deployment gates over a simulated flight.
 
 The vigilant watchdog is enabled by default (USER_OPTIONS). It must correct the
-flight state without suppressing the drogue or main deployment.
+flight state without suppressing the drogue or main deployment. Landed must
+wait for touchdown: a steady descent under the main is not "on the ground".
 """
 from pathlib import Path
 import subprocess
@@ -109,26 +110,38 @@ int main(int argc, char **argv) {
   store(&sm.flight, Armed, Rel);
   const float dt = coarse ? 0.5f : 0.02f, g = 9.80665f;
   float alt = 0.0f, vel = 0.0f, apogee = 0.0f, apogee_vel = 0.0f;
+  float landed_alt = NAN, touchdown_t = -1.0f;
   state reached = Armed;
   for (unsigned step = 0; step < 200000; ++step) {
     const float t = step * dt;
-    float acc = t < 3.5f ? 50.0f : -g;
-    vel += acc * dt;
-    if (t >= 3.5f && (g_conf & option(Parachute_Expanded))) vel = fmaxf(vel, -6.0f);
-    else if (t >= 3.5f && (g_conf & option(Parachute_Deployed))) vel = fmaxf(vel, -25.0f);
-    alt += vel * dt;
+    if (touchdown_t >= 0.0f) {
+      /* At rest on the pad baseline after touchdown. */
+      if (t - touchdown_t > 60.0f) break;
+      alt = 0.0f; vel = 0.0f;
+    } else {
+      float acc = t < 3.5f ? 50.0f : -g;
+      vel += acc * dt;
+      if (t >= 3.5f && (g_conf & option(Parachute_Expanded))) vel = fmaxf(vel, -6.0f);
+      else if (t >= 3.5f && (g_conf & option(Parachute_Deployed))) vel = fmaxf(vel, -25.0f);
+      alt += vel * dt;
+      if (alt <= 0.0f && t > 5.0f) { touchdown_t = t; alt = 0.0f; vel = 0.0f; }
+    }
     apogee = fmaxf(apogee, alt);
     sim_ms = (uint32_t)(t * 1000.0f);
-    if (alt <= 0.0f && t > 5.0f) break;
     sv[sm.idx].alt = alt; sv[sm.idx].vel = vel; meas.baro.alt = alt;
     if (skip_ms) { const uint32_t step_ms = (uint32_t)(dt * 1000.0f); skip_ms = skip_ms > step_ms ? skip_ms - step_ms : 0U; continue; }
     evaluate_rocket_state(g_conf, dt);
     if (current() == Apogee && reached < Apogee) apogee_vel = vel;
+    if (current() >= Landed && reached < Landed) {
+      landed_alt = alt;
+      assert(touchdown_t >= 0.0f); /* never Landed while still descending */
+    }
     if (current() > reached) reached = current();
   }
-  printf("%s: apogee=%.0f reached=%u drogue=%u@%.0f main=%u@%.0f\n", argv[1], apogee,
-         (unsigned)reached, drogue, drogue_alt, mains, main_alt); fflush(stdout);
-  assert(reached >= Reefing);
+  printf("%s: apogee=%.0f reached=%u drogue=%u@%.0f main=%u@%.0f landed@%.1f touchdown=%.1fs\n", argv[1], apogee,
+         (unsigned)reached, drogue, drogue_alt, mains, main_alt, landed_alt, touchdown_t); fflush(stdout);
+  assert(touchdown_t >= 0.0f);
+  assert(reached >= Landed && landed_alt == 0.0f);
   assert(drogue == 1 && drogue_alt > apogee - 150.0f);
   if (coarse) assert(apogee_vel < -APOGEE_MAX_VEL); /* outside detect_apogee's window */
   assert(mains == 1 && main_alt <= REEF_TARGET_ALT && main_alt > 300.0f);

@@ -238,6 +238,11 @@ static inline void detect_landed(fu32 mode)
   float dh_4 = svec(2).alt - svec(6).alt;
   float dv_4 = svec(2).vel - svec(6).vel;
 
+  /* Steady descent under the main also has near-constant altitude steps and
+   * velocity; only a resting vehicle near the pad baseline is on the ground. */
+  Require(svec(0).alt <= LANDED_MAX_ALT);
+  Require(within(svec(0).vel, LANDED_MAX_VEL));
+  Require(within(svec(4).vel, LANDED_MAX_VEL));
   Require(within(dh_1, ALT_TOLER));
   Require(within(dh_4, ALT_TOLER));
   Require(within(dv_1, VEL_TOLER));
