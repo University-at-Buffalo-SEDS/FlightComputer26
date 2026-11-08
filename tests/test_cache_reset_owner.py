@@ -82,6 +82,8 @@ SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*r,unsigned t
 
 SedsResult seds_router_request_managed_variable(SedsRouter *r,unsigned ty){assert(r&&ty==SEDS_DT_FLIGHT_STATE);++requests;return 0;}
 uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){assert(p);return allow_update;}
+static int report_ignorable;
+uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *p){assert(p);return (uint8_t)report_ignorable;}
 static SedsResult update(uint8_t state){SedsPacketView p={SEDS_DT_FLIGHT_STATE,&state,1,100};assert(callback);return callback(&p,NULL);}
 int main(int argc,char **argv){
  assert(argc==2);SedsRouter router=0;
@@ -110,6 +112,13 @@ int main(int argc,char **argv){
   assert(flight_state_cache_reset_startup()==0);unsigned w=writes,c=clears;
   allow_update=0;assert(update(3)==-9&&flight_state_cache_value()==0&&stored==0&&writes==w&&clears==c+1&&callback);
   allow_update=1;assert(update(1)==0&&flight_state_cache_value()==1&&stored==1&&writes==w+1);
+ }else if(!strcmp(argv[1],"report_ignored")){
+  /* The FC's own (or a relayed FC) report: never applied or persisted, cache
+   * observation retired, and SDK delivery is NOT failed. */
+  assert(flight_state_cache_reset_startup()==0);unsigned w=writes,c=clears;
+  allow_update=0;report_ignorable=1;
+  assert(update(8)==0&&flight_state_cache_value()==0&&stored==0&&writes==w&&clears==c+1);
+  report_ignorable=0;assert(update(8)==-9&&writes==w);
  }else if(!strcmp(argv[1],"ordinary_retry")){
   fail_write=1;assert(update(0)==-9&&flight_state_cache_value()==0);
   assert(update(0)==-9&&writes==2);fail_write=0;
@@ -136,6 +145,7 @@ class ResetOwnerTests(unittest.TestCase):
     def tearDownClass(cls):cls.tmp.cleanup()
     def test_actual_durable_cache_commit_and_refresh(self):self.run_case('success')
     def test_failed_write_preserves_applied_cache(self):self.run_case('write_failure')
+    def test_fc_state_report_is_ignored_without_failing_delivery(self):self.run_case('report_ignored')
     def test_failed_readback_preserves_applied_cache(self):self.run_case('read_failure')
     def test_wrong_readback_preserves_applied_cache(self):self.run_case('read_mismatch')
     def test_failed_cache_retirement_never_claims_reset(self):self.run_case('service_failure')
