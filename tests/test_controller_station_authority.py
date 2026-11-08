@@ -20,7 +20,7 @@ class ControllerStationAuthorityTests(unittest.TestCase):
 #include <stdio.h>
 static int cookie;static SedsRouter*recovery_router=(SedsRouter*)&cookie;
 static bool ready=true,healthy=true,active=true,clock_ok=true;
-static uint64_t clock_now=10000;static unsigned commands,biases,states;
+static uint64_t clock_now=20000;static unsigned commands,biases,states;
 bool persistent_store_controls_ready(void){return ready;}
 uint8_t board_recovery_floor_is_healthy(void){return healthy;}
 uint8_t board_recovery_floor_active(void){return active;}
@@ -38,13 +38,13 @@ static SedsResult update_ascent_biases(const uint8_t*p,size_t n){assert(p&&n==1)
    if name+'(' in transport:code+='\n'+function(transport,name)
   code+='\n'+function(distribution,'on_fc_packet_impl')+r'''
 int main(void){
- uint8_t value=1;SedsPacketView p={.payload=&value,.payload_len=1};const char*senders[]={"GS","RRLS","PB","@addr:unknown"};const uint32_t types[]={SEDS_DT_FLIGHT_STATE,SEDS_DT_FLIGHT_COMMAND,SEDS_DT_ASCENT_BIASES};const uint64_t times[]={9000,0,UINT64_MAX,1,4999,11001};unsigned count=0;
+ uint8_t value=1;SedsPacketView p={.payload=&value,.payload_len=1};const char*senders[]={"GS","RRLS","PB","@addr:unknown"};const uint32_t types[]={SEDS_DT_FLIGHT_STATE,SEDS_DT_FLIGHT_COMMAND,SEDS_DT_ASCENT_BIASES};const uint64_t times[]={5000,0,UINT64_MAX,1,4999,21001};unsigned count=0;
  for(unsigned r=0;r<2;r++)for(unsigned h=0;h<2;h++)for(unsigned a=0;a<2;a++)for(unsigned s=0;s<4;s++)for(unsigned k=0;k<3;k++)for(unsigned t=0;t<6;t++){
   ready=r;healthy=h;active=a;p.sender=senders[s];p.sender_len=strlen(p.sender);p.ty=types[k];p.timestamp=times[t];
   bool expected=ready&&healthy&&(!active?(k!=0||s==0):((k==0?s==0:s<=1)&&t==0));unsigned before=commands+biases+states;SedsResult result=on_fc_packet_impl(&p,NULL);
   assert((result==SEDS_OK)==expected);assert(commands+biases+states==before+(expected?1U:0U));count++;
  }
- ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=9000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED&&commands==before);clock_ok=true;
+ ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=19000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED&&commands==before);clock_ok=true;
  p.ty=SEDS_DT_FLIGHT_STATE;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED);p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
  assert(on_fc_packet_impl(NULL,NULL)==SEDS_HANDLER_ERROR);p.sender_len=0;assert(on_fc_packet_impl(&p,NULL)==SEDS_HANDLER_ERROR);
  printf("actual FC source/type/readiness/floor/time matrix %u PASS\n",count);return 0;}
