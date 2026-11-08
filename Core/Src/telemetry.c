@@ -147,11 +147,25 @@ extern volatile uint32_t g_fdcan_last_error;
 static uint32_t g_queue_observed_tx_fail_count = 0U;
 static uint32_t g_queue_observed_tx_busy_count = 0U;
 
-static void telemetry_sample_stack_margin(void) {
-  const uint32_t *cursor =
-      (const uint32_t *)telemetry_task.tx_thread_stack_start;
-  const uint32_t *const end =
-      (const uint32_t *)telemetry_task.tx_thread_stack_end;
+/* The evaluation and distribution threads also publish through the SEDSNet
+ * router on their own stacks (flight-state and sensor packets). Keep their
+ * low-water marks next to telemetry's so the simulator and HIL can check the
+ * headroom of every router caller. */
+volatile uint32_t g_evaluation_stack_free_min
+    __attribute__((used, externally_visible)) = EVAL_STACK_BYTES;
+volatile uint32_t g_distribution_stack_free_min
+    __attribute__((used, externally_visible)) = DIST_STACK_BYTES;
+
+static void stack_note_free(volatile uint32_t *low_water, uint32_t free_bytes) {
+  if (free_bytes < *low_water) {
+    *low_water = free_bytes;
+  }
+}
+
+static void stack_sample_fill(const TX_THREAD *thread,
+                              volatile uint32_t *low_water) {
+  const uint32_t *cursor = (const uint32_t *)thread->tx_thread_stack_start;
+  const uint32_t *const end = (const uint32_t *)thread->tx_thread_stack_end;
 
   if (cursor == NULL || end == NULL || cursor >= end) {
     return;
@@ -159,33 +173,44 @@ static void telemetry_sample_stack_margin(void) {
   while (cursor < end && *cursor == 0xEFEFEFEFUL) {
     ++cursor;
   }
-  const uint32_t free_bytes = (uint32_t)((uintptr_t)cursor -
-                                         (uintptr_t)telemetry_task.tx_thread_stack_start);
-  if (free_bytes < g_telemetry_stack_free_min) {
-    g_telemetry_stack_free_min = free_bytes;
-  }
+  stack_note_free(low_water, (uint32_t)((uintptr_t)cursor -
+                                        (uintptr_t)thread->tx_thread_stack_start));
+}
+
+static void telemetry_sample_stack_margin(void) {
+  stack_sample_fill(&telemetry_task, &g_telemetry_stack_free_min);
+  stack_sample_fill(&evaluation_task, &g_evaluation_stack_free_min);
+  stack_sample_fill(&distribution_task, &g_distribution_stack_free_min);
 }
 
 /* Stack-fill scanning only sees bytes that a function actually writes.  Large
  * Rust frames reserve their full size by moving PSP, but may leave most of the
  * reserved area filled with ThreadX's marker.  Sample the live process stack
  * pointer from the deepest board callback as well so HIL and the simulator see
- * the real routing-path headroom. */
+ * the real routing-path headroom of whichever thread is sending. */
 static void telemetry_sample_active_stack_margin(void) {
-  const uintptr_t stack_start =
-      (uintptr_t)telemetry_task.tx_thread_stack_start;
-  const uintptr_t stack_end =
-      (uintptr_t)telemetry_task.tx_thread_stack_end;
+  const TX_THREAD *const thread = tx_thread_identify();
+  volatile uint32_t *low_water;
+
+  if (thread == &telemetry_task) {
+    low_water = &g_telemetry_stack_free_min;
+  } else if (thread == &evaluation_task) {
+    low_water = &g_evaluation_stack_free_min;
+  } else if (thread == &distribution_task) {
+    low_water = &g_distribution_stack_free_min;
+  } else {
+    return;
+  }
+
+  const uintptr_t stack_start = (uintptr_t)thread->tx_thread_stack_start;
+  const uintptr_t stack_end = (uintptr_t)thread->tx_thread_stack_end;
   const uintptr_t psp = (uintptr_t)__get_PSP();
 
   if (psp < stack_start || psp > stack_end) {
     return;
   }
 
-  const uint32_t free_bytes = (uint32_t)(psp - stack_start);
-  if (free_bytes < g_telemetry_stack_free_min) {
-    g_telemetry_stack_free_min = free_bytes;
-  }
+  stack_note_free(low_water, (uint32_t)(psp - stack_start));
 }
 
 static void telemetry_record_queue_result(SedsResult result) {

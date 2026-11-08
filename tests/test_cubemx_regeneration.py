@@ -22,7 +22,7 @@ class CubeMxRegenerationContracts(unittest.TestCase):
         ioc = (ROOT / "FlightComputer26.ioc").read_text(encoding="utf-8")
         self.assertIn("ProjectManager.KeepUserCode=true", ioc)
         self.assertIn("ProjectManager.TargetToolchain=CMake", ioc)
-        self.assertIn("THREADX.TX_APP_MEM_POOL_SIZE=86016", ioc)
+        self.assertIn("THREADX.TX_APP_MEM_POOL_SIZE=98304", ioc)
 
     def test_boot_critical_board_hooks_are_in_preserved_blocks(self):
         main = (ROOT / "Core" / "Src" / "main.c").read_text(encoding="utf-8")

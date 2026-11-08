@@ -20,7 +20,8 @@
 /* Logging */
 
 #define MSP_STACK_MARGIN	32768
-#define TELEMETRY_HEAP		65536
+/* Same telemetry heap as the flight config: the task stacks take the rest. */
+#define TELEMETRY_HEAP		(48U * 1024U)
 
 #define LOG_RATE_SD	 			80
 #define LOG_RATE_GND 			2000

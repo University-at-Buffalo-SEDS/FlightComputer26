@@ -49,7 +49,9 @@ UINT create_recovery_task(TX_BYTE_POOL *);
 #define EVAL_SLEEP_RT_CONF 10
 #define EVAL_PRIORITY 5
 #define EVAL_PREEMPT_THRESHOLD 1
-#define EVAL_STACK_BYTES 8192
+/* Flight-state changes publish through the SEDSNet router's immediate send
+ * path on this stack (measured 6.4 KiB through Landed in simulation). */
+#define EVAL_STACK_BYTES (12U * 1024U)
 #define EVAL_STACK_ULONG (EVAL_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD evaluation_task;
@@ -64,7 +66,11 @@ UINT create_evaluation_task(TX_BYTE_POOL *);
 #define DIST_TIME_SLICE 25
 #define DIST_SLEEP_NO_DATA 25
 #define DIST_PRIORITY 5
-#define DIST_STACK_BYTES 8192
+/* Sensor publication, the Launch ignition request and the descent evaluator
+ * all run the SEDSNet router's immediate send path here. 8 KiB overflowed at
+ * Launch (simulation peak: 8.8 KiB at Launch, 9.3 KiB by Recovery), and a
+ * router re-initialisation from this task reaches ~13 KiB statically. */
+#define DIST_STACK_BYTES (16U * 1024U)
 #define DIST_STACK_ULONG (DIST_STACK_BYTES / sizeof(ULONG))
 
 extern TX_THREAD distribution_task;
