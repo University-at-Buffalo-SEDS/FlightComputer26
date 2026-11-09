@@ -158,6 +158,16 @@ int main(int argc,char**argv){assert(argc==2);
   unsigned before=commits;quiet=true;fc_recovery_control_service();fc_recovery_network_service();
   assert(commits==before&&!finals&&actual==5&&!gpio.ODR&&seal);
   assert(fc_recovery_request_startup(ticket)==-10);
+ }else if(!strcmp(argv[1],"manual_duplicate_identity")){
+  /* One operator Abort delivered several times: one admission, one epoch. */
+  fc_recovery_manual_stop_original_utc(5000);const uint32_t ticket=fc_recovery_epoch();assert(ticket==2);
+  fc_recovery_manual_stop_original_utc(5000);fc_recovery_manual_stop_original_utc(5000);
+  assert(fc_recovery_epoch()==ticket&&fc_recovery_abort_latched()&&seal&&!gpio.ODR);
+  /* A new Abort (new original UTC) and an unidentified legacy Stop still advance. */
+  fc_recovery_manual_stop_original_utc(6000);assert(fc_recovery_epoch()==ticket+1);
+  fc_recovery_manual_stop_original_utc(6000);assert(fc_recovery_epoch()==ticket+1);
+  fc_recovery_manual_stop();assert(fc_recovery_epoch()==ticket+2);
+  fc_recovery_manual_stop();assert(fc_recovery_epoch()==ticket+3);
  }else if(!strcmp(argv[1],"epoch_wrap")){
   owner.epoch=UINT32_MAX;assert(fc_recovery_request_startup(UINT32_MAX)==-10);
   fc_recovery_manual_stop();fc_recovery_manual_stop();assert(fc_recovery_epoch()==UINT32_MAX&&seal&&!gpio.ODR);
@@ -196,5 +206,5 @@ class FCRecoveryOwnerTests(unittest.TestCase):
   with tempfile.TemporaryDirectory()as tmp:
    p=Path(tmp);src=p/'test.c';src.write_text(STUB+actual+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),str(src),'-o',str(exe)],check=True)
-   for case in ['monitor_preflight','store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','barrier_failure','manual_barrier_failure','masked_caller','rejected_resume_manual','rejected_resume_other_holds','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
+   for case in ['monitor_preflight','store_unready','success','stop_before_high','stop_after_high','stop_during_io','io_retry','legacy_abort_cancels_reset','epoch_wrap','manual_duplicate_identity','barrier_failure','manual_barrier_failure','masked_caller','rejected_resume_manual','rejected_resume_other_holds','sensor_recovery','sensor_stop_race','legacy_sensor_cancel','manual_twice','stop_stage_requested','stop_stage_wait','stop_stage_network','stop_stage_final']:
     with self.subTest(case=case):subprocess.run([str(exe),case],check=True)

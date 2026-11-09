@@ -20,6 +20,10 @@ static volatile struct {
     bool monitor_mode, monitor_ready; /* released only by a full MCU reset */
 } owner = {.epoch = 1U};
 _Static_assert(sizeof owner <= 32U, "Bounded single FC recovery mailbox");
+/* Original UTC of the manual Stop that set the current latch. The station
+ * can deliver one operator Abort more than once (retries, relays); every
+ * copy carries the same original UTC and must not invalidate tickets again. */
+static volatile uint64_t latched_stop_source;
 
 static bool reset_active(void)
 {
@@ -95,6 +99,12 @@ void fc_recovery_manual_stop_original_utc(uint64_t source)
     const uint32_t mask = __get_PRIMASK();
     __disable_irq();
     if(board_recovery_manual_time_retired(source)){__set_PRIMASK(mask);return;}
+    if (source != 0U && source != UINT64_MAX && owner.manual_stop &&
+        latched_stop_source == source) {
+        /* Same command identity while its latch still holds: already admitted. */
+        __set_PRIMASK(mask);
+        return;
+    }
     /* FIRST retained store: an IWDG at every subsequent crash point rejects
      * old checkpoint replay. The same guard serializes every pyro HIGH. */
     const bool sealed = fc_watchdog_hold_for_operator_reset();
@@ -104,6 +114,7 @@ void fc_recovery_manual_stop_original_utc(uint64_t source)
     advance_epoch();
     if (reset_active() || !sealed) owner.phase = RESET_FAILED;
     owner.manual_stop = true;
+    latched_stop_source = source;
     owner.reset_inhibit = true;
     owner.new_flight = true;
     owner.verified_startup = false;
