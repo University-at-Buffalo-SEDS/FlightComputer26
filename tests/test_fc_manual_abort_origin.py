@@ -46,7 +46,7 @@ int main(void){
 '''
 class FCManualAbortOriginTests(unittest.TestCase):
  def test_actual_handler_and_shared_alias_auth(self):
-  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();auth=transport[transport.index('static uint8_t authorized_owner('):transport.index('uint8_t board_recovery_command_is_stale(')]
+  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();auth=transport[transport.index('static uint8_t authorized_owner('):transport.index('/* Station clock:')]
   # The recovery-only GS wrapper is excluded; both actual manual role branches remain.
   a=auth.index('static uint8_t authorized_primary(');b=auth.index('uint8_t board_recovery_manual_stop_source_allowed(');auth=auth[:a]+auth[b:]
   telemetry=(ROOT/'Core/Src/telemetry.c').read_text();start=telemetry.index('static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)');end=telemetry.index('\nstatic SedsResult Board_Recovery_handler(',start);handler=telemetry[start:end]

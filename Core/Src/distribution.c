@@ -412,6 +412,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   switch (pkt->ty)
   {
     case SEDS_DT_HEARTBEAT:
+      /* GS heartbeats keep the recovery freshness clock current. */
+      board_recovery_observe_station_time(NULL, pkt);
       return ground_heartbeat_owner_matches(pkt->sender, pkt->sender_len)
                  ? pulse_ground() : SEDS_OK;
     case SEDS_DT_FLIGHT_STATE:

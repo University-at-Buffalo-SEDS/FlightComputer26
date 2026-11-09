@@ -28,6 +28,7 @@ static uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *p){
  * actual station/floor/clock policy is covered by its dedicated source test. */
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
+static unsigned station_observed;static void board_recovery_observe_station_time(void*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p && n==1);commands++;return 42;}
@@ -42,9 +43,11 @@ int main(void){
  p.payload_len=1;p.payload=NULL;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  p.payload=&value;p.ty=SEDS_DT_FLIGHT_COMMAND;
  assert(on_fc_packet(&p,NULL)==42 && commands==1);
- p.ty=SEDS_DT_HEARTBEAT;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
+ p.ty=SEDS_DT_HEARTBEAT;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1 && station_observed==1);
  p.sender="DAQ";p.sender_len=3;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
  p.sender="@addr:3561204631";p.sender_len=16;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==2);
+ /* Every heartbeat reaches the station clock; it admits only the GS itself. */
+ assert(station_observed==3);
  p.sender="GS";p.sender_len=2;
  p.ty=999;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  assert(g_fc_endpoint_error_type==999 && g_fc_endpoint_error_result==SEDS_HANDLER_ERROR);

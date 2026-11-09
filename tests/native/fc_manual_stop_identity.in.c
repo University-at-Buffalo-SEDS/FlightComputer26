@@ -17,6 +17,8 @@ static uint8_t board_recovery_command_time_allowed(uint64_t timestamp){(void)tim
 static uint8_t board_recovery_floor_active(void){return 1;}
 /* SOURCE_FUNCTION:authorized_owner */
 /* SOURCE_FUNCTION:board_recovery_manual_stop_source_allowed */
+/* Freshness clock: never reached here, the modelled floor refuses first. */
+static __attribute__((unused)) uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)==SEDS_OK?t:0U;}
 /* SOURCE_FUNCTION:board_recovery_command_is_stale */
 /* SOURCE_FUNCTION:Manual_Abort_handler */
 static uint64_t now(void*u){(void)u;return 123456;}

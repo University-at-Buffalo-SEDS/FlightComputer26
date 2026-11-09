@@ -26,6 +26,9 @@ uint8_t board_recovery_floor_is_healthy(void){return healthy;}
 uint8_t board_recovery_floor_active(void){return active;}
 uint8_t board_recovery_command_time_allowed(uint64_t source){return source>100;}
 SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);*out=clock_now;return clock_ok?SEDS_OK:SEDS_ERR;}
+/* Station-clock fixture: no GS time observed, so freshness equals the network clock. */
+uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)?0U:t;}
+static unsigned station_observed;static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
 static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){assert(p&&n==1);states++;return SEDS_OK;}
@@ -47,6 +50,7 @@ int main(void){
  }
  ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=19000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_PERMISSION_DENIED&&commands==before);clock_ok=true;
  p.ty=SEDS_DT_FLIGHT_STATE;before=states;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&states==before);p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
+ p.ty=SEDS_DT_HEARTBEAT;p.sender="GS";p.sender_len=2;before=station_observed;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&station_observed==before+1);
  assert(on_fc_packet_impl(NULL,NULL)==SEDS_HANDLER_ERROR);p.sender_len=0;assert(on_fc_packet_impl(&p,NULL)==SEDS_HANDLER_ERROR);
  printf("actual FC source/type/readiness/floor/time matrix %u PASS\n",count);return 0;}
 '''

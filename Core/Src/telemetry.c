@@ -99,6 +99,8 @@ volatile uint32_t g_telemetry_rx_error_length __attribute__((used, externally_vi
 volatile uint8_t g_telemetry_rx_error_prefix[16] __attribute__((used, externally_visible));
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
+/* Network clock restarts after it disagreed with the station clock by >60 s. */
+volatile uint32_t g_network_clock_resyncs = 0U;
 volatile uint32_t g_telemetry_network_ready = 0U;
 volatile uint32_t g_telemetry_thread_entered __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_peer_mask = 0U;
@@ -579,6 +581,11 @@ static void telemetry_update_network_health(SedsRouter *router) {
   uint64_t network_time_ms = 0ULL;
   if (seds_router_get_network_time_ms(router, &network_time_ms) == SEDS_OK) {
     g_telemetry_timesync_valid = 1U;
+    if (board_recovery_network_clock_resync_needed(network_time_ms) &&
+        telemetry_configure_timesync_locked(router) == SEDS_OK) {
+      g_network_clock_resyncs++;
+      network_time_ms = 0ULL;
+    }
   }
   if (g_telemetry_discovery_seen != 0U &&
       g_telemetry_timesync_valid != 0U) {
