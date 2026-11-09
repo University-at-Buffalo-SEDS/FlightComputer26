@@ -90,6 +90,21 @@ int main(void) {
         self.assertIn('seds_router_log_queue_typed(', body)
         self.assertNotIn('seds_router_log_bytes(', body)
 
+    def test_flight_state_is_republished_from_launch_on(self):
+        # One-shot ordered reports lose their queued tail when a predecessor
+        # exhausts end-to-end retries; the GS must still converge on Landed.
+        telemetry = (ROOT / 'Core/Src/telemetry.c').read_text()
+        body = function(telemetry, 'telemetry_republish_flight_state')
+        self.assertIn('if (local < Launch || local > Recovery) return;', body)
+        self.assertIn('FC_STATE_REPUBLISH_MS', body)
+        self.assertIn('log_telemetry_queued_u8(SEDS_DT_FLIGHT_STATE, &value, 1U)', body)
+        self.assertIn('global_state_of(local)', body)
+        loop = telemetry[telemetry.index('void telemetry_entry(ULONG _)'):]
+        self.assertIn('telemetry_republish_flight_state();', loop)
+        fcapi = (ROOT / 'Core/Inc/fcapi.h').read_text()
+        mapping = function(fcapi, 'global_state_of')
+        self.assertNotIn('sm.global_state', mapping)
+
 
 if __name__ == '__main__':
     unittest.main()

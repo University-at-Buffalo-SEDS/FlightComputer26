@@ -1361,6 +1361,35 @@ static TX_BYTE_POOL telemetry_extra_pool;
 static uncached CHAR telemetry_extra_storage[TELEMETRY_EXTRA_HEAP];
 #endif
 
+/* From Launch on, republish the current flight state on a fixed cadence.
+ * Each transition report is a one-shot ordered managed value, and the SDK
+ * fails an ordered stream's queued tail when one report exhausts its
+ * end-to-end retries (any contracted recipient's receipt is late). In flight
+ * that dropped Ascent, Coast, Descent and Landed at the ground station, which
+ * then never saw the FC-owned Landed. The repeat only restates the FC's own
+ * current state; boards ignore non-station reports and the GS acts on change. */
+#ifndef FC_STATE_REPUBLISH_MS
+#define FC_STATE_REPUBLISH_MS 2000U
+#endif
+volatile uint32_t g_flight_state_republished __attribute__((used, externally_visible)) = 0U;
+
+static void telemetry_republish_flight_state(void)
+{
+#ifdef TELEMETRY_ENABLED
+  static uint32_t last_ms;
+  static bool started;
+  const state local = current();
+  if (local < Launch || local > Recovery) return;
+  const uint32_t now_ms = HAL_GetTick();
+  if (started && (uint32_t)(now_ms - last_ms) < FC_STATE_REPUBLISH_MS) return;
+  started = true;
+  last_ms = now_ms;
+  const uint8_t value = (uint8_t)global_state_of(local);
+  if (log_telemetry_queued_u8(SEDS_DT_FLIGHT_STATE, &value, 1U) == SEDS_OK)
+    g_flight_state_republished++;
+#endif
+}
+
 void telemetry_entry(ULONG _)
 {
   g_telemetry_thread_entered++;
@@ -1416,6 +1445,7 @@ void telemetry_entry(ULONG _)
     g_telemetry_service_stage = 63U;
 
     telemetry_record_queue_result(k);
+    telemetry_republish_flight_state();
 
     if (telemetry_poll_timesync() != SEDS_OK)
       g_telemetry_timesync_poll_errors++;

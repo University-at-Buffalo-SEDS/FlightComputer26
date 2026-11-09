@@ -207,25 +207,30 @@ static inline bool beyond(state bound)
   return current() > bound;
 }
 
-static inline gnd_state *to_global_state(state local)
+/* Pure local -> network (GS FlightState) mapping. */
+static inline gnd_state global_state_of(state local)
 {
   switch (local) {
-    case Startup:   sm.global_state = G_Startup;    break;
+    case Startup:   return G_Startup;
     case Postinit:
-    case Armed:     sm.global_state = G_Armed;      break;
-    case Launch:    sm.global_state = G_Launch;     break;
-    case Ascent:    sm.global_state = G_Ascent;     break;
-    case Coast:     sm.global_state = G_Coast;      break;
-    case Apogee:    sm.global_state = G_Apogee;     break;
-    case Descent:   sm.global_state = G_Descent;    break;
-    case Reefing:   sm.global_state = G_Reefing;    break;
-    case Landed:    sm.global_state = G_Landed;     break;
-    case Recovery:  sm.global_state = G_Recovery;   break;
+    case Armed:     return G_Armed;
+    case Launch:    return G_Launch;
+    case Ascent:    return G_Ascent;
+    case Coast:     return G_Coast;
+    case Apogee:    return G_Apogee;
+    case Descent:   return G_Descent;
+    case Reefing:   return G_Reefing;
+    case Landed:    return G_Landed;
+    case Recovery:  return G_Recovery;
 
     /* Something went terribly wrong */
-    default:        sm.global_state = G_Aborted;
+    default:        return G_Aborted;
   }
+}
 
+static inline gnd_state *to_global_state(state local)
+{
+  sm.global_state = global_state_of(local);
   return &sm.global_state;
 }
 
