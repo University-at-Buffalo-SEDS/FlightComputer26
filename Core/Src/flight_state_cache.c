@@ -23,7 +23,6 @@ volatile uint32_t g_flight_state_cache_restores __attribute__((used, externally_
 volatile uint32_t g_flight_state_cache_writes __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_flight_state_cache_updates __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_flight_state_cache_errors __attribute__((used, externally_visible)) = 0U;
-volatile uint32_t g_flight_state_cache_reports_ignored __attribute__((used, externally_visible)) = 0U;
 
 static bool g_restore_attempted;
 static bool g_has_value;
@@ -152,21 +151,17 @@ static SedsResult persist_update(const SedsPacketView *packet, void *user)
         if (packet != NULL && packet->ty == SEDS_DT_FLIGHT_STATE)
             (void)clear_managed_cache();
         g_flight_state_cache_errors++;
-        return SEDS_HANDLER_ERROR;
+        return SEDS_OK;
     }
 
     if (!board_recovery_managed_update_allowed(packet)) {
         (void)clear_managed_cache();
-        /* The SDK runs this callback inside its own transmit of the FC's
-         * FLIGHT_STATE report and inside every relay of it. Failing a report
-         * that is not a station write aborted that transmit/relay, so the GS
-         * never saw a single FC flight state. Ignore it without applying. */
-        if (board_recovery_managed_report_ignorable(packet)) {
-            ++g_flight_state_cache_reports_ignored;
-            return SEDS_OK;
-        }
-        ++g_flight_state_cache_errors;
-        return SEDS_HANDLER_ERROR;
+        /* The SDK runs this callback inside its own transmit, every relay and
+         * every receipt. A failure aborted the FC's own report and withheld
+         * the ACK of a refused (stale/unready) station write, so the GS
+         * retransmitted it forever. Refuse without applying; never fail. */
+        ++g_reliable_refusal_count;
+        return SEDS_OK;
     }
     const uint8_t state = packet->payload[0];
     const SedsResult apply_result = flight_state_cache_apply_network_update(packet);

@@ -60,22 +60,21 @@ int main(void) {
                             str(src), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
-    def test_flight_state_callback_ignores_reports_before_failing(self):
+    def test_flight_state_callback_never_fails_a_refusal(self):
+        # Reports and refused station writes alike: retired, counted, acknowledged.
         text = (ROOT / 'Core/Src/flight_state_cache.c').read_text()
         start = text.index('static SedsResult persist_update(const SedsPacketView *packet, void *user)\n{')
         body = function(text[start:], 'persist_update')
         denied = body.index('if (!board_recovery_managed_update_allowed(packet))')
-        ignored = body.index('board_recovery_managed_report_ignorable(packet)', denied)
-        self.assertLess(ignored, body.index('return SEDS_HANDLER_ERROR;', denied))
-        self.assertIn('return SEDS_OK;', body[ignored:body.index('return SEDS_HANDLER_ERROR;', denied)])
-        header = (ROOT / 'Core/Inc/board_recovery_transport.h').read_text()
-        self.assertIn('board_recovery_managed_report_ignorable(const SedsPacketView *packet);', header)
+        refusal = body[denied:body.index('}', denied)]
+        self.assertIn('++g_reliable_refusal_count;', refusal)
+        self.assertIn('return SEDS_OK;', refusal)
+        self.assertNotIn('SEDS_HANDLER_ERROR', refusal)
 
     def test_fc_endpoint_handler_does_not_fail_its_own_report(self):
         body = function((ROOT / 'Core/Src/distribution.c').read_text(), 'on_fc_packet_impl')
-        gate = body.index('if (pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))')
-        self.assertIn('return board_recovery_managed_report_ignorable(pkt) ? SEDS_OK : SEDS_PERMISSION_DENIED;',
-                      body[gate:gate + 300])
+        gate = body.index('if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))')
+        self.assertIn('++g_reliable_refusal_count;\n    return SEDS_OK;', body[gate:gate + 300])
 
     def test_flight_state_report_is_queued_off_the_evaluation_stack(self):
         # Sent directly from the evaluation task, the now-delivered report ran

@@ -48,13 +48,13 @@ static void process_config_update(fc_msg message){(void)message;assert(false);}
 static void run_queued_owner(void){assert(queued&&queued_message==Launch_Signal);queued=false;decode_flight_message(queued_message);}
 static void controller_probe(SedsRouter*r,const char*kind){
  (void)r;uint8_t command=1;SedsPacketView packet={.ty=SEDS_DT_FLIGHT_COMMAND,.sender="RRLS",.sender_len=4,.payload=&command,.payload_len=1,.timestamp=10003};clock_ms=10003;unsigned reads=media_reads,writes=media_writes;uint32_t epoch=fc_recovery_epoch();assert(epoch==2&&!fc_recovery_abort_latched()&&persistent_store_controls_ready());
- const char*bad[]={"PB","@addr:9999"};for(unsigned i=0;i<2;i++){packet.sender=bad[i];packet.sender_len=strlen(bad[i]);assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued);}
- packet.sender="RRLS";packet.sender_len=4;const uint64_t stale[]={0,UINT64_MAX,10001,4999,11004};for(unsigned i=0;i<5;i++){packet.timestamp=stale[i];assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued);}
+ const char*bad[]={"PB","@addr:9999"};for(unsigned i=0;i<2;i++){packet.sender=bad[i];packet.sender_len=strlen(bad[i]);assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued);}
+ packet.sender="RRLS";packet.sender_len=4;const uint64_t stale[]={0,UINT64_MAX,10001,4999,11004};for(unsigned i=0;i<5;i++){packet.timestamp=stale[i];assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued);}
  /* Without a network clock, freshness falls back to the station clock (the latest GS QUERY time), which still bounds future-dated commands. */
- packet.timestamp=11004;controller_clock_ok=false;assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued);controller_clock_ok=true;packet.timestamp=10003;
+ packet.timestamp=11004;controller_clock_ok=false;assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued);controller_clock_ok=true;packet.timestamp=10003;
  uint8_t aborted=15;packet.ty=SEDS_DT_FLIGHT_STATE;packet.payload=&aborted;/* a non-station FSTATE report is ignored (delivery not failed), never applied */assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!fc_recovery_abort_latched()&&!queued);packet.ty=SEDS_DT_FLIGHT_COMMAND;packet.payload=&command;
- if(!strcmp(kind,"held")){fc_recovery_manual_stop();assert(fc_recovery_abort_latched());assert(on_fc_packet_impl(&packet,NULL)!=SEDS_OK&&!queued&&owner_deliveries==0&&media_reads==reads&&media_writes==writes&&!highs);puts("actual current manual Stop blocks RRLS ordinary launch without NVM/high PASS");return;}
- if(!strcmp(kind,"pending")){uint8_t body[32]={1,0};put64(body+4,101);put64(body+24,88);uint32_t endpoint=SEDS_EP_BOARD_RECOVERY;SedsPacketView q={.ty=200,.sender="GS",.sender_len=2,.payload=body,.payload_len=32,.timestamp=10003,.endpoints=&endpoint,.num_endpoints=1};request(r,&q,false);body[1]=1;put64(body+4,102);put64(body+12,board_recovery_boot_current());body[20]=(uint8_t)epoch;q.timestamp=clock_ms=10004;unsigned replies=app_replies;assert(board_recovery_handle(r,&q,endpoint,123)==SEDS_OK&&app_replies==replies&&!persistent_store_controls_ready());packet.timestamp=10004;assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued&&owner_deliveries==0&&!highs);puts("actual durable-recovery Pending gate blocks RRLS ordinary launch PASS");return;}
+ if(!strcmp(kind,"held")){fc_recovery_manual_stop();assert(fc_recovery_abort_latched());assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued&&owner_deliveries==0&&media_reads==reads&&media_writes==writes&&!highs);puts("actual current manual Stop blocks RRLS ordinary launch without NVM/high PASS");return;}
+ if(!strcmp(kind,"pending")){uint8_t body[32]={1,0};put64(body+4,101);put64(body+24,88);uint32_t endpoint=SEDS_EP_BOARD_RECOVERY;SedsPacketView q={.ty=200,.sender="GS",.sender_len=2,.payload=body,.payload_len=32,.timestamp=10003,.endpoints=&endpoint,.num_endpoints=1};request(r,&q,false);body[1]=1;put64(body+4,102);put64(body+12,board_recovery_boot_current());body[20]=(uint8_t)epoch;q.timestamp=clock_ms=10004;unsigned replies=app_replies;assert(board_recovery_handle(r,&q,endpoint,123)==SEDS_OK&&app_replies==replies&&!persistent_store_controls_ready());packet.timestamp=10004;assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued&&owner_deliveries==0&&!highs);puts("actual durable-recovery Pending gate blocks RRLS ordinary launch PASS");return;}
  if(!strcmp(kind,"GS")){packet.sender="GS";packet.sender_len=2;}
  assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&queued&&g_network_flight_commands_accepted==1);run_queued_owner();assert(owner_deliveries==1&&fc_recovery_epoch()==epoch&&fc_recovery_requires_new_flight());
  sm.flight=Postinit;packet.timestamp=clock_ms=10004;assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK);run_queued_owner();assert(owner_deliveries==2&&fc_recovery_epoch()==epoch&&fc_recovery_requires_new_flight());
@@ -66,7 +66,7 @@ static void controller_probe(SedsRouter*r,const char*kind){
  assert(fc_recovery_flight_is_admitted()&&!fc_recovery_holds_sequence()&&!fc_recovery_inhibits_pyro());
  deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(highs==2&&gpio.ODR==3);
  /* Actual distribution callback keeps ordinary controller mutation closed. */
- assert(on_fc_packet_impl(&packet,NULL)==SEDS_PERMISSION_DENIED&&!queued);
+ assert(on_fc_packet_impl(&packet,NULL)==SEDS_OK&&!queued);
  /* Actual manual-ABORT transport remains separate from storage/controller gates. */
  static const uint8_t marker[]="SEDS_MANUAL_ABORT_V1:K";
  SedsPacketView stop={.ty=SEDS_DT_ABORT,.sender="PB",.sender_len=2,.payload=marker,.payload_len=sizeof(marker)-1U,.timestamp=10006};
@@ -90,7 +90,7 @@ static void controller_probe(SedsRouter*r,const char*kind){
    arm_ready=true;sm.flight=Postinit;
    assert(!fc_recovery_admit_new_flight(false)&&!fc_recovery_admit_new_flight(true)&&!fc_recovery_flight_is_admitted());
    uint8_t launch=1;SedsPacketView command={.ty=SEDS_DT_FLIGHT_COMMAND,.sender="GS",.sender_len=2,.payload=&launch,.payload_len=1,.timestamp=10002};
-   assert(on_fc_packet_impl(&command,NULL)==SEDS_PERMISSION_DENIED&&!queued&&!highs);
+   assert(on_fc_packet_impl(&command,NULL)==SEDS_OK&&!queued&&!highs);
    deployment_pulse_start(false,false);deployment_pulse_start(true,false);assert(!highs&&!gpio.ODR);
    static const uint8_t marker[]="SEDS_MANUAL_ABORT_V1:K";
    command.ty=SEDS_DT_ABORT;command.payload=marker;command.payload_len=sizeof(marker)-1U;g_router.r=r;

@@ -23,7 +23,7 @@ typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
 static unsigned commands, heartbeats;
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){return p!=NULL;}
-static uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *p){(void)p;return 0;}
+static volatile uint32_t g_reliable_refusal_count;
 /* Existing receipt-only fixture: controller readiness is conservative too;
  * actual station/floor/clock policy is covered by its dedicated source test. */
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p){return p!=NULL;}
@@ -49,8 +49,9 @@ int main(void){
  /* Every heartbeat reaches the station clock; it admits only the GS itself. */
  assert(station_observed==3);
  p.sender="GS";p.sender_len=2;
- p.ty=999;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
- assert(g_fc_endpoint_error_type==999 && g_fc_endpoint_error_result==SEDS_HANDLER_ERROR);
+ /* Endpoint fan-out of a type this dispatcher does not own (the station
+  * ABORT names FLIGHT_CONTROLLER) is not a delivery failure. */
+ p.ty=999;assert(on_fc_packet(&p,NULL)==SEDS_OK&&commands==1);
  p.sender_len=0;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  assert(on_fc_packet(NULL,NULL)==SEDS_HANDLER_ERROR);
  assert(g_fc_endpoint_error_type==0 && g_fc_endpoint_error_result==SEDS_HANDLER_ERROR);

@@ -16,7 +16,8 @@ typedef struct {uint32_t ty;const char*sender;size_t sender_len;const uint8_t*pa
 #define SEDS_DT_ABORT 135612662U
 static SedsRouter router;
 static struct {SedsRouter*r;}g_router={&router};
-static unsigned stops;
+static unsigned stops;static bool latched;static volatile uint32_t g_reliable_refusal_count;
+static bool fc_recovery_abort_latched(void){return latched;}
 static void fc_recovery_manual_stop(void){++stops;}
 static void fc_recovery_manual_stop_original_utc(uint64_t source){(void)source;fc_recovery_manual_stop();}
 static bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*owner,size_t owner_n){
@@ -36,6 +37,8 @@ int main(void){
  for(unsigned i=0;i<4;i++){p.sender=allowed[i];p.sender_len=strlen(p.sender);unsigned old=stops;assert(Manual_Abort_handler(&p,0)==0&&stops==old+1);}
  const char *rejected[]={"PB","gs","@addr:0","@addr:3456","@addr:+1234","@addr:4294967296"};
  for(unsigned i=0;i<6;i++){p.sender=rejected[i];p.sender_len=strlen(p.sender);unsigned old=stops;assert(Manual_Abort_handler(&p,0)==SEDS_PERMISSION_DENIED&&stops==old);}
+ /* Already stopped: an unidentified copy is acknowledged, nothing applied. */
+ latched=true;for(unsigned i=0;i<6;i++){p.sender=rejected[i];p.sender_len=strlen(p.sender);unsigned old=stops,refused=g_reliable_refusal_count;assert(Manual_Abort_handler(&p,0)==0&&stops==old&&g_reliable_refusal_count==refused+1);}latched=false;
  p.sender="GS";p.sender_len=2;
  const char *ignored[]={"Manual Abort Command Issued","SEDS_AUTO_ABORT_V1:","SEDS_MANUAL_ABORT_V1:X","SEDS_MANUAL_ABORT_V1",""};
  for(unsigned i=0;i<5;i++){p.payload=(const uint8_t*)ignored[i];p.payload_len=strlen(ignored[i]);unsigned old=stops;assert(Manual_Abort_handler(&p,0)==0&&stops==old);}

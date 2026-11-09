@@ -308,7 +308,10 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
 
 #endif /* MESSAGE_BATCHING_ENABLED */
 
-  return st == TX_SUCCESS ? SEDS_OK : SEDS_ERR;
+  /* An invalid or unadmitted command is refused for good: acknowledge it so
+   * it is not retransmitted (and run late). A full queue is retried. */
+  if (st == INVALID_MESSAGE_STATUS) ++g_reliable_refusal_count;
+  return st == TX_SUCCESS || st == INVALID_MESSAGE_STATUS ? SEDS_OK : SEDS_ERR;
 }
 
 static inline SedsResult pulse_ground(void)
@@ -322,15 +325,18 @@ static inline SedsResult pulse_ground(void)
 static inline SedsResult
 update_ascent_biases(const uint8_t *data, size_t len)
 {
+  /* Malformed or in-flight biases are refused for good, yet acknowledged. */
   if (data == NULL || len != sizeof(ekf_bias))
   {
-    return SEDS_ERR;
+    ++g_reliable_refusal_count;
+    return SEDS_OK;
   }
 
   if (load(&g_conf, Acq) & option(Launch_Requested))
   {
     message(id "biases blocked: flight", true);
-    return SEDS_ERR;
+    ++g_reliable_refusal_count;
+    return SEDS_OK;
   }
 
   /* Copy before typed access: the network buffer may be unaligned. */
@@ -400,14 +406,16 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   }
 
   // led_toggle(LED1_PORT, LED1_PIN);
-  /* The SDK also delivers this FC's own FLIGHT_STATE report here before
-   * sending it; denying it aborted the send, so the GS never saw an FC
-   * flight state. A non-station report is ignored, never applied. */
-  if (pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))
-    return board_recovery_managed_report_ignorable(pkt) ? SEDS_OK : SEDS_PERMISSION_DENIED;
-  if ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES) &&
-      !board_recovery_controller_update_allowed(pkt))
-    return SEDS_PERMISSION_DENIED;
+  /* A refused delivery (this FC's own report, a stale or unready station
+   * write, an unadmitted controller update) is never applied, but failing it
+   * withheld the SDK receipt: the sender retransmitted it forever. */
+  if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt)) ||
+      ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES) &&
+       !board_recovery_controller_update_allowed(pkt)))
+  {
+    ++g_reliable_refusal_count;
+    return SEDS_OK;
+  }
 
   switch (pkt->ty)
   {
@@ -433,7 +441,9 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
                  ? SEDS_OK : SEDS_HANDLER_ERROR;
   }
 
-  return SEDS_HANDLER_ERROR;
+  /* Endpoint fan-out (the station ABORT names FLIGHT_CONTROLLER; its own
+   * handler owns it): not this dispatcher's type, nothing to apply. */
+  return SEDS_OK;
 }
 
 /* Retain the actual endpoint failure, separate from transport backpressure. */

@@ -23,7 +23,7 @@ SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*,unsigned,bo
 ''',
 "sedsnet_config.h": '#pragma once\n#define SEDS_DT_FLIGHT_STATE 444U\n',
 "main.h": '#pragma once\n#include <stdint.h>\nuint32_t HAL_GetTick(void);\n',
-"board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\n',
+"board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nextern volatile uint32_t g_reliable_refusal_count;\n',
 "persistent_store.h": r'''#pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -48,6 +48,7 @@ HARNESS = r'''
 #include <string.h>
 #include <stdio.h>
 volatile uint32_t g_telemetry_discovery_seen;
+volatile uint32_t g_reliable_refusal_count;
 static SedsResult (*callback)(const SedsPacketView*,void*);
 static unsigned writes,clears,requests;
 static uint8_t stored=5,have_stored=1,allow_update=1;
@@ -110,7 +111,8 @@ int main(int argc,char **argv){
   fail_invalidate=0;assert(flight_state_cache_reset_startup()==0&&flight_state_cache_value()==0);
  }else if(!strcmp(argv[1],"stale_retirement")){
   assert(flight_state_cache_reset_startup()==0);unsigned w=writes,c=clears;
-  allow_update=0;assert(update(3)==-9&&flight_state_cache_value()==0&&stored==0&&writes==w&&clears==c+1&&callback);
+  /* Refused, never applied or persisted, yet acknowledged (SEDS_OK). */
+  allow_update=0;unsigned refused=g_reliable_refusal_count;assert(update(3)==0&&g_reliable_refusal_count==refused+1&&flight_state_cache_value()==0&&stored==0&&writes==w&&clears==c+1&&callback);
   allow_update=1;assert(update(1)==0&&flight_state_cache_value()==1&&stored==1&&writes==w+1);
  }else if(!strcmp(argv[1],"report_ignored")){
   /* The FC's own (or a relayed FC) report: never applied or persisted, cache
@@ -118,7 +120,7 @@ int main(int argc,char **argv){
   assert(flight_state_cache_reset_startup()==0);unsigned w=writes,c=clears;
   allow_update=0;report_ignorable=1;
   assert(update(8)==0&&flight_state_cache_value()==0&&stored==0&&writes==w&&clears==c+1);
-  report_ignorable=0;assert(update(8)==-9&&writes==w);
+  report_ignorable=0;assert(update(8)==0&&flight_state_cache_value()==0&&writes==w);
  }else if(!strcmp(argv[1],"ordinary_retry")){
   fail_write=1;assert(update(0)==-9&&flight_state_cache_value()==0);
   assert(update(0)==-9&&writes==2);fail_write=0;
@@ -127,7 +129,7 @@ int main(int argc,char **argv){
   fail_apply=1;assert(update(3)==-14&&flight_state_cache_value()==5&&stored==5&&writes==0&&clears==1&&callback);
   fail_apply=0;assert(update(3)==0&&flight_state_cache_value()==3&&stored==3&&writes==1&&clears==1);
  }else if(!strcmp(argv[1],"malformed_retirement")){
-  assert(update(255)==-9&&flight_state_cache_value()==5&&stored==5&&writes==0&&clears==1&&callback);
+  assert(update(255)==0&&flight_state_cache_value()==5&&stored==5&&writes==0&&clears==1&&callback);
  }else assert(!"unknown case");
  puts(argv[1]);return 0;
 }

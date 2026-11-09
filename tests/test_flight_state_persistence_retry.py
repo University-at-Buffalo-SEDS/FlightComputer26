@@ -23,7 +23,7 @@ SedsResult seds_router_enable_network_variable(SedsRouter*,uint32_t,bool,bool);
 SedsResult seds_router_on_network_variable_update(SedsRouter*,uint32_t,SedsResult(*)(const SedsPacketView*,void*),void*);
 SedsResult seds_router_request_managed_variable(SedsRouter*,uint32_t);
 ''',
-    "board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\n',
+    "board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nextern volatile uint32_t g_reliable_refusal_count;\n',
     "sedsnet_config.h": "#pragma once\n#define SEDS_DT_FLIGHT_STATE 444U\n",
     "main.h": "#pragma once\n#include <stdint.h>\nuint32_t HAL_GetTick(void);\n",
     "persistent_store.h": r'''
@@ -47,6 +47,7 @@ HARNESS = r'''
 #include <stdio.h>
 #include <string.h>
 volatile uint32_t g_telemetry_discovery_seen;
+volatile uint32_t g_reliable_refusal_count;
 extern volatile uint32_t g_flight_state_cache_value;
 extern volatile uint32_t g_flight_state_cache_restores;
 extern volatile uint32_t g_flight_state_cache_writes;
@@ -138,13 +139,14 @@ int main(int argc,char **argv) {
   assert(update(1)==SEDS_HANDLER_ERROR && write_attempts==0);
   assert(applied==1 && flight_state_cache_value()==1 && g_flight_state_cache_errors==3);
  }else if(!strcmp(argv[1],"invalid_packet")){
+  /* Malformed values are refused for good: acknowledged, never applied. */
   uint8_t state=16;SedsPacketView packet={SEDS_DT_FLIGHT_STATE,&state,1};
-  assert(callback(NULL,NULL)==SEDS_HANDLER_ERROR);
-  assert(callback(&packet,NULL)==SEDS_HANDLER_ERROR);
-  state=1;packet.payload_len=0;assert(callback(&packet,NULL)==SEDS_HANDLER_ERROR);
-  packet.payload_len=2;assert(callback(&packet,NULL)==SEDS_HANDLER_ERROR);
-  packet.payload_len=1;packet.ty=0;assert(callback(&packet,NULL)==SEDS_HANDLER_ERROR);
-  packet.ty=SEDS_DT_FLIGHT_STATE;packet.payload=NULL;assert(callback(&packet,NULL)==SEDS_HANDLER_ERROR);
+  assert(callback(NULL,NULL)==SEDS_OK);
+  assert(callback(&packet,NULL)==SEDS_OK);
+  state=1;packet.payload_len=0;assert(callback(&packet,NULL)==SEDS_OK);
+  packet.payload_len=2;assert(callback(&packet,NULL)==SEDS_OK);
+  packet.payload_len=1;packet.ty=0;assert(callback(&packet,NULL)==SEDS_OK);
+  packet.ty=SEDS_DT_FLIGHT_STATE;packet.payload=NULL;assert(callback(&packet,NULL)==SEDS_OK);
   assert(write_attempts==0 && apply_attempts==0 && !flight_state_cache_has_value());
  }else if(!strcmp(argv[1],"poll")){
   tick=500;assert(flight_state_cache_poll(&router)==SEDS_OK && requests==0);

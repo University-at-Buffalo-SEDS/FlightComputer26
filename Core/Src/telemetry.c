@@ -895,8 +895,12 @@ static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)
   if(packet->payload==NULL)return SEDS_OK;
   bool known=packet->payload_len==sizeof manual&&!memcmp(packet->payload,manual,sizeof manual-1U)&&packet->payload[sizeof manual-1U]=='K';
   if(!known&&(packet->payload_len!=sizeof manual-1U||memcmp(packet->payload,manual,sizeof manual-1U)))return SEDS_OK;
-  if (!board_recovery_manual_stop_source_allowed(g_router.r, packet))
-    return SEDS_PERMISSION_DENIED;
+  /* An unidentified source is acknowledged only while the FC is already
+   * stopped; otherwise it stays undelivered so the sender retries it. */
+  if (!board_recovery_manual_stop_source_allowed(g_router.r, packet)) {
+    if (!fc_recovery_abort_latched()) return SEDS_PERMISSION_DENIED;
+    ++g_reliable_refusal_count; return SEDS_OK;
+  }
   if(known)fc_recovery_manual_stop_original_utc(packet->timestamp);else fc_recovery_manual_stop();
   return SEDS_OK; /* Admission only: actual GPIO/evaluator readback is QUERY. */
 }
