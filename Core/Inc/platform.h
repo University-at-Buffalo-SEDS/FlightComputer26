@@ -232,10 +232,12 @@ extern uint8_t sdmmc_ready;
   log_telemetry_asynchronous(SEDS_DT_VALVE_COMMAND,           \
                              &(cmd), 1, sizeof(uint8_t))      \
 
+/* Queued: the SDK's managed-variable cache, local endpoint delivery and
+ * route selection for FLIGHT_STATE run on the telemetry task, never on the
+ * evaluation or recovery task stack that changed the state. */
 #define log_flight_state(state)                               \
-  log_telemetry_asynchronous(SEDS_DT_FLIGHT_STATE,            \
-                             (const void *)(state),           \
-                             1, sizeof(uint8_t))              \
+  log_telemetry_queued_u8(SEDS_DT_FLIGHT_STATE,               \
+                          (const uint8_t *)(state), 1)        \
 
 #define log_f32(type, amount, buf)                            \
   log_telemetry_asynchronous((type), (buf), (amount),         \

@@ -77,6 +77,19 @@ int main(void) {
         self.assertIn('return board_recovery_managed_report_ignorable(pkt) ? SEDS_OK : SEDS_PERMISSION_DENIED;',
                       body[gate:gate + 300])
 
+    def test_flight_state_report_is_queued_off_the_evaluation_stack(self):
+        # Sent directly from the evaluation task, the now-delivered report ran
+        # the SDK's managed-variable and route work on its 12 KiB stack and
+        # hard-faulted the FC at T+6 s in simulation.
+        platform = (ROOT / 'Core/Inc/platform.h').read_text()
+        start = platform.index('#ifdef TELEMETRY_ENABLED') if '#ifdef TELEMETRY_ENABLED' in platform else 0
+        macro = platform[platform.index('#define log_flight_state(state)', start):][:200]
+        self.assertIn('log_telemetry_queued_u8(SEDS_DT_FLIGHT_STATE', macro)
+        telemetry = (ROOT / 'Core/Src/telemetry.c').read_text()
+        body = function(telemetry, 'log_telemetry_queued_u8')
+        self.assertIn('seds_router_log_queue_typed(', body)
+        self.assertNotIn('seds_router_log_bytes(', body)
+
 
 if __name__ == '__main__':
     unittest.main()

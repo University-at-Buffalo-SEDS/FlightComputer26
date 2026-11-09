@@ -1051,6 +1051,26 @@ SedsResult log_telemetry_string_asynchronous(SedsDataType data_type, const char 
 }
 
 
+SedsResult log_telemetry_queued_u8(SedsDataType data_type, const uint8_t *data,
+                                   size_t element_count) {
+#ifdef TELEMETRY_ENABLED
+  if (!data || element_count == 0U) return SEDS_BAD_ARG;
+  if (!telemetry_router_enter()) return SEDS_BAD_ARG;
+  SedsResult result = SEDS_ERR;
+  if (g_router.r || init_telemetry_router() == SEDS_OK) {
+    result = seds_router_log_queue_typed(g_router.r, data_type, data, element_count,
+                                         sizeof(uint8_t), SEDS_EK_UNSIGNED);
+  }
+  if (!telemetry_router_leave() && result == SEDS_OK) return SEDS_ERR;
+  return result;
+#else
+  (void)data_type;
+  print_data_no_telem((void *)data, element_count);
+  return SEDS_OK;
+#endif
+}
+
+
 static SedsResult dispatch_tx_queue_locked(void) {
 #ifndef TELEMETRY_ENABLED
   return SEDS_OK;

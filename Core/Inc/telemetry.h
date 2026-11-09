@@ -30,6 +30,12 @@ SedsResult log_telemetry_asynchronous(SedsDataType data_type, const void *data,
 
 SedsResult log_telemetry_string_asynchronous(SedsDataType data_type, const char *str);
 
+/* Queue one unsigned-byte publication for the telemetry task to send. Use it
+ * from small task stacks: the SDK's managed-variable/route work then runs on
+ * the telemetry task's stack, not the caller's. */
+SedsResult log_telemetry_queued_u8(SedsDataType data_type, const uint8_t *data,
+                                   size_t element_count);
+
 SedsResult dispatch_tx_queue(void);
 
 void rx_asynchronous(const uint8_t *bytes, size_t len);
