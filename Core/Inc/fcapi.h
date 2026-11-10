@@ -302,6 +302,26 @@ static inline void message(const char *msg, bool critical)
 
 /* TODO logging errors without double vsnprintf */
 
+/* A diagnostic for the FC's own log only: kept off the shared radio. */
+static inline void
+log_metric_local(const char *msg, fi32 metric)
+{
+#ifdef SD_AVAILABLE
+  if (timer_probe(MessageLocal, rates.sd))
+  {
+    char buf[MAX_METRIC_REPORT_SIZE];
+    int n = snprintf(buf, sizeof buf, "%s: %d", msg, metric);
+    if (n > 0 && n < sizeof buf)
+    {
+      sd_append_string(SEDS_DT_MESSAGE_DATA, buf);
+    }
+  }
+#else
+  (void)msg;
+  (void)metric;
+#endif
+}
+
 static inline void
 log_metric(const char *msg, fi32 metric, bool critical)
 {

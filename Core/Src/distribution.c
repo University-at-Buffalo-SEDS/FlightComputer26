@@ -781,7 +781,7 @@ static inline void data_streaming_mode(void)
       if (++ctr_baro % 61 == 0 /* Golang! */)
       {
         float avg = (float)acc_baro / (float)ctr_baro;
-        log_metric(id "Baro interval", (fi32) avg, false);
+        log_metric_local(id "Baro interval", (fi32) avg);
       }
     }
     if ((imu & (Accl_Mask | Gyro_Mask)) && maybe_log_measm(IMU, &meas.accl))
