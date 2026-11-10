@@ -1415,6 +1415,25 @@ static void telemetry_republish_flight_state(void)
 #endif
 }
 
+/* One BOARD_STATE_STATUS on the first edge of an Abort latch episode
+ * (fc_recovery_abort_latched() or In_Aborted_State), so the station sees it
+ * even while its ordered queries wait. A latch already present at the first
+ * pass (restored at boot) or set by recovery commissioning owes nothing; a
+ * refused push is retried on the next pass while the latch holds. */
+static void telemetry_push_abort_status(void)
+{
+#ifdef TELEMETRY_ENABLED
+  static uint8_t episode; /* 0 unobserved, 1 clear, 2 latched and settled, 3 push owed */
+  const bool latched = fc_recovery_abort_latched() || (g_conf & option(In_Aborted_State));
+  if (!latched) episode = 1U;
+  else if (episode == 1U) episode = board_commissioning_pending() ? 2U : 3U;
+  else if (episode == 0U) episode = 2U;
+  if (episode != 3U || !telemetry_router_enter()) return;
+  if (g_router.r && board_recovery_push_abort_status(g_router.r) == SEDS_OK) episode = 2U;
+  (void)telemetry_router_leave();
+#endif
+}
+
 void telemetry_entry(ULONG _)
 {
   g_telemetry_thread_entered++;
@@ -1471,6 +1490,7 @@ void telemetry_entry(ULONG _)
 
     telemetry_record_queue_result(k);
     telemetry_republish_flight_state();
+    telemetry_push_abort_status();
 
     if (telemetry_poll_timesync() != SEDS_OK)
       g_telemetry_timesync_poll_errors++;
