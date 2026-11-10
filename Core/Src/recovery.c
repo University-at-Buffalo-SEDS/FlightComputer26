@@ -356,13 +356,14 @@ static inline void manual_deployment(bool apogee, bool force, bool manual)
   }
   if (apogee)
   {
+    /* A refused pulse (reported by release_parachute) keeps the state. */
+    if (!release_parachute(force, manual)) return;
     {
       const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
       fc_recovery_ota_reset_retire_locked();
       sm.flight = Descent;
       __set_PRIMASK(reset_mask);
     }
-    release_parachute(force, manual);
 #ifdef TELEMETRY_ENABLED
     av_bay_underglow_signal(2U);
 #else
