@@ -176,6 +176,8 @@ class BaroscopeTests(unittest.TestCase):
             process.terminate.assert_called_once()
             connection.close.assert_called_once()
         self.assertIn('adapter serial TESTSERIAL',commands)
+        # The single auto-detected probe is opened without a serial filter.
+        self.assertFalse(any(c.startswith('adapter serial') for c in scope.OpenOCDProbe('fake-cli',None).commands()))
         self.assertIn('target create fc.cpu cortex_m -dap fc.dap -ap-num 1',commands)
         self.assertIn('bindto 127.0.0.1',commands)
         self.assertIn('tcl_port 0',commands)

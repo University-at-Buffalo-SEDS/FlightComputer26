@@ -167,7 +167,7 @@ class InconsistentRead(RuntimeError):
 
 class OpenOCDProbe:
     def __init__(self, executable, serial, frequency=1000, timeout=15):
-        if not re.fullmatch(r'[A-Za-z0-9]+',serial):
+        if serial is not None and not re.fullmatch(r'[A-Za-z0-9]+',serial):
             raise ValueError('Invalid ST-Link serial number')
         self.executable, self.serial = executable, serial
         self.frequency, self.timeout = frequency, timeout
@@ -176,8 +176,11 @@ class OpenOCDProbe:
     def commands(self):
         # AP1 is the H523 core; AP0 is debug authentication. No board/flash
         # hooks, halt/reset commands, or externally accessible debug servers.
+        # serial None: the only attached probe. OpenOCD 0.12 on macOS cannot
+        # read STLINK-V3 serial descriptors, so a filter would never match.
         return ['source [find interface/stlink-dap.cfg]',
-                        'transport select dapdirect_swd',f'adapter serial {self.serial}',
+                        'transport select dapdirect_swd',
+                        *([f'adapter serial {self.serial}'] if self.serial else []),
                         f'adapter speed {self.frequency}',
                         'swd newdap fc cpu -expected-id 0x6ba02477',
                         'dap create fc.dap -chain-position fc.cpu',
@@ -713,7 +716,7 @@ def main(argv=None):
                 listing=subprocess.run([find_cli(args.programmer),'--list','st-link'],capture_output=True,text=True,timeout=15)
                 serials=re.findall(r'ST-?LINK\s+SN\s*:\s*(\S+)',listing.stdout,re.I)
                 if listing.returncode or len(serials)!=1:raise ValueError('Select one probe with --serial; use --list-probes to inspect USB probes')
-                serial=serials[0]
+                serial=None
             probe=OpenOCDProbe(executable,serial,args.frequency)
             matched=True
             try:
