@@ -46,6 +46,9 @@ static fu32 timer_fetch(int t) { return t == HeartbeatGND ? heartbeat_age : 0; }
 static unsigned tx_queue_send(int *q, fc_msg *m, unsigned w) { (void)q; (void)m; (void)w; ++sent; return 0; }
 static void sweetbench_catch(int n) { (void)n; }
 static void sweetbench_start(int a, int b) { (void)a; (void)b; }
+static bool past_armed, admitted;
+#define beyond(bound) past_armed
+static bool fc_recovery_flight_is_admitted(void) { return admitted; }
 '''
 
 MAIN = r'''
@@ -59,6 +62,15 @@ int main(void) {
   assert(g_conf & option(Lost_GroundStation));
   assert(g_conf & option(Reset_Failures));
   assert(g_conf & option(In_Aborted_State)); /* still awaiting a command */
+  /* In flight the loss holds after the heartbeat returns. */
+  heartbeat_age = 0; past_armed = true; fc_timer_routine(0);
+  assert(g_conf & option(Lost_GroundStation));
+  past_armed = false; admitted = true; fc_timer_routine(0);
+  assert(g_conf & option(Lost_GroundStation));
+  /* On the pad it clears, so a GS outage does not latch until power cycle. */
+  admitted = false; fc_timer_routine(0);
+  assert(!(g_conf & option(Lost_GroundStation)));
+  assert(!sent);
   return 0;
 }
 '''

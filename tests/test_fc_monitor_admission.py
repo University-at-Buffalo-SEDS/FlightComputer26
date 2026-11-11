@@ -91,7 +91,10 @@ int main(int argc,char **argv){assert(argc==2);actual=Startup;
  }else if(!strcmp(argv[1],"requested")){
   actual=Armed;atomic_store(&g_conf,Launch_Requested);refused();
  }else if(!strcmp(argv[1],"lost_groundstation")){
-  actual=Startup;atomic_store(&g_conf,Lost_GroundStation);refused();
+  /* A wired bench lease on the pad does not need the ground station. */
+  actual=Startup;atomic_store(&g_conf,Lost_GroundStation);
+  assert(fc_recovery_control_monitor_preflight());
+  actual=Armed;atomic_store(&g_conf,Lost_GroundStation|Launch_Requested);refused();
  }else if(!strcmp(argv[1],"reset_active")){
   owner.phase=RESET_REQUESTED;refused();assert(owner.phase==RESET_REQUESTED);
  }else if(!strcmp(argv[1],"preflight")||!strcmp(argv[1],"preflight_armed")){

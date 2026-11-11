@@ -184,11 +184,13 @@ static inline void sensor_init_supervised(sens_init sn)
 static volatile uint8_t evaluation_quiescent = 1U;
 bool fc_recovery_control_ready(void) { return g_recovery_receive_loop_ready != 0U; }
 bool fc_recovery_control_is_startup(void) { return current() == Startup; }
-/* Same short IRQ owner as Launch/Stop/monitor admission; no IO or providers. */
+/* Same short IRQ owner as Launch/Stop/monitor admission; no IO or providers.
+ * A lost ground station does not refuse: the bench lease needs a wired probe,
+ * and Startup/Armed without a Launch request or admitted flight is on the pad. */
 bool fc_recovery_control_monitor_preflight(void)
 {
   return (current() == Startup || current() == Armed) &&
-      !(load(&g_conf, Acq) & option(Launch_Requested | Lost_GroundStation));
+      !(load(&g_conf, Acq) & option(Launch_Requested));
 }
 void fc_recovery_evaluation_running(void) { evaluation_quiescent = 0U; }
 void fc_recovery_evaluation_quiescent(void)
@@ -800,6 +802,14 @@ static void fc_timer_routine(ULONG _)
     autostart_on_timeout();
 #endif
   }
+#ifdef TELEMETRY_ENABLED
+  /* On the pad the loss clears once the heartbeat returns; in flight it holds. */
+  else if ((g_conf & option(Lost_GroundStation)) && !beyond(Armed) &&
+           !fc_recovery_flight_is_admitted())
+  {
+    g_conf &= ~option(Lost_GroundStation);
+  }
+#endif
 
   fu32 gps_interval = timer_fetch(HeartbeatRF);
 
