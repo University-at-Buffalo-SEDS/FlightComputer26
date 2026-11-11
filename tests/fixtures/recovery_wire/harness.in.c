@@ -39,7 +39,7 @@ const launchcore_storage_driver_t launchcore_board_storage_driver={.init=init_me
 static void sdk_unlocked(void){assert(!physical||!physical->locked);}
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){sdk_unlocked();assert(r&&((len==2&&!memcmp(name,"GS",2))||(len==4&&!memcmp(name,"RRLS",4))));return s&&((n==len&&!memcmp(s,name,len))||(len==2&&n==10&&!memcmp(s,"@addr:1234",10)));}
 SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){sdk_unlocked();assert(r);*out=clock_ms;return SEDS_OK;}
-SedsResult seds_router_log_queue_typed(SedsRouter*r,SedsDataType type,const void*p,size_t count,size_t width,SedsElemKind kind){sdk_unlocked();assert(r&&type==201&&count==40&&width==1&&kind==SEDS_EK_UNSIGNED);memcpy(response,p,40);assert((response[3]&32U)==EXPECTED_CAP);app_replies++;return SEDS_OK;}
+SedsResult seds_router_log_queue_typed(SedsRouter*r,SedsDataType type,const void*p,size_t count,size_t width,SedsElemKind kind){sdk_unlocked();assert(r&&type==201&&count==40&&width==1&&kind==SEDS_EK_UNSIGNED);memcpy(response,p,40);assert((response[3]&32U)==EXPECTED_CAP);assert(response[3]&0x80U); /* RESET_ANY_STATE on every FC status */app_replies++;return SEDS_OK;}
 SedsResult seds_router_enable_network_variable(SedsRouter*r,SedsDataType type,bool read,bool write){sdk_unlocked();(void)r;assert(type==SEDS_DT_FLIGHT_STATE&&read&&!write);return SEDS_OK;}
 SedsResult seds_router_on_network_variable_update(SedsRouter*r,SedsDataType type,SedsResult(*cb)(const SedsPacketView*,void*),void*user){sdk_unlocked();(void)r;(void)cb;assert(type==SEDS_DT_FLIGHT_STATE&&!user);return SEDS_OK;}
 SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*r,SedsDataType type,bool*out){sdk_unlocked();(void)r;assert(type==SEDS_DT_FLIGHT_STATE&&!out);return owner_fail?SEDS_IO:SEDS_OK;}
@@ -214,7 +214,7 @@ bool fc_recovery_control_finalize_startup(void)
 
 
 enum{Postinit=1,Armed=2,Launch=3,Ascent=4,Coast=5,Apogee=6,Descent=7,Reefing=8,Landed=9,Recovery=10};
-enum{G_Armed=2,G_Launch=4,G_Ascent=5,G_Coast=6,G_Apogee=7,G_Descent=8,G_Reefing=9,G_Landed=13,G_Recovery=14,G_Aborted=15};
+enum{G_Armed=6,G_Launch=7,G_Ascent=8,G_Coast=9,G_Apogee=10,G_Descent=11,G_Reefing=12,G_Landed=13,G_Recovery=14,G_Aborted=15}; /* fcstructs.h numbering */
 /* Pure mapping of the ACTUAL evaluator, not the independently managed cache.
  * No write to sm/global state or deployment GPIO is performed by QUERY. */
 static uint8_t evaluator_global_state(void) {
@@ -283,6 +283,19 @@ int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(v
   if(!strcmp(argv[1],"query_fault")){unsigned reads=media_reads,writes=media_writes;request(r,&packet,false);assert(response[1]==7&&reads==media_reads&&writes==media_writes&&!persistent_store_controls_ready());puts("strict boot-prime fault, RAM-only QUERY IO, no mutation PASS");return 0;}
   unsigned rd=media_reads,wr=media_writes;request(r,&packet,false);assert(response[1]==0&&rd==media_reads&&wr==media_writes);
   body[1]=1;put64(body+4,2);put64(body+12,generation);body[20]=1;packet.timestamp=clock_ms=10001;
+  /* Op 3 RESET_STARTUP_ANY: the RECOVER owner path, after a pyro check that never cuts a pulse. */
+  if(!strncmp(argv[1],"reset_any",9))body[1]=3;
+  if(!strcmp(argv[1],"reset_any_desired")){body[2]=1;request(r,&packet,false);assert(response[1]==6&&response_epoch()==1&&!highs);puts("op 3 with desired state 1 is INVALID PASS");return 0;}
+  if(!strcmp(argv[1],"reset_any_unsafe")){
+   deployment_pulse_start(false,true);assert(gpio.ODR==1&&highs==1);unsigned w=media_writes;
+   request(r,&packet,false);assert(response[1]==5&&response_epoch()==1&&gpio.ODR==1&&highs==1&&media_writes==w);
+   puts("op 3 during a pulse is UNSAFE: no seal, no cancel, no epoch PASS");return 0;}
+  if(!strcmp(argv[1],"reset_any_ascent")){
+   sm.flight=Ascent;
+#if FC_RESET_ANY_HOLDS_UNDEPLOYED_FLIGHT
+   unsigned w=media_writes,before=app_replies;assert(board_recovery_handle(r,&packet,endpoint,123)==SEDS_OK);assert(app_replies==before+1&&response[1]==5&&response_epoch()==1&&media_writes==w);puts("policy: op 3 refused in Ascent before any deploy PASS");return 0;
+#endif
+  }
 
   unsigned before_reads=media_reads,before_writes=media_writes,before_replies=app_replies;
   if(!strcmp(argv[1],"authority")){
@@ -296,6 +309,7 @@ int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(v
   if(!strcmp(argv[1],"io")){assert(response[1]==7&&response[3]&1U&&(response[3]&18U)==18U&&!persistent_store_controls_ready()&&response_epoch()==1&&response[2]==G_Recovery);unsigned reads=media_reads,writes=media_writes;fail_key=0;request(r,&packet,false);assert(response[1]==7&&reads==media_reads&&writes==media_writes);puts("actual NVM IO stays held, exact duplicate performs no IO PASS");return 0;}
 
   assert(response[1]==0&&response[2]==0&&response_epoch()==2&&!(response[3]&1U)&&(response[3]&18U)==18U&&persistent_store_controls_ready()&&!persistent_store_commission_pending());
+  if(!strncmp(argv[1],"reset_any",9)){assert(!highs&&!gpio.ODR&&fc_recovery_requires_new_flight()); /* no relaunch from a cached state */puts("op 3 reset to Startup from any state PASS");return 0;}
   uint8_t marker[40];size_t size=40;assert(persistent_store_enter());assert(launchcore_persist_get_strict(COMMISSION_RECORD_KEY,marker,&size,&info)==0);assert(persistent_store_leave());CommissionRecord record;assert(commission_record_decode(marker,size,&record)&&record.kind==1&&record.state==0&&record.generation==generation&&record.nonce==2&&record.source==10001);
   uint8_t original_request[32];memcpy(original_request,body,32);body[1]=0;put64(body+4,3);put64(body+12,0);memset(body+20,0,4);packet.timestamp=clock_ms=10002;unsigned query_reads=media_reads,query_writes=media_writes;request(r,&packet,false);assert(response[1]==0&&response[2]==0&&response_epoch()==2&&!(response[3]&1U)&&get64(response+12)==generation&&media_reads==query_reads&&media_writes==query_writes);memcpy(body,original_request,32);packet.timestamp=10001;
   wr=media_writes;request(r,&packet,false);assert(response[1]==0&&media_writes==wr);packet.timestamp=10002;request(r,&packet,false);assert(response[1]==6&&media_writes==wr);

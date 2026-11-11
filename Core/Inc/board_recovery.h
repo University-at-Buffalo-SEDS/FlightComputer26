@@ -11,7 +11,9 @@ enum {
  /* Hardened application transport; independent of readiness or output proof. */
  BOARD_RECOVERY_VERIFIED_IMPLEMENTATION=1u<<5,
  /* Exact known-UTC manual Stop retirement, independent of Ready/Applied. */
- BOARD_RECOVERY_MANUAL_UTC_IMPLEMENTATION=1u<<6
+ BOARD_RECOVERY_MANUAL_UTC_IMPLEMENTATION=1u<<6,
+ /* FC: RESET_STARTUP_ANY (op 3) implemented (AB/VB use bit 7 for RESYNC). */
+ BOARD_RECOVERY_RESET_ANY_STATE_IMPLEMENTATION=1u<<7
 };
 typedef struct {
  uint8_t actual_state;

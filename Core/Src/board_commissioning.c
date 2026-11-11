@@ -79,7 +79,7 @@ static uint64_t attempted_time;
 static bool fresh(uint64_t source,uint64_t now){return source&&source!=UINT64_MAX&&now&&now!=UINT64_MAX&&(now>=source?now-source<=15000U:source-now<=1000U);}
 static bool same_tuple(uint64_t issuer,uint64_t nonce,uint64_t other_issuer,uint64_t other_nonce){return issuer==other_issuer&&nonce==other_nonce;}
 static bool same_request(const BoardRecoveryRequest*a,const BoardRecoveryRequest*b){return a->operation==b->operation&&a->desired_state==b->desired_state&&a->nonce==b->nonce&&a->issuer_session==b->issuer_session&&a->expected_boot_generation==b->expected_boot_generation&&a->expected_abort_epoch==b->expected_abort_epoch;}
-static bool same_history(const BoardRecoveryRequest*r,uint64_t source){return r->operation==BOARD_RECOVERY_RECOVER&&r->desired_state==0&&r->expected_abort_epoch==history.epoch&&r->expected_boot_generation==history.generation&&source==history.source;}
+static bool same_history(const BoardRecoveryRequest*r,uint64_t source){return board_recovery_is_recover(r->operation)&&r->desired_state==0&&r->expected_abort_epoch==history.epoch&&r->expected_boot_generation==history.generation&&source==history.source;}
 static uint64_t query_cutoff(void){uint64_t cutoff=0;if(!board_recovery_floor_cached_cutoff(&cutoff))return UINT64_MAX;if(history_valid&&history.source>cutoff)cutoff=history.source;if(attempted_time>cutoff)cutoff=attempted_time;return cutoff;}
 bool board_commissioning_note_query(const BoardRecoveryRequest*r,uint64_t source,uint64_t now,uint32_t epoch){
  if(!board_commissioning_pending())return true;
@@ -92,7 +92,7 @@ bool board_commissioning_note_query(const BoardRecoveryRequest*r,uint64_t source
 /* -2 means metadata is unclassified/ineligible, never a legacy repair path.
  * -1 means serialized service owes a reply. Neither is a wire result. */
 int32_t board_commissioning_stage(const BoardRecoveryRequest*r,uint64_t source,uint64_t now,uint32_t epoch,void*context,CommissionReply reply,CommissionClock clock){
- if(!r||!reply||!clock||r->operation!=BOARD_RECOVERY_RECOVER||r->desired_state!=0||!r->nonce||!r->issuer_session)return BOARD_RECOVERY_RESULT_INVALID;
+ if(!r||!reply||!clock||!board_recovery_is_recover(r->operation)||r->desired_state!=0||!r->nonce||!r->issuer_session)return BOARD_RECOVERY_RESULT_INVALID;
  bool duplicate=job.valid&&same_tuple(r->issuer_session,r->nonce,job.request.issuer_session,job.request.nonce);
  if(duplicate&&(!same_request(r,&job.request)||source!=job.source))return BOARD_RECOVERY_RESULT_INVALID;
  if(duplicate){

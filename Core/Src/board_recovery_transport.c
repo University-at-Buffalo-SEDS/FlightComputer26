@@ -110,6 +110,18 @@ uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *packet)
  if (now==0U || now==UINT64_MAX || packet->timestamp==0U || packet->timestamp==UINT64_MAX) return 1U;
  return now<packet->timestamp || now-packet->timestamp<=15000U;
 }
+/* Op 3 admission from the actual readback (taken under the IRQ guard that
+ * deployment_pulse_start uses): no pyro output HIGH and no pulse ticking.
+ * FC_RESET_ANY_HOLDS_UNDEPLOYED_FLIGHT (an open policy question) also
+ * refuses Ascent..Apogee. Never seals, cancels or advances anything. */
+#ifndef FC_RESET_ANY_HOLDS_UNDEPLOYED_FLIGHT
+#define FC_RESET_ANY_HOLDS_UNDEPLOYED_FLIGHT 0
+#endif
+static bool fc_reset_any_state_permitted(const BoardRecoverySnapshot *s)
+{
+ if (FC_RESET_ANY_HOLDS_UNDEPLOYED_FLIGHT && s->actual_state>=8U && s->actual_state<=10U) return false; /* Ascent..Apogee */
+ return !(s->flags&BOARD_RECOVERY_OUTPUTS_VALID) || (s->flags&BOARD_RECOVERY_SAFE_OUTPUTS);
+}
 /* Ordinary controller admission: identity reuse only, never emergency-Stop policy. */
 uint8_t board_recovery_controller_update_allowed(const SedsPacketView *packet)
 {
@@ -149,9 +161,9 @@ static SedsResult commissioning_status(SedsRouter*router,uint8_t result,const Bo
  if(board_recovery_snapshot(&snapshot)!=0)result=BOARD_RECOVERY_RESULT_IO;
  uint64_t generation=board_commissioning_query_generation();
  if(!generation&&!board_commissioning_uncertain_first())snapshot.flags&=(uint8_t)~BOARD_RECOVERY_SUPPORTED;
- if(request->operation==BOARD_RECOVERY_RECOVER&&result==BOARD_RECOVERY_RESULT_OK&&(snapshot.flags&BOARD_RECOVERY_ABORT_LATCHED)&&!board_commissioning_pending())result=BOARD_RECOVERY_RESULT_STALE;
+ if(board_recovery_is_recover(request->operation)&&result==BOARD_RECOVERY_RESULT_OK&&(snapshot.flags&BOARD_RECOVERY_ABORT_LATCHED)&&!board_commissioning_pending())result=BOARD_RECOVERY_RESULT_STALE;
  uint8_t wire[BOARD_RECOVERY_STATUS_SIZE];
- board_recovery_encode_status(wire,result,snapshot.actual_state,(uint8_t)(snapshot.flags|extra_flags|BOARD_RECOVERY_VERIFIED_IMPLEMENTATION|BOARD_RECOVERY_MANUAL_UTC_IMPLEMENTATION),request,generation,snapshot.abort_epoch,uptime,snapshot.actual_outputs_mask);
+ board_recovery_encode_status(wire,result,snapshot.actual_state,(uint8_t)(snapshot.flags|extra_flags|BOARD_RECOVERY_VERIFIED_IMPLEMENTATION|BOARD_RECOVERY_MANUAL_UTC_IMPLEMENTATION|BOARD_RECOVERY_RESET_ANY_STATE_IMPLEMENTATION),request,generation,snapshot.abort_epoch,uptime,snapshot.actual_outputs_mask);
  return seds_router_log_queue_typed(router,SEDS_DT_BOARD_STATE_STATUS,wire,sizeof wire,1,SEDS_EK_UNSIGNED);
 }
 static uint64_t commissioning_now(void*context){return board_recovery_station_now((SedsRouter*)context);}
@@ -190,7 +202,7 @@ SedsResult board_recovery_handle(SedsRouter *router,const SedsPacketView *packet
  }
  /* FC owns only explicit Startup recovery, not Idle/output recovery.
   * Reject unsupported intent before loading/committing a floor or calling owner. */
- if (request.operation==BOARD_RECOVERY_RECOVER && request.desired_state!=0U)
+ if (board_recovery_is_recover(request.operation) && request.desired_state!=0U)
   result=BOARD_RECOVERY_RESULT_INVALID;
  /* Commissioning has its own explicit two-leg path. QUERY only reads boot
   * caches/registers and never provisions or refreshes storage. */
@@ -206,6 +218,9 @@ SedsResult board_recovery_handle(SedsRouter *router,const SedsPacketView *packet
   if(!board_commissioning_pending()&&fc_recovery_reset_failed()&&result==BOARD_RECOVERY_RESULT_OK)result=BOARD_RECOVERY_RESULT_IO;
   return commissioning_status(router,result,&request,uptime_ms,0U);
  }
+ /* Op 3 never cuts a pulse: refuse while one runs, before any seal or epoch. */
+ if(request.operation==BOARD_RECOVERY_RESET_STARTUP_ANY&&result==BOARD_RECOVERY_RESULT_OK&&!fc_reset_any_state_permitted(&snapshot))
+  result=BOARD_RECOVERY_RESULT_UNSAFE;
  if(result==BOARD_RECOVERY_RESULT_OK){
   int32_t staged=board_commissioning_stage(&request,packet->timestamp,commissioning_now(router),snapshot.abort_epoch,router,commissioning_reply,commissioning_now);
   if(staged!=-2){if(staged==-1)return SEDS_OK;return commissioning_status(router,(uint8_t)staged,&request,uptime_ms,0U);}
