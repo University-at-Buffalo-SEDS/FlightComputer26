@@ -195,6 +195,8 @@ typedef enum global_state : uint8_t {
   G_Landed,
   G_Recovery,
   G_Aborted,
+  /* Network only: the FC publishes it for Ascent..Reefing. */
+  G_InFlight,
 
   Global_States
 } gnd_state;

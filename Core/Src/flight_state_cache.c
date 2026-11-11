@@ -6,6 +6,7 @@
 #endif
 
 #include "persistent_store.h"
+#include "flight_state_contract.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -15,13 +16,14 @@ extern volatile uint32_t g_telemetry_discovery_seen;
 #endif
 
 #define FLIGHT_STATE_PERSIST_KEY 0x46535445u
-#define FLIGHT_STATE_MAX_VALUE 15U
 #define FLIGHT_STATE_UNSYNCED_RETRY_MS 500U
 /* The station answers a FLIGHT_STATE GET only for a state it has authority
  * for, and pushes that state as a write when it gets one. An unanswered GET
  * therefore backs off to this cap instead of repeating at 2 Hz on the radio. */
 #define FLIGHT_STATE_UNSYNCED_RETRY_MAX_MS 4000U
 
+/* Retired FLIGHT_STATE values received (sender violates the state-split contract). */
+volatile uint32_t g_flight_state_retired_received __attribute__((used)) = 0U;
 volatile uint32_t g_flight_state_cache_value __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_flight_state_cache_restores __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_flight_state_cache_writes __attribute__((used, externally_visible)) = 0U;
@@ -87,11 +89,12 @@ void flight_state_cache_restore(void)
         FLIGHT_STATE_PERSIST_KEY, &state, &size);
     if (status == LAUNCHCORE_PERSIST_NOT_FOUND) return;
     if (status != LAUNCHCORE_PERSIST_OK || size != sizeof(state) ||
-        state > FLIGHT_STATE_MAX_VALUE)
+        network_flight_state(state) < 0)
     {
         g_flight_state_cache_errors++;
         return;
     }
+    state = (uint8_t)network_flight_state(state); /* a value an older FC stored */
 
     g_has_value = true;
     g_flight_state_cache_value = state;
@@ -150,7 +153,7 @@ static SedsResult persist_update(const SedsPacketView *packet, void *user)
     (void)user;
     if (packet == NULL || packet->ty != SEDS_DT_FLIGHT_STATE ||
         packet->payload == NULL || packet->payload_len != 1U ||
-        packet->payload[0] > FLIGHT_STATE_MAX_VALUE)
+        network_flight_state(packet->payload[0]) < 0)
     {
         /* Public SDK435 caches managed data before invoking this callback.
          * A malformed FSTATE must not poison future ordering/cache reads. */
@@ -169,7 +172,8 @@ static SedsResult persist_update(const SedsPacketView *packet, void *user)
         ++g_reliable_refusal_count;
         return SEDS_OK;
     }
-    const uint8_t state = packet->payload[0];
+    const uint8_t state = (uint8_t)network_flight_state(packet->payload[0]);
+    if (state != packet->payload[0]) g_flight_state_retired_received++; /* contract violation */
     const SedsResult apply_result = flight_state_cache_apply_network_update(packet);
     if (apply_result != SEDS_OK) {
         (void)clear_managed_cache();

@@ -33,7 +33,7 @@ HARNESS = r'''
 #include <stdbool.h>
 #include <string.h>
 extern volatile uint32_t g_flight_state_cache_errors,g_flight_state_cache_writes;
-static uint8_t stored=5;static unsigned reads,writes;
+static uint8_t stored=13;static unsigned reads,writes;
 static bool missing,bad_init,bad_write,bad_read,mismatch,short_read;
 uint32_t HAL_GetTick(void){return 123;}
 int persistent_store_init(void){return bad_init?2:0;}
@@ -52,7 +52,7 @@ int main(int argc,char**argv){
  assert(argc==2);bool absent=!strcmp(argv[1],"absent");missing=absent;
  flight_state_cache_restore();
  assert(flight_state_cache_has_value()==!absent);
- if(!absent)assert(flight_state_cache_value()==5);
+ if(!absent)assert(flight_state_cache_value()==13);
  unsigned before=reads;
  bad_init=!strcmp(argv[1],"init_failure");
  bad_write=!strcmp(argv[1],"write_failure");
@@ -62,7 +62,7 @@ int main(int argc,char**argv){
  bool failed=bad_init||bad_write||bad_read||mismatch||short_read;
  assert((flight_state_cache_reset_startup()!=0)==failed);
  if(failed){
-  assert(flight_state_cache_value()==5&&flight_state_cache_has_value());
+  assert(flight_state_cache_value()==13&&flight_state_cache_has_value());
   assert(g_flight_state_cache_writes==0&&g_flight_state_cache_errors==1);
   if(bad_init)assert(writes==0&&reads==before);
   else if(bad_write)assert(writes==1&&reads==before);

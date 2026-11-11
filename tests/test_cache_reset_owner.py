@@ -51,7 +51,7 @@ volatile uint32_t g_telemetry_discovery_seen;
 volatile uint32_t g_reliable_refusal_count;
 static SedsResult (*callback)(const SedsPacketView*,void*);
 static unsigned writes,clears,requests;
-static uint8_t stored=5,have_stored=1,allow_update=1;
+static uint8_t stored=13,have_stored=1,allow_update=1;
 static int fail_write,fail_read,wrong_read,fail_invalidate,fail_apply;
 static unsigned tick;
 uint32_t HAL_GetTick(void){return tick;}
@@ -89,7 +89,7 @@ static SedsResult update(uint8_t state){SedsPacketView p={SEDS_DT_FLIGHT_STATE,&
 int main(int argc,char **argv){
  assert(argc==2);SedsRouter router=0;
  assert(flight_state_cache_init(&router)==0);
- assert(flight_state_cache_has_value()&&flight_state_cache_value()==5);
+ assert(flight_state_cache_has_value()&&flight_state_cache_value()==13);
  if(!strcmp(argv[1],"success")){
   assert(flight_state_cache_reset_startup()==0&&stored==0&&flight_state_cache_value()==0);
   assert(writes==1&&clears==1&&callback);
@@ -98,16 +98,16 @@ int main(int argc,char **argv){
   g_telemetry_discovery_seen=1;tick=499;assert(flight_state_cache_poll(&router)==0&&requests==0);
   tick=500;assert(flight_state_cache_poll(&router)==0&&requests==1);
  }else if(!strcmp(argv[1],"write_failure")){
-  fail_write=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==5&&clears==0);
+  fail_write=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==13&&clears==0);
   fail_write=0;assert(flight_state_cache_reset_startup()==0&&flight_state_cache_value()==0);
  }else if(!strcmp(argv[1],"read_failure")){
-  fail_read=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==5&&clears==0);
+  fail_read=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==13&&clears==0);
   fail_read=0;assert(flight_state_cache_reset_startup()==0&&flight_state_cache_value()==0);
  }else if(!strcmp(argv[1],"read_mismatch")){
-  wrong_read=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==5&&clears==0);
+  wrong_read=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==13&&clears==0);
   wrong_read=0;assert(flight_state_cache_reset_startup()==0&&flight_state_cache_value()==0);
  }else if(!strcmp(argv[1],"service_failure")){
-  fail_invalidate=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==5);
+  fail_invalidate=1;assert(flight_state_cache_reset_startup()!=0&&flight_state_cache_value()==13);
   fail_invalidate=0;assert(flight_state_cache_reset_startup()==0&&flight_state_cache_value()==0);
  }else if(!strcmp(argv[1],"stale_retirement")){
   assert(flight_state_cache_reset_startup()==0);unsigned w=writes,c=clears;
@@ -126,10 +126,10 @@ int main(int argc,char **argv){
   assert(update(0)==-9&&writes==2);fail_write=0;
   assert(update(0)==0&&writes==3&&stored==0);assert(update(0)==0&&writes==3&&clears==2); /* Both failed persistence owners retire SDK cache; volatile apply/retry counts unchanged. */
  }else if(!strcmp(argv[1],"apply_failure")){
-  fail_apply=1;assert(update(3)==-14&&flight_state_cache_value()==5&&stored==5&&writes==0&&clears==1&&callback);
-  fail_apply=0;assert(update(3)==0&&flight_state_cache_value()==3&&stored==3&&writes==1&&clears==1);
+  fail_apply=1;assert(update(7)==-14&&flight_state_cache_value()==13&&stored==13&&writes==0&&clears==1&&callback);
+  fail_apply=0;assert(update(7)==0&&flight_state_cache_value()==7&&stored==7&&writes==1&&clears==1);
  }else if(!strcmp(argv[1],"malformed_retirement")){
-  assert(update(255)==0&&flight_state_cache_value()==5&&stored==5&&writes==0&&clears==1&&callback);
+  assert(update(255)==0&&flight_state_cache_value()==13&&stored==13&&writes==0&&clears==1&&callback);
  }else assert(!"unknown case");
  puts(argv[1]);return 0;
 }

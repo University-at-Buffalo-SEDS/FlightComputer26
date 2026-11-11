@@ -1,6 +1,7 @@
 #include "sedsnet.h"
 #include "sedsnet_config.h"
 #include "ground_heartbeat_owner.h"
+#include "flight_state_contract.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,7 +10,7 @@
 /* Real SDK router with the FC's actual ABORT, FLIGHT_CONTROLLER and managed
  * FLIGHT_STATE handlers. Owners below them are intent counters only. */
 static struct { SedsRouter *r; } g_router;
-volatile uint32_t g_reliable_refusal_count;
+volatile uint32_t g_reliable_refusal_count,g_flight_state_retired_received;
 static bool source_ok=true,managed_ok=true,controller_ok=true,stopped;
 static unsigned stop_calls,postinits,commands,biases,acks,writes;
 static void fc_recovery_manual_stop_original_utc(uint64_t source){(void)source;++stop_calls;stopped=true;}

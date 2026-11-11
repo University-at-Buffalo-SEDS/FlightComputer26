@@ -19,7 +19,7 @@ class ManagedPostinitTests(unittest.TestCase):
             cache = (ROOT / "Core/Src/flight_state_cache.c").read_text()
             a = cache.index("__attribute__((weak)) SedsResult")
             body += cache[a:cache.index("void flight_state_cache_restore", a)]
-        code = r"""
+        code = (ROOT / "Core/Inc/flight_state_contract.h").read_text() + r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -68,7 +68,7 @@ int main(void) {
  p.payload=NULL; assert(flight_state_cache_apply_network_update(&p)==SEDS_HANDLER_ERROR);
  p.payload=&value; p.payload_len=2;
  assert(flight_state_cache_apply_network_update(&p)==SEDS_HANDLER_ERROR);
- p.payload_len=1; value=16;
+ p.payload_len=1; value=17;
  assert(flight_state_cache_apply_network_update(&p)==SEDS_HANDLER_ERROR);
  value=G_Armed; p.ty=999;
  assert(flight_state_cache_apply_network_update(&p)==SEDS_HANDLER_ERROR);

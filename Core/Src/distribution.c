@@ -1,3 +1,4 @@
+#include "flight_state_contract.h"
 #include "ground_heartbeat_owner.h"
 /* Core/Src/distribution.c */
 
@@ -377,7 +378,7 @@ implicit_postinit(const uint8_t *data, size_t len)
     armed_postinit_epoch = epoch;
   }
   if (fc_recovery_holds_sequence()) return SEDS_IO;
-  if (data == NULL || len != sizeof(uint8_t) || *data > G_Aborted)
+  if (data == NULL || len != sizeof(uint8_t) || network_flight_state(*data) < 0)
   {
     return SEDS_HANDLER_ERROR;
   }

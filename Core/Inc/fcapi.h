@@ -207,7 +207,8 @@ static inline bool beyond(state bound)
   return current() > bound;
 }
 
-/* Pure local -> network (GS FlightState) mapping. */
+/* Pure local -> network FLIGHT_STATE mapping (state-split contract, set (a)
+ * only). The detailed phase stays in the FC's BOARD_STATE_STATUS. */
 static inline gnd_state global_state_of(state local)
 {
   switch (local) {
@@ -215,18 +216,19 @@ static inline gnd_state global_state_of(state local)
     case Postinit:
     case Armed:     return G_Armed;
     case Launch:    return G_Launch;
-    case Ascent:    return G_Ascent;
-    case Coast:     return G_Coast;
-    case Apogee:    return G_Apogee;
-    case Descent:   return G_Descent;
-    case Reefing:   return G_Reefing;
-    case Landed:    return G_Landed;
-    case Recovery:  return G_Recovery;
+    case Ascent:
+    case Coast:
+    case Apogee:
+    case Descent:
+    case Reefing:   return G_InFlight;
+    case Landed:
+    case Recovery:  return G_Landed;
 
     /* Something went terribly wrong */
     default:        return G_Aborted;
   }
 }
+
 
 static inline gnd_state *to_global_state(state local)
 {

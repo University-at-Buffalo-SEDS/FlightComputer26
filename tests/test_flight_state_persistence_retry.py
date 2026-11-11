@@ -98,8 +98,8 @@ static SedsResult update(uint8_t state) {
 }
 int main(int argc,char **argv) {
  assert(argc==2);SedsRouter router=0;
- if(!strcmp(argv[1],"restore")){have_stored=1;stored=5;}
- if(!strcmp(argv[1],"invalid_restore")){have_stored=1;stored=16;}
+ if(!strcmp(argv[1],"restore")){have_stored=1;stored=13;}
+ if(!strcmp(argv[1],"invalid_restore")){have_stored=1;stored=17;}
  if(!strcmp(argv[1],"init_error"))init_failed=1;
  assert(flight_state_cache_init(&router)==SEDS_OK && callback);
  if(!strcmp(argv[1],"changed_retry")){
@@ -120,10 +120,10 @@ int main(int argc,char **argv) {
   write_failed=0;assert(update(0)==SEDS_OK && write_attempts==3 && stored==0);
   assert(update(0)==SEDS_OK && write_attempts==3);
  }else if(!strcmp(argv[1],"restore")){
-  assert(flight_state_cache_has_value() && flight_state_cache_value()==5 && g_flight_state_cache_restores==1);
-  assert(update(5)==SEDS_OK && write_attempts==0);
+  assert(flight_state_cache_has_value() && flight_state_cache_value()==13 && g_flight_state_cache_restores==1);
+  assert(update(13)==SEDS_OK && write_attempts==0);
   write_failed=1;
-  assert(update(6)==SEDS_HANDLER_ERROR && write_attempts==1 && stored==5);
+  assert(update(6)==SEDS_HANDLER_ERROR && write_attempts==1 && stored==13);
   assert(flight_state_cache_value()==6 && applied==6);
   assert(update(6)==SEDS_HANDLER_ERROR && write_attempts==2);
   write_failed=0;assert(update(6)==SEDS_OK && write_attempts==3 && stored==6);
@@ -140,7 +140,7 @@ int main(int argc,char **argv) {
   assert(applied==1 && flight_state_cache_value()==1 && g_flight_state_cache_errors==3);
  }else if(!strcmp(argv[1],"invalid_packet")){
   /* Malformed values are refused for good: acknowledged, never applied. */
-  uint8_t state=16;SedsPacketView packet={SEDS_DT_FLIGHT_STATE,&state,1};
+  uint8_t state=17;SedsPacketView packet={SEDS_DT_FLIGHT_STATE,&state,1};
   assert(callback(NULL,NULL)==SEDS_OK);
   assert(callback(&packet,NULL)==SEDS_OK);
   state=1;packet.payload_len=0;assert(callback(&packet,NULL)==SEDS_OK);
