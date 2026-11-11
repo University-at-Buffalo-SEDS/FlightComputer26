@@ -17,6 +17,7 @@ uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *packet);
 /* FC controller only: active recovery floor admits known GS or RRLS. */
 uint8_t board_recovery_controller_update_allowed(const SedsPacketView *packet);
 uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *packet);
+uint32_t board_recovery_controller_gate(void);
 uint8_t board_recovery_automatic_is_stale(const SedsPacketView *packet);
 /* Advance the station clock from an authorized GS packet's timestamp. */
 void board_recovery_observe_station_time(SedsRouter*router,const SedsPacketView*packet);

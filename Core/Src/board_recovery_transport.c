@@ -118,6 +118,17 @@ uint8_t board_recovery_controller_update_allowed(const SedsPacketView *packet)
  return recovery_router!=0 && board_recovery_manual_stop_source_allowed(recovery_router,packet) &&
         !board_recovery_command_is_stale(packet);
 }
+/* Why the check above refuses ordinary controller updates, for BOARD_HEALTH
+ * word 6 bits 24..27: 1 store not ready, 2 commissioning hold, 4 store
+ * ownership fault, 8 recovery floor failed. Cached state only, no storage IO. */
+uint32_t board_recovery_controller_gate(void)
+{
+ uint32_t gate=0U;
+ if (!persistent_store_controls_ready())
+  gate=persistent_store_commission_pending()?2U:persistent_store_ownership_faulted()?4U:1U;
+ if (!board_recovery_floor_cached_health()) gate|=8U;
+ return gate;
+}
 /* A well-formed FLIGHT_STATE whose sender is not the primary station is a
  * state report (this board's own, or the FC's that the station follows),
  * never a desired-state write: callers ignore it instead of failing SDK

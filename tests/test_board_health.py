@@ -37,6 +37,7 @@ uint32_t board_health_can_rx_drops(void){return 31;}
 uint32_t board_health_uart_rx_drops(void){return 32;}
 uint32_t board_health_adc_overruns(void){return 33;}
 size_t seds_memory_admission_rejected(void){return 34;}
+uint32_t gate;uint32_t board_recovery_controller_gate(void){assert(!mask);return gate;}
 void telemetry_lock(void){assert(!mask);++lock_depth;}
 void telemetry_unlock(void){assert(lock_depth==1);--lock_depth;}
 SedsResult seds_router_log_bytes_ex(SedsRouter *router,int dtype,const uint8_t *data,size_t length,const uint64_t *stamp,bool queue){
@@ -63,6 +64,8 @@ int main(void){
  assert(!(captured[1]&1)&&!captured[7]&&!captured[8]&&!captured[9]&&!captured[10]);
 #endif
  if(captured[1]&16){assert(captured[16]==0xf00d1234U);assert((captured[1]&128U)&&captured[21]==20U);} /* no float rounding */
+ /* Flight-command refusal reasons ride above the watchdog mask. */
+ gate=9;uptime=16000+5000;board_health_poll(&router);assert(calls==3&&captured[6]==(5U|(9U<<24)));gate=0;calls=2;
  uptime=(UINT64_C(1)<<42)+20000;board_health_poll(&router);
  assert(calls==3&&captured[2]==20000&&captured[3]==1024);
  uptime=(UINT64_C(1)<<42)+UINT32_MAX-2U;board_health_poll(&router);assert(calls==4);

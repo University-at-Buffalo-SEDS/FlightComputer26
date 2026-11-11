@@ -98,6 +98,7 @@ static void validate_controls(void)
 bool persistent_store_controls_ready(void) { return controls_ready&&!commissioning_hold&&!ownership_faulted; }
 bool persistent_store_recovery_ready(void){return controls_ready&&!ownership_faulted;}
 bool persistent_store_commission_pending(void){return commissioning_hold;}
+bool persistent_store_ownership_faulted(void){return ownership_faulted;}
 void persistent_store_hold_commissioning(void){commissioning_complete=0U;commissioning_hold=true;}
 void persistent_store_note_failure(void){commissioning_complete=0U;controls_ready=false;++g_persistent_store_errors;}
 bool persistent_store_publish_commission_complete(void){

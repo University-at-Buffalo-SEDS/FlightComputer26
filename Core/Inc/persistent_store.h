@@ -16,6 +16,7 @@ launchcore_persist_status_t persistent_store_get(uint32_t key, void *value, size
 launchcore_persist_status_t persistent_store_set(uint32_t key, const void *value, size_t value_size);
 bool persistent_store_recovery_ready(void);
 bool persistent_store_commission_pending(void);
+bool persistent_store_ownership_faulted(void);
 void persistent_store_hold_commissioning(void);
 void persistent_store_note_failure(void);
 bool persistent_store_publish_commission_complete(void);

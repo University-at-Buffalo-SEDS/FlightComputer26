@@ -1,4 +1,5 @@
 #include "board_health.h"
+#include "board_recovery_transport.h"
 #include "board_temperature.h"
 #include "board_uptime.h"
 #include "board_watchdog.h"
@@ -50,6 +51,8 @@ void board_health_poll(SedsRouter *router)
   words[1] |= 128U; words[21] = g_sd_max_write_ms;
 #endif
   __set_PRIMASK(saved);
+  /* Why flight commands are refused (board_recovery_transport.c). */
+  words[6] |= board_recovery_controller_gate() << 24U;
   words[11] = (uint32_t)seds_memory_admission_rejected();
   words[23] = failures;
   words[1] |= board_temperature_health_flags();

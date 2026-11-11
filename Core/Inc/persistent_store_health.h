@@ -3,4 +3,6 @@
 #include <stdbool.h>
 /* RAM-only critical-journal admission state, owned by the strict wrapper. */
 bool persistent_store_controls_ready(void);
+bool persistent_store_commission_pending(void);
+bool persistent_store_ownership_faulted(void);
 #endif
