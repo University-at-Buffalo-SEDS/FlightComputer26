@@ -30,6 +30,8 @@ static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
 static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
+/* Mirror of g_network_value_seen for BOARD_HEALTH word 14. */
+volatile uint32_t g_av_bay_underglow_network_seen = 0U;
 static bool g_persist_pending = false;
 static uint32_t g_persist_due_ms = 0U;
 static uint32_t g_last_refresh_ms = 0U;
@@ -139,6 +141,7 @@ static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
                          g_av_bay_underglow_enabled != (uint32_t)enabled;
     drive_underglow(enabled);
     g_network_value_seen = true;
+    g_av_bay_underglow_network_seen = 1U;
     g_av_bay_underglow_updates++;
     if (changed)
     {

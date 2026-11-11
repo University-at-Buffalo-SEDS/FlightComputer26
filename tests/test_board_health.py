@@ -27,6 +27,7 @@ volatile uint32_t g_telemetry_tlsf_live_bytes=100,g_telemetry_tlsf_peak_bytes=20
 volatile uint32_t g_can_tx_rejected=11,g_can_tx_high_water=12,g_gateway_uart_rx_ring_drops=13;
 volatile uint32_t g_sd_raw_records_enqueued_count=0xf00d1234U,g_sd_raw_records_written_count=15,g_sd_raw_records_dropped_count=16,g_sd_raw_records_flushed_count=17,g_sd_raw_records_io_lost_count=18,g_sd_write_error_count=19,g_sd_max_write_ms=20;
 volatile uint32_t g_sd_enqueued_records=0xf00d1234U,g_sd_written_records=15,g_sd_flushed_records=17,g_sd_format_errors=16,g_sd_lock_contention_drops=18,g_sd_unavailable_drops=19,g_sd_shutdown_lost_records=20,g_sd_write_errors=21;
+volatile uint32_t g_av_bay_underglow_enabled=1,g_flight_buzzer_enabled=0,g_av_bay_underglow_network_seen=1,g_flight_buzzer_network_seen=0;
 void board_temperature_poll(void){}
 uint32_t board_temperature_health_flags(void){return 0x17bd0100U;}
 uint64_t board_uptime_ticks(void){return uptime;}
@@ -58,6 +59,8 @@ int main(void){
  assert((captured[1]&0xffffff00U)==0x17bd0100U);
  assert(calls==2&&captured[23]==2&&captured[0]==1&&captured[4]==1000);
  assert(captured[5]==123&&captured[6]==5&&captured[11]==34&&captured[12]==31);
+ /* Applied cosmetic outputs: tag 0x4F55, underglow on from a network write. */
+ assert(!(captured[1]&8U)&&captured[14]==((0x4F55U<<16)|1U|4U));
 #ifdef TELEMETRY_USE_TLSF
  assert((captured[1]&1)&&captured[7]==100&&captured[8]==200&&captured[9]==4096&&captured[10]==7);
 #else
@@ -71,6 +74,8 @@ int main(void){
  uptime=(UINT64_C(1)<<42)+UINT32_MAX-2U;board_health_poll(&router);assert(calls==4);
  uptime+=4999;board_health_poll(&router);assert(calls==4);
  ++uptime;board_health_poll(&router);assert(calls==5); /* 32-bit schedule wrap */
+ g_flight_buzzer_enabled=1;g_flight_buzzer_network_seen=1;g_av_bay_underglow_enabled=0;
+ uptime+=5000;board_health_poll(&router);assert(calls==6&&captured[14]==((0x4F55U<<16)|2U|4U|8U));
 #else
  uptime=999999;board_health_poll(&router);assert(!calls);
 #endif

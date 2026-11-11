@@ -35,6 +35,8 @@ static bool g_persist_has_value = false;
 static bool g_persist_has_timestamp = false;
 static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
+/* Mirror of g_network_value_seen for BOARD_HEALTH word 14. */
+volatile uint32_t g_flight_buzzer_network_seen = 0U;
 static bool g_persist_pending = false;
 static uint32_t g_persist_due_ms = 0U;
 static uint32_t g_last_refresh_ms = 0U;
@@ -154,6 +156,7 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
      * not a level command for the buzzer output. */
     g_flight_buzzer_enabled = enabled ? 1U : 0U;
     g_network_value_seen = true;
+    g_flight_buzzer_network_seen = 1U;
     g_flight_buzzer_updates++;
     if (needs_persist)
     {

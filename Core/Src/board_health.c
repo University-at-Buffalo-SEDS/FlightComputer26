@@ -1,4 +1,6 @@
 #include "board_health.h"
+#include "av_bay_underglow.h"
+#include "flight_buzzer.h"
 #include "board_recovery_transport.h"
 #include "board_temperature.h"
 #include "board_uptime.h"
@@ -7,6 +9,7 @@
 #include "main.h"
 #include <stdint.h>
 #include <stdbool.h>
+#define BOARD_HEALTH_FC_OUTPUTS_TAG (0x4F55U << 16U)
 #if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error "Board diagnostic words require little-endian encoding"
 #endif
@@ -43,6 +46,16 @@ void board_health_poll(SedsRouter *router)
   words[9] = g_telemetry_tlsf_region_bytes; words[10] = g_telemetry_tlsf_failures;
 #endif
   words[12] = board_health_can_rx_drops();
+  /* The cosmetic outputs this FC applied, so the station can confirm a write
+   * whose end-to-end ACK was lost. Word 14 is the UART-drop counter on other
+   * boards only with word 1 flag 8, which this FC never sets; the tag in bits
+   * 16..31 marks this use. Bits: 0 underglow on, 1 buzzer on, 2 the underglow
+   * value came from a network write this boot, 3 likewise for the buzzer. */
+  words[14] = BOARD_HEALTH_FC_OUTPUTS_TAG |
+              (g_av_bay_underglow_enabled != 0U ? 1U : 0U) |
+              (g_flight_buzzer_enabled != 0U ? 2U : 0U) |
+              (g_av_bay_underglow_network_seen != 0U ? 4U : 0U) |
+              (g_flight_buzzer_network_seen != 0U ? 8U : 0U);
 #ifdef SD_AVAILABLE
   words[1] |= 16U;
   words[16] = g_sd_enqueued_records; words[17] = g_sd_written_records;

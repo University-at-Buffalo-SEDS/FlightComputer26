@@ -6,6 +6,7 @@
 
 extern volatile uint32_t g_av_bay_underglow_enabled;
 extern volatile uint32_t g_av_bay_underglow_updates;
+extern volatile uint32_t g_av_bay_underglow_network_seen;
 extern volatile uint32_t g_av_bay_underglow_persist_restores;
 extern volatile uint32_t g_av_bay_underglow_persist_writes;
 extern volatile uint32_t g_av_bay_underglow_persist_errors;

@@ -6,6 +6,7 @@
 
 extern volatile uint32_t g_flight_buzzer_enabled;
 extern volatile uint32_t g_flight_buzzer_updates;
+extern volatile uint32_t g_flight_buzzer_network_seen;
 extern volatile uint32_t g_flight_buzzer_persist_restores;
 extern volatile uint32_t g_flight_buzzer_persist_writes;
 extern volatile uint32_t g_flight_buzzer_persist_errors;
