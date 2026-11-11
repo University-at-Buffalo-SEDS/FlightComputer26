@@ -69,7 +69,7 @@ static void HAL_SuspendTick(void){}
 static void HAL_IncTick(void){}
 static uint32_t HAL_GetTick(void){return 100;}
 static bool fc_watchdog_can_actuate(void){return seal==0;}
-static bool fc_watchdog_can_actuate_manual(void){return seal==0;}
+__attribute__((unused)) static bool fc_watchdog_can_actuate_manual(void){return seal==0;}
 static bool fc_watchdog_record_deployment(bool reef,bool manual){(void)reef;(void)manual;return true;}
 static bool fc_watchdog_hold_for_operator_reset(void){assert(irq);seal=1;return true;}
 static bool fc_watchdog_begin_new_flight(void){assert(irq);seal=0;return true;}

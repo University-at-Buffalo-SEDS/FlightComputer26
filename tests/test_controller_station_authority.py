@@ -32,13 +32,15 @@ static unsigned station_observed;static void board_recovery_observe_station_time
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
 static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){assert(p&&n==1);states++;return SEDS_OK;}
+/* distribution.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
+static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==13||p->payload[0]==14);}
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p&&n==1);commands++;return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){assert(p&&n==1);biases++;return SEDS_OK;}
 volatile uint32_t g_reliable_refusal_count;
 #include "ground_heartbeat_owner.h"
 '''
-  for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed']:
+  for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed','board_recovery_operator_pyro_allowed']:
    if name+'(' in transport:code+='\n'+function(transport,name)
   code+='\n'+function(distribution,'on_fc_packet_impl')+r'''
 int main(void){

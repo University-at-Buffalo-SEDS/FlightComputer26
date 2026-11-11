@@ -19,6 +19,9 @@ static uint8_t board_recovery_manual_stop_source_allowed(SedsRouter*r,const Seds
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView*p){assert(p);return managed_ok;}
 static __attribute__((unused)) uint8_t board_recovery_managed_report_ignorable(const SedsPacketView*p){assert(p);return 0U;}
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView*p){assert(p);return controller_ok;}
+/* distribution.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
+static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==13||p->payload[0]==14);}
+static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView*p){(void)p;assert(!"no operator Deploy/Expand in this matrix");return 0U;}
 static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){(void)r;(void)p;}
 static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*d,size_t n){assert(d&&n==1);++postinits;return SEDS_OK;}
