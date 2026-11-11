@@ -20,10 +20,11 @@ static uint8_t authorized_owner(SedsRouter *router,const SedsPacketView *packet,
  return packet!=NULL && seds_router_sender_matches_hostname(router,
      packet->sender,packet->sender_len,owner,owner_len);
 }
+/* A station: the GS, or the RRLS when it takes over (name or compact alias,
+ * resolved by the SDK). Freshness, epoch and nonce checks still apply. */
 static uint8_t authorized_primary(SedsRouter *router,const SedsPacketView *packet)
 {
- return packet!=NULL && seds_router_sender_matches_hostname(router,
-     packet->sender,packet->sender_len,"GS",2U);
+ return authorized_owner(router,packet,"GS",2U) || authorized_owner(router,packet,"RRLS",4U);
 }
 uint8_t board_recovery_manual_stop_source_allowed(SedsRouter *router,const SedsPacketView *packet)
 {

@@ -30,7 +30,7 @@ SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);
 uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)?0U:t;}
 static unsigned station_observed;static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
-static SedsResult pulse_ground(void){return SEDS_OK;}
+static unsigned ground_pulses;static SedsResult pulse_ground(void){++ground_pulses;return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){assert(p&&n==1);states++;return SEDS_OK;}
 /* distribution.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
 static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==13||p->payload[0]==14);}
@@ -47,14 +47,18 @@ int main(void){
  uint8_t value=1;SedsPacketView p={.payload=&value,.payload_len=1};const char*senders[]={"GS","RRLS","PB","@addr:unknown"};const uint32_t types[]={SEDS_DT_FLIGHT_STATE,SEDS_DT_FLIGHT_COMMAND,SEDS_DT_ASCENT_BIASES};const uint64_t times[]={5000,0,UINT64_MAX,1,4999,21001};unsigned count=0;
  for(unsigned r=0;r<2;r++)for(unsigned h=0;h<2;h++)for(unsigned a=0;a<2;a++)for(unsigned s=0;s<4;s++)for(unsigned k=0;k<3;k++)for(unsigned t=0;t<6;t++){
   ready=r;healthy=h;active=a;p.sender=senders[s];p.sender_len=strlen(p.sender);p.ty=types[k];p.timestamp=times[t];
-  bool expected=ready&&healthy&&(!active?(k!=0||s==0):((k==0?s==0:s<=1)&&t==0));unsigned before=commands+biases+states,refused=g_reliable_refusal_count;SedsResult result=on_fc_packet_impl(&p,NULL);
+  /* Station writes: the GS or the RRLS (automatic takeover), never another board. */
+  bool expected=ready&&healthy&&(!active?(k!=0||s<=1):(s<=1&&t==0));unsigned before=commands+biases+states,refused=g_reliable_refusal_count;SedsResult result=on_fc_packet_impl(&p,NULL);
   /* Every refusal (non-station report, stale/unready write) is counted and
    * acknowledged (delivery not failed) but never applied. */
   assert(result==SEDS_OK&&g_reliable_refusal_count==refused+(expected?0U:1U));assert(commands+biases+states==before+(expected?1U:0U));count++;
  }
  ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=19000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&commands==before);clock_ok=true;
- p.ty=SEDS_DT_FLIGHT_STATE;before=states;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&states==before);p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
- p.ty=SEDS_DT_HEARTBEAT;p.sender="GS";p.sender_len=2;before=station_observed;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&station_observed==before+1);
+ p.ty=SEDS_DT_FLIGHT_STATE;before=states;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&states==before+1); /* a fresh RRLS write applies */p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
+ p.ty=SEDS_DT_HEARTBEAT;p.sender="GS";p.sender_len=2;before=station_observed;unsigned pulses=ground_pulses;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&station_observed==before+1&&ground_pulses==pulses+1);
+ /* An RRLS heartbeat keeps the ground link alive during a takeover; another board's does not. */
+ const char*beats[]={"RRLS","@addr:1895946653","@addr:3561204631","PB","@addr:12345"};const unsigned want[]={1,1,1,0,0};
+ for(unsigned i=0;i<5;i++){p.sender=beats[i];p.sender_len=strlen(beats[i]);pulses=ground_pulses;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&ground_pulses==pulses+want[i]);}
  assert(on_fc_packet_impl(NULL,NULL)==SEDS_HANDLER_ERROR);p.sender_len=0;assert(on_fc_packet_impl(&p,NULL)==SEDS_HANDLER_ERROR);
  printf("actual FC source/type/readiness/floor/time matrix %u PASS\n",count);return 0;}
 '''

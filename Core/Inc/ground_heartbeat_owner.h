@@ -15,10 +15,19 @@ static inline int ground_heartbeat_name_equal(const char *sender, size_t len,
   for (size_t i = 0; i < count; ++i) if (sender[i] != expected[i]) return 0;
   return 1;
 }
+/* The RRLS that takes over from a silent GS keeps the ground link alive. */
+#ifndef GROUND_HEARTBEAT_TAKEOVER_NAME
+#define GROUND_HEARTBEAT_TAKEOVER_NAME "RRLS"
+#endif
+#ifndef GROUND_HEARTBEAT_TAKEOVER_COMPACT
+#define GROUND_HEARTBEAT_TAKEOVER_COMPACT "@addr:1895946653"
+#endif
+#define GROUND_HEARTBEAT_IS(sender, len, name) \
+  ground_heartbeat_name_equal((sender), (len), (name), sizeof(name) - 1U)
 static inline int ground_heartbeat_owner_matches(const char *sender, size_t len) {
-  return ground_heartbeat_name_equal(sender, len, GROUND_HEARTBEAT_OWNER_NAME,
-      sizeof(GROUND_HEARTBEAT_OWNER_NAME) - 1U) ||
-      ground_heartbeat_name_equal(sender, len, GROUND_HEARTBEAT_OWNER_COMPACT,
-      sizeof(GROUND_HEARTBEAT_OWNER_COMPACT) - 1U);
+  return GROUND_HEARTBEAT_IS(sender, len, GROUND_HEARTBEAT_OWNER_NAME) ||
+         GROUND_HEARTBEAT_IS(sender, len, GROUND_HEARTBEAT_OWNER_COMPACT) ||
+         GROUND_HEARTBEAT_IS(sender, len, GROUND_HEARTBEAT_TAKEOVER_NAME) ||
+         GROUND_HEARTBEAT_IS(sender, len, GROUND_HEARTBEAT_TAKEOVER_COMPACT);
 }
 #endif
