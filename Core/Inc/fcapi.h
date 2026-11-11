@@ -341,7 +341,7 @@ void deployment_pulse_start(bool reef, bool manual);
 
 static inline bool release_parachute(bool force, bool manual)
 {
-  if (!(manual ? fc_watchdog_can_actuate_manual() : fc_watchdog_can_actuate())) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
+  if (!manual && !fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
   if (!force && !beyond(Armed))
   {
     log_metric("PD drogue blocked, state", current(), true);
@@ -360,7 +360,7 @@ static inline bool release_parachute(bool force, bool manual)
 
 static inline bool expand_parachute(bool force, bool manual)
 {
-  if (!(manual ? fc_watchdog_can_actuate_manual() : fc_watchdog_can_actuate())) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
+  if (!manual && !fc_watchdog_can_actuate()) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   if (!force && !beyond(Launch))
   {
     log_metric("PR reef blocked, state %u", current(), true);

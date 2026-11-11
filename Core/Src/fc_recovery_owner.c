@@ -70,14 +70,14 @@ bool fc_recovery_inhibits_pyro(void)
 {
     return fc_recovery_holds_sequence() || owner.new_flight;
 }
-/* The operator's manual deploy: every hold above except a rejected watchdog
- * resume (Stop's retained seal still refuses). Automatic pyro keeps
+/* The operator's manual Deploy/Expand is an emergency action the ground
+ * station gates by mode and authority: no flight state, Stop, reset, new-flight
+ * or storage hold refuses it here. Only a wired bench monitor session, which
+ * holds the outputs on purpose, does. Automatic pyro keeps
  * fc_recovery_inhibits_pyro(). */
 bool fc_recovery_inhibits_manual_pyro(void)
 {
-    return owner.monitor_mode || (!owner.admitted_flight && !persistent_store_controls_ready()) ||
-           owner.commissioning_hold || owner.manual_stop || owner.reset_inhibit ||
-           owner.new_flight || !fc_watchdog_can_actuate_manual();
+    return owner.monitor_mode;
 }
 bool fc_recovery_control_pending(void)
 {

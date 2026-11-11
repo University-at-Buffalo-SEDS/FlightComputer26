@@ -217,7 +217,8 @@ bool fc_watchdog_begin_new_flight(void)
 bool fc_watchdog_record_deployment(bool reef, bool manual)
 {
     if (!fc_watchdog_can_actuate()) {
-        if (!manual || !fc_watchdog_can_actuate_manual()) return false;
+        /* An operator Deploy/Expand still fires after Stop's seal. */
+        if (!manual) return false;
         /* A rejected boot never restored the journal cursors: append after the
          * newest valid record. With no valid journal no resume can use it. */
         unsigned latest;

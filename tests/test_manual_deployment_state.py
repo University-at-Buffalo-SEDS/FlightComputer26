@@ -99,6 +99,22 @@ class ManualDeploymentStateTests(unittest.TestCase):
             result = subprocess.run([str(out / 'probe')], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_operator_deploy_and_expand_are_forced_in_any_state(self):
+        # Emergency chutes: the operator's Deploy/Expand (not internal) is
+        # forced past the flight-state checks and every FC hold but a wired
+        # bench session; automatic deployments keep the state checks.
+        recovery = (BASE / 'Core/Src/recovery.c').read_text()
+        action = extract(recovery, 'static inline void process_action(')
+        plain = action[action.index('#else'):action.index('#endif /* LUNATIC_STATE */')]
+        self.assertIn('manual_deployment(true, !internal, !internal)', plain)
+        self.assertIn('manual_deployment(false, !internal, !internal)', plain)
+        admissible = extract(recovery, 'bool fc_recovery_command_admissible(')
+        self.assertLess(admissible.index('Deploy_Parachute'), admissible.index('fc_recovery_holds_sequence()'))
+        owner = (BASE / 'Core/Src/fc_recovery_owner.c').read_text()
+        self.assertIn('return owner.monitor_mode;', extract(owner, 'bool fc_recovery_inhibits_manual_pyro('))
+        distribution = (BASE / 'Core/Src/distribution.c').read_text()
+        self.assertIn('board_recovery_operator_pyro_allowed(pkt)', distribution)
+
 
 if __name__ == '__main__':
     unittest.main()

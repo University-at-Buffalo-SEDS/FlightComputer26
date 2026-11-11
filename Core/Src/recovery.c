@@ -499,11 +499,14 @@ static inline void process_action(fc_msg cmd, bool internal)
 
 #else
 
+    /* The operator's Deploy/Expand fires in any flight state so the chutes
+     * can be deployed or reefed in an emergency; the ground station gates it
+     * by mode and authority. Automatic deployments keep the state checks. */
     case Deploy_Parachute:
-      return manual_deployment(true, false, !internal);
+      return manual_deployment(true, !internal, !internal);
 
     case Expand_Parachute:
-      return manual_deployment(false, false, !internal);
+      return manual_deployment(false, !internal, !internal);
 
 #endif /* LUNATIC_STATE */
 
@@ -708,6 +711,9 @@ static inline void process_gps_code(fc_msg code)
 bool fc_recovery_command_admissible(uint32_t command, bool internal)
 {
   const fc_msg cmd = (fc_msg)command;
+  /* The operator's emergency Deploy/Expand passes every sequence hold. */
+  if (!internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute))
+    return !fc_recovery_inhibits_manual_pyro();
   if (fc_recovery_holds_sequence()) {
     /* Only the operator's deploy commands may pass a rejected watchdog resume. */
     return cmd == Evaluation_Abort ||

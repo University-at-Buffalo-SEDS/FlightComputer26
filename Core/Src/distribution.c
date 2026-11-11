@@ -95,6 +95,15 @@ static inline fc_msg decode_cmd(const uint8_t *k)
 }
 
 #endif /* TELEMETRY_CMD_COMPAT */
+
+/* The operator's emergency Deploy/Expand, admitted by sender identity only. */
+static inline bool operator_pyro_command(const SedsPacketView *pkt)
+{
+  if (pkt->ty != SEDS_DT_FLIGHT_COMMAND || pkt->payload == NULL || pkt->payload_len != MIN_CMD_SIZE)
+    return false;
+  const fc_msg msg = decode_cmd(pkt->payload);
+  return msg == Deploy_Parachute || msg == Expand_Parachute;
+}
 #endif /* TELEMETRY_ENABLED + FAKESTATION */
 
 
@@ -411,7 +420,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
    * withheld the SDK receipt: the sender retransmitted it forever. */
   if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt)) ||
       ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES) &&
-       !board_recovery_controller_update_allowed(pkt)))
+       !(operator_pyro_command(pkt) ? board_recovery_operator_pyro_allowed(pkt)
+                                    : board_recovery_controller_update_allowed(pkt))))
   {
     ++g_reliable_refusal_count;
     return SEDS_OK;

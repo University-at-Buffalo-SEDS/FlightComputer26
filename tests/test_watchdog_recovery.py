@@ -236,12 +236,15 @@ int main(void) {
  assert(fc_watchdog_record_deployment(false,true));
  {unsigned latest;assert(action_history_ready(&latest)&&retained.action[latest].sequence==prior+2U);}
  unsigned before=g_fc_watchdog_checkpoints;fc_watchdog_checkpoint();assert(g_fc_watchdog_checkpoints==before);
- /* Stop still refuses the manual path. */
+ /* After Stop the operator's emergency Deploy/Expand still records and fires;
+  * automatic deployments stay refused. */
  mask=1;assert(fc_watchdog_hold_for_operator_reset());mask=0;
- assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,true));
+ assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,false));
+ assert(fc_watchdog_record_deployment(false,true));
  cold_boot();flight(4);mask=1;fc_watchdog_hold_for_operator_reset();mask=0;
  reset_runtime();fc_watchdog_recovery_boot(1);
- assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,true));
+ assert(!fc_watchdog_can_actuate_manual()&&!fc_watchdog_record_deployment(false,false));
+ assert(fc_watchdog_record_deployment(false,true));
 }
 '''
         import re

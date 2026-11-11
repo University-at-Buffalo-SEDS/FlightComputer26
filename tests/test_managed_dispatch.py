@@ -27,6 +27,8 @@ static volatile uint32_t g_reliable_refusal_count;
 /* Existing receipt-only fixture: controller readiness is conservative too;
  * actual station/floor/clock policy is covered by its dedicated source test. */
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p){return p!=NULL;}
+static int operator_pyro_command(const SedsPacketView *p){(void)p;return 0;}
+static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
 static unsigned station_observed;static void board_recovery_observe_station_time(void*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}

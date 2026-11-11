@@ -74,7 +74,9 @@ int main(void) {
     def test_fc_endpoint_handler_does_not_fail_its_own_report(self):
         body = function((ROOT / 'Core/Src/distribution.c').read_text(), 'on_fc_packet_impl')
         gate = body.index('if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))')
-        self.assertIn('++g_reliable_refusal_count;\n    return SEDS_OK;', body[gate:gate + 300])
+        refusal = body[gate:body.index('}', gate)]
+        self.assertIn('++g_reliable_refusal_count;\n    return SEDS_OK;', refusal)
+        self.assertNotIn('SEDS_HANDLER_ERROR', refusal)
 
     def test_flight_state_report_is_queued_off_the_evaluation_stack(self):
         # Sent directly from the evaluation task, the now-delivered report ran

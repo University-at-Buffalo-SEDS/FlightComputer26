@@ -99,6 +99,17 @@ uint8_t board_recovery_managed_update_allowed(const SedsPacketView *packet)
  return recovery_router!=0 && authorized_primary(recovery_router,packet) &&
         !board_recovery_command_is_stale(packet);
 }
+/* The operator's emergency Deploy/Expand: the station's sender identity is the
+ * only gate, like the manual Stop. A storage or floor fault, or an unsynced
+ * clock, must not refuse it; a request more than 15 s old by the station clock
+ * still does, so a long-delayed retry cannot fire late. */
+uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *packet)
+{
+ if (recovery_router==0 || !board_recovery_manual_stop_source_allowed(recovery_router,packet)) return 0U;
+ const uint64_t now=board_recovery_station_now(recovery_router);
+ if (now==0U || now==UINT64_MAX || packet->timestamp==0U || packet->timestamp==UINT64_MAX) return 1U;
+ return now<packet->timestamp || now-packet->timestamp<=15000U;
+}
 /* Ordinary controller admission: identity reuse only, never emergency-Stop policy. */
 uint8_t board_recovery_controller_update_allowed(const SedsPacketView *packet)
 {

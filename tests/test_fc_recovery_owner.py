@@ -44,9 +44,8 @@ static void HAL_IncTick(void){}
 static uint32_t HAL_GetTick(void){return 100;}
 static bool resume_rejected;
 static bool fc_watchdog_can_actuate(void){return seal==0&&!resume_rejected;}
-static bool fc_watchdog_can_actuate_manual(void){return seal==0;}
 static bool fc_watchdog_record_deployment(bool reef,bool manual){
- if(!(manual?fc_watchdog_can_actuate_manual():fc_watchdog_can_actuate()))return false;
+ if(!manual&&!fc_watchdog_can_actuate())return false; /* operator Deploy/Expand passes Stop's seal */
  historical|=reef?2:1;return true;}
 static bool fc_watchdog_hold_for_operator_reset(void){assert(irq);if(seal_error)return false;seal=1;return true;}
 static bool fc_watchdog_begin_new_flight(void){assert(irq);seal=0;++arms;return true;}
@@ -190,10 +189,13 @@ int main(int argc,char**argv){assert(argc==2);
   deployment_pulse_start(true,true);assert(highs==2&&gpio.ODR==3&&historical==3);
   assert(fc_recovery_abort_latched()); /* automatic sequence stays held */
  }else if(!strcmp(argv[1],"rejected_resume_other_holds")){
-  resume_rejected=true;store_ready=false;assert(fc_recovery_inhibits_manual_pyro());
-  deployment_pulse_start(false,true);assert(highs==0);
-  store_ready=true;fc_recovery_manual_stop();assert(fc_recovery_inhibits_manual_pyro());
-  deployment_pulse_start(false,true);deployment_pulse_start(true,true);assert(highs==0&&!gpio.ODR);
+  /* The operator's emergency Deploy/Expand: no storage, Stop or resume hold
+   * refuses it (the station gates it); automatic pyro stays held. */
+  resume_rejected=true;store_ready=false;assert(!fc_recovery_inhibits_manual_pyro());
+  deployment_pulse_start(false,false);assert(highs==0);
+  deployment_pulse_start(false,true);assert(highs==1&&gpio.ODR==1);
+  store_ready=true;fc_recovery_manual_stop();assert(seal&&!gpio.ODR&&!fc_recovery_inhibits_manual_pyro());
+  deployment_pulse_start(true,true);assert(highs==2&&gpio.ODR==2);
  }else if(!strcmp(argv[1],"masked_caller")){
   irq=1;fc_recovery_manual_stop();assert(irq==1&&seal&&!gpio.ODR);
  }else assert(!"unknown case");
