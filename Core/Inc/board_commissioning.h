@@ -19,6 +19,8 @@ int32_t board_commissioning_stage(const BoardRecoveryRequest*,uint64_t,uint64_t,
 void board_commissioning_service(void);
 /* Fixed concrete domain owner. No state/IRQ lock crosses storage or SDK. */
 int32_t board_recovery_commission_prepare(uint32_t expected_epoch);
+bool fc_recovery_reserve_reset_any(void);
+void fc_recovery_release_reset_any(void);
 bool board_recovery_commission_held(uint32_t expected_epoch);
 int32_t board_recovery_commission_apply(uint32_t expected_epoch);
 bool board_recovery_commission_applied(uint32_t expected_epoch,uint32_t*actual_epoch);

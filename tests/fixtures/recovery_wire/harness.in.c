@@ -305,11 +305,19 @@ int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(v
   if(!strcmp(argv[1],"stale")){body[20]=2;request(r,&packet,false);assert(response[1]==4&&media_reads==before_reads&&media_writes==before_writes&&response_epoch()==1&&response[2]==G_Recovery);return 0;}
   if(!strcmp(argv[1],"io"))fail_key=0x4252464cU;
   if(!strcmp(argv[1],"pending")){unsigned replies=app_replies;assert(board_recovery_handle(r,&packet,endpoint,123)==SEDS_OK&&app_replies==replies);assert(media_reads==before_reads&&media_writes==before_writes&&!persistent_store_controls_ready());BoardRecoverySnapshot held={0};assert(board_recovery_snapshot(&held)==0&&held.abort_epoch==1&&held.actual_state==G_Recovery&&(held.flags&1U)&&(held.flags&18U)==18U);assert(board_recovery_handle(r,&packet,endpoint,123)==SEDS_OK&&app_replies==replies);}
+  if(!strcmp(argv[1],"reset_any_race")){
+   /* Accepted op 3 still running: a Deploy/Expand (or an automatic pulse) is
+    * refused, never started and then cut by the reset. */
+   assert(board_recovery_handle(r,&packet,endpoint,123)==SEDS_OK);
+   deployment_pulse_start(false,true);deployment_pulse_start(true,false);
+   assert(!highs&&!gpio.ODR&&fc_recovery_inhibits_manual_pyro()&&fc_recovery_reset_any_inflight());
+  }
   request(r,&packet,true);assert(!gpio.ODR&&!highs&&irq==0);
   if(!strcmp(argv[1],"io")){assert(response[1]==7&&response[3]&1U&&(response[3]&18U)==18U&&!persistent_store_controls_ready()&&response_epoch()==1&&response[2]==G_Recovery);unsigned reads=media_reads,writes=media_writes;fail_key=0;request(r,&packet,false);assert(response[1]==7&&reads==media_reads&&writes==media_writes);puts("actual NVM IO stays held, exact duplicate performs no IO PASS");return 0;}
 
   assert(response[1]==0&&response[2]==0&&response_epoch()==2&&!(response[3]&1U)&&(response[3]&18U)==18U&&persistent_store_controls_ready()&&!persistent_store_commission_pending());
-  if(!strncmp(argv[1],"reset_any",9)){assert(!highs&&!gpio.ODR&&fc_recovery_requires_new_flight()); /* no relaunch from a cached state */puts("op 3 reset to Startup from any state PASS");return 0;}
+  if(!strncmp(argv[1],"reset_any",9)){assert(!highs&&!gpio.ODR&&fc_recovery_requires_new_flight()); /* no relaunch from a cached state */
+   if(!strcmp(argv[1],"reset_any_race")){assert(!fc_recovery_reset_any_inflight()&&!fc_recovery_inhibits_manual_pyro());deployment_pulse_start(false,true);assert(highs==1&&gpio.ODR==1);puts("op 3 window refuses pulses; manual Deploy works after the reset PASS");}puts("op 3 reset to Startup from any state PASS");return 0;}
   uint8_t marker[40];size_t size=40;assert(persistent_store_enter());assert(launchcore_persist_get_strict(COMMISSION_RECORD_KEY,marker,&size,&info)==0);assert(persistent_store_leave());CommissionRecord record;assert(commission_record_decode(marker,size,&record)&&record.kind==1&&record.state==0&&record.generation==generation&&record.nonce==2&&record.source==10001);
   uint8_t original_request[32];memcpy(original_request,body,32);body[1]=0;put64(body+4,3);put64(body+12,0);memset(body+20,0,4);packet.timestamp=clock_ms=10002;unsigned query_reads=media_reads,query_writes=media_writes;request(r,&packet,false);assert(response[1]==0&&response[2]==0&&response_epoch()==2&&!(response[3]&1U)&&get64(response+12)==generation&&media_reads==query_reads&&media_writes==query_writes);memcpy(body,original_request,32);packet.timestamp=10001;
   wr=media_writes;request(r,&packet,false);assert(response[1]==0&&media_writes==wr);packet.timestamp=10002;request(r,&packet,false);assert(response[1]==6&&media_writes==wr);

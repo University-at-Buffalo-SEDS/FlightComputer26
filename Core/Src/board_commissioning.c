@@ -115,6 +115,8 @@ int32_t board_commissioning_stage(const BoardRecoveryRequest*r,uint64_t source,u
  else if(normal_eligible&&(!history_valid||history.state==0)&&generation&&generation!=UINT64_MAX&&r->expected_boot_generation==generation)kind=JOB_NORMAL;
  else if(board_commissioning_pending()&&known_identity&&(known_floor||repairable_floor)&&query.valid&&query.generation==generation&&query.epoch==epoch&&fresh(query.source,now)&&r->expected_boot_generation==generation&&r->issuer_session==query.issuer&&!same_tuple(r->issuer_session,r->nonce,query.issuer,query.nonce))kind=history.kind==1?JOB_NORMAL:JOB_SECOND;
  else return BOARD_RECOVERY_RESULT_STALE;
+ /* Op 3: no pulse running, and none may start until this job finishes. */
+ if(r->operation==BOARD_RECOVERY_RESET_STARTUP_ANY&&!fc_recovery_reserve_reset_any())return BOARD_RECOVERY_RESULT_UNSAFE;
  query.valid=false;
  /* Retire the exact original intent BEFORE state or media effects. Failed jobs
   * require a new explicit nonce/time, never an SDK-ID allocation/restamp. */
@@ -123,7 +125,7 @@ int32_t board_commissioning_stage(const BoardRecoveryRequest*r,uint64_t source,u
   * the strict PENDING commit. Concrete owner performs no flash/SDK here. */
  persistent_store_hold_commissioning();job.owner_started=true;
  int32_t prepared=board_recovery_commission_prepare(r->expected_abort_epoch);
- if(prepared!=0){job.waiting=false;job.result=prepared==-10?BOARD_RECOVERY_RESULT_STALE:BOARD_RECOVERY_RESULT_IO;board_recovery_commission_retain();return job.result;}
+ if(prepared!=0){fc_recovery_release_reset_any();job.waiting=false;job.result=prepared==-10?BOARD_RECOVERY_RESULT_STALE:BOARD_RECOVERY_RESULT_IO;board_recovery_commission_retain();return job.result;}
  job.phase=1;return -1;
 }
 
@@ -278,6 +280,7 @@ static bool write_pending_normal(void){
 
 static bool reply_delayed;static uint32_t reply_tick;
 static void finish_job(uint8_t result,bool retain){
+ fc_recovery_release_reset_any();
  if(retain&&job.owner_started)board_recovery_commission_retain();
  job.waiting=false;job.dirty=true;job.result=result;reply_delayed=false;
 }

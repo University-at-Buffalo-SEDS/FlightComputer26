@@ -6,6 +6,9 @@
  * exclusion as deployment_pulse_start. These accessors perform no I/O. */
 bool fc_recovery_inhibits_pyro(void);
 bool fc_recovery_inhibits_manual_pyro(void);
+bool fc_recovery_reserve_reset_any(void);
+void fc_recovery_release_reset_any(void);
+bool fc_recovery_reset_any_inflight(void);
 bool fc_recovery_eval_pause_requested(void);
 void fc_recovery_evaluation_quiescent(void);
 void fc_recovery_control_service(void);

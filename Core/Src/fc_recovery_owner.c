@@ -20,6 +20,8 @@ static volatile struct {
     bool monitor_mode, monitor_ready; /* released only by a full MCU reset */
 } owner = {.epoch = 1U};
 _Static_assert(sizeof owner <= 32U, "Bounded single FC recovery mailbox");
+/* Op 3 accepted and running: no pulse may start (read under the IRQ guard). */
+static volatile bool reset_any;
 /* Original UTC of the manual Stop that set the current latch. The station
  * can deliver one operator Abort more than once (retries, relays); every
  * copy carries the same original UTC and must not invalidate tickets again. */
@@ -68,7 +70,7 @@ bool fc_recovery_abort_latched(void)
 }
 bool fc_recovery_inhibits_pyro(void)
 {
-    return fc_recovery_holds_sequence() || owner.new_flight;
+    return fc_recovery_holds_sequence() || owner.new_flight || reset_any;
 }
 /* The operator's manual Deploy/Expand is an emergency action the ground
  * station gates by mode and authority: no flight state, Stop, reset, new-flight
@@ -77,8 +79,23 @@ bool fc_recovery_inhibits_pyro(void)
  * fc_recovery_inhibits_pyro(). */
 bool fc_recovery_inhibits_manual_pyro(void)
 {
-    return owner.monitor_mode;
+    return owner.monitor_mode || reset_any;
 }
+/* Op 3 RESET_STARTUP_ANY: check that no pulse is HIGH or ticking and, under
+ * the same IRQ guard deployment_pulse_start uses, block every new pulse until
+ * the reset finishes. The reset therefore never cuts a pulse, and a Deploy
+ * pressed meanwhile is refused (recovery.c tells the station), not started. */
+bool fc_recovery_reserve_reset_any(void)
+{
+    uint32_t outputs;
+    const uint32_t mask = __get_PRIMASK(); __disable_irq();
+    const bool safe = deployment_pulse_safe_outputs_locked(&outputs);
+    if (safe) reset_any = true;
+    __set_PRIMASK(mask);
+    return safe;
+}
+void fc_recovery_release_reset_any(void) { reset_any = false; }
+bool fc_recovery_reset_any_inflight(void) { return reset_any; }
 bool fc_recovery_control_pending(void)
 {
     return (owner.monitor_mode && !owner.monitor_ready) ||

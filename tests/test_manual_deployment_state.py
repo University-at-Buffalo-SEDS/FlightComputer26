@@ -48,6 +48,7 @@ static void __set_PRIMASK(uint32_t m) { (void)m; }
 static void fc_recovery_ota_reset_retire_locked(void) {}
 static bool fc_recovery_inhibits_manual_pyro(void) { return inhibited; }
 static bool fc_recovery_inhibits_pyro(void) { return inhibited; }
+static bool fc_recovery_reset_any_inflight(void) { return false; }
 static bool fc_watchdog_can_actuate(void) { return true; }
 static void fc_sd_capture_event(int e, bool reef) { (void)e; (void)reef; rejected_events++; }
 static bool release_parachute(bool force, bool manual) { (void)force; (void)manual; released++; return release_ok; }
@@ -111,7 +112,7 @@ class ManualDeploymentStateTests(unittest.TestCase):
         admissible = extract(recovery, 'bool fc_recovery_command_admissible(')
         self.assertLess(admissible.index('Deploy_Parachute'), admissible.index('fc_recovery_holds_sequence()'))
         owner = (BASE / 'Core/Src/fc_recovery_owner.c').read_text()
-        self.assertIn('return owner.monitor_mode;', extract(owner, 'bool fc_recovery_inhibits_manual_pyro('))
+        self.assertIn('return owner.monitor_mode || reset_any;', extract(owner, 'bool fc_recovery_inhibits_manual_pyro('))  # op 3 window only
         distribution = (BASE / 'Core/Src/distribution.c').read_text()
         self.assertIn('board_recovery_operator_pyro_allowed(pkt)', distribution)
 

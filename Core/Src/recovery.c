@@ -354,6 +354,8 @@ static inline void manual_deployment(bool apogee, bool force, bool manual)
 {
   if (manual ? fc_recovery_inhibits_manual_pyro()
              : fc_recovery_inhibits_pyro() || !fc_watchdog_can_actuate()) {
+    if (manual && fc_recovery_reset_any_inflight())
+      message(id "Deploy/Expand refused: reset to Startup running", true);
     fc_sd_capture_event(FC_LOG_PYRO_REJECTED, !apogee); return;
   }
   if (apogee)
