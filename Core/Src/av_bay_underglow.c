@@ -11,6 +11,12 @@ extern volatile uint32_t g_telemetry_discovery_seen;
 
 #define UNDERGLOW_PERSIST_KEY 0x55474C57u
 #define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
+/* A cosmetic setting reaches flash only after it has settled this long, so
+ * toggling it never wears or fills the store; a reset inside the window
+ * restores the previous settled value. */
+#ifndef UNDERGLOW_PERSIST_SETTLE_MS
+#define UNDERGLOW_PERSIST_SETTLE_MS 30000U
+#endif
 
 volatile uint32_t g_av_bay_underglow_enabled = 0U;
 volatile uint32_t g_av_bay_underglow_updates = 0U;
@@ -24,6 +30,8 @@ static bool g_persist_ready = false;
 static bool g_persist_has_value = false;
 static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
+static bool g_persist_pending = false;
+static uint32_t g_persist_due_ms = 0U;
 static uint32_t g_last_refresh_ms = 0U;
 
 /* The recovery task must never busy-wait for an indicator. Only these short
@@ -127,29 +135,38 @@ static SedsResult apply_underglow(const SedsPacketView *packet, void *user)
     }
 
     const bool enabled = packet->payload[0] != 0U;
-    const bool needs_persist = !g_persist_has_value ||
-                               g_av_bay_underglow_enabled != (uint32_t)enabled;
+    const bool changed = !g_persist_has_value ||
+                         g_av_bay_underglow_enabled != (uint32_t)enabled;
     drive_underglow(enabled);
     g_network_value_seen = true;
     g_av_bay_underglow_updates++;
-
-    if (needs_persist)
+    if (changed)
     {
-        const uint8_t stored = enabled ? 1U : 0U;
-        if (!g_persist_ready ||
-            persistent_store_set(UNDERGLOW_PERSIST_KEY, &stored,
-                                 sizeof(stored)) != LAUNCHCORE_PERSIST_OK)
-        {
-            /* GPIO already changed; an identical delivery must retry the
-             * failed flash write before reporting durable success. */
-            g_persist_has_value = false;
-            g_av_bay_underglow_persist_errors++;
-            return SEDS_HANDLER_ERROR;
-        }
-        g_persist_has_value = true;
-        g_av_bay_underglow_persist_writes++;
+        g_persist_has_value = false;
+        g_persist_pending = true;
+        g_persist_due_ms = HAL_GetTick() + UNDERGLOW_PERSIST_SETTLE_MS;
     }
     return SEDS_OK;
+}
+
+/* Telemetry task: write the setting once it has settled; retry a failed
+ * write one settle period later. */
+static void persist_settled(void)
+{
+    const uint32_t now_ms = HAL_GetTick();
+    if (!g_persist_pending || (int32_t)(now_ms - g_persist_due_ms) < 0) return;
+    const uint8_t stored = g_av_bay_underglow_enabled != 0U ? 1U : 0U;
+    if (!g_persist_ready ||
+        persistent_store_set(UNDERGLOW_PERSIST_KEY, &stored,
+                             sizeof(stored)) != LAUNCHCORE_PERSIST_OK)
+    {
+        g_av_bay_underglow_persist_errors++;
+        g_persist_due_ms = now_ms + UNDERGLOW_PERSIST_SETTLE_MS;
+        return;
+    }
+    g_persist_pending = false;
+    g_persist_has_value = true;
+    g_av_bay_underglow_persist_writes++;
 }
 
 SedsResult av_bay_underglow_init(SedsRouter *router)
@@ -169,6 +186,7 @@ SedsResult av_bay_underglow_init(SedsRouter *router)
 SedsResult av_bay_underglow_poll(SedsRouter *router)
 {
     poll_indicator();
+    persist_settled();
     if (router == NULL) return SEDS_BAD_ARG;
     if (g_network_value_seen) return SEDS_OK;
     if (g_telemetry_discovery_seen == 0U) return SEDS_OK;

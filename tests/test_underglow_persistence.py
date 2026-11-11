@@ -54,23 +54,30 @@ static int seds_router_request_managed_variable(SedsRouter *r,int ty) { (void)r;
 '''
 TEST = r'''
 static SedsResult update(uint8_t value){SedsPacketView p={SEDS_DT_AV_BAY_UNDERGLOW,&value,1};return callback(&p,NULL);}
+static void settle(uint32_t ms){SedsRouter router=0;tick+=ms;(void)av_bay_underglow_poll(&router);}
 int main(void){
  (void)irq_mask;
  SedsRouter router=0;assert(av_bay_underglow_init(&router)==SEDS_OK);assert(callback);
- assert(update(1)==SEDS_OK);assert(writes==1&&stored==1&&pin==1);
- assert(update(1)==SEDS_OK);assert(writes==1); /* avoid successful-value flash wear */
- fail_write=1;
- assert(update(0)==SEDS_HANDLER_ERROR);assert(writes==2&&stored==1&&pin==0);
- assert(update(0)==SEDS_HANDLER_ERROR);assert(writes==3&&stored==1); /* no false receipt */
- fail_write=0;
- assert(update(0)==SEDS_OK);assert(writes==4&&stored==0); /* identical retry repairs flash */
- assert(update(0)==SEDS_OK);assert(writes==4);
- assert(g_av_bay_underglow_persist_errors==2&&g_av_bay_underglow_persist_writes==2);
+ /* The lamp follows at once; flash waits until the value settles 30 s. */
+ assert(update(1)==SEDS_OK);assert(pin==1&&writes==0);
+ settle(29999);assert(writes==0);
+ settle(1);assert(writes==1&&stored==1);
+ assert(update(1)==SEDS_OK);settle(30000);assert(writes==1); /* unchanged: no wear */
+ /* Thousands of toggles inside the window cost no flash; the last value is stored once. */
+ for(unsigned i=0;i<5000;i++){assert(update((uint8_t)(i&1u))==SEDS_OK);settle(10);}
+ assert(writes==1&&pin==1); /* the last toggle (i=4999) leaves it on */
+ settle(30000);assert(writes==2&&stored==1);
+ /* A failed write retries one settle period later; delivery is never refused. */
+ fail_write=1;assert(update(0)==SEDS_OK&&pin==0);settle(30000);assert(writes==3&&stored==1);
+ settle(29999);assert(writes==3);
+ fail_write=0;settle(1);assert(writes==4&&stored==0);
+ settle(30000);assert(writes==4);
+ assert(g_av_bay_underglow_persist_errors==1&&g_av_bay_underglow_persist_writes==3);
 }
 '''
 
 class UnderglowPersistenceTests(unittest.TestCase):
-    def test_failed_changed_write_retries_until_durable(self):
+    def test_settled_value_is_persisted_once_and_toggles_cost_no_flash(self):
         source = (ROOT / 'Core/Src/av_bay_underglow.c').read_text()
         source = '\n'.join(line for line in source.splitlines()
                            if not line.startswith('#include "'))

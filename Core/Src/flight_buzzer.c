@@ -13,6 +13,10 @@ extern volatile uint32_t g_telemetry_discovery_seen;
 #define FLIGHT_BUZZER_PERSIST_RECORD_SIZE 9U
 #define FLIGHT_BUZZER_STARTUP_DURATION_MS 2000U
 #define NETWORK_VARIABLE_UNSYNCED_RETRY_MS 500U
+/* Persisted only after settling (see av_bay_underglow.c); ordering stays in RAM. */
+#ifndef FLIGHT_BUZZER_PERSIST_SETTLE_MS
+#define FLIGHT_BUZZER_PERSIST_SETTLE_MS 30000U
+#endif
 
 volatile uint32_t g_flight_buzzer_enabled = 0U;
 volatile uint32_t g_flight_buzzer_updates = 0U;
@@ -31,6 +35,8 @@ static bool g_persist_has_value = false;
 static bool g_persist_has_timestamp = false;
 static bool g_restore_attempted = false;
 static bool g_network_value_seen = false;
+static bool g_persist_pending = false;
+static uint32_t g_persist_due_ms = 0U;
 static uint32_t g_last_refresh_ms = 0U;
 static uint64_t g_last_source_timestamp_ms = 0U;
 static bool g_startup_buzz_active = false;
@@ -151,23 +157,33 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
     g_flight_buzzer_updates++;
     if (needs_persist)
     {
-        uint8_t record[FLIGHT_BUZZER_PERSIST_RECORD_SIZE] = {
-            enabled ? 1U : 0U,
-        };
-        encode_u64_le(&record[1], packet->timestamp);
-        if (!g_persist_ready ||
-            persistent_store_set(FLIGHT_BUZZER_PERSIST_KEY, record,
-                                 sizeof(record)) != LAUNCHCORE_PERSIST_OK)
-        {
-            g_flight_buzzer_persist_errors++;
-            return SEDS_HANDLER_ERROR;
-        }
         g_persist_has_value = true;
         g_persist_has_timestamp = true;
         g_last_source_timestamp_ms = packet->timestamp;
-        g_flight_buzzer_persist_writes++;
+        g_persist_pending = true;
+        g_persist_due_ms = HAL_GetTick() + FLIGHT_BUZZER_PERSIST_SETTLE_MS;
     }
     return SEDS_OK;
+}
+
+static void persist_settled(void)
+{
+    const uint32_t now_ms = HAL_GetTick();
+    if (!g_persist_pending || (int32_t)(now_ms - g_persist_due_ms) < 0) return;
+    uint8_t record[FLIGHT_BUZZER_PERSIST_RECORD_SIZE] = {
+        g_flight_buzzer_enabled != 0U ? 1U : 0U,
+    };
+    encode_u64_le(&record[1], g_last_source_timestamp_ms);
+    if (!g_persist_ready ||
+        persistent_store_set(FLIGHT_BUZZER_PERSIST_KEY, record,
+                             sizeof(record)) != LAUNCHCORE_PERSIST_OK)
+    {
+        g_flight_buzzer_persist_errors++;
+        g_persist_due_ms = now_ms + FLIGHT_BUZZER_PERSIST_SETTLE_MS;
+        return;
+    }
+    g_persist_pending = false;
+    g_flight_buzzer_persist_writes++;
 }
 
 SedsResult flight_buzzer_init(SedsRouter *router)
@@ -187,6 +203,7 @@ SedsResult flight_buzzer_init(SedsRouter *router)
 SedsResult flight_buzzer_poll(SedsRouter *router)
 {
     service_startup_buzz();
+    persist_settled();
     if (router == NULL) return SEDS_BAD_ARG;
     if (g_network_value_seen) return SEDS_OK;
     if (g_telemetry_discovery_seen == 0U) return SEDS_OK;

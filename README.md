@@ -13,8 +13,9 @@ CMake fetches rolling SEDSNet `main` and SEDS LaunchCore v1.0.0 without submodul
 LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
-storage before network synchronization and updated when an authoritative
-network value arrives. The buzzer record also retains the authoritative packet
+storage before network synchronization. Flight state is written when an
+authoritative network value arrives; underglow and buzzer are written only once
+a value has settled for 30 s, so toggling them never wears the store. The buzzer record also retains the authoritative packet
 timestamp so a reliable update left in flight before a reset cannot roll the
 restored state back after reboot; legacy one-byte records remain readable.
 
@@ -28,6 +29,13 @@ python3 build.py release flash-st
 python3 build.py release flash-dfu
 python3 build.py release clean
 ```
+
+A wired factory flash also erases the LaunchCore persistent store at
+0x0807C000 (16 KiB), which lies past the factory image and was otherwise kept
+across reflashes. That wipes the boot identity, recovery floor, commissioning
+marker (including a PENDING Stop hold), persisted flight state and the
+underglow and buzzer settings; the tool lists them before flashing. Add
+`keep-settings` (or `--keep-settings`) to keep the store.
 
 `factory` builds the combined bootloader and confirmed Slot A image;
 `bootloader`, `firmware`, and `ota` select the other image workflows. A normal

@@ -186,6 +186,7 @@ ALL_OPTIONS     = { "no-watchdog", "allocator-tlsf", "packet-store-compact", "se
                         "alloctest",
                         "fakestation",
                         "factory",
+                        "keep-settings",
                         "bootloader",
                         "firmware",
                         "ota",
@@ -566,37 +567,63 @@ def verify_stm32_target(exe: str, connect: str) -> None:
         raise RuntimeError(f"Refusing flash: expected STM32 device 0x478, got {actual}. Check ST-Link wiring.")
 
 
-def flash(path: Path, address: str, options: dict):
+SETTINGS_WIPED = (
+        "boot identity (boot generation restarts at 1)",
+        "recovery floor (replay cutoff for recovery requests)",
+        "commissioning marker, including a PENDING Stop hold",
+        "persisted flight state (the FC boots in Startup)",
+        "underglow and buzzer settings",
+)
+
+
+def factory_flash_writes(path: Path, address: str, options: dict, workdir: Path) -> list[tuple[Path, str]]:
+        """Images to write, in order. A factory flash erases the persistent store
+        first (it lies past the factory image, so a reflash never touched it)
+        unless keep-settings is given."""
+        writes = [(path, address)]
+        if options.get("image", "factory") != "factory":
+                return writes
+        base = board_macro_optional("PERSIST_BASE")
+        size = board_macro_optional("PERSIST_SIZE")
+        if base is None or size is None:
+                return writes
+        if options.get("keep-settings"):
+                print(f"Persistent settings at {hex(base)} kept (--keep-settings).")
+                return writes
+        erase = workdir / "settings-erase.bin"
+        erase.write_bytes(b"\xff" * size)
+        print(f"Factory flash erases the persistent store at {hex(base)} ({size} bytes). Wiped:")
+        for item in SETTINGS_WIPED:
+                print(f"  - {item}")
+        print("Pass --keep-settings (legacy token: keep-settings) to keep them.")
+        return [(erase, hex(base)), *writes]
+
+
+def flash(path: Path, address: str, options: dict, workdir: Path | None = None):
         if not address:
                 sys.exit("Delta OTA files cannot be flashed directly. Upload the .seds through GroundStation, or build a factory image for wired flashing.")
         if not path.exists():
                 sys.exit(f"Expected BIN at {path}")
-
-        cmd = []
+        writes = factory_flash_writes(path, address, options, workdir or path.parent)
 
         if options["flash-dfu"]:
                 require_tool("dfu-util")
-                dfuse_address = address if ":" in address else f"{address}:leave"
-                cmd = [ "dfu-util", "-a", "0",
-                        "-s", dfuse_address, "-D", str(path),
-                ]
+                for index, (image, at) in enumerate(writes):
+                        last = index == len(writes) - 1
+                        dfuse_address = at if ":" in at or not last else f"{at}:leave"
+                        run_dfu([ "dfu-util", "-a", "0", "-s", dfuse_address, "-D", str(image)])
         elif options["flash-st"]:
                 stm32prog = require_tool(STM32_PROG_CLI)
                 verify_stm32_target(stm32prog, "port=SWD mode=UR reset=HWrst")
-                cmd = [ stm32prog,
-                        "-c", "port=SWD", "mode=UR", "reset=HWrst",
-                        "-w", str(path), address,
-                        "-v",
-                        "-rst",
-                ]
+                cmd = [ stm32prog, "-c", "port=SWD", "mode=UR", "reset=HWrst"]
+                for image, at in writes:
+                        cmd += ["-w", str(image), at]
+                run(cmd + ["-v", "-rst"])
         elif options["flash-stlink"]:
                 stflash = require_tool("st-flash")
-                cmd = [stflash, "--reset", "write", str(path), address]
-
-        if options["flash-dfu"]:
-                run_dfu(cmd)
-        else:
-                run(cmd)
+                for index, (image, at) in enumerate(writes):
+                        last = index == len(writes) - 1
+                        run([stflash, *(["--reset"] if last else []), "write", str(image), at])
 
 
 def gdb_st_session(path: Path):
@@ -908,6 +935,7 @@ def make_parser() -> argparse.ArgumentParser:
             if flag != key: aliases.append("--"+key)
             p.add_argument(*aliases, dest=key, action="store_true", help=help_text)
         if command == "flash":
+            p.add_argument("--keep-settings", action="store_true", help="Keep the persistent store on a factory flash (default: erase it).")
             p.add_argument("--method", choices=("stm32prog-cli","dfu","st-flash"), default="stm32prog-cli", help="Programmer (default: STM32CubeProgrammer over SWD).")
         if command == "test":
             p.add_argument("--all", "--full", dest="all_tests", action="store_true", help="Also run library, simulator and linked-firmware tests.")
@@ -926,6 +954,7 @@ def cli_build_options(args):
     options["image"] = "ota" if args.ota else args.image
     options["toolchain"] = args.toolchain
     options["generator"] = args.generator
+    options["keep-settings"] = getattr(args, "keep_settings", False)
     if args.cmd == "flash":
         key = {"stm32prog-cli":"flash-st","dfu":"flash-dfu","st-flash":"flash-stlink"}[args.method]
         options[key] = True
@@ -958,7 +987,7 @@ def main() -> None:
     executable, address = select_artifact(buildir, options["image"])
     if options["asm"] and options["image"] != "bootloader": asmgen(buildir)
     if options["flash-dfu"] or options["flash-st"] or options["flash-stlink"]:
-        flash(executable, address, options)
+        flash(executable, address, options, buildir)
     elif preset != "Release" and options["stlink"]:
         gdb_st_session(executable)
 

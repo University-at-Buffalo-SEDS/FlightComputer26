@@ -18,18 +18,20 @@ class BuzzerPersistenceRetryTests(unittest.TestCase):
                            if not line.startswith('#include "'))
         test = r'''
 static SedsResult update(uint8_t value,uint64_t at){SedsPacketView p={SEDS_DT_FLIGHT_BUZZER,&value,1,at};return callback(&p,NULL);}
+static void settle(uint32_t ms){SedsRouter router=0;tick+=ms;(void)flight_buzzer_poll(&router);}
 int main(void){
  (void)irq_mask;
  SedsRouter router=0;assert(flight_buzzer_init(&router)==SEDS_OK);assert(callback);
- assert(update(0,100)==SEDS_OK);assert(writes==1&&stored==0&&g_last_source_timestamp_ms==100);
- fail_write=1;
- assert(update(1,200)==SEDS_HANDLER_ERROR);assert(writes==2&&stored==0&&g_last_source_timestamp_ms==100);
- assert(update(1,200)==SEDS_HANDLER_ERROR);assert(writes==3&&stored==0&&g_last_source_timestamp_ms==100);
- fail_write=0;
- assert(update(1,200)==SEDS_OK);assert(writes==4&&stored==1&&g_last_source_timestamp_ms==200);
- assert(update(1,200)==SEDS_OK);assert(writes==4);
- assert(update(0,150)==SEDS_OK);assert(writes==4&&g_flight_buzzer_enabled==1&&g_flight_buzzer_stale_updates==1);
- assert(update(1,300)==SEDS_OK);assert(writes==5&&g_last_source_timestamp_ms==300);
+ assert(update(0,100)==SEDS_OK);assert(writes==0&&g_last_source_timestamp_ms==100);
+ settle(30000);assert(writes==1&&stored==0);
+ /* Ordering is kept in RAM at once: an older update stays rejected. */
+ assert(update(1,200)==SEDS_OK);assert(writes==1&&g_last_source_timestamp_ms==200&&g_flight_buzzer_enabled==1);
+ assert(update(0,150)==SEDS_OK);assert(g_flight_buzzer_enabled==1&&g_flight_buzzer_stale_updates==1);
+ fail_write=1;settle(30000);assert(writes==2&&stored==0);
+ fail_write=0;settle(30000);assert(writes==3&&stored==1);
+ assert(update(1,200)==SEDS_OK);settle(30000);assert(writes==3);
+ for(unsigned i=0;i<5000;i++){assert(update((uint8_t)(i&1u),300+i)==SEDS_OK);settle(5);}
+ assert(writes==3);settle(30000);assert(writes==4&&stored==1&&g_last_source_timestamp_ms==5299);
  assert(pin==0); /* setting controls next boot indication, not current output */
 }
 '''

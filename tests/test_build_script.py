@@ -214,7 +214,8 @@ class OtaBuildScriptTests(unittest.TestCase):
 
     def test_dfu_flash_leaves_rom_bootloader_after_download(self):
         image = Path("FlightComputer26.factory.bin")
-        options = {"flash-dfu": True, "flash-st": False, "flash-stlink": False}
+        # The store erase (test_factory_flash_settings) is a separate download.
+        options = {"flash-dfu": True, "flash-st": False, "flash-stlink": False, "keep-settings": True}
         dfu_output = ("Download [=========================] 100%\r"
                       "File downloaded successfully\nSubmitting leave request...\n"
                       "dfu-util: Error during download get_status\n")
@@ -229,7 +230,7 @@ class OtaBuildScriptTests(unittest.TestCase):
         command = popen.call_args.args[0]
         self.assertEqual(command[4], "0x08000000:leave")
         self.assertEqual(
-            visible_output.getvalue(),
+            visible_output.getvalue().split("\n", 1)[1],  # after the kept-settings notice
             dfu_output.replace("dfu-util: Error during download get_status\n", ""),
         )
 
