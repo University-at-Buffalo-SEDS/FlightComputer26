@@ -29,6 +29,12 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
+# Simulator-only clock-error probe (never in release images): records a
+# (board microseconds, network microseconds) pair each telemetry loop.
+option(TELEMETRY_TIMESYNC_PROBE "Simulator-only time sync error probe" OFF)
+if(TELEMETRY_TIMESYNC_PROBE)
+    add_compile_definitions(TELEMETRY_TIMESYNC_PROBE=1)
+endif()
 option(SEDS_FIRMWARE_SIM_TEST "Enable simulator-only network observability" OFF)
 if(SEDS_FIRMWARE_SIM_TEST)
     add_compile_definitions(SEDS_FIRMWARE_SIM_TEST=1)

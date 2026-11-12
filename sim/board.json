@@ -151,7 +151,14 @@
       {"name": "can_tx_pending", "symbol": "g_can_tx_pending", "maximum": 48},
       {"name": "can_tx_high_water", "symbol": "g_can_tx_high_water", "maximum": 48},
       {"name": "can_tx_rejected", "symbol": "g_can_tx_rejected"},
-      {"name": "can_tx_expired", "symbol": "g_can_tx_expired", "maximum": 0}
+      {"name": "can_tx_expired", "symbol": "g_can_tx_expired", "maximum": 0},
+      {"name": "ts_probe_mono_lo", "symbol": "g_ts_probe", "byte_offset": 0},
+      {"name": "ts_probe_mono_hi", "symbol": "g_ts_probe", "byte_offset": 4},
+      {"name": "ts_probe_net_lo", "symbol": "g_ts_probe", "byte_offset": 8},
+      {"name": "ts_probe_net_hi", "symbol": "g_ts_probe", "byte_offset": 12},
+      {"name": "tx_tick", "symbol": "_tx_timer_system_clock"},
+      {"name": "systick_val", "address": 3758153752},
+      {"name": "systick_load", "address": 3758153748}
     ]
   },
   "traffic": {
