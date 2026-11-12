@@ -381,6 +381,9 @@ static SedsResult telemetry_configure_timesync_locked(SedsRouter *router) {
     return SEDS_BAD_ARG;
   }
 
+  /* Safety traffic outranks SEDSnet network control (time sync); data stays below. */
+  (void)seds_dtype_set_scheduling_class((uint32_t)SEDS_DT_ABORT, -1);
+  (void)seds_dtype_set_scheduling_class((uint32_t)SEDS_DT_FLIGHT_COMMAND, -1);
   result = seds_router_configure_timesync(
       router, true, telemetry_timesync_role(), telemetry_timesync_priority(),
       (uint64_t)TELEMETRY_TIMESYNC_SOURCE_TIMEOUT_MS,
