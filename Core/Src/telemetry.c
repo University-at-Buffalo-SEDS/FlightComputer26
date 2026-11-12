@@ -781,6 +781,8 @@ static SedsResult init_telemetry_router_locked(void) {
   SedsRuntimeTuningConfig tuning;
   result = seds_get_runtime_tuning_config(&tuning);
   if (result != SEDS_OK) return result;
+  tuning.reliable_retransmit_ms = 400U;
+  tuning.reliable_max_retries = 3U;
   tuning.payload_compress_threshold = SIZE_MAX;
   result = seds_set_runtime_tuning_config(&tuning);
   if (result != SEDS_OK) return result;
