@@ -26,12 +26,12 @@ class CodegenTests(unittest.TestCase):
                              if line.startswith('SEDSNET_ENV_RUSTFLAGS:STRING='))
                 self.assertEqual(flags.count('machine-outliner-reruns='), 1)
                 self.assertIn('machine-outliner-reruns=0', flags)
-                self.assertIn('target-cpu=cortex-m33', flags)
-                if old and 'inline-threshold=15' in old:
-                    self.assertIn('inline-threshold=15', flags)
-                    self.assertIn('opt-level=z', flags)
-                else:
-                    self.assertIn('inline-threshold=20', flags)
+                # A named CPU and the old inline threshold keep core::fmt
+                # and every panic message linked; cached values are dropped.
+                self.assertNotIn('target-cpu', flags)
+                self.assertNotIn('inline-threshold', flags)
+                if old and 'opt-level=z' in old:
+                    self.assertIn('-C opt-level=z', flags)
 
 if __name__ == '__main__':
     unittest.main()
