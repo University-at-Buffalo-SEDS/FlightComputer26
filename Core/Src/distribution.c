@@ -377,17 +377,22 @@ implicit_postinit(const uint8_t *data, size_t len)
     armed_postinit_pending = false;
     armed_postinit_epoch = epoch;
   }
-  if (fc_recovery_holds_sequence()) return SEDS_IO;
   if (data == NULL || len != sizeof(uint8_t) || network_flight_state(*data) < 0)
   {
     return SEDS_HANDLER_ERROR;
   }
   if (*data != G_Armed)
   {
+    /* Only Armed requests anything here. A held sequence (the manual Stop
+     * latched by the Abort that precedes the station's FLIGHT_STATE=15) must
+     * not withhold the receipt of a write that asks for nothing: the station
+     * re-sent it for its whole 4.8 s window on every Abort. */
     armed_postinit_pending = false;
+    return SEDS_OK;
   }
-  else if (!armed_postinit_pending && current() < Postinit &&
-           !(g_conf & option(Postinit_Requested)))
+  if (fc_recovery_holds_sequence()) return SEDS_IO;
+  if (!armed_postinit_pending && current() < Postinit &&
+      !(g_conf & option(Postinit_Requested)))
   {
     fc_msg post = fc_mask(Postinit_Signal);
     if (tx_queue_send(&seds_syscall, &post, TX_NO_WAIT) != TX_SUCCESS)

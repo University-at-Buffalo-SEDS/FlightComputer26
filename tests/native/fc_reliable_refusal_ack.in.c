@@ -25,7 +25,21 @@ static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView*p){(void)p;assert(!"no operator Deploy/Expand in this matrix");return 0U;}
 static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){(void)r;(void)p;}
 static SedsResult pulse_ground(void){return SEDS_OK;}
-static SedsResult implicit_postinit(const uint8_t*d,size_t n){assert(d&&n==1);++postinits;return SEDS_OK;}
+/* distribution.c implicit_postinit runs for real; its owners are stand-ins. A
+ * Postinit request is counted at the syscall queue. The recovery owner holds
+ * the sequence once the manual Stop latches (fc_recovery_owner.c). */
+enum {Postinit=3,G_Armed=6,Postinit_Signal=7,Postinit_Requested=1u<<8,TX_NO_WAIT=0,TX_SUCCESS=0};
+typedef uint32_t fc_msg;
+#define fc_mask(m) (m)
+#define option(o) (o)
+static uint32_t g_conf;static int seds_syscall;
+static int current(void){return Postinit-1;}
+static uint32_t fc_recovery_epoch(void){return 1U;}
+static bool fc_recovery_holds_sequence(void){return stopped;}
+static unsigned tx_queue_send(void*q,void*m,unsigned w){(void)q;(void)m;(void)w;++postinits;return TX_SUCCESS;}
+/* distribution.c puts the return type on its own line. */
+static inline SedsResult
+/* SOURCE_FUNCTION:implicit_postinit */
 static SedsResult process_gps_packet(const uint8_t*d,size_t n){(void)d;(void)n;return SEDS_OK;}
 static SedsResult dispatch_flight_cmd(const uint8_t*d,size_t n){(void)d;(void)n;++commands;return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*d,size_t n){(void)d;(void)n;++biases;return SEDS_OK;}
@@ -94,6 +108,25 @@ int main(int argc,char**argv){
   SedsResult b=deliver(SEDS_DT_FLIGHT_STATE,fc_eps,2,&state,1,stamp+1U);
   printf("fstate results=%d,%d acks=%u,%u postinits=%u writes=%u\n",a,b,first,acks,postinits,writes);
   assert(a==SEDS_OK&&b==SEDS_OK&&first>=1&&acks>first&&postinits==0&&writes==0&&!g_has_value);
+ }else if(!strcmp(mode,"fstate_aborted_after_stop")){
+  /* The station's manual Abort: ABORT lands first and latches the Stop, then
+   * its FLIGHT_STATE=15 write arrives. Withholding that receipt made the
+   * station re-send it 12 times (4.8 s) on every bench Abort. */
+  SedsResult a=deliver(SEDS_DT_ABORT,abort_eps,7,manual,sizeof manual-1U,stamp);unsigned after_abort=acks;
+  uint8_t state=15;const uint32_t fc_eps[]={SEDS_EP_FLIGHT_STATE,SEDS_EP_FLIGHT_CONTROLLER};
+  SedsResult b=deliver(SEDS_DT_FLIGHT_STATE,fc_eps,2,&state,1,stamp+1U);
+  printf("aborted after stop results=%d,%d acks=%u,%u stopped=%d postinits=%u writes=%u value=%u\n",a,b,after_abort,acks,stopped,postinits,writes,g_flight_state_cache_value);
+  assert(a==SEDS_OK&&stopped&&after_abort>=1&&acks>after_abort&&postinits==0&&writes==1&&g_flight_state_cache_value==15U);
+ }else if(!strcmp(mode,"fstate_armed_held_after_stop")){
+  /* Armed would request Postinit: while the Stop holds the sequence it is
+   * still not applied (nor acknowledged), so it can land once released. */
+  stopped=true;uint8_t state=6;const uint32_t fc_eps[]={SEDS_EP_FLIGHT_STATE,SEDS_EP_FLIGHT_CONTROLLER};
+  (void)deliver(SEDS_DT_FLIGHT_STATE,fc_eps,2,&state,1,stamp);
+  printf("armed held acks=%u postinits=%u writes=%u\n",acks,postinits,writes);
+  assert(acks==0&&postinits==0&&writes==0);
+  stopped=false;(void)redeliver();
+  printf("armed released acks=%u postinits=%u writes=%u\n",acks,postinits,writes);
+  assert(acks>=1&&postinits==1&&writes==1);
  }else if(!strcmp(mode,"controller_refused")){
   controller_ok=false;uint8_t cmd=1;const uint32_t eps[]={SEDS_EP_GROUND_STATION,SEDS_EP_SD_CARD,SEDS_EP_FLIGHT_CONTROLLER};
   SedsResult a=deliver(SEDS_DT_FLIGHT_COMMAND,eps,3,&cmd,1,stamp);

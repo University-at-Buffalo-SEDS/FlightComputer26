@@ -36,6 +36,7 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         template = (ROOT / 'tests/native/fc_reliable_refusal_ack.in.c').read_text()
         sources = {'Manual_Abort_handler': 'Core/Src/telemetry.c',
                    'on_fc_packet_impl': 'Core/Src/distribution.c',
+                   'implicit_postinit': 'Core/Src/distribution.c',
                    'clear_managed_cache': 'Core/Src/flight_state_cache.c',
                    'persist_update': 'Core/Src/flight_state_cache.c'}
         for name, file in sources.items():
@@ -72,6 +73,12 @@ class FCReliableRefusalAckTests(unittest.TestCase):
 
     def test_refused_flight_state_is_acknowledged_and_not_applied(self):
         self.run_mode('fstate_refused')
+
+    def test_aborted_flight_state_after_the_stop_latches_is_acknowledged(self):
+        self.run_mode('fstate_aborted_after_stop')
+
+    def test_armed_flight_state_waits_for_the_stop_to_release(self):
+        self.run_mode('fstate_armed_held_after_stop')
 
     def test_refused_controller_command_is_acknowledged_and_not_applied(self):
         self.run_mode('controller_refused')
