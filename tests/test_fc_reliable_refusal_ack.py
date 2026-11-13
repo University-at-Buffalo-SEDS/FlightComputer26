@@ -80,6 +80,11 @@ class FCReliableRefusalAckTests(unittest.TestCase):
     def test_armed_flight_state_waits_for_the_stop_to_release(self):
         self.run_mode('fstate_armed_held_after_stop')
 
+    def test_a_flight_command_copy_is_dispatched_once(self):
+        # GS heard-gap copies of Deploy/Expand: one effect per command, also
+        # after the FC's 16-entry recent-ID ring rolled over.
+        self.run_mode('flight_cmd_copy_dedupe')
+
     def test_refused_controller_command_is_acknowledged_and_not_applied(self):
         self.run_mode('controller_refused')
 
