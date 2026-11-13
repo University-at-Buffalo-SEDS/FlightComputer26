@@ -36,9 +36,12 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         template = (ROOT / 'tests/native/fc_reliable_refusal_ack.in.c').read_text()
         sources = {'Manual_Abort_handler': 'Core/Src/telemetry.c',
                    'on_fc_packet_impl': 'Core/Src/distribution.c',
+                   'flight_cmd_repeat': 'Core/Src/distribution.c',
                    'implicit_postinit': 'Core/Src/distribution.c',
                    'clear_managed_cache': 'Core/Src/flight_state_cache.c',
-                   'persist_update': 'Core/Src/flight_state_cache.c'}
+                   'persist_update': 'Core/Src/flight_state_cache.c',
+                   'deployment_pulse_start': 'Core/Src/deployment_pulse.c',
+                   'fc_runtime_tick': 'Core/Src/deployment_pulse.c'}
         for name, file in sources.items():
             marker = '/* SOURCE_FUNCTION:' + name + ' */'
             assert template.count(marker) == 1, name
@@ -81,8 +84,10 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         self.run_mode('fstate_armed_held_after_stop')
 
     def test_a_flight_command_copy_is_dispatched_once(self):
-        # GS heard-gap copies of Deploy/Expand: one effect per command, also
-        # after the FC's 16-entry recent-ID ring rolled over.
+        # Station re-sends and heard-gap copies of Deploy, Expand and
+        # Rewind_State: one dispatch and one pulse per press, also after the
+        # FC's 16-entry recent-ID ring rolled over and the pulse ended; a
+        # deliberate re-press (new station timestamp) runs again.
         self.run_mode('flight_cmd_copy_dedupe')
 
     def test_refused_controller_command_is_acknowledged_and_not_applied(self):

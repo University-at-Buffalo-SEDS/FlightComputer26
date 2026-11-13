@@ -42,6 +42,10 @@ volatile uint32_t g_reliable_refusal_count;
 '''
   for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed','board_recovery_operator_pyro_allowed']:
    if name+'(' in transport:code+='\n'+function(transport,name)
+  code+='\n'+r'''/* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
+static volatile uint32_t g_flight_cmd_repeats_dropped;
+static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
+'''
   code+='\n'+function(distribution,'on_fc_packet_impl')+r'''
 int main(void){
  uint8_t value=1;SedsPacketView p={.payload=&value,.payload_len=1};const char*senders[]={"GS","RRLS","PB","@addr:unknown"};const uint32_t types[]={SEDS_DT_FLIGHT_STATE,SEDS_DT_FLIGHT_COMMAND,SEDS_DT_ASCENT_BIASES};const uint64_t times[]={5000,0,UINT64_MAX,1,4999,21001};unsigned count=0;

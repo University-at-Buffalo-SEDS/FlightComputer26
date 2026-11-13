@@ -367,6 +367,37 @@ update_ascent_biases(const uint8_t *data, size_t len)
   return SEDS_OK;
 }
 
+/* A station flight command runs once. The SDK forgets a packet ID after 16
+ * newer packets, while the station re-sends an unacknowledged command for up
+ * to 4.8 s, so a late copy (same sender, station timestamp and bytes) would
+ * run again: a second Deploy/Expand pulse once the first ended, a second
+ * state step. Each command the FC has taken is remembered for longer than it
+ * would still pass as fresh (15 s); a repeat is acknowledged, not applied. A
+ * deliberate re-press carries a new station timestamp and runs. */
+#define FLIGHT_CMD_SEEN 8U
+#define FLIGHT_CMD_SEEN_MS 16000U
+volatile uint32_t g_flight_cmd_repeats_dropped;
+static bool flight_cmd_repeat(const SedsPacketView *pkt, bool remember)
+{
+  static struct { uint64_t stamp; uint32_t key, tick; } seen[FLIGHT_CMD_SEEN];
+  static uint8_t next;
+  uint32_t key = 2166136261u;
+  for (size_t i = 0; i < pkt->sender_len; ++i) key = (key ^ (uint8_t)pkt->sender[i]) * 16777619u;
+  for (size_t i = 0; i < pkt->payload_len; ++i) key = (key ^ pkt->payload[i]) * 16777619u;
+  const uint32_t now = HAL_GetTick() | 1U; /* 0 marks an empty slot */
+  if (remember)
+  {
+    seen[next].stamp = pkt->timestamp; seen[next].key = key; seen[next].tick = now;
+    next = (uint8_t)((next + 1U) % FLIGHT_CMD_SEEN);
+    return false;
+  }
+  for (unsigned i = 0; i < FLIGHT_CMD_SEEN; ++i)
+    if (seen[i].tick && seen[i].stamp == pkt->timestamp && seen[i].key == key &&
+        now - seen[i].tick < FLIGHT_CMD_SEEN_MS)
+      return true;
+  return false;
+}
+
 static inline SedsResult
 implicit_postinit(const uint8_t *data, size_t len)
 {
@@ -445,7 +476,17 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);
     case SEDS_DT_FLIGHT_COMMAND:
-      return dispatch_flight_cmd(pkt->payload, pkt->payload_len);
+      if (flight_cmd_repeat(pkt, false))
+      {
+        ++g_flight_cmd_repeats_dropped;
+        return SEDS_OK;
+      }
+      {
+        const SedsResult result = dispatch_flight_cmd(pkt->payload, pkt->payload_len);
+        /* Taken or refused for good; a full queue is retried. */
+        if (result == SEDS_OK) (void)flight_cmd_repeat(pkt, true);
+        return result;
+      }
     case SEDS_DT_ASCENT_BIASES:
       return update_ascent_biases(pkt->payload, pkt->payload_len);
     case SEDS_DT_AV_BAY_UNDERGLOW:

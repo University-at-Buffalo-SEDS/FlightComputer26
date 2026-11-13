@@ -38,7 +38,7 @@ static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;r
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 #include "ground_heartbeat_owner.h"
 '''
-  actual=support+'\n'+decoder+'\n'+function(recovery,'fc_recovery_command_admissible')+'\n'+'static SedsResult\n'+function(distribution,'dispatch_flight_cmd')+'\n'+function(distribution,'on_fc_packet_impl')+'\n'+function(recovery,'enter_launch')+r'''
+  actual=support+'\n'+decoder+'\n'+function(recovery,'fc_recovery_command_admissible')+'\n'+'static SedsResult\n'+function(distribution,'dispatch_flight_cmd')+'\n'+'volatile uint32_t g_flight_cmd_repeats_dropped;\n#define FLIGHT_CMD_SEEN 8U\n#define FLIGHT_CMD_SEEN_MS 16000U\n'+function(distribution,'flight_cmd_repeat')+'\n'+function(distribution,'on_fc_packet_impl')+'\n'+function(recovery,'enter_launch')+r'''
 static void process_action(fc_msg message,bool internal){assert(message==Launch_Signal);owner_deliveries++;enter_launch(internal);}
 static void process_sensor_report(fc_msg message){(void)message;assert(false);}
 static void process_gps_code(fc_msg message){(void)message;assert(false);}

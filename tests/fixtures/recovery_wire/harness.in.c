@@ -327,7 +327,13 @@ int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(v
   if(!strcmp(argv[1],"station_race")){uint8_t late[32];memcpy(late,body,32);put64(late+4,10);put64(late+24,88);SedsPacketView rival=packet;rival.sender="RRLS";rival.sender_len=4;rival.payload=late;packet.timestamp=clock_ms;request(r,&rival,false);assert(response[1]==BOARD_RECOVERY_RESULT_STALE&&response_epoch()==2);puts("GS/RRLS same-epoch race: one applies, the other STALE PASS");return 0;}
   if(!strncmp(argv[1],"rrls_",5)){puts("RRLS query and recover apply like the GS PASS");return 0;}
   if(!strncmp(argv[1],"reset_any",9)){assert(!highs&&!gpio.ODR&&fc_recovery_requires_new_flight()); /* no relaunch from a cached state */
-   if(!strcmp(argv[1],"reset_any_race")){assert(!fc_recovery_reset_any_inflight()&&!fc_recovery_inhibits_manual_pyro());deployment_pulse_start(false,true);assert(highs==1&&gpio.ODR==1);puts("op 3 window refuses pulses; manual Deploy works after the reset PASS");}puts("op 3 reset to Startup from any state PASS");return 0;}
+   if(!strcmp(argv[1],"reset_any_race")){assert(!fc_recovery_reset_any_inflight()&&!fc_recovery_inhibits_manual_pyro());deployment_pulse_start(false,true);assert(highs==1&&gpio.ODR==1);puts("op 3 window refuses pulses; manual Deploy works after the reset PASS");}if(!strcmp(argv[1],"reset_any")){
+    /* The station's late re-send of the same op 3 (same nonce and station
+     * timestamp, its receipt lost), 4 s on: replayed, never run again. */
+    unsigned w=media_writes,before=app_replies;clock_ms+=4000;request(r,&packet,true);
+    assert(app_replies==before+1&&response[1]!=BOARD_RECOVERY_RESULT_PENDING&&response_epoch()==2&&media_writes==w&&!highs&&!fc_recovery_reset_any_inflight());
+    puts("op 3 late exact duplicate is not run again PASS");}
+   puts("op 3 reset to Startup from any state PASS");return 0;}
   uint8_t marker[40];size_t size=40;assert(persistent_store_enter());assert(launchcore_persist_get_strict(COMMISSION_RECORD_KEY,marker,&size,&info)==0);assert(persistent_store_leave());CommissionRecord record;assert(commission_record_decode(marker,size,&record)&&record.kind==1&&record.state==0&&record.generation==generation&&record.nonce==2&&record.source==10001);
   uint8_t original_request[32];memcpy(original_request,body,32);body[1]=0;put64(body+4,3);put64(body+12,0);memset(body+20,0,4);packet.timestamp=clock_ms=10002;unsigned query_reads=media_reads,query_writes=media_writes;request(r,&packet,false);assert(response[1]==0&&response[2]==0&&response_epoch()==2&&!(response[3]&1U)&&get64(response+12)==generation&&media_reads==query_reads&&media_writes==query_writes);memcpy(body,original_request,32);packet.timestamp=10001;
   wr=media_writes;request(r,&packet,false);assert(response[1]==0&&media_writes==wr);packet.timestamp=10002;request(r,&packet,false);assert(response[1]==6&&media_writes==wr);

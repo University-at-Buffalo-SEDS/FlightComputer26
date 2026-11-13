@@ -39,7 +39,7 @@ static SedsResult update_ascent_biases(const uint8_t*p,size_t n){(void)p;(void)n
 #include "ground_heartbeat_owner.h"
 '''
   support+='\nstatic struct { SedsRouter *r; } g_router;\n'+function((ROOT/'Core/Src/telemetry.c').read_text()[(ROOT/'Core/Src/telemetry.c').read_text().rindex('static SedsResult Manual_Abort_handler('):],'Manual_Abort_handler')+'\n'
-  actual=support+'\n'+decoder+'\n'+function(recovery,'fc_recovery_command_admissible')+'\n'+'static SedsResult\n'+function(distribution,'dispatch_flight_cmd')+'\n'+function(distribution,'on_fc_packet_impl')+'\n'+function(recovery,'enter_launch')+r'''
+  actual=support+'\n'+decoder+'\n'+function(recovery,'fc_recovery_command_admissible')+'\n'+'static SedsResult\n'+function(distribution,'dispatch_flight_cmd')+'\n'+'volatile uint32_t g_flight_cmd_repeats_dropped;\n#define FLIGHT_CMD_SEEN 8U\n#define FLIGHT_CMD_SEEN_MS 16000U\n'+function(distribution,'flight_cmd_repeat')+'\n'+function(distribution,'on_fc_packet_impl')+'\n'+function(recovery,'enter_launch')+r'''
 static void process_action(fc_msg message,bool internal){assert(message==Launch_Signal);owner_deliveries++;enter_launch(internal);}
 static void process_sensor_report(fc_msg message){(void)message;assert(false);}
 static void process_gps_code(fc_msg message){(void)message;assert(false);}

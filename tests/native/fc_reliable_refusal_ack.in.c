@@ -20,8 +20,8 @@ static uint8_t board_recovery_manual_stop_source_allowed(SedsRouter*r,const Seds
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView*p){assert(p);return managed_ok;}
 static __attribute__((unused)) uint8_t board_recovery_managed_report_ignorable(const SedsPacketView*p){assert(p);return 0U;}
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView*p){assert(p);return controller_ok;}
-/* distribution.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
-static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==13||p->payload[0]==14);}
+/* distribution.c operator Deploy/Expand selector (compat bytes 12/13, extmap); this matrix sends ordinary commands. */
+static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==12||p->payload[0]==13);}
 static bool pyro_ok;
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView*p){(void)p;assert(pyro_ok&&"operator Deploy/Expand only in the copy-dedupe mode");return 1U;}
 static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){(void)r;(void)p;}
@@ -42,9 +42,47 @@ static unsigned tx_queue_send(void*q,void*m,unsigned w){(void)q;(void)m;(void)w;
 static inline SedsResult
 /* SOURCE_FUNCTION:implicit_postinit */
 static SedsResult process_gps_packet(const uint8_t*d,size_t n){(void)d;(void)n;return SEDS_OK;}
-static SedsResult dispatch_flight_cmd(const uint8_t*d,size_t n){(void)d;(void)n;++commands;return SEDS_OK;}
+/* deployment_pulse.c runs for real: a Deploy (12) or Expand (13) starts the
+ * actual channel pulse, which cannot be re-started while it runs and ends
+ * after 500 ticks of fc_runtime_tick; Rewind_State (22) steps the state. */
+enum {FC_LOG_PYRO_HIGH,FC_LOG_PYRO_LOW,FC_LOG_PYRO_REJECTED,FC_LOG_PYRO_ACTIVE};
+#define CO2_ASSERT_INTERVAL 500
+#define REEF_ASSERT_INTERVAL 500
+#define Parachute_Deployed (1u<<16)
+#define Parachute_Expanded (1u<<17)
+#define CO2_Asserted (1u<<18)
+#define REEF_Asserted (1u<<19)
+static volatile uint32_t g_fc_runtime_clock_active,g_deployment_pulse_completions,co2_ticks,reef_ticks;
+static uint32_t irq_mask,hal_ticks,co2_on,reef_on;
+static uint32_t __get_PRIMASK(void){return irq_mask;}
+static void __disable_irq(void){irq_mask=1;}
+static void __set_PRIMASK(uint32_t v){irq_mask=v;}
+static uint32_t HAL_GetTick(void){return hal_ticks;}
+static void HAL_IncTick(void){++hal_ticks;}
+static void HAL_SuspendTick(void){}
+static bool fc_recovery_inhibits_manual_pyro(void){return false;}
+static bool fc_recovery_inhibits_pyro(void){return false;}
+static bool fc_watchdog_can_actuate(void){return true;}
+static bool fc_watchdog_record_deployment(bool reef,bool manual){(void)reef;(void)manual;return true;}
+static void fc_recovery_ota_reset_retire_locked(void){}
+static void fc_sd_capture_event(int kind,bool reef){(void)kind;(void)reef;}
+static void co2_high(void){co2_on=1;}
+static void co2_low(void){co2_on=0;}
+static void reef_high(void){reef_on=1;}
+static void reef_low(void){reef_on=0;}
+/* SOURCE_FUNCTION:deployment_pulse_start */
+/* SOURCE_FUNCTION:fc_runtime_tick */
+static unsigned rewinds;
+static void run_ticks(unsigned n){while(n--)fc_runtime_tick();}
+static SedsResult dispatch_flight_cmd(const uint8_t*d,size_t n){(void)n;++commands;
+ if(d[0]==12)deployment_pulse_start(false,true);else if(d[0]==13)deployment_pulse_start(true,true);else if(d[0]==22)++rewinds;
+ return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*d,size_t n){(void)d;(void)n;++biases;return SEDS_OK;}
 /* SOURCE_FUNCTION:Manual_Abort_handler */
+#define FLIGHT_CMD_SEEN 8U
+#define FLIGHT_CMD_SEEN_MS 16000U
+static volatile uint32_t g_flight_cmd_repeats_dropped;
+/* SOURCE_FUNCTION:flight_cmd_repeat */
 /* SOURCE_FUNCTION:on_fc_packet_impl */
 #define FLIGHT_STATE_PERSIST_KEY 0x46535445u
 #define FLIGHT_STATE_MAX_VALUE 15U
@@ -56,10 +94,16 @@ static int persistent_store_set(uint32_t key,const void*p,size_t n){assert(key==
 static SedsResult flight_state_cache_apply_network_update(const SedsPacketView*p){return implicit_postinit(p->payload,p->payload_len);}
 /* SOURCE_FUNCTION:clear_managed_cache */
 /* SOURCE_FUNCTION:persist_update */
-static uint64_t now(void*u){(void)u;return 1767225601000ULL;}
+/* The routers' clock follows the FC tick, so a deliberate re-press carries a new station timestamp. */
+static uint64_t now(void*u){(void)u;return 1767225601000ULL+hal_ticks;}
 /* Copy-dedupe mode: a real station router whose packed radio side is captured. */
 static SedsRouter*gs_router;static int32_t gs_side=-1;static uint8_t gs_wire[512];static int32_t gs_wire_len,gs_frames;
-static SedsResult gs_tx(const uint8_t*b,size_t n,void*u){(void)u;if(n<=sizeof gs_wire){memcpy(gs_wire,b,n);gs_wire_len=(int32_t)n;++gs_frames;}return SEDS_OK;}
+/* Only the station's FLIGHT_COMMAND frames are captured (discovery and
+ * receipts also leave on this side). */
+static SedsResult gs_tx(const uint8_t*b,size_t n,void*u){(void)u;
+ SedsOwnedHeader*h=seds_pkt_unpack_header_owned(b,n);SedsPacketView v;
+ const bool command=h&&seds_owned_header_view(h,&v)==SEDS_OK&&v.ty==SEDS_DT_FLIGHT_COMMAND;if(h)seds_owned_header_free(h);
+ if(command&&n<=sizeof gs_wire){memcpy(gs_wire,b,n);gs_wire_len=(int32_t)n;++gs_frames;}return SEDS_OK;}
 static SedsResult side(const SedsPacketView*p,void*u){(void)u;if(p->sender_len>=7&&!memcmp(p->sender,"E2EACK:",7))acks++;
  if(gs_router){(void)seds_router_receive_from_side(gs_router,(uint32_t)gs_side,p);}
  return SEDS_OK;}
@@ -138,12 +182,15 @@ int main(int argc,char**argv){
   printf("armed released acks=%u postinits=%u writes=%u\n",acks,postinits,writes);
   assert(acks>=1&&postinits==1&&writes==1);
  }else if(!strcmp(mode,"flight_cmd_copy_dedupe")){
-  /* The station's heard-gap copies of a FLIGHT_COMMAND are the same frame
-   * (same bytes, same packet ID) as its SDK re-sends. A real station router
-   * sends Deploy and Expand end to end to this FC router; the FC gets each
-   * frame, a copy at once (the next gap), a copy after 64 other packets have
-   * rolled its 16-entry recent-ID ring over (its receipt long gone), and one
-   * more: each command is dispatched (pulses) exactly once. */
+  /* The station's re-sends and heard-gap copies of a FLIGHT_COMMAND are the
+   * same frame (same bytes, same packet ID and station timestamp). A real
+   * station router sends Deploy, Expand and Rewind_State end to end to this
+   * FC router; the FC gets each frame, a copy at once (its receipt already
+   * sent), a copy after 64 other packets rolled its 16-entry recent-ID ring
+   * over and the 500 ms pulse ended, and one more 4 s later (inside the
+   * station's 4.8 s re-send window): each command is dispatched and pulses
+   * exactly once. A deliberate re-press is a new frame with a new station
+   * timestamp and runs again. */
   pyro_ok=true;
   gs_router=seds_router_new(now,NULL,NULL,0);assert(gs_router);
   assert(seds_router_set_sender_id(gs_router,"GS",2)==SEDS_OK);assert(seds_router_configure_address(gs_router,2,101)==SEDS_OK);
@@ -152,24 +199,33 @@ int main(int argc,char**argv){
   bool queued=false;assert(seds_router_poll_discovery(r,&queued)==SEDS_OK);assert(seds_router_process_all_queues(r)==SEDS_OK);
   assert(seds_router_process_all_queues(gs_router)==SEDS_OK);
   const uint32_t hb_eps[]={SEDS_EP_FLIGHT_CONTROLLER};
-  for(uint8_t cmd=13;cmd<=14;++cmd){
-   unsigned before=commands,acks_before=acks;int32_t frames_before=gs_frames;
-   assert(seds_router_log_bytes(gs_router,SEDS_DT_FLIGHT_COMMAND,&cmd,1)==SEDS_OK);
-   assert(seds_router_process_all_queues(gs_router)==SEDS_OK);
-   assert(gs_frames>frames_before&&"the station sent the command on its radio side");
-   uint8_t copy[512];int32_t copy_len=gs_wire_len;memcpy(copy,gs_wire,(size_t)copy_len);
-   SedsResult a=seds_router_receive_packed_from_side(r,(uint32_t)sid,copy,(size_t)copy_len);(void)seds_router_process_all_queues(r);
-   unsigned after_first=commands-before;
-   SedsResult b=seds_router_receive_packed_from_side(r,(uint32_t)sid,copy,(size_t)copy_len);(void)seds_router_process_all_queues(r);
-   unsigned after_copy=commands-before,acked=acks;
-   for(uint64_t k=0;k<64;++k){uint8_t beat=0;(void)deliver(SEDS_DT_FLIGHT_BUZZER,hb_eps,1,&beat,1,stamp+1000U+cmd*100U+k);}
-   unsigned after_churn=commands-before;
-   SedsResult c=seds_router_receive_packed_from_side(r,(uint32_t)sid,copy,(size_t)copy_len);(void)seds_router_process_all_queues(r);
-   unsigned after_late=commands-before;
-   SedsResult d=seds_router_receive_packed_from_side(r,(uint32_t)sid,copy,(size_t)copy_len);(void)seds_router_process_all_queues(r);
-   printf("cmd %u results=%d,%d,%d,%d dispatches after first %u, immediate copy %u, churn %u, late copy %u, second late copy %u acks=%u->%u->%u\n",
-          cmd,a,b,c,d,after_first,after_copy,after_churn,after_late,commands-before,acks_before,acked,acks);
-   assert(after_first==1U&&commands-before==1U);
+  const uint8_t cmds[]={12,13,22};
+  for(size_t c=0;c<sizeof cmds;++c){
+   const uint8_t cmd=cmds[c];
+   unsigned before=commands,pulses_before=g_deployment_pulse_completions,rewinds_before=rewinds;
+   uint8_t copy[512];int32_t copy_len=0;SedsResult res[5];unsigned seen[5];
+   for(int press=0;press<2;++press){
+    int32_t frames_before=gs_frames;
+    assert(seds_router_log_bytes(gs_router,SEDS_DT_FLIGHT_COMMAND,&cmd,1)==SEDS_OK);
+    /* FLIGHT_COMMAND is Ordered at the station: pump it (time advancing)
+     * until this press is on its radio side. */
+    for(int k=0;k<100&&gs_frames==frames_before;++k){assert(seds_router_process_all_queues(gs_router)==SEDS_OK);if(gs_frames==frames_before)run_ticks(50);}
+    assert(gs_frames>frames_before&&"the station sent the command on its radio side");
+    copy_len=gs_wire_len;memcpy(copy,gs_wire,(size_t)copy_len);
+    for(int k=0;k<5;++k){
+     if(k==2)for(uint64_t m=0;m<64;++m){uint8_t beat=0;(void)deliver(SEDS_DT_FLIGHT_BUZZER,hb_eps,1,&beat,1,stamp+1000U+cmd*100U+m);}
+     res[k]=seds_router_receive_packed_from_side(r,(uint32_t)sid,copy,(size_t)copy_len);(void)seds_router_process_all_queues(r);
+     run_ticks(k==3?4000U:600U); /* the pulse ends; the last copy is 4 s after the one before */
+     seen[k]=commands-before;
+    }
+    unsigned pulses=g_deployment_pulse_completions-pulses_before,steps=rewinds-rewinds_before;
+    printf("cmd %u press %d results=%d,%d,%d,%d,%d dispatches after first %u, immediate copy %u, late copy %u, second late copy %u, 4 s copy %u; pulses %u rewinds %u acks=%u\n",
+           cmd,press+1,res[0],res[1],res[2],res[3],res[4],seen[0],seen[1],seen[2],seen[3],seen[4],pulses,steps,acks);
+    const unsigned want=(unsigned)press+1U;
+    assert(res[0]==SEDS_OK&&res[1]==SEDS_OK&&res[2]==SEDS_OK&&res[3]==SEDS_OK&&res[4]==SEDS_OK&&"every copy is acknowledged");
+    assert(seen[4]==want&&"one dispatch per press");
+    if(cmd==22)assert(steps==want&&pulses==0U);else assert(pulses==want&&"one pulse per press");
+   }
   }
   seds_router_free(gs_router);gs_router=NULL;
  }else if(!strcmp(mode,"controller_refused")){
