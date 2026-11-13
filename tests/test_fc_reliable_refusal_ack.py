@@ -37,6 +37,7 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         sources = {'Manual_Abort_handler': 'Core/Src/telemetry.c',
                    'on_fc_packet_impl': 'Core/Src/distribution.c',
                    'flight_cmd_repeat': 'Core/Src/distribution.c',
+                   'flight_state_cache_order': 'Core/Src/flight_state_cache.c',
                    'implicit_postinit': 'Core/Src/distribution.c',
                    'clear_managed_cache': 'Core/Src/flight_state_cache.c',
                    'persist_update': 'Core/Src/flight_state_cache.c',
@@ -89,6 +90,15 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         # FC's 16-entry recent-ID ring rolled over and the pulse ended; a
         # deliberate re-press (new station timestamp) runs again.
         self.run_mode('flight_cmd_copy_dedupe')
+
+    def test_twelve_commands_within_the_window_are_all_remembered(self):
+        # Twelve different commands in 16 s, then a late copy of the first.
+        self.run_mode('flight_cmd_ring')
+
+    def test_a_late_older_flight_state_write_never_applies(self):
+        # 2 then Aborted 15, a refused write retires the SDK cache, then a late
+        # copy of the 2: still Aborted. Same for an Advance (1, 2, late 1).
+        self.run_mode('fstate_order')
 
     def test_refused_controller_command_is_acknowledged_and_not_applied(self):
         self.run_mode('controller_refused')

@@ -371,24 +371,30 @@ update_ascent_biases(const uint8_t *data, size_t len)
  * newer packets, while the station re-sends an unacknowledged command for up
  * to 4.8 s, so a late copy (same sender, station timestamp and bytes) would
  * run again: a second Deploy/Expand pulse once the first ended, a second
- * state step. Each command the FC has taken is remembered for longer than it
- * would still pass as fresh (15 s); a repeat is acknowledged, not applied. A
- * deliberate re-press carries a new station timestamp and runs. */
-#define FLIGHT_CMD_SEEN 8U
+ * state step. The last 16 commands the FC has taken are remembered for longer
+ * than one would still pass as fresh (15 s); a repeat is acknowledged, not
+ * applied. A deliberate re-press carries a new station timestamp and runs. */
+#define FLIGHT_CMD_SEEN 16U
 #define FLIGHT_CMD_SEEN_MS 16000U
 volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *pkt, bool remember)
 {
   static struct { uint64_t stamp; uint32_t key, tick; } seen[FLIGHT_CMD_SEEN];
-  static uint8_t next;
   uint32_t key = 2166136261u;
   for (size_t i = 0; i < pkt->sender_len; ++i) key = (key ^ (uint8_t)pkt->sender[i]) * 16777619u;
   for (size_t i = 0; i < pkt->payload_len; ++i) key = (key ^ pkt->payload[i]) * 16777619u;
   const uint32_t now = HAL_GetTick() | 1U; /* 0 marks an empty slot */
   if (remember)
   {
-    seen[next].stamp = pkt->timestamp; seen[next].key = key; seen[next].tick = now;
-    next = (uint8_t)((next + 1U) % FLIGHT_CMD_SEEN);
+    /* An empty or expired slot first, else the oldest live one. */
+    unsigned slot = 0U; uint32_t oldest = 0U;
+    for (unsigned i = 0; i < FLIGHT_CMD_SEEN; ++i)
+    {
+      const uint32_t age = seen[i].tick ? now - seen[i].tick : UINT32_MAX;
+      if (age >= FLIGHT_CMD_SEEN_MS) { slot = i; break; }
+      if (age > oldest) { oldest = age; slot = i; }
+    }
+    seen[slot].stamp = pkt->timestamp; seen[slot].key = key; seen[slot].tick = now;
     return false;
   }
   for (unsigned i = 0; i < FLIGHT_CMD_SEEN; ++i)
@@ -472,6 +478,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
       return ground_heartbeat_owner_matches(pkt->sender, pkt->sender_len)
                  ? pulse_ground() : SEDS_OK;
     case SEDS_DT_FLIGHT_STATE:
+      /* An older station write than the last applied one asks for nothing. */
+      if (flight_state_cache_order(pkt, false)) return SEDS_OK;
       return implicit_postinit(pkt->payload, pkt->payload_len);
     case SEDS_DT_GPS_DATA:
       return process_gps_packet(pkt->payload, pkt->payload_len);

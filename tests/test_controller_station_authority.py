@@ -45,6 +45,8 @@ volatile uint32_t g_reliable_refusal_count;
   code+='\n'+r'''/* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
+/* flight_state_cache.c ordering (tested in test_fc_reliable_refusal_ack): never older here. */
+static bool flight_state_cache_order(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
 '''
   code+='\n'+function(distribution,'on_fc_packet_impl')+r'''
 int main(void){

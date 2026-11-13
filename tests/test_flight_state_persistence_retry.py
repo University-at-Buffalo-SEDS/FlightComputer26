@@ -13,7 +13,7 @@ HEADERS = {
 #include <stdbool.h>
 typedef int SedsResult;
 typedef int SedsRouter;
-typedef struct { uint32_t ty; const uint8_t *payload; size_t payload_len; } SedsPacketView;
+typedef struct { uint32_t ty; const uint8_t *payload; size_t payload_len; uint64_t timestamp; const char *sender; size_t sender_len; } SedsPacketView;
 #define SEDS_OK 0
 #define SEDS_HANDLER_ERROR 1
 #define SEDS_BAD_ARG 2
@@ -92,8 +92,10 @@ SedsResult seds_router_on_network_variable_update(SedsRouter *r,uint32_t ty,Seds
 SedsResult seds_router_request_managed_variable(SedsRouter *r,uint32_t ty) {
  assert(r && ty==SEDS_DT_FLIGHT_STATE);++requests;return SEDS_OK;
 }
+/* Each call is a new station write (its own station timestamp). */
+static uint64_t write_stamp=1;
 static SedsResult update(uint8_t state) {
- SedsPacketView packet={SEDS_DT_FLIGHT_STATE,&state,1};
+ SedsPacketView packet={.ty=SEDS_DT_FLIGHT_STATE,.payload=&state,.payload_len=1,.timestamp=write_stamp++,.sender="GS",.sender_len=2};
  assert(callback);return callback(&packet,NULL);
 }
 int main(int argc,char **argv) {
@@ -140,7 +142,7 @@ int main(int argc,char **argv) {
   assert(applied==1 && flight_state_cache_value()==1 && g_flight_state_cache_errors==3);
  }else if(!strcmp(argv[1],"invalid_packet")){
   /* Malformed values are refused for good: acknowledged, never applied. */
-  uint8_t state=17;SedsPacketView packet={SEDS_DT_FLIGHT_STATE,&state,1};
+  uint8_t state=17;SedsPacketView packet={.ty=SEDS_DT_FLIGHT_STATE,.payload=&state,.payload_len=1,.timestamp=0,.sender="GS",.sender_len=2};
   assert(callback(NULL,NULL)==SEDS_OK);
   assert(callback(&packet,NULL)==SEDS_OK);
   state=1;packet.payload_len=0;assert(callback(&packet,NULL)==SEDS_OK);

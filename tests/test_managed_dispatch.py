@@ -35,6 +35,8 @@ static unsigned station_observed;static void board_recovery_observe_station_time
 /* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
+/* flight_state_cache.c ordering (tested in test_fc_reliable_refusal_ack): never older here. */
+static bool flight_state_cache_order(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
 
 static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}

@@ -79,7 +79,9 @@ static SedsResult dispatch_flight_cmd(const uint8_t*d,size_t n){(void)n;++comman
  return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*d,size_t n){(void)d;(void)n;++biases;return SEDS_OK;}
 /* SOURCE_FUNCTION:Manual_Abort_handler */
-#define FLIGHT_CMD_SEEN 8U
+#define FLIGHT_CMD_SEEN 16U
+static volatile uint32_t g_flight_state_writes_out_of_order;
+/* SOURCE_FUNCTION:flight_state_cache_order */
 #define FLIGHT_CMD_SEEN_MS 16000U
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 /* SOURCE_FUNCTION:flight_cmd_repeat */
@@ -131,7 +133,7 @@ int main(int argc,char**argv){
   * (CMakeLists.txt SEDSNET_MAX_RECENT_RX_IDS); the queue budget is the
   * SEDSnet churn test's 32 KiB so the host discovery exchange fits. */
  const SedsRuntimeMemoryConfig fc_memory={.max_queue_budget=32768,.max_recent_rx_ids=16,.starting_queue_size=512,.queue_grow_step=1.0};
- r=!strcmp(argv[2],"flight_cmd_copy_dedupe")?seds_router_new_with_memory(now,NULL,locals,2,SEDS_ROUTER_E2E_DISABLED,0,&fc_memory):seds_router_new(now,NULL,locals,2);assert(r);assert(seds_router_set_sender_id(r,"FC",2)==SEDS_OK);g_router.r=r;g_cache_router=r;
+ r=(!strcmp(argv[2],"flight_cmd_copy_dedupe")||!strcmp(argv[2],"flight_cmd_ring")||!strcmp(argv[2],"fstate_order"))?seds_router_new_with_memory(now,NULL,locals,2,SEDS_ROUTER_E2E_DISABLED,0,&fc_memory):seds_router_new(now,NULL,locals,2);assert(r);assert(seds_router_set_sender_id(r,"FC",2)==SEDS_OK);g_router.r=r;g_cache_router=r;
  assert(seds_router_enable_network_variable(r,SEDS_DT_FLIGHT_STATE,true,false)==SEDS_OK);
  assert(seds_router_on_network_variable_update(r,SEDS_DT_FLIGHT_STATE,persist_update,NULL)==SEDS_OK);
  sid=seds_router_add_side_packet(r,"radio",5,side,NULL,false);assert(sid>=0);learn_gs(r,(uint32_t)sid);
@@ -228,6 +230,55 @@ int main(int argc,char**argv){
    }
   }
   seds_router_free(gs_router);gs_router=NULL;
+ }else if(!strcmp(mode,"flight_cmd_ring")){
+  /* Twelve different station flight commands within 16 s, then a late copy
+   * of the first (its recent-ID entry rolled over): still remembered, not
+   * run again. */
+  pyro_ok=true;
+  gs_router=seds_router_new(now,NULL,NULL,0);assert(gs_router);
+  assert(seds_router_set_sender_id(gs_router,"GS",2)==SEDS_OK);assert(seds_router_configure_address(gs_router,2,101)==SEDS_OK);
+  gs_side=seds_router_add_side_packed(gs_router,"radio",5,gs_tx,NULL,false);assert(gs_side>=0);
+  bool queued=false;assert(seds_router_poll_discovery(r,&queued)==SEDS_OK);assert(seds_router_process_all_queues(r)==SEDS_OK);
+  assert(seds_router_process_all_queues(gs_router)==SEDS_OK);
+  const uint32_t hb_eps[]={SEDS_EP_FLIGHT_CONTROLLER};
+  const uint8_t cmds[12]={14,15,17,18,19,20,23,24,25,26,27,28};
+  uint8_t first[512];int32_t first_len=0;const uint32_t start=hal_ticks;
+  for(size_t c=0;c<sizeof cmds;++c){
+   int32_t frames_before=gs_frames;
+   assert(seds_router_log_bytes(gs_router,SEDS_DT_FLIGHT_COMMAND,&cmds[c],1)==SEDS_OK);
+   for(int k=0;k<100&&gs_frames==frames_before;++k){assert(seds_router_process_all_queues(gs_router)==SEDS_OK);if(gs_frames==frames_before)run_ticks(50);}
+   assert(gs_frames>frames_before);
+   if(c==0){first_len=gs_wire_len;memcpy(first,gs_wire,(size_t)first_len);}
+   assert(seds_router_receive_packed_from_side(r,(uint32_t)sid,gs_wire,(size_t)gs_wire_len)==SEDS_OK);(void)seds_router_process_all_queues(r);
+   run_ticks(200);
+  }
+  unsigned before=commands;
+  for(uint64_t m=0;m<64;++m){uint8_t beat=0;(void)deliver(SEDS_DT_FLIGHT_BUZZER,hb_eps,1,&beat,1,stamp+9000U+m);}
+  SedsResult late=seds_router_receive_packed_from_side(r,(uint32_t)sid,first,(size_t)first_len);(void)seds_router_process_all_queues(r);
+  printf("ring: %u commands dispatched in %u ms, late copy of the first result=%d extra dispatches %u\n",before,hal_ticks-start,late,commands-before);
+  assert(before==12U&&hal_ticks-start<16000U&&late==SEDS_OK&&commands==before);
+  seds_router_free(gs_router);gs_router=NULL;
+ }else if(!strcmp(mode,"fstate_order")){
+  /* The station writes Idle-like 2, then Aborted 15. A refused write (stale
+   * or unready) retires the SDK's managed cache, which alone ordered them;
+   * then a late re-send of the 2 arrives (its recent-ID entry rolled over).
+   * The board stays Aborted. Then an Advance: 1, 2, a refused write, a late
+   * 1, which must not step it back; a newer 7 still applies (wire values
+   * that map onto themselves, flight_state_contract.h). */
+  const uint32_t fc_eps[]={SEDS_EP_FLIGHT_STATE,SEDS_EP_FLIGHT_CONTROLLER},hb_eps[]={SEDS_EP_FLIGHT_CONTROLLER};
+  struct {uint8_t value;uint64_t ts;int refused,late;} steps[]={
+   {2,0,0,0},{15,1,0,0},{9,2,1,0},{2,0,0,1},
+   {1,3,0,0},{2,4,0,0},{9,5,1,0},{1,3,0,1},{7,6,0,0}};
+  const uint32_t want[]={2,15,15,15,1,2,2,2,7};
+  for(size_t i=0;i<sizeof steps/sizeof steps[0];++i){
+   if(steps[i].late)for(uint64_t m=0;m<64;++m){uint8_t beat=0;(void)deliver(SEDS_DT_FLIGHT_BUZZER,hb_eps,1,&beat,1,stamp+5000U+i*100U+m);}
+   managed_ok=!steps[i].refused;unsigned before=acks;
+   SedsResult a=deliver(SEDS_DT_FLIGHT_STATE,fc_eps,2,&steps[i].value,1,stamp+steps[i].ts);
+   managed_ok=true;
+   printf("step %zu write %u ts+%llu%s%s result=%d value=%u acked=%d out_of_order=%u\n",i,steps[i].value,(unsigned long long)steps[i].ts,
+          steps[i].refused?" refused":"",steps[i].late?" late copy":"",a,g_flight_state_cache_value,acks>before,g_flight_state_writes_out_of_order);
+   assert(a==SEDS_OK&&acks>before&&g_flight_state_cache_value==want[i]);
+  }
  }else if(!strcmp(mode,"controller_refused")){
   controller_ok=false;uint8_t cmd=1;const uint32_t eps[]={SEDS_EP_GROUND_STATION,SEDS_EP_SD_CARD,SEDS_EP_FLIGHT_CONTROLLER};
   SedsResult a=deliver(SEDS_DT_FLIGHT_COMMAND,eps,3,&cmd,1,stamp);
