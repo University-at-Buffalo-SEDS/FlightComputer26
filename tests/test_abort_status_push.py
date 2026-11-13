@@ -7,6 +7,12 @@ one unsolicited status: nonce 0, ABORT_LATCHED, the live abort epoch, the
 QUERY reply's generation and the last valid QUERY's issuer. A latch present
 at the first pass (restored at boot), one set by recovery commissioning and
 repeated passes owe none; a refused push is retried while the latch holds.
+
+BOARD_STATE_STATUS is an ordered reliable stream: a status goes on air only
+once every older one has its station receipt. The push carries the live
+snapshot, so it first completes every older status still pending; otherwise it
+waits behind them, for seconds when their receipts are lost on air (sim A0b:
+RF 4.7 s, FC 1.5 s). Other pending types, ABORT included, are left alone.
 """
 from pathlib import Path
 import subprocess
@@ -140,8 +146,31 @@ static uint64_t board_commissioning_query_generation(void){return 0x0A0B0C0D0E0F
 static bool board_commissioning_uncertain_first(void){return false;}
 static bool board_commissioning_pending(void){return false;}
 static uint64_t last_query_issuer=0xC1C2C3C4C5C6C7C8ULL;
+#define SEDS_DT_ABORT 5
+#define SEDS_DT_GPS_STATUS 90
+#define SEDS_PERMISSION_DENIED -14
+typedef struct SedsReliablePendingRow{uint64_t packet_id,last_send_ms;uint32_t data_type,pending_count,retries,flags;uint64_t pending_owners[4];}SedsReliablePendingRow;
+/* The SDK's pending window, ordered by packet id like its map. */
+static struct{uint64_t id;uint32_t type;bool live;}pending[5]={
+ {11U,SEDS_DT_BOARD_STATE_STATUS,true},{22U,SEDS_DT_ABORT,true},{33U,SEDS_DT_GPS_STATUS,true},
+ {44U,SEDS_DT_BOARD_STATE_STATUS,true},{55U,SEDS_DT_BOARD_STATE_STATUS,true}};
+static unsigned completed_after_send;
+static int32_t seds_router_copy_reliable_pending(SedsRouter*r,size_t first,SedsReliablePendingRow*rows,size_t cap){
+ assert(r&&rows&&cap>=1U);int32_t live=0;memset(rows,0,cap*sizeof *rows);
+ for(size_t i=0;i<5U;++i)if(pending[i].live){if((size_t)live>=first&&(size_t)live<first+cap){rows[live-first].packet_id=pending[i].id;rows[live-first].data_type=pending[i].type;}++live;}
+ return live;}
+static SedsResult seds_router_complete_reliable(SedsRouter*r,uint64_t id){
+ assert(r);
+ for(size_t i=0;i<5U;++i){
+  if(!pending[i].live||pending[i].id!=id)continue;
+  if(pending[i].type==SEDS_DT_ABORT)return SEDS_PERMISSION_DENIED;
+  if(sends)++completed_after_send;
+  pending[i].live=false;return SEDS_OK;
+ }
+ return -1;}
 @WIRE@
 @STATUS@
+@RETIRE@
 @PUSH@
 static uint64_t le64(const uint8_t*p){uint64_t v=0;for(int i=7;i>=0;--i)v=v<<8|p[i];return v;}
 static uint32_t le32(const uint8_t*p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
@@ -155,6 +184,10 @@ int main(void){
  assert(le64(sent+12)==0x0A0B0C0D0E0F1011ULL);          /* the QUERY reply's generation */
  assert(le32(sent+20)==11U&&le32(sent+24)==777000U&&le32(sent+28)==3U);
  assert(le64(sent+32)==0xC1C2C3C4C5C6C7C8ULL);          /* last valid QUERY issuer */
+ /* Every older pending status was completed before the push was queued;
+  * ABORT and other types stay pending. */
+ assert(!pending[0].live&&!pending[3].live&&!pending[4].live);
+ assert(pending[1].live&&pending[2].live&&completed_after_send==0U);
  return 0;
 }
 '''
@@ -192,6 +225,8 @@ class AbortStatusPushTests(unittest.TestCase):
         wire = '\n'.join(l for l in wire.splitlines() if not l.startswith('#include'))
         _build_and_run(PUSH_HARNESS.replace('@WIRE@', wire)
                        .replace('@STATUS@', _function(transport, 'static SedsResult commissioning_status('))
+                .replace('@RETIRE@', _function(transport, 'static void retire_superseded_status(')
+                         if 'static void retire_superseded_status(' in transport else '')
                        .replace('@PUSH@', _function(transport, 'SedsResult board_recovery_push_abort_status(')))
 
     def test_issuer_is_cached_from_each_valid_query(self):
