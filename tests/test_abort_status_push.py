@@ -50,6 +50,17 @@ static bool board_commissioning_pending(void){return commissioning;}
 static int telemetry_router_enter(void){++entered;return 1;}
 static int telemetry_router_leave(void){--entered;return 1;}
 static SedsResult board_recovery_push_abort_status(SedsRouter*r){assert(r&&entered==1);++pushes;return refuse?SEDS_ERR:SEDS_OK;}
+/* SDK pending rows and the tick, as the push sees them: status_pending and
+ * status_retries model the one BOARD_STATE_STATUS awaiting its receipt. */
+#define SEDS_DT_BOARD_STATE_STATUS 77
+#define TELEMETRY_RELIABLE_MAX_RETRIES 3U
+#define ABORT_PUSH_WINDOW_MS 5000U
+#define ABORT_PUSH_UNSEEN_MS 1000U
+typedef struct {uint64_t packet_id,last_send_ms;uint32_t data_type,pending_count,retries,flags;uint64_t pending_owners[4];} SedsReliablePendingRow;
+static bool status_pending;static uint32_t status_retries,now_ms;
+static uint32_t HAL_GetTick(void){return now_ms;}
+static int32_t seds_router_copy_reliable_pending(SedsRouter*r,size_t first,SedsReliablePendingRow*rows,size_t cap){
+ assert(r&&entered==1&&cap>=1);if(!status_pending)return 0;if(first==0){rows[0]=(SedsReliablePendingRow){0};rows[0].data_type=SEDS_DT_BOARD_STATE_STATUS;rows[0].retries=status_retries;}return 1;}
 @PUSH@
 int main(void){
  /* A latch already present at the first pass (restored at boot) owes none. */
@@ -75,6 +86,30 @@ int main(void){
  /* A refused push is dropped if the latch clears first. */
  latch=false;telemetry_push_abort_status();refuse=1;latch=true;telemetry_push_abort_status();
  refuse=0;latch=false;telemetry_push_abort_status();assert(pushes==5);
+ return 0;
+}
+'''
+
+LOST_CASES = r'''
+/* Pass the telemetry loop for ms milliseconds, 10 ms per pass. */
+static void run(uint32_t ms){for(uint32_t t=0;t<ms;t+=10){now_ms+=10;telemetry_push_abort_status();}}
+/* The station never acknowledges a copy: the SDK retries it 3 times, 400 ms apart, then drops it. */
+static void lose_copy(void){status_pending=true;for(status_retries=0;status_retries<=3;++status_retries)run(400);status_pending=false;status_retries=0;}
+int main(void){
+ now_ms=1000;latch=false;telemetry_push_abort_status();
+ /* Edge: one push. Its first 4 copies (the push and 3 retries) are all lost. */
+ latch=true;telemetry_push_abort_status();assert(pushes==1);
+ const uint32_t edge=now_ms;lose_copy();run(20);
+ /* Pushed again while latched, well inside the station's 4.8 s Abort window. */
+ assert(pushes==2&&now_ms-edge<2000);
+ /* This copy is acknowledged on its first try: no more pushes. */
+ status_pending=true;status_retries=0;run(100);status_pending=false;run(6000);
+ assert(pushes==2);
+ /* A latch whose every copy is lost is pushed until 5 s after its edge, then no more. */
+ latch=false;run(20);latch=true;run(10);const int first=pushes;const uint32_t edge2=now_ms;
+ while(now_ms-edge2<7000){lose_copy();run(20);}
+ assert(pushes>first+1&&pushes<=first+4);
+ const int last=pushes;run(3000);assert(pushes==last);
  return 0;
 }
 '''
@@ -126,10 +161,28 @@ int main(void){
 
 
 class AbortStatusPushTests(unittest.TestCase):
-    def test_first_edge_of_each_latch_episode_pushes_once(self):
+    def test_a_lost_abort_push_is_pushed_again_until_acknowledged(self):
+        # T30: the first 4 copies of the Abort status were all lost at 30%
+        # loss and nothing re-pushed it. A later copy delivers it within 5 s;
+        # an acknowledged copy ends the pushes; pushes stop 5 s after the edge.
+        _, push = self._push_source()
+        prelude = EDGE_HARNESS[:EDGE_HARNESS.index('int main(void){')].replace('@PUSH@', push)
+        _build_and_run(prelude + LOST_CASES)
+
+    def test_routine_statuses_keep_the_three_retry_budget(self):
         telemetry = (ROOT / 'Core/Src/telemetry.c').read_text()
-        _build_and_run(EDGE_HARNESS.replace(
-            '@PUSH@', _function(telemetry, 'static void telemetry_push_abort_status(void)')))
+        self.assertIn('#define TELEMETRY_RELIABLE_MAX_RETRIES 3U', telemetry)
+        self.assertIn('tuning.reliable_max_retries = TELEMETRY_RELIABLE_MAX_RETRIES;', telemetry)
+
+    def _push_source(self):
+        telemetry = (ROOT / 'Core/Src/telemetry.c').read_text()
+        helper = (_function(telemetry, 'static bool abort_status_pending(') + '\n'
+                  if 'static bool abort_status_pending(' in telemetry else '')
+        return telemetry, helper + _function(telemetry, 'static void telemetry_push_abort_status(void)')
+
+    def test_first_edge_of_each_latch_episode_pushes_once(self):
+        telemetry, push = self._push_source()
+        _build_and_run(EDGE_HARNESS.replace('@PUSH@', push))
         loop = _function(telemetry, 'void telemetry_entry(ULONG _)')
         self.assertIn('telemetry_republish_flight_state();\n    telemetry_push_abort_status();', loop)
 

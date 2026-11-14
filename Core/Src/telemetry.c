@@ -29,6 +29,14 @@ extern int telemetry_router_leave(void);
 
 #define id "TE "
 
+/* End-to-end retries per reliable send (4 tries, 400 ms apart). */
+#define TELEMETRY_RELIABLE_MAX_RETRIES 3U
+/* An Abort status push is repeated, while unacknowledged, this long after
+ * the latch edge: the station's Abort window is 4.8 s. */
+#define ABORT_PUSH_WINDOW_MS 5000U
+/* A push not seen pending this long after it was queued is pushed again. */
+#define ABORT_PUSH_UNSEEN_MS 1000U
+
 #ifdef TELEMETRY_ENABLED
 #include "board_packet_store.h"
 #ifdef TELEMETRY_USE_TLSF
@@ -782,7 +790,7 @@ static SedsResult init_telemetry_router_locked(void) {
   result = seds_get_runtime_tuning_config(&tuning);
   if (result != SEDS_OK) return result;
   tuning.reliable_retransmit_ms = 400U;
-  tuning.reliable_max_retries = 3U;
+  tuning.reliable_max_retries = TELEMETRY_RELIABLE_MAX_RETRIES;
   tuning.payload_compress_threshold = SIZE_MAX;
   result = seds_set_runtime_tuning_config(&tuning);
   if (result != SEDS_OK) return result;
@@ -1417,21 +1425,67 @@ static void telemetry_republish_flight_state(void)
 #endif
 }
 
+#ifdef TELEMETRY_ENABLED
+/* True while a BOARD_STATE_STATUS of this board is still awaiting its
+ * receipt; *retries is the highest retry count seen among them. */
+static bool abort_status_pending(SedsRouter *router, uint32_t *retries)
+{
+  SedsReliablePendingRow rows[4];
+  bool found = false;
+  for (size_t first = 0U;; first += 4U)
+  {
+    const int32_t total = seds_router_copy_reliable_pending(router, first, rows, 4U);
+    if (total < 0) return true; /* unknown: keep waiting */
+    for (size_t i = 0U; i < 4U && first + i < (size_t)total; ++i)
+      if (rows[i].data_type == (uint32_t)SEDS_DT_BOARD_STATE_STATUS)
+      {
+        found = true;
+        if (rows[i].retries > *retries) *retries = rows[i].retries;
+      }
+    if (first + 4U >= (size_t)total) return found;
+  }
+}
+#endif
+
 /* One BOARD_STATE_STATUS on the first edge of an Abort latch episode
  * (fc_recovery_abort_latched() or In_Aborted_State), so the station sees it
  * even while its ordered queries wait. A latch already present at the first
  * pass (restored at boot) or set by recovery commissioning owes nothing; a
- * refused push is retried on the next pass while the latch holds. */
+ * refused push is retried on the next pass while the latch holds.
+ *
+ * Routine statuses keep the 3-retry budget (4 tries over 1.2 s), but the
+ * station's Abort window is 4.8 s: a push whose every try was lost is pushed
+ * again while the latch holds, until a status of this board is acknowledged
+ * (any status sent after the latch carries it) or 5 s after the edge. */
 static void telemetry_push_abort_status(void)
 {
 #ifdef TELEMETRY_ENABLED
-  static uint8_t episode; /* 0 unobserved, 1 clear, 2 latched and settled, 3 push owed */
+  /* 0 unobserved, 1 clear, 2 latched and settled, 3 push owed, 4 pushed */
+  static uint8_t episode;
+  static uint32_t edge_ms, push_ms, seen_retries;
+  static bool seen;
   const bool latched = fc_recovery_abort_latched() || (g_conf & option(In_Aborted_State));
+  const uint32_t now = HAL_GetTick();
   if (!latched) episode = 1U;
-  else if (episode == 1U) episode = board_commissioning_pending() ? 2U : 3U;
+  else if (episode == 1U) { episode = board_commissioning_pending() ? 2U : 3U; edge_ms = now; }
   else if (episode == 0U) episode = 2U;
+  if (episode == 4U)
+  {
+    if (now - edge_ms >= ABORT_PUSH_WINDOW_MS) { episode = 2U; return; }
+    if (!telemetry_router_enter()) return;
+    const bool pending = g_router.r && abort_status_pending(g_router.r, &seen_retries);
+    (void)telemetry_router_leave();
+    if (pending) { seen = true; return; }
+    if (!seen && now - push_ms < ABORT_PUSH_UNSEEN_MS) return; /* not dispatched yet */
+    /* Gone before its last try ran out: the station acknowledged it. */
+    if (seen && seen_retries < TELEMETRY_RELIABLE_MAX_RETRIES) { episode = 2U; return; }
+    episode = 3U; /* every try lost (or never dispatched): push again */
+  }
   if (episode != 3U || !telemetry_router_enter()) return;
-  if (g_router.r && board_recovery_push_abort_status(g_router.r) == SEDS_OK) episode = 2U;
+  if (g_router.r && board_recovery_push_abort_status(g_router.r) == SEDS_OK)
+  {
+    episode = 4U; seen = false; seen_retries = 0U; push_ms = now;
+  }
   (void)telemetry_router_leave();
 #endif
 }

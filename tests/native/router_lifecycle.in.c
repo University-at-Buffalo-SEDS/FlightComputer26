@@ -100,6 +100,8 @@ static int32_t pack(uint32_t ty,uint8_t value,uint8_t *wire,size_t capacity){
 #define UNUSED_FUNCTION __attribute__((unused))
 #define HAL_OK 0
 #define TX_SUCCESS 0U
+/* telemetry.c: end-to-end retries per reliable send. */
+#define TELEMETRY_RELIABLE_MAX_RETRIES 3U
 #define TX_WAIT_FOREVER (~0U)
 #define TX_NULL NULL
 #define TX_MUTEX_ID 0x4D555445U
