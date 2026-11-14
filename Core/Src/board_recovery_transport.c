@@ -14,10 +14,14 @@ static SedsRouter *recovery_router;
  * the sender stops retransmitting them. */
 volatile uint32_t g_reliable_refusal_count __attribute__((used));
 void board_recovery_transport_set_router(SedsRouter *router) { recovery_router=router; }
+/* A station checked by its fixed name ("GS", "RRLS"): matches the name, an
+ * address the SDK resolves to it, or, when this board never learned the
+ * station (rebooted, or behind a relay before it heard the station), the
+ * name's own compact identity unless another known name shares it. */
 static uint8_t authorized_owner(SedsRouter *router,const SedsPacketView *packet,
                                 const char *owner,size_t owner_len)
 {
- return packet!=NULL && seds_router_sender_matches_hostname(router,
+ return packet!=NULL && seds_router_sender_matches_station(router,
      packet->sender,packet->sender_len,owner,owner_len);
 }
 /* A station: the GS, or the RRLS when it takes over (name or compact alias,
