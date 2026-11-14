@@ -38,6 +38,7 @@ class ManagedAuthorityTests(unittest.TestCase):
   SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);*out=now;return 0;}
   /* Station-clock fixture: the freshness clock equals the network clock here. */
   uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)?0U:t;}
+  #define seds_router_sender_matches_station seds_router_sender_matches_hostname
   bool seds_router_sender_matches_hostname(SedsRouter*r,const char*s,size_t len,const char*name,size_t n){assert(r);return s&&len==n&&!memcmp(s,name,n);}
   '''+function(text,'authorized_owner')+'\n'+function(text,'authorized_primary')+'\n'+function(text,'board_recovery_command_is_stale')+'\n'+body+'''
   int main(int argc,char**argv){assert(argc==2);SedsPacketView p={.ty=SEDS_DT_FLIGHT_STATE,.sender="VB",.sender_len=2,.timestamp=9000};

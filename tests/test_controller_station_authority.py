@@ -29,6 +29,7 @@ SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);
 /* Station-clock fixture: no GS time observed, so freshness equals the network clock. */
 uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)?0U:t;}
 static unsigned station_observed;static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
+#define seds_router_sender_matches_station seds_router_sender_matches_hostname
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
 static unsigned ground_pulses;static SedsResult pulse_ground(void){++ground_pulses;return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){assert(p&&n==1);states++;return SEDS_OK;}

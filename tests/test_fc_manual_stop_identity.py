@@ -89,11 +89,15 @@ class FCManualStopIdentityTests(unittest.TestCase):
                 self.run_case('receive', sender, 'assigned', 'manual', wire, discovery, 1)
 
     def test_unknown_and_wrong_foreign_sources_do_not_stop(self):
+        # A station this board never learned: its own compact identity (the
+        # deterministic one of its name) is accepted for the fixed station
+        # names (sender_matches_station, station identity); an assigned
+        # address it never learned is not.
         for sender in ('GS', 'RRLS'):
             for form in ('compact', 'assigned'):
                 with self.subTest(sender=sender, form=form):
                     wire, discovery = self.produce(sender, form)
-                    self.run_case('unknown', sender, form, 'manual', wire, discovery, 0)
+                    self.run_case('unknown', sender, form, 'manual', wire, discovery, int(form == 'compact'))
         for form in ('compact', 'assigned'):
             wire, discovery = self.produce('VB', form)
             self.run_case('receive', 'VB', form, 'manual', wire, discovery, 0)
