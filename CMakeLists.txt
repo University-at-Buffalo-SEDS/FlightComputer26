@@ -153,6 +153,7 @@ if (ENABLE_TELEMETRY)
 
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/board_crc32.c
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry_rate.c
         ${CMAKE_SOURCE_DIR}/Core/Src/av_bay_underglow.c
         ${CMAKE_SOURCE_DIR}/Core/Src/flight_buzzer.c
