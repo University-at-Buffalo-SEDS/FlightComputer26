@@ -194,7 +194,22 @@ static void stack_sample_fill(const TX_THREAD *thread,
                                         (uintptr_t)thread->tx_thread_stack_start));
 }
 
+/* The fill scan walks every untouched word of three stacks, which dominated
+ * the telemetry loop. Low-water marks only fall, so one scan per second loses
+ * nothing; the live-PSP sample below still runs on every routing callback. */
+#define TELEMETRY_STACK_SCAN_PERIOD_TICKS ((ULONG)TX_TIMER_TICKS_PER_SECOND)
+volatile uint32_t g_telemetry_stack_scans
+    __attribute__((used, externally_visible)) = 0U;
+static ULONG g_stack_scan_tick;
+
 static void telemetry_sample_stack_margin(void) {
+  const ULONG now = tx_time_get();
+  if (g_telemetry_stack_scans != 0U &&
+      (ULONG)(now - g_stack_scan_tick) < TELEMETRY_STACK_SCAN_PERIOD_TICKS) {
+    return;
+  }
+  g_stack_scan_tick = now;
+  g_telemetry_stack_scans++;
   stack_sample_fill(&telemetry_task, &g_telemetry_stack_free_min);
   stack_sample_fill(&evaluation_task, &g_evaluation_stack_free_min);
   stack_sample_fill(&distribution_task, &g_distribution_stack_free_min);
