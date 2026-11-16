@@ -16,6 +16,18 @@
 TX_THREAD dma_task;
 static TX_SEMAPHORE dma_completion;
 
+/* Idle wakeups. A sensor data-ready IRQ wakes the DMA task through
+ * dma_ready; a delivered sample (or distribution_wake()) wakes the
+ * distribution task through sample_ready. Both tasks block on these instead
+ * of yielding in a loop, so ThreadX can reach its WFI idle. The one-tick
+ * timeout only bounds inputs that have no signal of their own (the barometer
+ * DRDY level recovery below and configuration changes); it never delays a
+ * signalled sample. */
+static TX_EVENT_FLAGS_GROUP dma_ready;
+static TX_EVENT_FLAGS_GROUP sample_ready;
+#define SENSOR_IDLE_POLL_TICKS 1U
+#define DIST_WAKE_OTHER 0x10000UL
+
 #ifdef SEDS_FIRMWARE_SIM_TEST
 volatile uint32_t g_sim_sensor_ready_irqs;
 volatile uint32_t g_sim_sensor_dma_started;
@@ -191,6 +203,37 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   SENSOR_PROBE(g_sim_sensor_ready_irqs);
 	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
+  /* After the flag: a task that saw no flag still finds this event. */
+  (void) tx_event_flags_set(&dma_ready, GPIO_Pin, TX_OR);
+}
+
+
+/* Idle waits */
+
+static inline void dma_wait_ready(ULONG wanted)
+{
+  ULONG seen;
+  (void) tx_event_flags_get(&dma_ready, wanted, TX_OR_CLEAR, &seen,
+                            SENSOR_IDLE_POLL_TICKS);
+}
+
+void dma_wait_for_samples(fu16 wanted)
+{
+  ULONG seen;
+  /* A sample already published (event consumed by an earlier wait) is
+   * still pending in relv: never sleep on it. One published after this
+   * check sets its event first, so the wait below returns at once. */
+  if (load(&flags.relv, Acq) & wanted)
+  {
+    return;
+  }
+  (void) tx_event_flags_get(&sample_ready, (ULONG)wanted | DIST_WAKE_OTHER,
+                            TX_OR_CLEAR, &seen, SENSOR_IDLE_POLL_TICKS);
+}
+
+void distribution_wake(void)
+{
+  (void) tx_event_flags_set(&sample_ready, DIST_WAKE_OTHER, TX_OR);
 }
 
 
@@ -210,6 +253,7 @@ static inline void propagate_rx(void)
   fc_unlock(&dma_locks[select.next]);
 
   fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
+  (void) tx_event_flags_set(&sample_ready, gpio.drdy[select.next], TX_OR);
 }
 
 static inline void start_dma_transfer(void)
@@ -279,7 +323,7 @@ void dma_entry(ULONG _)
     {
       if (drdy_snapshot == 0)
       {
-        tx_thread_relinquish();
+        dma_wait_ready(DMA_SENSOR_MASKS);
         continue;
       }
 
@@ -312,7 +356,7 @@ void dma_entry(ULONG _)
     {
       if (!(drdy_snapshot & DMA_BARO_MASK))
       {
-        tx_thread_relinquish();
+        dma_wait_ready(DMA_BARO_MASK);
         continue;
       }
       else select.next = Sensor_Baro;
@@ -341,6 +385,14 @@ UINT create_dma_task(TX_BYTE_POOL *byte_pool)
   st = tx_semaphore_create(&dma_completion, "Sensor DMA completion", 0);
   if (st != TX_SUCCESS)
   {
+    tx_byte_release(pointer);
+    return IT_IS_NOW_OVER;
+  }
+
+  if (tx_event_flags_create(&dma_ready, id "R") != TX_SUCCESS ||
+      tx_event_flags_create(&sample_ready, id "S") != TX_SUCCESS)
+  {
+    tx_semaphore_delete(&dma_completion);
     tx_byte_release(pointer);
     return IT_IS_NOW_OVER;
   }

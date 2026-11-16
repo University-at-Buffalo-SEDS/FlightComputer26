@@ -1027,6 +1027,15 @@ void HAL_FDCAN_TxBufferCompleteCallback(FDCAN_HandleTypeDef *hfdcan,
     can_tx_queue_pump();
 }
 
+int can_bus_rx_pending(void)
+{
+  if (g_rx_head != g_rx_tail || g_rx_fifo0_pending || g_rx_fifo1_pending)
+    return 1;
+  return g_hfdcan != NULL &&
+         (HAL_FDCAN_GetRxFifoFillLevel(g_hfdcan, FDCAN_RX_FIFO0) > 0U ||
+          HAL_FDCAN_GetRxFifoFillLevel(g_hfdcan, FDCAN_RX_FIFO1) > 0U);
+}
+
 // Call this periodically from thread/main-loop context.
 // It drains the ISR ring buffer, expires old partial reassembly slots,
 // reassembles fragmented messages, and notifies subscribers.
@@ -1118,6 +1127,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
   g_fdcan_irq_count++;
   /* Move at most one physical FIFO into the ring; no decode/allocation here. */
   (void)can_bus_drain_rx_fifo(hfdcan, FDCAN_RX_FIFO0, 3U);
+  can_bus_rx_ready_isr();
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
@@ -1129,6 +1139,7 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
   g_fdcan_irq_count++;
   /* Move at most one physical FIFO into the ring; no decode/allocation here. */
   (void)can_bus_drain_rx_fifo(hfdcan, FDCAN_RX_FIFO1, 3U);
+  can_bus_rx_ready_isr();
 }
 
 // TX event FIFO callback (called in ISR context). We read all new events

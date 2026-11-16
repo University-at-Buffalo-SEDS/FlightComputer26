@@ -85,6 +85,8 @@ void validate_baro(f_xyz *v,fu32 c){(void)v;(void)c;}
 void maybe_log_measm(unsigned t,const void *v){(void)t;(void)v;}
 void watch_for_gps_packets(fu32 c,fu32 *a,fu32 *n){(void)c;(void)a;(void)n;}
 void tx_thread_relinquish(void){}
+enum{DMA_BARO_MASK=1,DMA_ACCL_MASK=4};
+void dma_wait_for_samples(unsigned wanted){(void)wanted;}
 void message(const char *text,bool important){(void)text;(void)important;++messages;}
 '''
 MAIN = r'''

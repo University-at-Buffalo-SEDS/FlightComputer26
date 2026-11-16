@@ -1568,6 +1568,53 @@ static void telemetry_push_abort_status(void)
 #endif
 }
 
+/* Telemetry idle wait. The loop blocks here instead of yielding so ThreadX
+ * reaches its WFI idle. Event-driven inputs wake it at once: FDCAN RX (from
+ * the RX interrupt), and through telemetry_wake() router work queued by
+ * another task (router lock release) and handled commands (recovery task).
+ * The one-tick timeout only paces the time-driven duties (retries,
+ * discovery, time sync, Abort push repeats, the watchdog), which run on
+ * millisecond clocks anyway. */
+static TX_EVENT_FLAGS_GROUP telemetry_wake_flags;
+#define TELEMETRY_WAKE_CAN_RX 1UL
+#define TELEMETRY_WAKE_ROUTER 2UL
+#define TELEMETRY_IDLE_TICKS 1U
+
+void can_bus_rx_ready_isr(void)
+{
+  (void)tx_event_flags_set(&telemetry_wake_flags, TELEMETRY_WAKE_CAN_RX, TX_OR);
+}
+
+/* Wake the telemetry loop from another task; a no-op on its own thread. */
+void telemetry_wake(void)
+{
+  /* Before the group exists ThreadX's checked API refuses the set. */
+  if (tx_thread_identify() != &telemetry_task)
+    (void)tx_event_flags_set(&telemetry_wake_flags, TELEMETRY_WAKE_ROUTER, TX_OR);
+}
+
+static UNUSED_FUNCTION void telemetry_idle_wait(void)
+{
+  ULONG woken;
+  bool busy = can_bus_rx_pending() != 0;
+#ifdef TELEMETRY_ENABLED
+  if (!busy && g_router.r && telemetry_router_enter())
+  {
+    busy = seds_router_has_queued_work(g_router.r) > 0;
+    (void)telemetry_router_leave();
+  }
+#endif
+  if (busy)
+  {
+    /* Backlog: keep serving it, but let equal-priority peers run. */
+    tx_thread_relinquish();
+    return;
+  }
+  (void)tx_event_flags_get(&telemetry_wake_flags,
+                           TELEMETRY_WAKE_CAN_RX | TELEMETRY_WAKE_ROUTER,
+                           TX_OR_CLEAR, &woken, TELEMETRY_IDLE_TICKS);
+}
+
 void telemetry_entry(ULONG _)
 {
   g_telemetry_thread_entered++;
@@ -1634,7 +1681,7 @@ void telemetry_entry(ULONG _)
     g_telemetry_loop_completions++;
     board_watchdog_progress(BOARD_WATCHDOG_NETWORK);
 
-    tx_thread_relinquish();
+    telemetry_idle_wait();
   }
 
 #endif /* FAKESTATION */
@@ -1666,6 +1713,12 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
    * auto-start thread first allowed a boot-time lock/unlock on an uncreated
    * ThreadX object. */
   st = tx_mutex_create(&telemetry_mu, id "mu", TX_INHERIT);
+  if (st != TX_SUCCESS)
+  {
+    return st;
+  }
+
+  st = tx_event_flags_create(&telemetry_wake_flags, id "wk");
   if (st != TX_SUCCESS)
   {
     return st;

@@ -58,6 +58,8 @@ static void __disable_irq(void){irq=1;}
 static void __set_PRIMASK(unsigned n){irq=n;}
 static void __DMB(void){assert(irq);}
 static size_t can_bus_dlc_to_len(uint32_t n){return n;}
+static unsigned rx_wakes;
+static void can_bus_rx_ready_isr(void){++rx_wakes;}
 static unsigned HAL_FDCAN_GetRxFifoFillLevel(FDCAN_HandleTypeDef *h,unsigned f){assert(h==g_hfdcan);return fill[f];}
 static int HAL_FDCAN_GetRxMessage(FDCAN_HandleTypeDef *h,unsigned f,FDCAN_RxHeaderTypeDef *hdr,uint8_t *data){
  assert(h==g_hfdcan && fill[f] && irq);reads++;
@@ -76,9 +78,13 @@ int main(void){
  // More bursts arrive without any network-thread/decoder service.
  for(unsigned i=0;i<100;i++){fill[1]=3;HAL_FDCAN_RxFifo1Callback(&board,2);assert(!fill[1]);}
  assert(pushed==303 && g_fdcan_rx_count==303);
+ // Every serviced RX interrupt wakes the blocked network task.
+ assert(rx_wakes==101);
  unsigned before=reads;fill[0]=3;refill=1;
  HAL_FDCAN_RxFifo0Callback(&board,1);assert(reads-before==3);
+ unsigned wakes=rx_wakes;
  before=reads;HAL_FDCAN_RxFifo0Callback(&other,1);HAL_FDCAN_RxFifo0Callback(&board,0);assert(reads==before);
+ assert(rx_wakes==wakes);
  // Consumer protects the tail/slot from concurrent drop-oldest eviction,
  // and preserves an already-disabled interrupt mask on all exit paths.
  can_bus_rx_frame_t out;g_rx_ring[0].std_id=123;g_rx_head=1;g_rx_tail=0;

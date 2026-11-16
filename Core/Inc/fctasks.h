@@ -22,6 +22,7 @@ extern TX_BYTE_POOL telemetry_pool;
 
 void telemetry_lock(void);
 void telemetry_unlock(void);
+void telemetry_wake(void);
 void telemetry_entry(ULONG);
 UINT create_telemetry_task(TX_BYTE_POOL *);
 

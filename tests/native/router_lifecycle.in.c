@@ -222,6 +222,8 @@ static __attribute__((unused)) void inert_radio_rx(const uint8_t*p,size_t n,void
 #define Flight_State_handler inert
 #define Heartbeat_handler inert
 SedsResult init_telemetry_router(void);
+static unsigned router_use_notes;
+static void telemetry_wake(void){++router_use_notes;}
 
 #define Manual_Abort_handler inert
 #define Board_Recovery_handler inert

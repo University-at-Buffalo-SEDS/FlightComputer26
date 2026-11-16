@@ -887,6 +887,8 @@ void recovery_entry(ULONG st)
     if (fc_recovery_take_sensor_restart()) {
       if (flight_mission_active())
         decode_flight_message(fc_mask(Launch_Signal));
+      distribution_wake();
+      telemetry_wake();
       continue;
     }
     if (fc_recovery_control_pending()) {
@@ -921,6 +923,10 @@ void recovery_entry(ULONG st)
     const bool network_command = false;
 #endif
     decode_flight_message(msg);
+    /* Commands change the configuration distribution's loops poll and the
+     * latches (Abort status) the telemetry loop publishes. */
+    distribution_wake();
+    telemetry_wake();
     recovery_update_stack_profile();
     if (network_command)
     {

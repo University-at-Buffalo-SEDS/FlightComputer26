@@ -475,6 +475,7 @@ static inline void enter_flight_mode(fu32 conf)
     ascent_initialize(conf);
     message(id "launch received", true);
     fetch_or(&g_conf, option(Launch_Requested), Rel);
+    distribution_wake();
 
 #ifdef DESCENT_TEST
     descent_initialize(conf);
@@ -535,6 +536,7 @@ void evaluation_entry(ULONG _)
 
       conf = fetch_and(&g_conf,
                        ~option(Ascent_KF_Staged), AcqRel);
+      distribution_wake(); /* it waits for the stage to clear */
 
       sweetbench_catch(3);
       evaluate_rocket_state(conf, dt);

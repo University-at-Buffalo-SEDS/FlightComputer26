@@ -358,6 +358,8 @@ void telemetry_lock(void)
 void telemetry_unlock(void)
 {
   fchook_unlock(&telemetry_mu);
+  /* Router work from another task may have queued packets: wake telemetry. */
+  telemetry_wake();
 }
 
 /* C application ownership is checked separately from the unchanged Rust ABI

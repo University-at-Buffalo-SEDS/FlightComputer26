@@ -26,6 +26,14 @@ HAL_StatusTypeDef can_bus_send_large(const uint8_t *bytes, size_t len, uint32_t 
  */
 void can_bus_process_rx(void);
 
+/* True while received frames wait for can_bus_process_rx(): in the ISR ring
+ * or still in a hardware RX FIFO. The service loop must not block then. */
+int can_bus_rx_pending(void);
+
+/* Called from the FDCAN RX interrupt after frames enter the ring. Provided by
+ * the task that runs can_bus_process_rx() so it can block until RX arrives. */
+void can_bus_rx_ready_isr(void);
+
 /*
  * Subscribe a callback to RX events (FIFO1).
  * Can be called at startup before interrupts start firing.

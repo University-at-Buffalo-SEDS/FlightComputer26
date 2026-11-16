@@ -83,6 +83,8 @@ static UINT tx_thread_wait_abort(struct task *t){(void)t;++wakes;return TX_SUCCE
 static UINT tx_queue_flush(void *q){(void)q;return TX_SUCCESS;}
 static UINT tx_event_flags_set(unsigned *group,unsigned mask,unsigned mode){(void)group;(void)mask;(void)mode;return TX_SUCCESS;}
 static void tx_thread_sleep(unsigned ticks){(void)ticks;++waits;}
+static void distribution_wake(void){}
+static void telemetry_wake(void){}
 static void ascent_initialize(uint32_t conf){(void)conf;++ascent_initializations;assert(current()==Armed);}
 static void message(const char *text,bool important){(void)text;(void)important;++messages;}
 

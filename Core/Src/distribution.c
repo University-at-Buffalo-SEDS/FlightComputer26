@@ -200,6 +200,7 @@ process_gps_packet(const uint8_t *data, size_t len)
   rfboard.coords_buf = coords;
   rfboard.updated = true;
   fc_concede(&rfboard.rflock);
+  distribution_wake();
 
   sweetbench_start(10, 50);
 
@@ -699,7 +700,13 @@ static inline void for_ascent_update(fu32 conf)
     meas.baro = baro_suspect;
     fc_concede(&meas_locks[Baro]);
   }
-  else return;
+  else
+  {
+    /* Staged: only a barometer sample (or a wake from the evaluator
+     * clearing the stage) has work for this pass. */
+    dma_wait_for_samples(DMA_BARO_MASK);
+    return;
+  }
 
   tx_event_flags_set(&eval_stage, Baro_Mask, TX_OR);
 
@@ -748,7 +755,7 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 
   if (*imu != (Gyro_Mask | Accl_Mask))
   {
-    tx_thread_relinquish();
+    dma_wait_for_samples(DMA_SENSOR_MASKS);
     return;
   }
 
@@ -804,7 +811,7 @@ static inline void descent_full_cycle(fu32 conf)
     evaluate_rocket_state(conf, dt);
     sweetbench_catch(9);
   }
-  else tx_thread_relinquish();
+  else dma_wait_for_samples(DMA_BARO_MASK); /* GPS wakes via distribution_wake */
 }
 
 
@@ -856,7 +863,7 @@ static inline void data_streaming_mode(void)
     fc_monitor_bench_sample(fresh_gyro, fresh_accel, fresh_baro);
     watch_for_gps_packets(conf, &acc_gps, &ctr_gps);
 
-    tx_thread_relinquish();
+    dma_wait_for_samples(DMA_SENSOR_MASKS);
 
     conf = load(&g_conf, Acq);
   }
@@ -899,7 +906,7 @@ static inline void post_initialization(void)
     }
     watch_for_gps_packets(conf, &gps_acc, &gps_ctr);
 
-    tx_thread_relinquish();
+    dma_wait_for_samples(DMA_BARO_MASK | DMA_ACCL_MASK);
   }
 
   if (!fc_recovery_postinit_allowed(epoch)) return;

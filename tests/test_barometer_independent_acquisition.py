@@ -52,6 +52,9 @@ static void tx_event_flags_set(int *group, unsigned bits, unsigned operation) {
   (void)group; (void)operation; staged |= bits;
 }
 static void tx_thread_relinquish(void) {}
+enum { DMA_SENSOR_MASKS=7 };
+static unsigned waits;
+static void dma_wait_for_samples(unsigned wanted) { (void)wanted; ++waits; }
 '''
         harness += production + r'''
 int main(void) {

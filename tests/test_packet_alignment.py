@@ -24,6 +24,7 @@ class PacketAlignmentTests(unittest.TestCase):
 #define timer_update(x) ((void)0)
 #define fc_lock(x) ((void)0)
 #define fc_concede(x) ((void)0)
+#define distribution_wake() ((void)0)
 typedef uint32_t fu32;
 typedef int SedsResult;
 typedef struct {float x,y,z;} f_xyz;
