@@ -24,6 +24,8 @@ static uint64_t clock_now=20000;static unsigned commands,biases,states;
 bool persistent_store_controls_ready(void){return ready;}
 uint8_t board_recovery_floor_is_healthy(void){return healthy;}
 uint8_t board_recovery_floor_active(void){return active;}
+uint8_t board_recovery_floor_cached_cutoff(uint64_t*c){*c=0U;return 1U;}
+uint8_t board_recovery_station_behind(uint64_t m,uint64_t s){return s&&m>s&&m-s>60000U;}
 uint8_t board_recovery_command_time_allowed(uint64_t source){return source>100;}
 SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);*out=clock_now;return clock_ok?SEDS_OK:SEDS_ERR;}
 /* Station-clock fixture: no GS time observed, so freshness equals the network clock. */

@@ -16,6 +16,8 @@ static void fc_recovery_manual_stop_original_utc(uint64_t source){(void)source;f
  * This tests that the actual manual handler never calls that gate, not NVM. */
 static uint8_t board_recovery_command_time_allowed(uint64_t timestamp){(void)timestamp;++floor_checks;return 0;}
 static uint8_t board_recovery_floor_active(void){return 1;}
+static uint8_t board_recovery_floor_cached_cutoff(uint64_t*c){*c=0U;return 1U;}
+static uint8_t board_recovery_station_behind(uint64_t m,uint64_t s){return s&&m>s&&m-s>60000U;}
 /* SOURCE_FUNCTION:authorized_owner */
 /* SOURCE_FUNCTION:board_recovery_manual_stop_source_allowed */
 /* Freshness clock: never reached here, the modelled floor refuses first. */
