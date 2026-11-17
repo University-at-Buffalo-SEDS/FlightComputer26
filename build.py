@@ -380,7 +380,7 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                 "-DCMAKE_TOOLCHAIN_FILE=" + str(options.get("toolchain") or PROJECT / "cmake/gcc-arm-none-eabi.cmake"),
                 telem,
-                "-DSEDSNET_GIT_REF=" + (options.get("sedsnet-ref") or "dev"),
+                "-DSEDSNET_GIT_REF=" + (options.get("sedsnet-ref") or ("dev" if options["sedsnet-dev"] else "main")),
                 # Always explicit: a cached ON from a one-off configure must not
                 # silently pin later normal builds to a stale on-disk SDK.
                 "-DSEDSNET_OFFLINE=" + ("ON" if options.get("sedsnet-offline") else "OFF"),
@@ -922,7 +922,7 @@ def make_parser() -> argparse.ArgumentParser:
         mode.add_argument("--release", action="store_true", help="Build with Release size optimization.")
         mode.add_argument("--debug", action="store_true", help="Debug build (default).")
         p.add_argument("--allocator", choices=("threadx","tlsf"), default="tlsf", help="SEDSnet heap allocator; ThreadX continues scheduling (default: tlsf).")
-        p.add_argument("--packet-store", choices=("heap","compact"), default="compact", help="Compact packet arena (default); uses dev unless --sedsnet-ref is explicit.")
+        p.add_argument("--packet-store", choices=("heap","compact"), default="compact", help="Compact packet arena (default); uses main unless --sedsnet-ref is explicit.")
         p.add_argument("--sedsnet-ref", choices=("main","dev"), help="Fetch current branch commit, with an on-disk offline fallback.")
         p.add_argument("--sedsnet-offline", action="store_true", help="Use a compatible on-disk SEDSnet without fetching.")
         watchdog = p.add_mutually_exclusive_group()
@@ -947,7 +947,7 @@ def cli_build_options(args):
     for key in FLAG_HELP: options[key] = getattr(args,key,False)
     options["allocator-tlsf"] = args.allocator == "tlsf"
     options["packet-store-compact"] = args.packet_store == "compact"
-    options["sedsnet-ref"] = args.sedsnet_ref or "dev"
+    options["sedsnet-ref"] = args.sedsnet_ref or "main"
     options["sedsnet-offline"] = getattr(args, "sedsnet_offline", False)
     options["no-watchdog"] = not args.watchdog
     options["watchdog"] = args.watchdog

@@ -30,7 +30,7 @@ def missing_apis(path, apis):
     return [api for api in apis if f'{api}(' not in text]
 
 
-def select_source(cache, repository, fallbacks, offline=False, timeout=15, ref="dev", require_apis=()):
+def select_source(cache, repository, fallbacks, offline=False, timeout=15, ref="main", require_apis=()):
     if ref not in ("main", "dev"):
         raise ValueError("SEDSnet ref must be main or dev")
     cache.mkdir(parents=True, exist_ok=True)
@@ -92,7 +92,7 @@ def select_source(cache, repository, fallbacks, offline=False, timeout=15, ref="
             print(f'SEDSnet offline/local: {source} [{revision}]', file=sys.stderr)
             return source
     raise RuntimeError('No usable SEDSnet source (with the required API) is available on disk. Connect '
-                       'once to fetch the branch, or set FETCHCONTENT_SOURCE_DIR_SEDSNET to an existing source checkout.')
+                       'once to fetch main, or set FETCHCONTENT_SOURCE_DIR_SEDSNET to an existing source checkout.')
 
 
 def main():
@@ -101,7 +101,7 @@ def main():
     parser.add_argument('--repository', required=True)
     parser.add_argument('--fallback', action='append', default=[], type=Path)
     parser.add_argument('--offline', action='store_true')
-    parser.add_argument('--ref', choices=('main', 'dev'), default='dev')
+    parser.add_argument('--ref', choices=('main', 'dev'), default='main')
     parser.add_argument('--require-api', action='append', default=[],
                         help='C API the selected header must declare; incompatible fallbacks are skipped.')
     args = parser.parse_args()
