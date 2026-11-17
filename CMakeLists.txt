@@ -150,6 +150,16 @@ if (ENABLE_TELEMETRY)
         "Allow bounded radio startup receipt latency" FORCE)
     set(SEDSNET_ENV_PAYLOAD_COMPRESS_THRESHOLD "30" CACHE STRING "" FORCE)
     set(SEDSNET_TARGET "thumbv8m.main-none-eabihf" CACHE STRING "" FORCE)
+    # SEDSnet compresses only at zstd level 1, without long-distance matching
+    # or a target block size. Let the SDK leave that unreachable zstd code out;
+    # frames are byte-identical. SDKs older than 6.0.2 ignore the setting.
+    set(SEDSNET_ZSTD_LEAN ON CACHE BOOL
+        "Omit zstd LDM/target-block-size code SEDSnet never uses" FORCE)
+    # The release link uses -flto: the SDK compiles zstd as fat LTO objects
+    # with this firmware's GCC, so the link optimises zstd with its callers;
+    # frames are unchanged. SDKs older than 6.0.2 ignore the setting.
+    set(SEDSNET_ZSTD_LTO ON CACHE BOOL
+        "Compile SEDSnet's zstd for the firmware's LTO link" FORCE)
 
     target_sources(${PROJECT_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/Core/Src/telemetry.c
