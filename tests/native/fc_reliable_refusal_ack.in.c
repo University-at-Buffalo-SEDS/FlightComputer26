@@ -2,6 +2,7 @@
 #include "sedsnet_config.h"
 #include "ground_heartbeat_owner.h"
 #include "flight_state_contract.h"
+#include "network_stamp.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,7 +25,6 @@ static uint8_t board_recovery_controller_update_allowed(const SedsPacketView*p){
 static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==12||p->payload[0]==13);}
 static bool pyro_ok;
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView*p){(void)p;assert(pyro_ok&&"operator Deploy/Expand only in the copy-dedupe mode");return 1U;}
-static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){(void)r;(void)p;}
 static SedsResult pulse_ground(void){return SEDS_OK;}
 /* distribution.c implicit_postinit runs for real; its owners are stand-ins. A
  * Postinit request is counted at the syscall queue. The recovery owner holds

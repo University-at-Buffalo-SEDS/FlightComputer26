@@ -19,13 +19,9 @@ uint8_t board_recovery_controller_update_allowed(const SedsPacketView *packet);
 uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *packet);
 uint32_t board_recovery_controller_gate(void);
 uint8_t board_recovery_automatic_is_stale(const SedsPacketView *packet);
-/* Advance the station clock from an authorized GS packet's timestamp. */
-void board_recovery_observe_station_time(SedsRouter*router,const SedsPacketView*packet);
-/* Freshness clock: max(valid network time, station clock); 0 when neither. */
-uint64_t board_recovery_station_now(SedsRouter*router);
-/* Router owner only: a valid network clock more than 60 s from the station
- * clock (which then restarts from the next GS packet). */
-bool board_recovery_network_clock_resync_needed(uint64_t network_now);
+/* A station stamp (network_stamp.h key) at most 15 s old and 1 s ahead of
+ * the network clock, across remembered time steps; never without network time. */
+uint8_t board_recovery_stamp_fresh(SedsRouter*router,uint64_t key);
 /* Known manual Stop only; no ordinary floor/UTC admission implied. */
 uint8_t board_recovery_manual_stop_source_allowed(SedsRouter *,const SedsPacketView *);
 #endif

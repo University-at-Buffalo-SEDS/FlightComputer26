@@ -37,7 +37,7 @@ class FCManualStopIdentityTests(unittest.TestCase):
         template = (ROOT / 'tests/native/fc_manual_stop_identity.in.c').read_text()
         transport = (ROOT / 'Core/Src/board_recovery_transport.c').read_text()
         telemetry = (ROOT / 'Core/Src/telemetry.c').read_text()
-        for name in ('authorized_owner', 'board_recovery_manual_stop_source_allowed',
+        for name in ('authorized_owner', 'board_recovery_manual_stop_source_allowed', 'board_recovery_stamp_fresh',
                      'board_recovery_command_is_stale', 'Manual_Abort_handler'):
             marker = '/* SOURCE_FUNCTION:' + name + ' */'
             assert template.count(marker) == 1, name

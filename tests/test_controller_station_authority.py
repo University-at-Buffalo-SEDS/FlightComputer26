@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import subprocess,tempfile,unittest
+from network_stamp_model import model
 ROOT=Path(os.environ.get("FC_RRLS_POLICY_SOURCE",str(Path(__file__).resolve().parents[1])))
 def function(text,name):
  i=text.index(name+'(');start=text.rfind('\n',0,i)+1;end=text.index('{',i)+1;depth=1
@@ -25,10 +26,7 @@ bool persistent_store_controls_ready(void){return ready;}
 uint8_t board_recovery_floor_is_healthy(void){return healthy;}
 uint8_t board_recovery_floor_active(void){return active;}
 uint8_t board_recovery_command_time_allowed(uint64_t source){return source>100;}
-SedsResult seds_router_get_network_time_ms(SedsRouter*r,uint64_t*out){assert(r);*out=clock_now;return clock_ok?SEDS_OK:SEDS_ERR;}
-/* Station-clock fixture: no GS time observed, so freshness equals the network clock. */
-uint64_t board_recovery_station_now(SedsRouter*r){uint64_t t=0;return seds_router_get_network_time_ms(r,&t)?0U:t;}
-static unsigned station_observed;static void board_recovery_observe_station_time(SedsRouter*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
+#include "network_stamp.h"
 #define seds_router_sender_matches_station seds_router_sender_matches_hostname
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
 static unsigned ground_pulses;static SedsResult pulse_ground(void){++ground_pulses;return SEDS_OK;}
@@ -41,7 +39,8 @@ static SedsResult update_ascent_biases(const uint8_t*p,size_t n){assert(p&&n==1)
 volatile uint32_t g_reliable_refusal_count;
 #include "ground_heartbeat_owner.h"
 '''
-  for name in ['authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed','board_recovery_operator_pyro_allowed']:
+  code+=model('clock_now','clock_ok')
+  for name in ['board_recovery_stamp_fresh','authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed','board_recovery_operator_pyro_allowed']:
    if name+'(' in transport:code+='\n'+function(transport,name)
   code+='\n'+r'''/* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
@@ -62,7 +61,7 @@ int main(void){
  }
  ready=healthy=active=true;p.ty=SEDS_DT_FLIGHT_COMMAND;p.sender="RRLS";p.sender_len=4;p.timestamp=19000;clock_ok=false;unsigned before=commands;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&commands==before);clock_ok=true;
  p.ty=SEDS_DT_FLIGHT_STATE;before=states;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&states==before+1); /* a fresh RRLS write applies */p.ty=SEDS_DT_ASCENT_BIASES;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK);
- p.ty=SEDS_DT_HEARTBEAT;p.sender="GS";p.sender_len=2;before=station_observed;unsigned pulses=ground_pulses;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&station_observed==before+1&&ground_pulses==pulses+1);
+ p.ty=SEDS_DT_HEARTBEAT;p.sender="GS";p.sender_len=2;unsigned pulses=ground_pulses;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&ground_pulses==pulses+1);
  /* An RRLS heartbeat keeps the ground link alive during a takeover; another board's does not. */
  const char*beats[]={"RRLS","@addr:1895946653","@addr:3561204631","PB","@addr:12345"};const unsigned want[]={1,1,1,0,0};
  for(unsigned i=0;i<5;i++){p.sender=beats[i];p.sender_len=strlen(beats[i]);pulses=ground_pulses;assert(on_fc_packet_impl(&p,NULL)==SEDS_OK&&ground_pulses==pulses+want[i]);}

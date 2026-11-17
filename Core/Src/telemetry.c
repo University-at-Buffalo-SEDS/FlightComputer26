@@ -18,6 +18,8 @@ extern int telemetry_router_leave(void);
 #include "flight_state_cache.h"
 #include "fc_recovery_owner.h"
 #include "board_recovery_transport.h"
+#include "board_recovery_floor.h"
+#include "network_stamp.h"
 #include "telemetry_rate.h"
 #include "ota_stream.h"
 #include "sim_network_probe.h"
@@ -110,12 +112,6 @@ volatile uint32_t g_telemetry_rx_error_length __attribute__((used, externally_vi
 volatile uint8_t g_telemetry_rx_error_prefix[16] __attribute__((used, externally_visible));
 volatile uint32_t g_telemetry_discovery_seen = 0U;
 volatile uint32_t g_telemetry_timesync_valid = 0U;
-/* Network clock restarts after it disagreed with the station clock by >60 s. */
-volatile uint32_t g_network_clock_resyncs = 0U;
-/* A restart cannot fix a source that disagrees with the GS; repeating it on
- * every GS packet kept the clock torn down. Monotonic ticks pace it. */
-#define NETWORK_CLOCK_RESYNC_HOLDOFF_TICKS (30U * (ULONG)TX_TIMER_TICKS_PER_SECOND)
-static ULONG g_network_clock_resync_tick;
 volatile uint32_t g_telemetry_network_ready = 0U;
 volatile uint32_t g_telemetry_thread_entered __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_peer_mask = 0U;
@@ -641,17 +637,8 @@ static UNUSED_FUNCTION void rx_synchronous(const uint8_t *bytes, size_t len) {
 
 static void telemetry_update_network_health(SedsRouter *router) {
   uint64_t network_time_ms = 0ULL;
-  const ULONG now_ticks = tx_time_get();
   if (seds_router_get_network_time_ms(router, &network_time_ms) == SEDS_OK) {
     g_telemetry_timesync_valid = 1U;
-    if ((g_network_clock_resyncs == 0U ||
-         (ULONG)(now_ticks - g_network_clock_resync_tick) >= NETWORK_CLOCK_RESYNC_HOLDOFF_TICKS) &&
-        board_recovery_network_clock_resync_needed(network_time_ms) &&
-        telemetry_configure_timesync_locked(router) == SEDS_OK) {
-      g_network_clock_resyncs++;
-      g_network_clock_resync_tick = now_ticks;
-      network_time_ms = 0ULL;
-    }
   }
   if (g_telemetry_discovery_seen != 0U &&
       g_telemetry_timesync_valid != 0U) {
@@ -948,6 +935,15 @@ static SedsResult init_telemetry_router_locked(void) {
     seds_router_free(r);
     return result;
   }
+  /* The recovery floor (the last Reset's station stamp) was cached before
+   * threads started. Its time-base epoch bounds the network's from below, so
+   * a whole-stack power cycle cannot reuse an epoch older than the floor. */
+  {
+    uint64_t floor_key = 0U;
+    if (board_recovery_floor_cached_cutoff(&floor_key) && network_stamp_epoch(floor_key) != 0U) {
+      (void)seds_router_raise_time_epoch(r, network_stamp_epoch(floor_key), NULL);
+    }
+  }
   /* Publish only a complete router. RX and lazy producers share its mutex. */
   board_recovery_transport_set_router(r);
   g_router.r = r;
@@ -1002,7 +998,7 @@ static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)
     if (!fc_recovery_abort_latched()) return SEDS_PERMISSION_DENIED;
     ++g_reliable_refusal_count; return SEDS_OK;
   }
-  if(known)fc_recovery_manual_stop_original_utc(packet->timestamp);else fc_recovery_manual_stop();
+  if(known)fc_recovery_manual_stop_original_utc(NETWORK_STAMP_OF(packet));else fc_recovery_manual_stop();
   return SEDS_OK; /* Admission only: actual GPIO/evaluator readback is QUERY. */
 }
 

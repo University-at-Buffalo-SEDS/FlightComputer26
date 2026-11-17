@@ -31,7 +31,6 @@ static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p)
 static int operator_pyro_command(const SedsPacketView *p){(void)p;return 0;}
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
-static unsigned station_observed;static void board_recovery_observe_station_time(void*r,const SedsPacketView*p){assert(!r&&p);station_observed++;}
 /* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
@@ -52,11 +51,9 @@ int main(void){
  p.payload_len=1;p.payload=NULL;assert(on_fc_packet(&p,NULL)==SEDS_HANDLER_ERROR);
  p.payload=&value;p.ty=SEDS_DT_FLIGHT_COMMAND;
  assert(on_fc_packet(&p,NULL)==42 && commands==1);
- p.ty=SEDS_DT_HEARTBEAT;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1 && station_observed==1);
+ p.ty=SEDS_DT_HEARTBEAT;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
  p.sender="DAQ";p.sender_len=3;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==1);
  p.sender="@addr:3561204631";p.sender_len=16;assert(on_fc_packet(&p,NULL)==SEDS_OK && heartbeats==2);
- /* Every heartbeat reaches the station clock; it admits only the GS itself. */
- assert(station_observed==3);
  p.sender="GS";p.sender_len=2;
  /* Endpoint fan-out of a type this dispatcher does not own (the station
   * ABORT names FLIGHT_CONTROLLER) is not a delivery failure. */

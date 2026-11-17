@@ -380,7 +380,7 @@ update_ascent_biases(const uint8_t *data, size_t len)
 volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *pkt, bool remember)
 {
-  static struct { uint64_t stamp; uint32_t key, tick; } seen[FLIGHT_CMD_SEEN];
+  static struct { uint64_t stamp; uint32_t key, tick; uint16_t epoch; } seen[FLIGHT_CMD_SEEN];
   uint32_t key = 2166136261u;
   for (size_t i = 0; i < pkt->sender_len; ++i) key = (key ^ (uint8_t)pkt->sender[i]) * 16777619u;
   for (size_t i = 0; i < pkt->payload_len; ++i) key = (key ^ pkt->payload[i]) * 16777619u;
@@ -395,11 +395,13 @@ static bool flight_cmd_repeat(const SedsPacketView *pkt, bool remember)
       if (age >= FLIGHT_CMD_SEEN_MS) { slot = i; break; }
       if (age > oldest) { oldest = age; slot = i; }
     }
-    seen[slot].stamp = pkt->timestamp; seen[slot].key = key; seen[slot].tick = now;
+    seen[slot].stamp = pkt->timestamp; seen[slot].epoch = pkt->time_epoch;
+    seen[slot].key = key; seen[slot].tick = now;
     return false;
   }
   for (unsigned i = 0; i < FLIGHT_CMD_SEEN; ++i)
-    if (seen[i].tick && seen[i].stamp == pkt->timestamp && seen[i].key == key &&
+    if (seen[i].tick && seen[i].stamp == pkt->timestamp && seen[i].epoch == pkt->time_epoch &&
+        seen[i].key == key &&
         now - seen[i].tick < FLIGHT_CMD_SEEN_MS)
       return true;
   return false;
@@ -474,8 +476,6 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
   switch (pkt->ty)
   {
     case SEDS_DT_HEARTBEAT:
-      /* GS heartbeats keep the recovery freshness clock current. */
-      board_recovery_observe_station_time(NULL, pkt);
       return ground_heartbeat_owner_matches(pkt->sender, pkt->sender_len)
                  ? pulse_ground() : SEDS_OK;
     case SEDS_DT_FLIGHT_STATE:

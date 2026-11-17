@@ -9,7 +9,7 @@ STUB=r'''
 #include <string.h>
 #include <assert.h>
 typedef int SedsResult;typedef int SedsRouter;
-typedef struct {uint32_t ty;const char*sender;size_t sender_len;const uint8_t*payload;size_t payload_len;uint64_t timestamp;} SedsPacketView;
+typedef struct {uint32_t ty;const char*sender;size_t sender_len;const uint8_t*payload;size_t payload_len;uint64_t timestamp;uint16_t time_epoch;} SedsPacketView;
 #define SEDS_OK 0
 #define SEDS_BAD_ARG -10
 #define SEDS_PERMISSION_DENIED -11
@@ -50,10 +50,10 @@ int main(void){
 '''
 class FCManualAbortOriginTests(unittest.TestCase):
  def test_actual_handler_and_shared_alias_auth(self):
-  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();auth=transport[transport.index('static uint8_t authorized_owner('):transport.index('/* Station clock:')]
+  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();auth=transport[transport.index('static uint8_t authorized_owner('):transport.index('/* Station request validity window')]
   # The recovery-only GS wrapper is excluded; both actual manual role branches remain.
   a=auth.index('static uint8_t authorized_primary(');b=auth.index('uint8_t board_recovery_manual_stop_source_allowed(');auth=auth[:a]+auth[b:]
   telemetry=(ROOT/'Core/Src/telemetry.c').read_text();start=telemetry.index('static SedsResult Manual_Abort_handler(const SedsPacketView *packet, void *user)');end=telemetry.index('\nstatic SedsResult Board_Recovery_handler(',start);handler=telemetry[start:end]
   with tempfile.TemporaryDirectory()as tmp:
-   p=Path(tmp);src=p/'main.c';src.write_text(STUB+auth+handler+MAIN);exe=p/'test'
+   p=Path(tmp);src=p/'main.c';src.write_text(STUB+(ROOT/'Core/Inc/network_stamp.h').read_text()+auth+handler+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(src),'-o',str(exe)],check=True);subprocess.run([str(exe)],check=True)
