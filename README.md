@@ -9,7 +9,7 @@ the top-level CMake file so CubeMX regeneration does not remove it. Debug
 builds are unchanged. Keep checking the linker report: the H523 application
 flash partition remains tight, especially with simulation instrumentation.
 
-CMake fetches rolling SEDSNet `main` and SEDS LaunchCore v1.0.0 without submodules.
+CMake fetches rolling SEDSNet `dev` and SEDS LaunchCore v1.0.0 without submodules.
 LaunchCore generates linker scripts from `Bootloader/board_config.h`, packages
 the application, and owns OTA and persistent-storage formats. The underglow,
 startup-buzzer, and flight-state managed variables are restored from persistent
@@ -135,10 +135,10 @@ Use `--no-watchdog` only for a diagnostic build.
 
 ## SEDSnet build configuration
 
-Use `python3 build.py build --release --sedsnet-ref dev` for an explicit SEDSnet
-`dev` comparison. The same option is accepted by `test` and `flash`.
+Use `python3 build.py build --release --sedsnet-ref main` for an explicit SEDSnet
+`main` comparison. The same option is accepted by `test` and `flash`.
 Use `python3 build.py flash --release --method stm32prog-cli` for a wired factory flash.
-Normal builds continue to select `main`. Each branch has its own source cache;
+Normal builds select `dev`. Each branch has its own source cache;
 when the network is unavailable the last usable on-disk source is retained.
 The selected revision is printed during configure. An explicit CMake source
 override remains local and is never fetched or reset.
@@ -149,7 +149,7 @@ override remains local and is never fetched or reset.
 python3 build.py build --release
 ```
 
-This selects the latest compatible SEDSnet `main` commit and initializes a 4096-byte,
+This selects the latest compatible SEDSnet `dev` commit and initializes a 4096-byte,
 32-handle arena before the router starts. It uses the existing allocator
 pool and leaves ThreadX scheduling unchanged. Compression stays disabled.
 Use `--packet-store heap` to disable the arena, including in a previously enabled build cache.
