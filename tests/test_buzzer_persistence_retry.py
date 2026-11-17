@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BuzzerPersistenceRetryTests(unittest.TestCase):
     def test_identical_retry_persists_and_stale_updates_stay_rejected(self):
-        stub = STUB.replace('size_t payload_len; }', 'size_t payload_len; uint64_t timestamp; }')
+        stub = STUB.replace('size_t payload_len; }', 'size_t payload_len; uint64_t timestamp; uint16_t time_epoch; }')
+        stub += (ROOT / 'Core/Inc/network_stamp.h').read_text()
+        stub += ('static uint16_t raised;static SedsResult seds_router_raise_time_epoch(SedsRouter*r,uint16_t e,uint16_t*o)'
+                 '{(void)r;(void)o;raised=e;return 0;}\n')
         stub = stub.replace('#define SEDS_DT_AV_BAY_UNDERGLOW 7',
                             '#define SEDS_DT_AV_BAY_UNDERGLOW 7\n#define SEDS_DT_FLIGHT_BUZZER 8\n#define Buzzer_GPIO_Port 0\n#define Buzzer_Pin 0')
         stub = stub.replace('assert(n==1)', 'assert(n==9)')
@@ -17,7 +20,8 @@ class BuzzerPersistenceRetryTests(unittest.TestCase):
         source = '\n'.join(line for line in source.splitlines()
                            if not line.startswith('#include "'))
         test = r'''
-static SedsResult update(uint8_t value,uint64_t at){SedsPacketView p={SEDS_DT_FLIGHT_BUZZER,&value,1,at};return callback(&p,NULL);}
+static uint16_t epoch;
+static SedsResult update(uint8_t value,uint64_t at){SedsPacketView p={SEDS_DT_FLIGHT_BUZZER,&value,1,at,epoch};return callback(&p,NULL);}
 static void settle(uint32_t ms){SedsRouter router=0;tick+=ms;(void)flight_buzzer_poll(&router);}
 int main(void){
  (void)irq_mask;
@@ -33,6 +37,15 @@ int main(void){
  for(unsigned i=0;i<5000;i++){assert(update((uint8_t)(i&1u),300+i)==SEDS_OK);settle(5);}
  assert(writes==3);settle(30000);assert(writes==4&&stored==1&&g_last_source_timestamp_ms==5299);
  assert(pin==0); /* setting controls next boot indication, not current output */
+ /* The GS clock steps back 4 h (a new epoch): its next write is newer than
+  * every earlier one; a late copy stamped before the step stays stale. */
+ const unsigned stale=g_flight_buzzer_stale_updates;
+ epoch=1;assert(update(0,1299)==SEDS_OK);assert(g_flight_buzzer_enabled==0&&g_flight_buzzer_stale_updates==stale);
+ assert(g_last_source_timestamp_ms==network_stamp_key(1,1299));
+ epoch=0;assert(update(1,5300)==SEDS_OK);assert(g_flight_buzzer_enabled==0&&g_flight_buzzer_stale_updates==stale+1);
+ epoch=1;assert(update(1,1300)==SEDS_OK);assert(g_flight_buzzer_enabled==1);
+ settle(30000);assert(writes==5&&stored==1);
+ (void)raised;
 }
 '''
         with tempfile.TemporaryDirectory(prefix='buzzer-persistence-') as temp:

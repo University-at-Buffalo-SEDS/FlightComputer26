@@ -2,6 +2,7 @@
 #include "main.h"
 
 #include "persistent_store.h"
+#include "network_stamp.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -40,6 +41,8 @@ volatile uint32_t g_flight_buzzer_network_seen = 0U;
 static bool g_persist_pending = false;
 static uint32_t g_persist_due_ms = 0U;
 static uint32_t g_last_refresh_ms = 0U;
+/* The last applied write's (epoch, stamp) key (network_stamp.h); a record
+ * stored before SEDSnet 6 holds a bare stamp, which reads as epoch 0. */
 static uint64_t g_last_source_timestamp_ms = 0U;
 static bool g_startup_buzz_active = false;
 static uint32_t g_startup_buzz_deadline_ms = 0U;
@@ -140,9 +143,10 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
     }
 
     const bool enabled = packet->payload[0] != 0U;
+    const uint64_t stamp = NETWORK_STAMP_OF(packet);
     if (g_persist_has_timestamp &&
-        (packet->timestamp < g_last_source_timestamp_ms ||
-         (packet->timestamp == g_last_source_timestamp_ms &&
+        (stamp < g_last_source_timestamp_ms ||
+         (stamp == g_last_source_timestamp_ms &&
           g_flight_buzzer_enabled != (uint32_t)enabled)))
     {
         g_flight_buzzer_stale_updates++;
@@ -151,7 +155,7 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
     const bool needs_persist = !g_persist_has_value ||
                                !g_persist_has_timestamp ||
                                g_flight_buzzer_enabled != (uint32_t)enabled ||
-                               packet->timestamp > g_last_source_timestamp_ms;
+                               stamp > g_last_source_timestamp_ms;
     /* This variable configures the next boot indication. It is deliberately
      * not a level command for the buzzer output. */
     g_flight_buzzer_enabled = enabled ? 1U : 0U;
@@ -162,7 +166,7 @@ static SedsResult apply_buzzer(const SedsPacketView *packet, void *user)
     {
         g_persist_has_value = true;
         g_persist_has_timestamp = true;
-        g_last_source_timestamp_ms = packet->timestamp;
+        g_last_source_timestamp_ms = stamp;
         g_persist_pending = true;
         g_persist_due_ms = HAL_GetTick() + FLIGHT_BUZZER_PERSIST_SETTLE_MS;
     }
@@ -193,6 +197,10 @@ SedsResult flight_buzzer_init(SedsRouter *router)
 {
     if (router == NULL) return SEDS_BAD_ARG;
     flight_buzzer_restore();
+    /* The persisted mark's epoch bounds the network's from below. */
+    if (g_persist_has_timestamp && network_stamp_epoch(g_last_source_timestamp_ms) != 0U)
+        (void)seds_router_raise_time_epoch(
+            router, network_stamp_epoch(g_last_source_timestamp_ms), NULL);
     SedsResult result = seds_router_enable_network_variable(
         router, SEDS_DT_FLIGHT_BUZZER, true, false);
     if (result != SEDS_OK) return result;
