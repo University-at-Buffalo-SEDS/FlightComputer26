@@ -23,7 +23,7 @@ SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*,unsigned,bo
 ''',
 "sedsnet_config.h": '#pragma once\n#define SEDS_DT_FLIGHT_STATE 444U\n',
 "main.h": '#pragma once\n#include <stdint.h>\nuint32_t HAL_GetTick(void);\n',
-"board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nuint64_t board_recovery_station_now(SedsRouter*);\nuint8_t board_recovery_station_behind(uint64_t,uint64_t);\nextern volatile uint32_t g_reliable_refusal_count;\n',
+"board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nextern volatile uint32_t g_reliable_refusal_count;\n',
 "persistent_store.h": r'''#pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -83,8 +83,6 @@ SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*r,unsigned t
 
 SedsResult seds_router_request_managed_variable(SedsRouter *r,unsigned ty){assert(r&&ty==SEDS_DT_FLIGHT_STATE);++requests;return 0;}
 uint8_t board_recovery_managed_update_allowed(const SedsPacketView *p){assert(p);return allow_update;}
-uint64_t board_recovery_station_now(SedsRouter*r){(void)r;return 0U;}
-uint8_t board_recovery_station_behind(uint64_t m,uint64_t s){return s&&m>s&&m-s>60000U;}
 static int report_ignorable;
 uint8_t board_recovery_managed_report_ignorable(const SedsPacketView *p){assert(p);return (uint8_t)report_ignorable;}
 /* Each call is a new station write (its own station timestamp). */

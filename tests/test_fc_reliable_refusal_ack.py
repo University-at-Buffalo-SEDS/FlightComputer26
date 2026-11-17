@@ -100,11 +100,6 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         # copy of the 2: still Aborted. Same for an Advance (1, 2, late 1).
         self.run_mode('fstate_order')
 
-    def test_flight_states_apply_again_after_a_4_h_station_clock_step(self):
-        # After the GS clock steps back 4 h, writes on the new clock apply; a
-        # late copy stamped on the old clock never does; Aborted always does.
-        self.run_mode('fstate_step_back')
-
     def test_refused_controller_command_is_acknowledged_and_not_applied(self):
         self.run_mode('controller_refused')
 

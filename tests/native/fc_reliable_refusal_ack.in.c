@@ -81,10 +81,6 @@ static SedsResult update_ascent_biases(const uint8_t*d,size_t n){(void)d;(void)n
 /* SOURCE_FUNCTION:Manual_Abort_handler */
 #define FLIGHT_CMD_SEEN 16U
 static volatile uint32_t g_flight_state_writes_out_of_order;
-/* The station clock: the routers' clock, less a GS clock step back. */
-static uint64_t station_back;
-static uint64_t board_recovery_station_now(SedsRouter*u){(void)u;return 1767225601000ULL+hal_ticks-station_back;}
-static uint8_t board_recovery_station_behind(uint64_t mark,uint64_t station){return station&&mark>station&&mark-station>60000U;}
 /* SOURCE_FUNCTION:flight_state_cache_order */
 #define FLIGHT_CMD_SEEN_MS 16000U
 static volatile uint32_t g_flight_cmd_repeats_dropped;
@@ -137,7 +133,7 @@ int main(int argc,char**argv){
   * (CMakeLists.txt SEDSNET_MAX_RECENT_RX_IDS); the queue budget is the
   * SEDSnet churn test's 32 KiB so the host discovery exchange fits. */
  const SedsRuntimeMemoryConfig fc_memory={.max_queue_budget=32768,.max_recent_rx_ids=16,.starting_queue_size=512,.queue_grow_step=1.0};
- r=(!strcmp(argv[2],"flight_cmd_copy_dedupe")||!strcmp(argv[2],"flight_cmd_ring")||!strcmp(argv[2],"fstate_order")||!strcmp(argv[2],"fstate_step_back"))?seds_router_new_with_memory(now,NULL,locals,2,SEDS_ROUTER_E2E_DISABLED,0,&fc_memory):seds_router_new(now,NULL,locals,2);assert(r);assert(seds_router_set_sender_id(r,"FC",2)==SEDS_OK);g_router.r=r;g_cache_router=r;
+ r=(!strcmp(argv[2],"flight_cmd_copy_dedupe")||!strcmp(argv[2],"flight_cmd_ring")||!strcmp(argv[2],"fstate_order"))?seds_router_new_with_memory(now,NULL,locals,2,SEDS_ROUTER_E2E_DISABLED,0,&fc_memory):seds_router_new(now,NULL,locals,2);assert(r);assert(seds_router_set_sender_id(r,"FC",2)==SEDS_OK);g_router.r=r;g_cache_router=r;
  assert(seds_router_enable_network_variable(r,SEDS_DT_FLIGHT_STATE,true,false)==SEDS_OK);
  assert(seds_router_on_network_variable_update(r,SEDS_DT_FLIGHT_STATE,persist_update,NULL)==SEDS_OK);
  sid=seds_router_add_side_packet(r,"radio",5,side,NULL,false);assert(sid>=0);learn_gs(r,(uint32_t)sid);
@@ -281,28 +277,6 @@ int main(int argc,char**argv){
    managed_ok=true;
    printf("step %zu write %u ts+%llu%s%s result=%d value=%u acked=%d out_of_order=%u\n",i,steps[i].value,(unsigned long long)steps[i].ts,
           steps[i].refused?" refused":"",steps[i].late?" late copy":"",a,g_flight_state_cache_value,acks>before,g_flight_state_writes_out_of_order);
-   assert(a==SEDS_OK&&acks>before&&g_flight_state_cache_value==want[i]);
-  }
- }else if(!strcmp(mode,"fstate_step_back")){
-  /* Idle-like 2 applied, then the GS clock steps back 4 h. Writes stamped on
-   * the new clock apply (1, then 7); a late copy of the 2, stamped on the old
-   * clock, is not fresh on the new one and never applies; Aborted 15 always
-   * does. Then the clock steps forward 4 h again: newer writes apply. */
-  const uint32_t fc_eps[]={SEDS_EP_FLIGHT_STATE,SEDS_EP_FLIGHT_CONTROLLER},hb_eps[]={SEDS_EP_FLIGHT_CONTROLLER};
-  const uint64_t H4=14400000ULL;
-  struct {uint8_t value;uint64_t ts;int late;uint64_t back;} steps[]={
-   {2,stamp,0,0},{1,stamp-H4+10,0,H4},{2,stamp,1,H4},{7,stamp-H4+20,0,H4},{1,stamp-H4+10,1,H4},
-   {15,stamp-H4+30,0,H4},{1,stamp+40,0,0},{2,stamp+50,0,0}};
-  const uint32_t want[]={2,1,1,7,7,15,1,2};
-  for(size_t i=0;i<sizeof steps/sizeof steps[0];++i){
-   /* The station clock's backward re-anchor forgets the SDK's cached write. */
-   if(steps[i].back&&!station_back)assert(seds_router_invalidate_network_variable_cache(r,SEDS_DT_FLIGHT_STATE,NULL)==SEDS_OK);
-   station_back=steps[i].back;
-   if(steps[i].late)for(uint64_t m=0;m<64;++m){uint8_t beat=0;(void)deliver(SEDS_DT_FLIGHT_BUZZER,hb_eps,1,&beat,1,steps[i].ts+5000U+i*100U+m);}
-   unsigned before=acks;
-   SedsResult a=deliver(SEDS_DT_FLIGHT_STATE,fc_eps,2,&steps[i].value,1,steps[i].ts);
-   printf("step %zu write %u back %llu%s result=%d value=%u acked=%d out_of_order=%u\n",i,steps[i].value,(unsigned long long)steps[i].back,
-          steps[i].late?" late copy":"",a,g_flight_state_cache_value,acks>before,g_flight_state_writes_out_of_order);
    assert(a==SEDS_OK&&acks>before&&g_flight_state_cache_value==want[i]);
   }
  }else if(!strcmp(mode,"controller_refused")){

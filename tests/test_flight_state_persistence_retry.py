@@ -23,7 +23,7 @@ SedsResult seds_router_enable_network_variable(SedsRouter*,uint32_t,bool,bool);
 SedsResult seds_router_on_network_variable_update(SedsRouter*,uint32_t,SedsResult(*)(const SedsPacketView*,void*),void*);
 SedsResult seds_router_request_managed_variable(SedsRouter*,uint32_t);
 ''',
-    "board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nuint64_t board_recovery_station_now(SedsRouter*);\nuint8_t board_recovery_station_behind(uint64_t,uint64_t);\nextern volatile uint32_t g_reliable_refusal_count;\n',
+    "board_recovery_transport.h": '#pragma once\n#include "sedsnet.h"\nuint8_t board_recovery_managed_update_allowed(const SedsPacketView*);\nextern volatile uint32_t g_reliable_refusal_count;\n',
     "sedsnet_config.h": "#pragma once\n#define SEDS_DT_FLIGHT_STATE 444U\n",
     "main.h": "#pragma once\n#include <stdint.h>\nuint32_t HAL_GetTick(void);\n",
     "persistent_store.h": r'''
@@ -79,8 +79,6 @@ SedsResult flight_state_cache_apply_network_update(const SedsPacketView *packet)
  return apply_result;
 }
 uint8_t board_recovery_managed_update_allowed(const SedsPacketView *packet) {(void)packet;return 1;}
-uint64_t board_recovery_station_now(SedsRouter*r){(void)r;return 0U;}
-uint8_t board_recovery_station_behind(uint64_t m,uint64_t s){return s&&m>s&&m-s>60000U;}
 void seds_router_disable_managed_variable(SedsRouter *r,uint32_t ty) {(void)r;(void)ty;assert(!"whole-service disable forbidden during selective retirement");}
 SedsResult seds_router_invalidate_network_variable_cache(SedsRouter*r,uint32_t ty,bool*out_invalidated){assert(out_invalidated==NULL);assert(r&&ty==SEDS_DT_FLIGHT_STATE);return SEDS_OK;}
 
