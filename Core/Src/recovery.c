@@ -12,6 +12,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "fc_estimator_status.h"
 #ifdef TELEMETRY_ENABLED
 #include "av_bay_underglow.h"
 #endif
@@ -236,7 +237,12 @@ bool fc_recovery_control_quiesce(void)
   }
   return true;
 }
-void fc_recovery_control_mark_eval_stopped(void) { g_conf |= option(Eval_Abort_Flag); }
+void fc_recovery_control_mark_eval_stopped(void)
+{
+  g_conf |= option(Eval_Abort_Flag);
+  /* A preflight monitor lease also stops an evaluator that never ran. */
+  if (g_fc_est_phase != FC_EST_IDLE) g_fc_est_phase = FC_EST_STOPPED;
+}
 bool fc_recovery_control_finalize_startup(void)
 {
   if (!evaluation_quiescent || evaluation_task.tx_thread_state != TX_SUSPENDED ||
@@ -253,6 +259,8 @@ bool fc_recovery_control_finalize_startup(void)
   sm.confidence = 0;
   sm.kf_deviations = 0;
   baro_conf.rezero = 0;
+  g_fc_est_phase = FC_EST_IDLE;
+  g_fc_est_cycles = g_fc_est_start = 0;
   return true;
 }
 bool fc_recovery_control_new_flight_ready(void)

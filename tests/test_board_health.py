@@ -48,7 +48,9 @@ SedsResult seds_router_log_bytes_ex(SedsRouter *router,int dtype,const uint8_t *
  assert(router&&dtype==42&&length==96&&!stamp&&queue);
  assert(!mask&&lock_depth==1);++calls;memcpy(captured,data,sizeof(captured));return refuse?1:0;
 }
-''' +checked_hooks(ROOT)+'\n'+source+r'''
+''' +checked_hooks(ROOT)+'\n'+(ROOT/'Core/Inc/fc_estimator_status.h').read_text()+r'''
+volatile uint8_t g_fc_est_phase;volatile uint32_t g_fc_est_cycles,g_fc_est_start;
+'''+source+r'''
 int main(void){
  SedsRouter router=1;
  board_health_poll(NULL);assert(!calls);
@@ -85,6 +87,33 @@ int main(void){
  /* Stratum (2: RF re-serving the GS over CAN) in word 22 bits 8..15. */
  {unsigned before=calls;ts_health=0x85U;ts_stratum=2;uptime+=5000;board_health_poll(&router);
   assert(calls==before+1&&captured[22]==((0x5359U<<16)|(2U<<8)|0x85U));ts_health=0;ts_stratum=0;}
+ /* Kalman filter status in words 13/15: idle until Launch. */
+ assert(captured[13]==(0x4BU<<24)&&captured[15]==0U);
+ /* Launch: a phase change is sent at once, not after the 5 s cadence. */
+ {unsigned before=calls;uint64_t t=uptime+300U;
+  g_fc_est_phase=FC_EST_INIT;uptime=t;board_health_poll(&router);
+  assert(calls==before+1&&captured[13]==((0x4BU<<24)|(1U<<20)));
+  /* Running 5 ms later: held to the 250 ms minimum spacing, then sent. */
+  g_fc_est_phase=FC_EST_RUNNING;g_fc_est_cycles=3;g_fc_est_start=(uint32_t)t|1U;
+  uptime=t+5U;board_health_poll(&router);assert(calls==before+1);
+  uptime=t+250U;board_health_poll(&router);
+  assert(calls==before+2&&captured[13]==((0x4BU<<24)|(2U<<20)|3U)&&captured[15]==((uint32_t)t|1U));
+  assert(captured[2]-captured[15]==(uint32_t)(t+250U)-((uint32_t)t|1U)); /* time since start from one report */
+  /* Repeated 1 s after the change, then every 5 s. */
+  uptime=t+1249U;board_health_poll(&router);assert(calls==before+2);
+  g_fc_est_cycles=0x100005U; /* the cycle field wraps at 20 bits */
+  uptime=t+1250U;board_health_poll(&router);assert(calls==before+3&&captured[13]==((0x4BU<<24)|(2U<<20)|5U));
+  uptime=t+6249U;board_health_poll(&router);assert(calls==before+3);
+  uptime=t+6250U;board_health_poll(&router);assert(calls==before+4);
+  g_fc_est_phase=FC_EST_DIVERGED;uptime=t+6500U;board_health_poll(&router);
+  assert(calls==before+5&&(captured[13]>>20&0xFU)==6U);
+  /* A failed send is not retried until the 1 s repeat. */
+  g_fc_est_phase=FC_EST_STOPPED;refuse=1;uptime=t+6800U;board_health_poll(&router);
+  for(unsigned i=0;i<100;i++)board_health_poll(&router);
+  assert(calls==before+6);refuse=0;
+  uptime=t+7800U;board_health_poll(&router);assert(calls==before+7&&(captured[13]>>20&0xFU)==5U);
+  assert(!(captured[1]&(4U|64U))); /* words 13/15 are not the generic counters */
+  g_fc_est_phase=0;g_fc_est_cycles=0;g_fc_est_start=0;}
 #else
  uptime=999999;board_health_poll(&router);assert(!calls);
 #endif

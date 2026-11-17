@@ -260,6 +260,7 @@ float seen[6];
 bool timer_probe_ground(unsigned timer,unsigned interval){(void)timer;(void)interval;return false;}
 void sd_append_f32(unsigned type,const float *data,unsigned count){++written;seen_type=type;seen_count=count;memcpy(seen,data,count*sizeof(float));}
 void log_periodic_f32(unsigned type,unsigned count,const float *data){(void)type;(void)count;(void)data;assert(false);}
+unsigned cycles;void estimator_cycle(float probe){assert(probe==15.0f);++cycles;}
 '''+func+r'''
 int main(void){
  propel_kalman_state(1);
@@ -267,7 +268,7 @@ int main(void){
  assert(seen[0]==1&&seen[3]==4&&seen[4]==7&&seen[5]==8);
  propel_kalman_state(0);
  assert(written==2&&seen_type==SEDS_DT_DESCENT_LOCAL&&seen_count==4);
- assert(seen[0]==5&&seen[1]==6&&seen[2]==7&&seen[3]==8&&sm.idx==2);
+ assert(seen[0]==5&&seen[1]==6&&seen[2]==7&&seen[3]==8&&sm.idx==2&&cycles==2);
 }
 '''
         run_c(code)

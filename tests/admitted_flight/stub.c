@@ -42,6 +42,8 @@ static struct {enum state flight;unsigned global_state,confidence,kf_deviations,
 static enum state current(void){return sm.flight;}
 static bool beyond(enum state s){return current()>s;}
 static struct {unsigned rezero;} baro_conf;
+#include "fc_estimator_status.h"
+volatile uint8_t g_fc_est_phase;volatile uint32_t g_fc_est_cycles,g_fc_est_start;
 static struct {unsigned gps_delayed,gps_malform,to_abort,failures,to_reinit;} smon;
 static unsigned devctr_if[2];
 static struct {atomic_uint lock;} meas_locks[2];

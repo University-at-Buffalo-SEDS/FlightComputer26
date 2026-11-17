@@ -1,6 +1,7 @@
 #include "board_health.h"
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
+#include "fc_estimator_status.h"
 #include "board_recovery_transport.h"
 #include "board_temperature.h"
 #include "board_uptime.h"
@@ -26,13 +27,20 @@ extern volatile uint32_t g_sd_enqueued_records, g_sd_written_records, g_sd_flush
 void board_health_poll(SedsRouter *router)
 {
 #ifdef TELEMETRY_ENABLED
-  static uint32_t last_report_ms;
+  static uint32_t last_report_ms, last_sent_ms;
   static uint32_t failures;
+  static uint8_t sent_phase;
   if (!router) return;
   const uint64_t uptime = board_uptime_ticks();
   const uint32_t now = (uint32_t)uptime;
-  if ((uint32_t)(now - last_report_ms) < 5000U) return;
-  last_report_ms = now;
+  /* An estimator phase change (Launch starting the Kalman filter) is
+   * reported at once, at most every 250 ms, and repeated 1 s later. */
+  const uint8_t phase = g_fc_est_phase;
+  const bool changed = phase != sent_phase && (uint32_t)(now - last_sent_ms) >= 250U;
+  if (!changed && (uint32_t)(now - last_report_ms) < 5000U) return;
+  last_report_ms = changed ? now - 4000U : now;
+  last_sent_ms = now;
+  sent_phase = phase;
   board_temperature_poll();
 
   uint32_t words[24] = {1U, 2U, (uint32_t)uptime, (uint32_t)(uptime >> 32U), BOARD_UPTIME_FREQUENCY_HZ};
@@ -56,6 +64,8 @@ void board_health_poll(SedsRouter *router)
               (g_flight_buzzer_enabled != 0U ? 2U : 0U) |
               (g_av_bay_underglow_network_seen != 0U ? 4U : 0U) |
               (g_flight_buzzer_network_seen != 0U ? 8U : 0U);
+  words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);
+  words[15] = g_fc_est_start;
 #ifdef SD_AVAILABLE
   words[1] |= 16U;
   words[16] = g_sd_enqueued_records; words[17] = g_sd_written_records;

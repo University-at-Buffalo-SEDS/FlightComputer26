@@ -11,6 +11,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "fc_estimator_status.h"
 
 #define id "EV "
 
@@ -38,6 +39,25 @@ const fc_resume_region fc_resume_evaluation[] = {
 #ifndef NDEBUG
 uncached volatile float kalt, kvel;
 #endif
+
+
+/* Estimator status (fc_estimator_status.h) */
+
+volatile uint8_t g_fc_est_phase;
+volatile uint32_t g_fc_est_cycles, g_fc_est_start;
+static uint32_t est_run;
+
+static inline void estimator_cycle(float probe)
+{
+  /* -ffast-math folds isfinite(); test the exponent bits instead. */
+  union { float value; uint32_t bits; } cast = {.value = probe};
+  ++g_fc_est_cycles;
+  if (!g_fc_est_start) { g_fc_est_start = now_ms() | 1U; est_run = 0; }
+  g_fc_est_phase = (cast.bits & 0x7f800000U) == 0x7f800000U ||
+                   sm.kf_deviations > KF_FLUC_THRES ? FC_EST_DIVERGED
+                 : ++est_run >= FC_EST_CONVERGE_CYCLES ? FC_EST_CONVERGED
+                 : FC_EST_RUNNING;
+}
 
 
 /* FSM helpers */
@@ -409,6 +429,7 @@ static inline void propel_kalman_state(fu32 conf)
     log_periodic_f32(kind_gnd, elements, tmp);
   }
 
+  estimator_cycle(svec(0).alt + svec(0).vel);
   sm.idx = (sm.idx + 1) & STATE_HISTORY_MASK;
 }
 
@@ -463,6 +484,8 @@ publish:
 static inline void enter_flight_mode(fu32 conf)
 {
   static bool restored_entry;
+  g_fc_est_phase = FC_EST_INIT;
+  g_fc_est_start = 0;
   if (g_fc_watchdog_resumed && !restored_entry) { restored_entry = true; return; }
 
   if (conf & option(Launch_Requested))
@@ -495,6 +518,7 @@ static inline void enter_flight_mode(fu32 conf)
 static void evaluation_control_barrier(void)
 {
   while (fc_recovery_eval_pause_requested()) {
+    g_fc_est_phase = FC_EST_PAUSED;
     fc_recovery_evaluation_quiescent();
     /* A failed or prematurely lifted suspend cannot consume synthetic wake
      * flags as a measurement, nor spin and starve the telemetry commit. */
