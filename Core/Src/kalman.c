@@ -427,6 +427,20 @@ void ascent_initialize(fu32 conf)
 }
 
 
+#if FC_GROUND_TEST
+/* Integrated ground test: the replay's T0 attitude, not the stand's. Called
+ * by the recovery task before it resumes the evaluator at Launch. */
+void kalman_seed_attitude(const f_xyz *accl)
+{
+  eul ang;
+  fatan2(accl->y, accl->z, &ang.phi);
+  vnorm2(accl->y, accl->z, &ang.psi);
+  fatan2(-accl->x, ang.psi, &ang.theta);
+  ang.psi = 0;
+  euler_to_quat(&ang, &qv);
+}
+#endif
+
 static bool monitor_finite(float value)
 {
   union { float value; uint32_t bits; } cast = {.value = value};

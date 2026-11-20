@@ -11,6 +11,7 @@
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "fc_sd_events.h"
+#include "ground_test.h"
 
 
 /* DMA */
@@ -56,6 +57,9 @@ void ascent_update(void);
 void ascent_initialize(fu32);
 
 bool accel_to_quaternion(const f_xyz *, uint32_t epoch);
+#if FC_GROUND_TEST
+void kalman_seed_attitude(const f_xyz *);
+#endif
 
 
 /* Evaluation */
@@ -357,6 +361,9 @@ static inline bool release_parachute(bool force, bool manual)
 
   if (!force && (g_conf & option(Parachute_Deployed))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, false); return false; }
   deployment_pulse_start(false, manual);
+#if FC_GROUND_TEST
+  if (igt_pyro_dry()) message("IGT dry-run: drogue not fired", true);
+#endif
   log_metric("PD approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);
@@ -382,6 +389,9 @@ static inline bool expand_parachute(bool force, bool manual)
 
   if (!force && (g_conf & option(Parachute_Expanded))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   deployment_pulse_start(true, manual);
+#if FC_GROUND_TEST
+  if (igt_pyro_dry()) message("IGT dry-run: main (line cutter) not fired", true);
+#endif
   log_metric("PR approx altitude", svec(0).alt, true);
 
   sweetbench_start(4, 1);

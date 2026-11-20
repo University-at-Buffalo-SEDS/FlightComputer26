@@ -72,6 +72,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
     ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
     ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/ground_test.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
     ${CMAKE_SOURCE_DIR}/Core/Src/fc_recovery_owner.c
@@ -209,6 +210,10 @@ endif()
 
 option(ALLOC_TEST       "Test exported allocator."      OFF)
 option(TEST_DESCENT     "Start at Apogee."              OFF)
+# Integrated ground test (GroundStation26 docs/integrated-ground-test.md):
+# replays SD-card CSVs into the estimator after a real Launch on the stand.
+# Never ON in a flight image; ground_test.h compiles every hook out when OFF.
+option(INTEGRATED_GROUND_TEST "Ground-test CSV replay image" OFF)
 option(FAKESTATION      "Emulate GS commands."          OFF)
 if(FAKESTATION AND NOT ENABLE_TELEMETRY)
     message(FATAL_ERROR
@@ -234,6 +239,7 @@ message(STATUS "Simulation user config:    ${SWAP_CONFIG}")
 message(STATUS "Export spinlock:        ${EXPORT_SPINLOCK}")
 message(STATUS "Test allocator:         ${ALLOC_TEST}")
 message(STATUS "Start at Apogee:        ${TEST_DESCENT}")
+message(STATUS "Integrated ground test: ${INTEGRATED_GROUND_TEST}")
 message(STATUS "Emulate GS commands:    ${FAKESTATION}")
 
 if (MESSAGE_BATCHING)
@@ -296,6 +302,10 @@ endif()
 
 if (ALLOC_TEST)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE TEST_ALLOC)
+endif()
+
+if (INTEGRATED_GROUND_TEST)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_GROUND_TEST=1)
 endif()
 
 if (TEST_DESCENT)

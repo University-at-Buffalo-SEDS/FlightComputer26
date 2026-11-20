@@ -4,6 +4,7 @@
 #include "board_watchdog.h"
 #include "fc_watchdog_recovery.h"
 #include "fc_recovery_owner.h"
+#include "ground_test.h"
 #include <string.h>
 #if BOARD_WATCHDOG_ENABLE
 #define RECORD_SEAL 0x46575231U
@@ -289,6 +290,11 @@ reject:
 void fc_watchdog_checkpoint(void)
 {
     if (!clock_ready || !fc_watchdog_can_actuate() || fc_recovery_inhibits_pyro() || !(g_conf & option(Launch_Requested))) return;
+    /* A ground-test flight is never resumed: without a checkpoint a reset
+     * boots rejected, on real sensors, with the mode Off. */
+#if FC_GROUND_TEST
+    if (igt_engaged()) return;
+#endif
     /* Keep control from terminating/resetting the writer mid-transaction.
      * Interrupts remain enabled during CRC work so CAN and pulse timing run. */
     TX_THREAD *thread = tx_thread_identify();

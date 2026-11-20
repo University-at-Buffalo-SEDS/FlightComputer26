@@ -5,6 +5,7 @@
 #include "fccommon.h"
 #include "fcconfig.h"
 #include "fc_sd_events.h"
+#include "ground_test.h"
 #include <stddef.h>
 
 extern atomic_uint_fast32_t g_conf;
@@ -71,6 +72,17 @@ void deployment_pulse_start(bool reef, bool manual)
     bool started = false;
     const bool permitted = manual ? !fc_recovery_inhibits_manual_pyro() :
                            !fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate();
+#if FC_GROUND_TEST
+    if (*remaining == 0U && permitted && igt_pyro_dry()) {
+        /* Integrated ground test, dry-run: the state machine sees the
+         * deployment, the output and the watchdog action journal do not. */
+        g_conf |= reef ? option(Parachute_Expanded) : option(Parachute_Deployed);
+        igt_note_dry(reef);
+        fc_sd_capture_event(FC_LOG_PYRO_DRY_RUN, reef);
+        __set_PRIMASK(mask);
+        return;
+    }
+#endif
     if (*remaining == 0U && permitted && fc_watchdog_record_deployment(reef, manual)) {
         fc_recovery_ota_reset_retire_locked();
         started = true;
@@ -92,6 +104,9 @@ void deployment_pulse_start(bool reef, bool manual)
  * caller holds the identical IRQ guard used by every HIGH/pulse-start path. */
 void deployment_pulse_cancel_locked(void)
 {
+#if FC_GROUND_TEST
+    igt_stop(); /* every Stop/reset path ends an integrated ground test */
+#endif
     co2_ticks = 0U;
     reef_ticks = 0U;
     co2_low();

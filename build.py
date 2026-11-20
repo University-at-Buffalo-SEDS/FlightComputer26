@@ -166,6 +166,7 @@ ALL_OPTIONS     = { "no-watchdog", "allocator-tlsf", "packet-store-compact", "se
                         "flash-stlink",
                         "stlink",
                         "notelemetry", 
+                        "groundtest",
                         "clean",
                         "fullcmd",
                         "batching",
@@ -405,6 +406,9 @@ def configure(buildir: Path, preset: str, options: dict):
                 exspin,
                 alloctest,
                 fakestation,
+                # Always explicit: a ground-test configure must never leave a
+                # cached ON behind for a later flight build in the same folder.
+                "-DINTEGRATED_GROUND_TEST=" + ("ON" if options.get("groundtest") else "OFF"),
                 "-S", str(PROJECT),
                 "-B", str(buildir),
                 "-G", options.get("generator") or "Ninja",
@@ -901,6 +905,7 @@ FLAG_HELP = {
     "exspinlock": ("export-spinlock", "Use the experimental library spinlock instead of a mutex."),
     "alloctest": ("alloc-test", "Enable allocation diagnostics."),
     "fakestation": ("fake-station", "Enable the simulated GroundStation task."),
+    "groundtest": ("ground-test", "Integrated ground test image: SD-card CSV replay after Launch and the dry-run pyro gate. Never for flight."),
     "stlink": ("stlink", "Open the ST-Link debugger after a Debug build."),
     "configure": ("configure-only", "Configure CMake and exit without building."),
 }

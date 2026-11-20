@@ -256,6 +256,12 @@ typedef enum flight_message : fu32 {
   Log_Restrict     = Actionable_Decrees + 15,
   Log_Terminate    = Actionable_Decrees + 16,
 
+  /* Integrated ground test (ground_test.h); ignored by flight images. */
+  IGT_Enter        = Actionable_Decrees + 17,
+  IGT_Live_Pyro    = Actionable_Decrees + 18,
+  IGT_Dry_Run      = Actionable_Decrees + 19,
+  IGT_Exit         = Actionable_Decrees + 20,
+
   GPS_Data_Code = (1u << 18),
 
   Bad_Lattitude  = GPS_Data_Code | 1u,
@@ -365,6 +371,11 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Reinit_After_15,
   Compat_Reinit_After_30,
   Compat_Reinit_After_50,
+
+  Compat_IGT_Enter,
+  Compat_IGT_Live_Pyro,
+  Compat_IGT_Dry_Run,
+  Compat_IGT_Exit,
 
   Compat_Messages
 } compat;

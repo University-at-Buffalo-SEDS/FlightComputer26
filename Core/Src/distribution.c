@@ -20,6 +20,7 @@
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "fc_monitor_bench.h"
+#include "ground_test.h"
 #include <string.h>
 
 #define id "DI "
@@ -77,6 +78,11 @@ static const fc_msg extmap[Compat_Messages] = {
     Reinit_Thresholds + 15,
     Reinit_Thresholds + 30,
     Reinit_Thresholds + 50,
+
+    IGT_Enter,
+    IGT_Live_Pyro,
+    IGT_Dry_Run,
+    IGT_Exit,
 };
 
 #define MIN_CMD_SIZE 1
@@ -110,7 +116,7 @@ static inline bool operator_pyro_command(const SedsPacketView *pkt)
 
 /* GPS coordinates handling */
 
-static inline bool fetch_gps_data(kf_gps *buf)
+static inline bool fetch_real_gps(kf_gps *buf)
 {
 #ifdef GPS_AVAILABLE
 
@@ -136,6 +142,29 @@ static inline bool fetch_gps_data(kf_gps *buf)
   return false;
 
 #endif
+}
+
+/* Ground test: replayed fixes until the replay ends at Landed, then real GPS
+ * again. The rail reference follows the replay's pad and is restored. */
+static inline bool fetch_gps_data(kf_gps *buf)
+{
+#if FC_GROUND_TEST && defined(GPS_AVAILABLE)
+  static kf_gps real_rail;
+  static uint8_t rail_swapped;
+  if (igt_gps_simulated())
+  {
+    if (!igt_gps_fix(&buf->sea, now_ms())) return false;
+    timer_update(HeartbeatRF);
+    if (!rail_swapped) { real_rail = rfboard.rail; rfboard.rail = *buf; rail_swapped = 1U; }
+    return true;
+  }
+  if (rail_swapped)
+  {
+    rfboard.rail = real_rail;
+    rail_swapped = 0U;
+  }
+#endif
+  return fetch_real_gps(buf);
 }
 
 static inline fu32
@@ -654,6 +683,17 @@ static inline bool maybe_log_measm(devid dev, const void *buf)
 
   bool recorded = false;
 
+#if FC_GROUND_TEST
+  /* Replayed values go out only as SIM_SAMPLE; the normal types keep the
+   * real sensors (IMU: accl then gyro, contiguous like meas). */
+  if (igt_sim_running())
+  {
+    igt_publish(dev == IMU ? IGT_KIND_IMU : IGT_KIND_BARO, (const float *)buf,
+                mems[dev].size, now_ms());
+    buf = dev == IMU ? igt_real_imu() : igt_real_baro();
+  }
+#endif
+
 #ifdef SD_AVAILABLE
   if (timer_probe(mems[dev].tim_sd, rates.sd))
   {
@@ -793,7 +833,12 @@ static inline void descent_full_cycle(fu32 conf)
     maybe_log_measm(Baro, &meas.baro);
   }
 
+#if FC_GROUND_TEST
+  if (((conf & option(GPS_Available)) || igt_gps_simulated()) &&
+      fetch_gps_data(&meas.gps))
+#else
   if ((conf & option(GPS_Available)) && fetch_gps_data(&meas.gps))
+#endif
   {
     to_relative_coords(&meas.gps);
 

@@ -2,6 +2,7 @@
 #include "av_bay_underglow.h"
 #include "flight_buzzer.h"
 #include "fc_estimator_status.h"
+#include "ground_test.h"
 #include "board_recovery_transport.h"
 #include "board_temperature.h"
 #include "board_uptime.h"
@@ -30,6 +31,12 @@ void board_health_poll(SedsRouter *router)
   static uint32_t last_report_ms, last_sent_ms;
   static uint32_t failures;
   static uint8_t sent_phase, sent_frozen;
+#if FC_GROUND_TEST
+  static uint32_t sent_igt;
+  const uint32_t igt = igt_health_bits();
+#else
+  enum { sent_igt = 0, igt = 0 };
+#endif
   if (!router) return;
   const uint64_t uptime = board_uptime_ticks();
   const uint32_t now = (uint32_t)uptime;
@@ -39,13 +46,17 @@ void board_health_poll(SedsRouter *router)
   /* So is the barometer ground reference freezing at Launch. */
   const uint32_t word15 = FC_EST_WORD15(g_fc_est_start, baro_ref_bits());
   const uint8_t frozen = FC_EST_BARO_FROZEN(word15);
-  const bool changed = (phase != sent_phase || frozen != sent_frozen) &&
+  const bool changed = (phase != sent_phase || frozen != sent_frozen ||
+                        igt != sent_igt) &&
                        (uint32_t)(now - last_sent_ms) >= 250U;
   if (!changed && (uint32_t)(now - last_report_ms) < 5000U) return;
   last_report_ms = changed ? now - 4000U : now;
   last_sent_ms = now;
   sent_phase = phase;
   sent_frozen = frozen;
+#if FC_GROUND_TEST
+  sent_igt = igt;
+#endif
   board_temperature_poll();
 
   uint32_t words[24] = {1U, 2U, (uint32_t)uptime, (uint32_t)(uptime >> 32U), BOARD_UPTIME_FREQUENCY_HZ};
@@ -68,7 +79,8 @@ void board_health_poll(SedsRouter *router)
               (g_av_bay_underglow_enabled != 0U ? 1U : 0U) |
               (g_flight_buzzer_enabled != 0U ? 2U : 0U) |
               (g_av_bay_underglow_network_seen != 0U ? 4U : 0U) |
-              (g_flight_buzzer_network_seen != 0U ? 8U : 0U);
+              (g_flight_buzzer_network_seen != 0U ? 8U : 0U) |
+              igt; /* bits 4..15: integrated ground test (ground_test.h) */
   words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);
   words[15] = word15;
 #ifdef SD_AVAILABLE

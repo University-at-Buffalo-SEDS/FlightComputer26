@@ -13,6 +13,7 @@
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "fc_estimator_status.h"
+#include "ground_test.h"
 #ifdef TELEMETRY_ENABLED
 #include "av_bay_underglow.h"
 #endif
@@ -261,6 +262,9 @@ bool fc_recovery_control_finalize_startup(void)
   baro_conf.rezero = 0;
   g_fc_est_phase = FC_EST_IDLE;
   g_fc_est_cycles = g_fc_est_start = 0;
+#if FC_GROUND_TEST
+  igt_stop();
+#endif
   return true;
 }
 bool fc_recovery_control_new_flight_ready(void)
@@ -484,6 +488,15 @@ static inline void enter_launch(bool noconfirm)
   g_conf &= ~option(Postinit_Requested);
 
   fc_sd_capture_event(FC_LOG_LAUNCH_ACCEPTED, false);
+#if FC_GROUND_TEST
+  /* The replay starts only from a validated, pre-Launch entry and a vehicle
+   * at rest; the samples here are still the real sensors. */
+  {
+    float seed[3];
+    if (igt_launch(now_ms(), &meas.accl.x, &meas.gyro.x, meas.baro.alt, seed))
+      kalman_seed_attitude((const f_xyz *)seed);
+  }
+#endif
   tx_thread_resume(&evaluation_task);
 }
 
@@ -569,6 +582,23 @@ static inline void process_action(fc_msg cmd, bool internal)
       rates.gnd = UINT_FAST32_MAX;
       message(id "WARN: shared stack pool", true);
       break;
+
+#if FC_GROUND_TEST
+    case IGT_Enter:
+    case IGT_Live_Pyro:
+    case IGT_Dry_Run:
+    case IGT_Exit:
+      if (!internal)
+      {
+        const fu32 conf = load(&g_conf, Acq);
+        const bool pad = current() == Startup &&
+            !(conf & option(Postinit_Requested | Launch_Requested | Lost_GroundStation)) &&
+            !fc_recovery_flight_is_admitted();
+        (void)igt_command((unsigned)(cmd - IGT_Enter), pad,
+                          (conf & option(Launch_Requested)) != 0U);
+      }
+      break;
+#endif
 
     case Log_Terminate:
 #ifdef TELEMETRY_ENABLED

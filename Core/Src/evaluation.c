@@ -12,6 +12,7 @@
 #include "fcconfig.h"
 #include "sweetbench.h"
 #include "fc_estimator_status.h"
+#include "ground_test.h"
 
 #define id "EV "
 
@@ -97,6 +98,9 @@ static inline void flight_advance(state promotion)
 
   if (promotion == Launch) fc_sd_capture_event(FC_LOG_LAUNCH_DETECTED, false);
   if (promotion == Landed) sd_launch_landed(now_ms());
+#if FC_GROUND_TEST
+  if (promotion == Landed) igt_landed();
+#endif
   log_metric(id "new flight state", promotion, true);
   log_flight_state(to_global_state(promotion));
 }
@@ -418,15 +422,26 @@ static inline void propel_kalman_state(fu32 conf)
     elements = DKF_STATE;
   }
 
+#if FC_GROUND_TEST
+  /* Outputs computed from replayed inputs go out only as SIM_SAMPLE. */
+  if (igt_sim_running())
+  {
+    igt_publish(conf & option(Using_Ascent_KF) ? IGT_KIND_ASCENT : IGT_KIND_DESCENT,
+                tmp, elements, now_ms());
+  }
+  else
+#endif
+  {
 #ifdef SD_AVAILABLE
-  /* Preserve each completed filter output independently of radio/report
-   * throttling; the bounded SD path accounts for any storage refusal. */
-  sd_append_f32(kind_sd, tmp, elements);
+    /* Preserve each completed filter output independently of radio/report
+     * throttling; the bounded SD path accounts for any storage refusal. */
+    sd_append_f32(kind_sd, tmp, elements);
 #endif
 
-  if (timer_probe_ground(KFRemote, rates.gnd))
-  {
-    log_periodic_f32(kind_gnd, elements, tmp);
+    if (timer_probe_ground(KFRemote, rates.gnd))
+    {
+      log_periodic_f32(kind_gnd, elements, tmp);
+    }
   }
 
   estimator_cycle(svec(0).alt + svec(0).vel);

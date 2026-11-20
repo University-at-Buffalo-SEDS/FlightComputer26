@@ -13,6 +13,7 @@
 #include "sd_file_limit.h"
 #include "fc_sd_events.h"
 #include "resilient_storage.h"
+#include "ground_test.h"
 
 #define id "SD "
 
@@ -138,6 +139,9 @@ static inline constexpr char *seds_f32(SedsDataType ty)
         case SEDS_DT_ASCENT_LOCAL:    return "EKF";
         case SEDS_DT_DESCENT_LOCAL:   return "DKF";
         case SEDS_DT_EULER_ANGLES:    return "EULER";
+#if FC_GROUND_TEST
+        case SEDS_DT_SIM_SAMPLE:      return "SIM";
+#endif
         default:						          return "QUAT";
     }
 }
@@ -269,7 +273,8 @@ static void sd_service_events(bool draining)
 {
     static const char *const labels[] = {
         "launch_detected", "pyro_gpio_high", "pyro_gpio_low",
-        "pyro_rejected", "pyro_already_active", "launch_accepted"
+        "pyro_rejected", "pyro_already_active", "launch_accepted",
+        "pyro_dry_run"
     };
     fc_sd_event event;
     for (unsigned n = 0U; n < 32U && fc_sd_peek_event(&event); ++n)
@@ -585,6 +590,9 @@ void sd_pipeline_task()
             continue;
         }
         sd_service_events(false);
+#if FC_GROUND_TEST
+        igt_sd_service(); /* ground-test CSVs: this task owns FileX */
+#endif
         const bool flush_due = timer_probe(SDFlush, SD_FLUSH_INTERVAL);
         if (flush_due || sd_launch_pending || sd_cutoff_set || line.off[line.cur] >= SD_POST_MARGIN)
             sd_handoff_tail();

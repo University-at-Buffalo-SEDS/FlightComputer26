@@ -10,7 +10,8 @@ typedef enum {
     FC_LOG_PYRO_LOW,
     FC_LOG_PYRO_REJECTED,
     FC_LOG_PYRO_ACTIVE,
-    FC_LOG_LAUNCH_ACCEPTED
+    FC_LOG_LAUNCH_ACCEPTED,
+    FC_LOG_PYRO_DRY_RUN
 } fc_sd_event_kind;
 typedef struct { uint32_t tick; uint8_t kind, reef; } fc_sd_event;
 extern volatile uint32_t g_sd_event_pending;

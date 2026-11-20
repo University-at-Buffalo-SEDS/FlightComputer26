@@ -8,6 +8,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "sweetbench.h"
+#include "ground_test.h"
 #include <math.h>
 
 #define id "DM "
@@ -107,6 +108,12 @@ bool try_fetch_baro(baro *buf)
 
   // led_toggle(LED1_PORT, LED1_PIN);
 
+  /* Ground test: the real conversion above is on the SD card; the replay
+   * replaces what the estimator and flight logic see. */
+#if FC_GROUND_TEST
+  if (igt_sim_running()) igt_override_baro(&buf->alt, now_ms());
+#endif
+
   sweetbench_start(0, 150);
   
   return true;
@@ -143,6 +150,10 @@ bool try_fetch_gyro(f_xyz *buf)
   sd_append_sensor(Sensor_Gyro, raw_sample, &buf->x, 3U);
 #endif
 
+#if FC_GROUND_TEST
+  if (igt_sim_running()) igt_override_gyro(&buf->x, now_ms());
+#endif
+
   sweetbench_start(1, 150);
 
   return true;
@@ -177,6 +188,10 @@ bool try_fetch_accl(f_xyz *buf)
 #ifdef SD_AVAILABLE
   const float raw_sample[] = {(float)ax, (float)ay, (float)az};
   sd_append_sensor(Sensor_Accl, raw_sample, &buf->x, 3U);
+#endif
+
+#if FC_GROUND_TEST
+  if (igt_sim_running()) igt_override_accl(&buf->x, now_ms());
 #endif
 
   sweetbench_start(2, 150);
