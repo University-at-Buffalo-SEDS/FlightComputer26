@@ -36,6 +36,7 @@ static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p&&n==1);commands++;return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){assert(p&&n==1);biases++;return SEDS_OK;}
+static SedsResult update_launch_site(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_OK;}
 volatile uint32_t g_reliable_refusal_count;
 #include "ground_heartbeat_owner.h"
 '''

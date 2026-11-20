@@ -18,6 +18,11 @@ extern volatile uint32_t g_sd_event_pending;
 /* Authoritative state transition; monotonic milliseconds, no I/O. */
 void sd_launch_landed(uint32_t tick);
 void fc_sd_capture_event(fc_sd_event_kind kind, bool reef);
+/* BOARD_HEALTH word 6 bit 30 / 31: the card is not mounted or the log file
+ * cannot be opened; an operator SD retry is pending. */
+#define FC_SD_NOT_READY     1U
+#define FC_SD_RETRY_PENDING 2U
+extern volatile uint8_t g_fc_sd_state;
 bool fc_sd_peek_event(fc_sd_event *event);
 void fc_sd_consume_event(void);
 #endif

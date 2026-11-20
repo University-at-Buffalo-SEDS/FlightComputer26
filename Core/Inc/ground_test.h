@@ -26,7 +26,7 @@ enum igt_mode {
 /* BOARD_HEALTH word 14 bits 12..15 */
 enum igt_reason {
   IGT_OK, IGT_E_SD, IGT_E_MISSING, IGT_E_HEADER, IGT_E_PARSE, IGT_E_TIME,
-  IGT_E_RANGE, IGT_E_SHORT, IGT_E_MOVING, IGT_E_REAL_MOTION,
+  IGT_E_RANGE, IGT_E_SHORT, IGT_E_MOVING, IGT_E_UNUSED_9,
   IGT_I_UNDERRUN, IGT_E_REFUSED, IGT_I_DATA_ENDED
 };
 
@@ -54,6 +54,8 @@ enum igt_command {
 bool igt_command(unsigned cmd, bool pad, bool launch_requested);
 /* Stop, Abort, reset to Startup: back to Off (dry-run). */
 void igt_stop(void);
+/* Operator SD retry: once mounted, a card fault re-runs the validation. */
+void igt_sd_retry(void);
 /* Launch accepted. Starts the replay only from Ready and at rest; the real
  * samples are accl (m/s^2), gyro (deg/s) and baro altitude (m). On success
  * *seed receives the replay's first IMU row (accl) for the attitude. */
@@ -63,7 +65,7 @@ bool igt_launch(uint32_t now, const float *accl, const float *gyro,
 void igt_landed(void);
 
 /* Distribution task: replace a fresh real sample with the replay at
- * t = now - T0. The real value is kept for telemetry and the motion guard. */
+ * t = now - T0. The real value is kept for the normal telemetry types. */
 bool igt_sim_running(void);
 void igt_override_accl(float *v, uint32_t now);
 void igt_override_gyro(float *v, uint32_t now);

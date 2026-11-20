@@ -583,6 +583,13 @@ static inline void process_action(fc_msg cmd, bool internal)
       message(id "WARN: shared stack pool", true);
       break;
 
+    case SD_Retry:
+      g_fc_sd_state |= FC_SD_RETRY_PENDING;
+#if FC_GROUND_TEST
+      igt_sd_retry();
+#endif
+      break;
+
 #if FC_GROUND_TEST
     case IGT_Enter:
     case IGT_Live_Pyro:

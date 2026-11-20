@@ -146,7 +146,14 @@ UINT MX_FileX_Init(VOID *memory_ptr)
   if (sd_status != FX_SUCCESS)
   {
      /* USER CODE BEGIN SD DRIVER get info error */
-    while(1);
+    /* No card or no file system: report it (BOARD_HEALTH word 6 bit 30) and
+     * mount again on the operator's SD retry, as the DAQ does. */
+    do {
+      g_fc_sd_state = (uint8_t)(g_fc_sd_state | FC_SD_NOT_READY);
+      while (!(g_fc_sd_state & FC_SD_RETRY_PENDING)) tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 10U);
+      g_fc_sd_state &= (uint8_t)~FC_SD_RETRY_PENDING;
+      sd_status = fx_media_open(&sdio_disk, FX_SD_VOLUME_NAME, fx_stm32_sd_driver, (VOID *)FX_NULL, (VOID *) fx_sd_media_memory, sizeof(fx_sd_media_memory));
+    } while (sd_status != FX_SUCCESS);
     /* USER CODE END SD DRIVER get info error */
   }
 

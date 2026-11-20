@@ -262,6 +262,9 @@ typedef enum flight_message : fu32 {
   IGT_Dry_Run      = Actionable_Decrees + 19,
   IGT_Exit         = Actionable_Decrees + 20,
 
+  /* Re-attempt the SD mount and log file (both images). */
+  SD_Retry         = Actionable_Decrees + 21,
+
   GPS_Data_Code = (1u << 18),
 
   Bad_Lattitude  = GPS_Data_Code | 1u,
@@ -376,6 +379,7 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_IGT_Live_Pyro,
   Compat_IGT_Dry_Run,
   Compat_IGT_Exit,
+  Compat_SD_Retry,
 
   Compat_Messages
 } compat;

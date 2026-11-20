@@ -78,6 +78,7 @@ static SedsResult dispatch_flight_cmd(const uint8_t*d,size_t n){(void)n;++comman
  if(d[0]==12)deployment_pulse_start(false,true);else if(d[0]==13)deployment_pulse_start(true,true);else if(d[0]==22)++rewinds;
  return SEDS_OK;}
 static SedsResult update_ascent_biases(const uint8_t*d,size_t n){(void)d;(void)n;++biases;return SEDS_OK;}
+static SedsResult update_launch_site(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_OK;}
 /* SOURCE_FUNCTION:Manual_Abort_handler */
 #define FLIGHT_CMD_SEEN 16U
 static volatile uint32_t g_flight_state_writes_out_of_order;

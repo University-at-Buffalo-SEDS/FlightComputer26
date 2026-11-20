@@ -31,6 +31,9 @@ struct {int lock; bool free,cur; fu16 off[2];} line;
 char sdbuf[2][128];
 uint32_t sd_buffer_records[2],g_sd_written_records,g_sd_flushed_records;
 uint32_t g_sd_write_errors,g_sd_shutdown_lost_records;
+volatile uint8_t g_fc_sd_state;
+#define FC_SD_NOT_READY 1U
+#define FC_SD_RETRY_PENDING 2U
 uint32_t g_sd_shutdown_lost_events,g_sd_event_pending;
 bool sd_writer_slot,sd_retry_pending,sd_accepting;
 uint8_t sd_file_open=1;
@@ -136,6 +139,9 @@ bool sd_cutoff_set;
 bool stopped,sd_launch_pending;
 unsigned sema_calls,write_calls,sleep_calls,shutdown_calls,clock_refreshes;
 unsigned g_sd_flushed_records,g_sd_written_records,g_sd_write_errors,sdio_disk;
+volatile uint8_t g_fc_sd_state;
+#define FC_SD_NOT_READY 1U
+#define FC_SD_RETRY_PENDING 2U
 unsigned tx_semaphore_get(void *s,unsigned timeout){(void)s;assert(timeout==50);++sema_calls;exit(42);}
 int sd_pipeline_init(const char *s){(void)s;return 0;}
 void sd_refresh_clock(void){++clock_refreshes;}
@@ -188,6 +194,9 @@ bool sd_io_failed(unsigned status){return status!=0U;}
 struct {bool free;unsigned full,off[2];} line;
 struct {const char *fx_file_name;} file;
 uint32_t sd_buffer_records[2],g_sd_write_errors;
+volatile uint8_t g_fc_sd_state;
+#define FC_SD_NOT_READY 1U
+#define FC_SD_RETRY_PENDING 2U
 bool sd_writer_slot,sd_retry_pending,sd_accepting,stopped,stop_on_sleep,sd_prepared;
 uint8_t sd_file_open;
 bool sd_launch_pending,sd_launch_active;

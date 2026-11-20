@@ -36,6 +36,7 @@ static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
+static SedsResult update_launch_site(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_OK;}
 #include "ground_heartbeat_owner.h"
 '''
   support+='\nstatic struct { SedsRouter *r; } g_router;\n'+function((ROOT/'Core/Src/telemetry.c').read_text()[(ROOT/'Core/Src/telemetry.c').read_text().rindex('static SedsResult Manual_Abort_handler('):],'Manual_Abort_handler')+'\n'

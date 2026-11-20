@@ -30,13 +30,17 @@ TX_THREAD distribution_task;
 
 measm meas = {0};
 
+float g_launch_site[3] = {
+  LAUNCH_SITE_LAT_DEFAULT, LAUNCH_SITE_LON_DEFAULT, LAUNCH_SITE_SEA_DEFAULT
+};
+
 spinlock meas_locks[MEMS_Devices] = {0};
 
 #ifdef GPS_AVAILABLE
 static rf_receiver rfboard = {0};
 #if BOARD_WATCHDOG_ENABLE
 const fc_resume_region fc_resume_distribution[] = {
-  FC_RESUME_REGION(rfboard.rail), { NULL, 0U }
+  FC_RESUME_REGION(rfboard.rail), FC_RESUME_REGION(g_launch_site), { NULL, 0U }
 };
 #endif
 #endif
@@ -83,6 +87,7 @@ static const fc_msg extmap[Compat_Messages] = {
     IGT_Live_Pyro,
     IGT_Dry_Run,
     IGT_Exit,
+    SD_Retry,
 };
 
 #define MIN_CMD_SIZE 1
@@ -362,6 +367,21 @@ static inline SedsResult pulse_ground(void)
   return SEDS_OK;
 }
 
+/* Station-set launch site, applied only on the pad; the reply is the site
+ * in use either way, so the station can confirm or resend. */
+static inline SedsResult update_launch_site(const uint8_t *data, size_t len)
+{
+  float site[3];
+  if (data == NULL || len != sizeof site) return SEDS_OK;
+  memcpy(site, data, sizeof site);
+  if (!(load(&g_conf, Acq) & option(Launch_Requested)) && !beyond(Armed) &&
+      !igt_sim_running() && within(site[0], 90.0f) && within(site[1], 180.0f) &&
+      site[2] >= -500.0f && site[2] <= 9000.0f)
+    memcpy(g_launch_site, site, sizeof site);
+  log_f32(SEDS_DT_LAUNCH_SITE, 3, g_launch_site);
+  return SEDS_OK;
+}
+
 static inline SedsResult
 update_ascent_biases(const uint8_t *data, size_t len)
 {
@@ -494,7 +514,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
    * write, an unadmitted controller update) is never applied, but failing it
    * withheld the SDK receipt: the sender retransmitted it forever. */
   if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt)) ||
-      ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES) &&
+      ((pkt->ty == SEDS_DT_FLIGHT_COMMAND || pkt->ty == SEDS_DT_ASCENT_BIASES ||
+        pkt->ty == SEDS_DT_LAUNCH_SITE) &&
        !(operator_pyro_command(pkt) ? board_recovery_operator_pyro_allowed(pkt)
                                     : board_recovery_controller_update_allowed(pkt))))
   {
@@ -527,6 +548,8 @@ static SedsResult on_fc_packet_impl(const SedsPacketView *pkt, void *_)
       }
     case SEDS_DT_ASCENT_BIASES:
       return update_ascent_biases(pkt->payload, pkt->payload_len);
+    case SEDS_DT_LAUNCH_SITE:
+      return update_launch_site(pkt->payload, pkt->payload_len);
     case SEDS_DT_AV_BAY_UNDERGLOW:
     case SEDS_DT_FLIGHT_BUZZER:
       /* The registered network-variable callback already validated/applied

@@ -3,6 +3,7 @@
 #include "flight_buzzer.h"
 #include "fc_estimator_status.h"
 #include "ground_test.h"
+#include "fc_sd_events.h"
 #include "board_recovery_transport.h"
 #include "board_temperature.h"
 #include "board_uptime.h"
@@ -93,6 +94,7 @@ void board_health_poll(SedsRouter *router)
   __set_PRIMASK(saved);
   /* Why flight commands are refused (board_recovery_transport.c). */
   words[6] |= board_recovery_controller_gate() << 24U;
+  words[6] |= (uint32_t)g_fc_sd_state << 30U; /* SD not ready, retry pending */
   words[11] = (uint32_t)seds_memory_admission_rejected();
   words[23] = failures;
   words[1] |= board_temperature_health_flags();

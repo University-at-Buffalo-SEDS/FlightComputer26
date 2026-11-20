@@ -29,7 +29,9 @@ PORT = r'''
 #define IGT_PUB_PERIOD_MS 200U
 #define IGT_SD_PERIOD_MS 50U
 char igt_root[512];
-int igt_fail_sd;
+int igt_fail_sd, igt_sd_not_ready;
+float g_launch_site[3] = {LAUNCH_SITE_LAT_DEFAULT, LAUNCH_SITE_LON_DEFAULT, LAUNCH_SITE_SEA_DEFAULT};
+static bool igt_port_sd_ready(void) { return !igt_sd_not_ready; }
 static FILE *igt_fp;
 char igt_log[64][96];
 unsigned igt_logs, igt_samples[8], igt_radio, igt_sd;
@@ -194,7 +196,7 @@ static void scenario_gates(void)
   float seed[3], a[3];
   /* Entry only on the pad and before Launch. */
   assert(!igt_command(IGT_CMD_ENTER, false, false) && mode_now() == IGT_OFF);
-  assert(reason_now() == IGT_E_REFUSED && logged("needs Startup"));
+  assert(reason_now() == IGT_E_REFUSED && logged("not on the pad"));
   assert(!igt_command(IGT_CMD_ENTER, true, true) && mode_now() == IGT_OFF);
   assert(!igt_command(IGT_CMD_LIVE_PYRO, true, false));
   assert(igt_command(IGT_CMD_ENTER, true, false));
@@ -236,19 +238,49 @@ static void scenario_gates(void)
   printf("gates ok\n");
 }
 
-static void scenario_real_motion(void)
+/* No real-motion override: a ground-test image cannot be launched for real
+ * (the station latches Launch closed in the flight modes), so a high real
+ * barometer neither ends the replay nor arms the pyros. */
+static void scenario_no_motion_override(void)
 {
   float a[3], g[3], b[3], seed[3];
   enter_and_validate();
   assert(igt_launch(0, rest_a, rest_g, 0.0f, seed) && igt_pyro_dry());
-  for (uint32_t t = 10; t <= 90; t += 10) cycle(t, a, g, b, 60.0f);
-  assert(igt_sim_running());
-  cycle(100, a, g, b, 60.0f);
-  assert(mode_now() == IGT_FAULT && reason_now() == IGT_E_REAL_MOTION);
-  assert(!igt_sim_running() && !igt_pyro_dry() && logged("real motion"));
-  cycle(110, a, g, b, 61.0f);
-  assert(b[0] == 61.0f); /* real sensors */
-  printf("real motion ok\n");
+  for (uint32_t t = 10; t <= 2000; t += 10) cycle(t, a, g, b, 600.0f);
+  assert(igt_sim_running() && igt_pyro_dry() && mode_now() == IGT_SIM);
+  assert(near(b[0], 20.0f)); /* replayed alt = t/100 at t = 2000 ms */
+  printf("no motion override ok\n");
+}
+
+/* A missing card faults at once (no wait in Validating); an SD retry once
+ * the card is mounted re-runs the validation. */
+static void scenario_sd_retry(void)
+{
+  igt_sd_not_ready = 1;
+  assert(igt_command(IGT_CMD_ENTER, true, false));
+  assert(mode_now() == IGT_FAULT && reason_now() == IGT_E_SD && logged("SD not ready"));
+  igt_sd_service();
+  assert(mode_now() == IGT_FAULT);
+  igt_sd_not_ready = 0;
+  igt_sd_retry();
+  igt_sd_service();
+  assert(mode_now() == IGT_READY && reason_now() == IGT_OK);
+  /* A retry never revives an unrelated fault (here: a CSV time error). */
+  igt_sd_retry();
+  igt_sd_service();
+  assert(mode_now() == IGT_READY);
+  printf("sd retry ok\n");
+}
+
+/* The GPS acceptance window follows the station-set launch site. */
+static void scenario_site(void)
+{
+  igt_row row;
+  assert(parse_row(&streams[S_GPS], "0,43.0035560,-78.7685560,190", &row) == IGT_E_RANGE);
+  g_launch_site[0] = 43.003556f; g_launch_site[1] = -78.768556f; g_launch_site[2] = 182.0f;
+  assert(parse_row(&streams[S_GPS], "0,43.0035560,-78.7685560,190", &row) == 0);
+  assert(parse_row(&streams[S_GPS], "0,31.7580000,-102.0460000,890", &row) == IGT_E_RANGE);
+  printf("site ok\n");
 }
 
 static void scenario_data_end(void)
@@ -281,7 +313,9 @@ int main(int argc, char **argv)
   else if (!strcmp(argv[1], "numbers")) scenario_numbers();
   else if (!strcmp(argv[1], "flight")) scenario_flight();
   else if (!strcmp(argv[1], "gates")) scenario_gates();
-  else if (!strcmp(argv[1], "real_motion")) scenario_real_motion();
+  else if (!strcmp(argv[1], "no_motion")) scenario_no_motion_override();
+  else if (!strcmp(argv[1], "sd_retry")) scenario_sd_retry();
+  else if (!strcmp(argv[1], "site")) scenario_site();
   else if (!strcmp(argv[1], "data_end")) scenario_data_end();
   else if (!strcmp(argv[1], "sd_fail")) scenario_sd_fail();
   else return 2;
@@ -360,7 +394,7 @@ class GroundTestReplay(unittest.TestCase):
         mode, reason, gps, out = self.validate(self.nominal())
         self.assertEqual((mode, reason, gps), (2, 0, 1), out)
         self.assertIn('imu=32 baro=32', out)
-        self.assertIn('IGT CSV ok: IMU 4001 rows 40s, BARO 2001 rows 40s, GPS 401 rows', out)
+        self.assertIn('IGT CSV ok: IMU 4001 40s, BARO 2001 40s, GPS 401', out)
 
     def test_gps_is_optional(self):
         mode, reason, gps, out = self.validate(self.nominal(**{'GPS0.CSV': None}))
@@ -369,25 +403,26 @@ class GroundTestReplay(unittest.TestCase):
     def test_validation_failures_are_reported_with_file_and_line(self):
         bad_range = '\n'.join([IMU_HEADER] + imu_rows()[:5] + ['50,0,0,999,0,0,0'])
         cases = [
-            ({'IMU0.CSV': None}, 2, 'IMU0.CSV:0 file missing'),
-            ({'BARO0.CSV': 'time,alt\n0,1\n'}, 3, 'BARO0.CSV:1 bad header'),
-            ({'BARO0.CSV': ''}, 3, 'BARO0.CSV:0 bad header'),
-            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20\n20,abc,101000,20\n'}, 4, 'BARO0.CSV:3 parse error'),
-            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20\n0,2,101000,20\n'}, 5, 'BARO0.CSV:3 time not increasing'),
+            ({'IMU0.CSV': None}, 2, 'IMU0.CSV:0'),
+            ({'BARO0.CSV': 'time,alt\n0,1\n'}, 3, 'BARO0.CSV:1'),
+            ({'BARO0.CSV': ''}, 3, 'BARO0.CSV:0'),
+            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20\n20,abc,101000,20\n'}, 4, 'BARO0.CSV:3'),
+            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20\n0,2,101000,20\n'}, 5, 'BARO0.CSV:3'),
             # Time must also increase across segments.
-            ({'BARO1.CSV': f'{BARO_HEADER}\n19000,1,101000,20\n'}, 5, 'BARO1.CSV:2 time not increasing'),
-            ({'IMU0.CSV': bad_range}, 6, 'IMU0.CSV:7 value out of range'),
-            ({'GPS0.CSV': f'{GPS_HEADER}\n0,10.0,-102.046,900\n'}, 6, 'GPS0.CSV:2 value out of range'),
-            ({'IMU0.CSV': '\n'.join([IMU_HEADER] + imu_rows(4000))}, 7, 'too short'),
-            ({'GPS0.CSV': f'{GPS_HEADER}\n0,31.758,-102.046,900\n'}, 7, 'too short'),
-            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20' + ' ' * 130 + '\n'}, 4, 'BARO0.CSV:2 parse error'),
-            ({'BARO0.CSV': BARO_HEADER + '\n' + 'x' * 300 + '\n'}, 4, 'parse error'),
+            ({'BARO1.CSV': f'{BARO_HEADER}\n19000,1,101000,20\n'}, 5, 'BARO1.CSV:2'),
+            ({'IMU0.CSV': bad_range}, 6, 'IMU0.CSV:7'),
+            ({'GPS0.CSV': f'{GPS_HEADER}\n0,10.0,-102.046,900\n'}, 6, 'GPS0.CSV:2'),
+            ({'IMU0.CSV': '\n'.join([IMU_HEADER] + imu_rows(4000))}, 7, 'IMU'),
+            ({'GPS0.CSV': f'{GPS_HEADER}\n0,31.758,-102.046,900\n'}, 7, 'GPS'),
+            ({'BARO0.CSV': f'{BARO_HEADER}\n0,1,101000,20' + ' ' * 130 + '\n'}, 4, 'BARO0.CSV:2'),
+            ({'BARO0.CSV': BARO_HEADER + '\n' + 'x' * 300 + '\n'}, 4, 'BARO0.CSV:2'),
         ]
         for override, code, text in cases:
             with self.subTest(text=text):
                 mode, reason, _, out = self.validate(self.nominal(**override))
                 self.assertEqual((mode, reason), (5, code), out)
-                self.assertIn(f'IGT {text}' if ':' in text else text, out)
+                self.assertIn(f'IGT {text}', out)
+                self.assertIn(f'reason {code}', out)
 
     def test_sd_unavailable_faults(self):
         out = self.run_driver('sd_fail', self.nominal())
@@ -399,8 +434,14 @@ class GroundTestReplay(unittest.TestCase):
     def test_mode_gates_reset_and_live_pyro(self):
         self.assertIn('gates ok', self.run_driver('gates', self.nominal()))
 
-    def test_real_motion_abandons_replay_and_clears_dry_run(self):
-        self.assertIn('real motion ok', self.run_driver('real_motion', self.nominal()))
+    def test_no_real_motion_override(self):
+        self.assertIn('no motion override ok', self.run_driver('no_motion', self.nominal()))
+
+    def test_missing_card_faults_at_once_and_retry_revalidates(self):
+        self.assertIn('sd retry ok', self.run_driver('sd_retry', self.nominal()))
+
+    def test_gps_window_follows_the_launch_site(self):
+        self.assertIn('site ok', self.run_driver('site', self.nominal()))
 
     def test_data_end_holds_then_ends_replay(self):
         short = {

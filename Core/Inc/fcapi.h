@@ -390,7 +390,7 @@ static inline bool expand_parachute(bool force, bool manual)
   if (!force && (g_conf & option(Parachute_Expanded))) { fc_sd_capture_event(FC_LOG_PYRO_REJECTED, true); return false; }
   deployment_pulse_start(true, manual);
 #if FC_GROUND_TEST
-  if (igt_pyro_dry()) message("IGT dry-run: main (line cutter) not fired", true);
+  if (igt_pyro_dry()) message("IGT dry-run: main not fired", true);
 #endif
   log_metric("PR approx altitude", svec(0).alt, true);
 

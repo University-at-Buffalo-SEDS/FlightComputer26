@@ -16,9 +16,9 @@
 
 #define GRAVITY_SI 9.80665f
 
-#define LAUNCH_SITE_LAT 31.758f
-#define LAUNCH_SITE_LON -102.046f
-#define LAUNCH_SITE_SEA	890.016f
+#define LAUNCH_SITE_LAT_DEFAULT 31.758f
+#define LAUNCH_SITE_LON_DEFAULT -102.046f
+#define LAUNCH_SITE_SEA_DEFAULT	890.016f
 
 
 
@@ -180,4 +180,13 @@
 
 
 #endif /* SIMULATION_CONFIG */
+
+/* The launch site centres the GPS acceptance windows. The compiled site is
+ * the boot default; the station can set another one before Launch
+ * (LAUNCH_SITE, distribution.c). Order: lat, lon, sea. */
+extern float g_launch_site[3];
+#define LAUNCH_SITE_LAT (g_launch_site[0])
+#define LAUNCH_SITE_LON (g_launch_site[1])
+#define LAUNCH_SITE_SEA (g_launch_site[2])
+
 #endif /* FC_USER_CONFIG */

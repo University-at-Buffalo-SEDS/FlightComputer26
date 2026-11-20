@@ -27,6 +27,7 @@ volatile uint32_t g_telemetry_tlsf_live_bytes=100,g_telemetry_tlsf_peak_bytes=20
 volatile uint32_t g_can_tx_rejected=11,g_can_tx_high_water=12,g_gateway_uart_rx_ring_drops=13;
 volatile uint32_t g_sd_raw_records_enqueued_count=0xf00d1234U,g_sd_raw_records_written_count=15,g_sd_raw_records_dropped_count=16,g_sd_raw_records_flushed_count=17,g_sd_raw_records_io_lost_count=18,g_sd_write_error_count=19,g_sd_max_write_ms=20;
 volatile uint32_t g_sd_enqueued_records=0xf00d1234U,g_sd_written_records=15,g_sd_flushed_records=17,g_sd_format_errors=16,g_sd_lock_contention_drops=18,g_sd_unavailable_drops=19,g_sd_shutdown_lost_records=20,g_sd_write_errors=21;
+volatile uint8_t g_fc_sd_state;
 volatile uint32_t g_av_bay_underglow_enabled=1,g_flight_buzzer_enabled=0,g_av_bay_underglow_network_seen=1,g_flight_buzzer_network_seen=0;
 void board_temperature_poll(void){}
 uint32_t board_temperature_health_flags(void){return 0x17bd0100U;}

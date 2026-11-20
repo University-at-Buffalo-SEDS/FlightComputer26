@@ -17,15 +17,22 @@ replay code: each hook in the sources sits under `#if FC_GROUND_TEST`, and
 `tests/test_ground_test.py` checks this. The flight image reports no
 ground-test support, so the station refuses the IGT commands.
 
-Sizes, Release, against dev a602b51:
+Sizes, Release, measured against SEDSnet 6.0.3 (main ebdb444):
 
-| Image | FLASH | RAM |
-| --- | --- | --- |
-| flight (default) | +96 B | +0 B |
-| `--ground-test` | +6,604 B | +3,392 B |
+| Image | FLASH | Free | RAM |
+| --- | --- | --- | --- |
+| flight (default) | 467,064 B (+404 B vs dev e615de3) | 7,560 B | +0 B |
+| `--ground-test` | 473,152 B (−128 B vs the previous ground-test build) | 1,472 B | 198,912 B |
 
-The flight image's 96 B are the `SIM_SAMPLE` schema entry, the four compat
-command slots and one SD event label.
+The flight image's +404 B covers:
+
+- the `SIM_SAMPLE` and `LAUNCH_SITE` schema entries;
+- the station-set launch site (its handler and echo);
+- the SD state and `FcSdRetry`;
+- the compat command slots and one SD event label.
+
+The ground-test image dropped the real-motion override, and reports CSV
+problems as a reason code instead of text.
 
 ## Pieces
 
@@ -39,7 +46,9 @@ command slots and one SD event label.
 | `Core/Src/recovery.c` | `IGT_Enter`, `IGT_Live_Pyro`, `IGT_Dry_Run`, `IGT_Exit` (compat 29–32); replay start at Launch acceptance |
 | `Core/Src/deployment_pulse.c` | Dry-run gate; every Stop/reset path calls `igt_stop()` |
 | `Core/Src/fc_watchdog_recovery.c` | No checkpoint while the mode is on, so a reset cannot resume a replayed flight |
-| `Core/Src/board_health.c` | BOARD_HEALTH word 14 bits 4..15 |
+| `Core/Src/board_health.c` | BOARD_HEALTH word 14 bits 4..15 (bit 7: this is the ground-test image, sent from boot); word 6 bits 30..31: SD not ready / retry pending (both images) |
+| `Core/Src/distribution.c` (`update_launch_site`) | `LAUNCH_SITE`: the station sets the GPS acceptance centre on the pad and the FC echoes it (both images) |
+| `FileX/App/app_filex.c`, `Core/Src/sdpipeline.c` | A failed mount waits for `FcSdRetry` (compat 33) instead of spinning; SD state bits |
 
 ## SD card
 

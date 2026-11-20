@@ -19,7 +19,7 @@ class ManagedDispatchTests(unittest.TestCase):
 typedef int SedsResult;
 enum {SEDS_PERMISSION_DENIED=-11, SEDS_OK=0, SEDS_HANDLER_ERROR=-9, SEDS_DT_HEARTBEAT=1,
  SEDS_DT_FLIGHT_STATE, SEDS_DT_GPS_DATA, SEDS_DT_FLIGHT_COMMAND,
- SEDS_DT_ASCENT_BIASES, SEDS_DT_AV_BAY_UNDERGLOW, SEDS_DT_FLIGHT_BUZZER};
+ SEDS_DT_ASCENT_BIASES, SEDS_DT_AV_BAY_UNDERGLOW, SEDS_DT_FLIGHT_BUZZER, SEDS_DT_LAUNCH_SITE};
 typedef struct {unsigned ty;const char *sender;size_t sender_len;
  const uint8_t *payload;size_t payload_len;} SedsPacketView;
 static unsigned commands, heartbeats;
@@ -41,6 +41,7 @@ static int implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return 0;
 static int process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 static int dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p && n==1);commands++;return 42;}
 static int update_ascent_biases(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
+static int update_launch_site(const uint8_t*p,size_t n){(void)p;(void)n;return 0;}
 """ + source[start:end] + r"""
 int main(void){
  uint8_t value=1;SedsPacketView p={SEDS_DT_AV_BAY_UNDERGLOW,"GS",2,&value,1};

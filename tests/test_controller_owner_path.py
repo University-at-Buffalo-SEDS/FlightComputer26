@@ -36,6 +36,7 @@ static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult update_ascent_biases(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
+static SedsResult update_launch_site(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_OK;}
 #include "ground_heartbeat_owner.h"
 '''
   actual=support+'\n'+decoder+'\n'+function(recovery,'fc_recovery_command_admissible')+'\n'+'static SedsResult\n'+function(distribution,'dispatch_flight_cmd')+'\n'+'volatile uint32_t g_flight_cmd_repeats_dropped;\n#define FLIGHT_CMD_SEEN 16U\n#define FLIGHT_CMD_SEEN_MS 16000U\n'+function(distribution,'flight_cmd_repeat')+'\n'+function(distribution,'on_fc_packet_impl')+'\n'+function(recovery,'enter_launch')+r'''

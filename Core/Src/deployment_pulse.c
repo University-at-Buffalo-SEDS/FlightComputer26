@@ -27,6 +27,8 @@ static uint8_t sd_event_head, sd_event_tail;
 volatile uint32_t g_sd_event_pending;
 volatile uint32_t g_sd_event_queue_drops;
 volatile uint32_t g_sd_event_queue_peak;
+/* Not ready from boot until the SD log file is open (sdpipeline.c). */
+volatile uint8_t g_fc_sd_state = FC_SD_NOT_READY;
 
 void fc_sd_capture_event(fc_sd_event_kind kind, bool reef)
 {

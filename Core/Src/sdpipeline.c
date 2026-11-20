@@ -512,8 +512,11 @@ static inline int sd_pipeline_init(const char *surprise)
         if (sd_pipeline_open(surprise) == WE_ARE_SO_BACK)
         {
             sd_accepting = true;
+            g_fc_sd_state = 0U;
             return WE_ARE_SO_BACK;
         }
+        /* This loop already retries every second: an operator retry is taken. */
+        g_fc_sd_state = FC_SD_NOT_READY;
         ++g_sd_write_errors;
         tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
     }
@@ -585,6 +588,7 @@ void sd_pipeline_task()
         fc_lock(&line.lock);
         sd_mark_launch_cutoff();
         fc_unlock(&line.lock);
+        g_fc_sd_state &= (uint8_t)~FC_SD_RETRY_PENDING; /* mounted and open */
         if (flight_sd_prepare_io() != FX_SUCCESS) {
             tx_thread_sleep((TX_TIMER_TICKS_PER_SECOND + 19U) / 20U);
             continue;

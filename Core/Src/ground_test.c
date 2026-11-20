@@ -61,6 +61,8 @@ static void igt_port_close(void) {}
 
 static void igt_port_message(const char *text) { message(text, true); }
 
+static bool igt_port_sd_ready(void) { return !(g_fc_sd_state & FC_SD_NOT_READY); }
+
 static void igt_port_sample(const float v[8], bool radio, bool sd)
 {
   if (radio) log_periodic_f32(SEDS_DT_SIM_SAMPLE, 8, v);
@@ -82,8 +84,6 @@ static void igt_port_sample(const float v[8], bool radio, bool sd)
 #define IGT_REST_ACC       1.5f
 #define IGT_REST_GYRO      15.0f
 #define IGT_REST_ALT       20.0f
-#define IGT_MOTION_ALT     50.0f
-#define IGT_MOTION_SAMPLES 10U
 #define IGT_REFILL_STEPS   12U
 
 enum { S_IMU, S_BARO, S_GPS, S_COUNT };
@@ -116,18 +116,11 @@ static igt_stream streams[S_COUNT] = {
 };
 
 static _Atomic uint8_t mode;
-static volatile uint8_t reason, live, dry_bits, gps_present, gps_sim;
-static uint32_t t0, gps_due, motion_count;
+static volatile uint8_t reason, live, dry_bits, gps_present, gps_sim, sd_retry;
+static uint32_t t0, gps_due;
 static float real_imu[6], real_baro[3];
 static uint32_t pub_last[6], sd_last[6];
 static char chunk[IGT_CHUNK + 1U];
-
-static const char *const reason_text[] = {
-  "ok", "SD unavailable", "file missing", "bad header", "parse error",
-  "time not increasing", "value out of range", "too short",
-  "not stationary at Launch", "real motion: replay abandoned",
-  "ring underrun", "refused", "data ended before landing",
-};
 
 static void say(const char *text) { igt_port_message(text); }
 
@@ -237,8 +230,9 @@ static int stream_fail(igt_stream *s, int why, bool validating)
   if (!validating) { s->eof = true; return R_ERR; } /* replay holds its last row */
   reason = (uint8_t)why;
   char buf[96];
-  snprintf(buf, sizeof buf, "IGT %s%u.CSV:%u %s", s->name, (unsigned)s->seg,
-           (unsigned)s->line, reason_text[why]);
+  /* The station names the reason from the code (also in BOARD_HEALTH). */
+  snprintf(buf, sizeof buf, "IGT %s%u.CSV:%u reason %d", s->name, (unsigned)s->seg,
+           (unsigned)s->line, why);
   say(buf);
   uint8_t expected = IGT_VALIDATING;
   atomic_compare_exchange_strong(&mode, &expected, (uint8_t)IGT_FAULT);
@@ -325,7 +319,7 @@ static void validate_and_prime(void)
   gps_present = streams[S_GPS].rows >= 2U;
   {
     char buf[96];
-    snprintf(buf, sizeof buf, "IGT CSV ok: IMU %u rows %us, BARO %u rows %us, GPS %u rows",
+    snprintf(buf, sizeof buf, "IGT CSV ok: IMU %u %us, BARO %u %us, GPS %u",
              (unsigned)streams[S_IMU].rows, (unsigned)(streams[S_IMU].last_t / 1000U),
              (unsigned)streams[S_BARO].rows, (unsigned)(streams[S_BARO].last_t / 1000U),
              (unsigned)streams[S_GPS].rows);
@@ -350,7 +344,16 @@ static void validate_and_prime(void)
 
 void igt_sd_service(void)
 {
-  const uint8_t m = atomic_load_explicit(&mode, memory_order_acquire);
+  uint8_t m = atomic_load_explicit(&mode, memory_order_acquire);
+  /* The card is mounted now: an SD retry re-runs the validation it failed. */
+  if (sd_retry) {
+    sd_retry = 0U;
+    if (m == IGT_FAULT && (reason == IGT_E_SD || reason == IGT_E_MISSING) &&
+        atomic_compare_exchange_strong(&mode, &m, (uint8_t)IGT_VALIDATING)) {
+      m = IGT_VALIDATING;
+      reason = IGT_OK;
+    }
+  }
   if (m == IGT_VALIDATING) { validate_and_prime(); return; }
   if (m != IGT_READY && m != IGT_SIM) return;
   for (unsigned i = 0U; i < S_COUNT; ++i) {
@@ -435,20 +438,12 @@ void igt_override_baro(float *v, uint32_t now)
 {
   if (!running()) return;
   memcpy(real_baro, v, sizeof real_baro);
-  /* The real barometer is the vehicle's own: a real climb ends the replay
-   * and returns the pyros to normal flight behaviour. */
-  motion_count = v[0] > IGT_MOTION_ALT ? motion_count + 1U : 0U;
-  if (motion_count >= IGT_MOTION_SAMPLES) {
-    live = 1U;
-    finish(IGT_FAULT, IGT_E_REAL_MOTION, "IGT real motion: replay abandoned, real sensors, pyros live");
-    return;
-  }
   const uint32_t t = now - t0;
   sample(&streams[S_BARO], t, v);
   sample(&streams[S_IMU], t, NULL);
   sample(&streams[S_GPS], t, NULL);
   if (stream_exhausted(&streams[S_BARO], t) && stream_exhausted(&streams[S_IMU], t)) {
-    finish(IGT_DONE, IGT_I_DATA_ENDED, "IGT data ended before landing: real sensors; GPS: real");
+    finish(IGT_DONE, IGT_I_DATA_ENDED, "IGT data ended: real sensors; GPS: real");
   }
 }
 
@@ -503,14 +498,20 @@ bool igt_command(unsigned cmd, bool pad, bool launch_requested)
   switch (cmd) {
     case IGT_CMD_ENTER:
       if (!pad || launch_requested)
-        return refuse("enter: needs Startup, no Postinit/Launch, station heard");
+        return refuse("enter: not on the pad");
       if (m == IGT_VALIDATING || m == IGT_READY || m == IGT_SIM)
         return refuse("enter");
       live = dry_bits = gps_sim = gps_present = 0U;
       reason = IGT_OK;
-      motion_count = 0U;
+      if (!igt_port_sd_ready()) {
+        /* Never wait in Validating for a card that is not there. */
+        reason = IGT_E_SD;
+        atomic_store_explicit(&mode, (uint8_t)IGT_FAULT, memory_order_release);
+        say("IGT SD not ready: retry SD");
+        return true;
+      }
       atomic_store_explicit(&mode, (uint8_t)IGT_VALIDATING, memory_order_release);
-      say("IGT entered: validating CSV; pyros dry-run");
+      say("IGT entered: validating; dry-run");
       return true;
     case IGT_CMD_LIVE_PYRO:
       if (m != IGT_READY || launch_requested) return refuse("LIVE PYRO");
@@ -532,6 +533,8 @@ bool igt_command(unsigned cmd, bool pad, bool launch_requested)
   }
 }
 
+void igt_sd_retry(void) { sd_retry = 1U; }
+
 void igt_stop(void)
 {
   /* No I/O: callers may hold the pyro IRQ guard. */
@@ -548,7 +551,7 @@ bool igt_launch(uint32_t now, const float *accl, const float *gyro,
     if (m == IGT_VALIDATING) {
       reason = IGT_E_REFUSED;
       atomic_store_explicit(&mode, (uint8_t)IGT_FAULT, memory_order_release);
-      say("IGT Launch before CSV ready: no replay, real sensors");
+      say("IGT not ready at Launch: real sensors");
     }
     return false;
   }
@@ -560,7 +563,7 @@ bool igt_launch(uint32_t now, const float *accl, const float *gyro,
   if (!rest) {
     reason = IGT_E_MOVING;
     atomic_store_explicit(&mode, (uint8_t)IGT_FAULT, memory_order_release);
-    say("IGT not stationary at Launch: no replay, real sensors");
+    say("IGT not at rest at Launch: real sensors");
     return false;
   }
   memcpy(real_imu, accl, 3U * sizeof(float));
@@ -568,20 +571,19 @@ bool igt_launch(uint32_t now, const float *accl, const float *gyro,
   real_baro[0] = alt;
   t0 = now;
   gps_due = now;
-  motion_count = 0U;
   for (unsigned i = 0U; i < 6U; ++i) pub_last[i] = sd_last[i] = now - 1000000U;
   float first[6] = { accl[0], accl[1], accl[2], gyro[0], gyro[1], gyro[2] };
   sample(&streams[S_IMU], 0U, first);
   memcpy(seed, first, 3U * sizeof(float));
   gps_sim = gps_present;
   atomic_store_explicit(&mode, (uint8_t)IGT_SIM, memory_order_release);
-  say(gps_present ? "IGT replay started; GPS: simulated" : "IGT replay started; GPS: real");
+  say(gps_present ? "IGT replay; GPS: simulated" : "IGT replay; GPS: real");
   return true;
 }
 
 void igt_landed(void)
 {
-  finish(IGT_DONE, IGT_OK, "IGT replay ended at landing: real sensors; GPS: real");
+  finish(IGT_DONE, IGT_OK, "IGT landed: real sensors; GPS: real");
 }
 
 
