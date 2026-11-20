@@ -84,7 +84,7 @@ static void igt_port_sample(const float v[8], bool radio, bool sd)
 #define IGT_REST_ALT       20.0f
 #define IGT_MOTION_ALT     50.0f
 #define IGT_MOTION_SAMPLES 10U
-#define IGT_REFILL_STEPS   4U
+#define IGT_REFILL_STEPS   12U
 
 enum { S_IMU, S_BARO, S_GPS, S_COUNT };
 enum { R_MORE, R_FULL, R_EOF, R_ERR };
@@ -368,6 +368,8 @@ static bool stream_exhausted(const igt_stream *s, uint32_t t)
   return s->eof && ring_count(s) == 0U && s->have == 2U && t >= s->next.t + IGT_END_HOLD_MS;
 }
 
+/* out == NULL only advances the stream to t: a sensor the flight phase is
+ * not reading (GPS before apogee, IMU after it) stays current. */
 static void sample(igt_stream *s, uint32_t t, float *out)
 {
   igt_row row;
@@ -379,7 +381,7 @@ static void sample(igt_stream *s, uint32_t t, float *out)
     s->have = 2U;
   }
   const igt_row *a = &s->prev, *b = &s->next;
-  if (s->have == 0U) return; /* never primed: keep the caller's value */
+  if (s->have == 0U || out == NULL) return; /* never primed: keep the caller's value */
   if (s->have == 1U || t <= a->t) { memcpy(out, a->v, s->fields * sizeof(float)); return; }
   if (t >= b->t) {
     if (!s->eof && reason == IGT_OK) reason = IGT_I_UNDERRUN;
@@ -443,6 +445,8 @@ void igt_override_baro(float *v, uint32_t now)
   }
   const uint32_t t = now - t0;
   sample(&streams[S_BARO], t, v);
+  sample(&streams[S_IMU], t, NULL);
+  sample(&streams[S_GPS], t, NULL);
   if (stream_exhausted(&streams[S_BARO], t) && stream_exhausted(&streams[S_IMU], t)) {
     finish(IGT_DONE, IGT_I_DATA_ENDED, "IGT data ended before landing: real sensors; GPS: real");
   }
@@ -483,9 +487,12 @@ void igt_publish(unsigned kind, const float *v, unsigned count, uint32_t now)
 
 static bool refuse(const char *what)
 {
-  char buf[48];
-  snprintf(buf, sizeof buf, "IGT %s refused (mode %u)", what,
-           (unsigned)atomic_load_explicit(&mode, memory_order_acquire));
+  /* While Off the status has no other reason: show the refusal there so the
+   * station can say why nothing changed. An active test keeps its own. */
+  const uint8_t m = atomic_load_explicit(&mode, memory_order_acquire);
+  if (m == IGT_OFF) reason = IGT_E_REFUSED;
+  char buf[64];
+  snprintf(buf, sizeof buf, "IGT %s refused (mode %u)", what, (unsigned)m);
   say(buf);
   return false;
 }
@@ -495,7 +502,9 @@ bool igt_command(unsigned cmd, bool pad, bool launch_requested)
   const uint8_t m = atomic_load_explicit(&mode, memory_order_acquire);
   switch (cmd) {
     case IGT_CMD_ENTER:
-      if (!pad || launch_requested || m == IGT_VALIDATING || m == IGT_READY || m == IGT_SIM)
+      if (!pad || launch_requested)
+        return refuse("enter: needs Startup, no Postinit/Launch, station heard");
+      if (m == IGT_VALIDATING || m == IGT_READY || m == IGT_SIM)
         return refuse("enter");
       live = dry_bits = gps_sim = gps_present = 0U;
       reason = IGT_OK;

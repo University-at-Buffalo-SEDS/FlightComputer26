@@ -22,7 +22,7 @@ Sizes, Release, against dev a602b51:
 | Image | FLASH | RAM |
 | --- | --- | --- |
 | flight (default) | +96 B | +0 B |
-| `--ground-test` | +6,500 B | +3,392 B |
+| `--ground-test` | +6,604 B | +3,392 B |
 
 The flight image's 96 B are the `SIM_SAMPLE` schema entry, the four compat
 command slots and one SD event label.

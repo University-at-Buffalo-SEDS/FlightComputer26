@@ -147,8 +147,13 @@ static void scenario_flight(void)
   assert(mode_now() == IGT_SIM && igt_sim_running() && igt_gps_simulated());
   assert(near(seed[2], 9.80665f)); /* the replay's T0 attitude row */
   assert(igt_health_bits() & IGT_HEALTH_GPS_SIM);
+  /* GPS is not read before apogee: the barometer keeps it current, so the
+   * first fix asked for later is current and no underrun is reported. */
+  for (uint32_t t = 0; t <= 5000; t += 10) cycle(t0 + t, a, g, b, 0.3f);
+  assert(igt_gps_fix(fix, t0 + 5005) && near(fix[2], 31.758f + 5005 * 1e-7f));
+  assert(reason_now() == IGT_OK);
   unsigned fixes = 0;
-  for (uint32_t t = 0; t <= 20000; t += 10) {
+  for (uint32_t t = 5010; t <= 20000; t += 10) {
     cycle(t0 + t, a, g, b, 0.3f);
     /* BARO: alt = t/100 m between rows 20 ms apart: exact interpolation */
     assert(near(b[0], (float)t / 100.0f));
@@ -161,7 +166,7 @@ static void scenario_flight(void)
       assert(near(fix[0], 900.0f + (float)t / 100.0f)); /* sea */
     }
   }
-  assert(fixes >= 199 && fixes <= 202);
+  assert(fixes >= 149 && fixes <= 152);
   /* The real samples are kept for the normal telemetry types. */
   assert(near(igt_real_baro()[0], 0.3f) && near(igt_real_imu()[2], 9.80665f));
   assert(near(igt_real_imu()[3], 0.1f));
@@ -189,6 +194,7 @@ static void scenario_gates(void)
   float seed[3], a[3];
   /* Entry only on the pad and before Launch. */
   assert(!igt_command(IGT_CMD_ENTER, false, false) && mode_now() == IGT_OFF);
+  assert(reason_now() == IGT_E_REFUSED && logged("needs Startup"));
   assert(!igt_command(IGT_CMD_ENTER, true, true) && mode_now() == IGT_OFF);
   assert(!igt_command(IGT_CMD_LIVE_PYRO, true, false));
   assert(igt_command(IGT_CMD_ENTER, true, false));
