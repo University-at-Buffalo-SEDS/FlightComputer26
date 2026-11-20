@@ -11,17 +11,8 @@
 
 static struct baro_calibration cd = {0};
 
-static float   gnd_lvl_pressure = 0.0f;  /* p0: pad pressure (fixed between rezeros) */
-static float   alt_bias         = 0.0f;  /* slow zero correction (m)                 */
 static float   prev_rel_alt     = 0.0f;  /* last returned altitude (m)               */
-static float   checkpoint_alt   = 0.0f;  /* anchor altitude of the still window (m)  */
-static uint8_t in_flight        = 0;     /* 1 = ground tracking disabled             */
-
-/* Runtime-only state */
-static float    last_alt_pres = 0.0f;    /* last valid pressure given to relative_alt */
-static uint32_t still_ms      = 0;
-static uint32_t last_tick     = 0;
-static uint8_t  tick_valid    = 0;
+static uint32_t last_tick       = 0;     /* tick of the last live sample (ST-Link viewer) */
 
 /* Last compensated sample from this file's read paths */
 static float   last_temp  = 0.0f;
@@ -29,14 +20,11 @@ static float   last_pres  = 0.0f;
 static uint8_t last_fresh = 0;
 
 #if BOARD_WATCHDOG_ENABLE
+/* The ground reference first: the resume check requires a positive pressure. */
 const fc_resume_region fc_resume_barometer[] = {
-  FC_RESUME_REGION(gnd_lvl_pressure), 
-  FC_RESUME_REGION(alt_bias),
-  FC_RESUME_REGION(prev_rel_alt),     
-  FC_RESUME_REGION(checkpoint_alt),
-  FC_RESUME_REGION(in_flight),        
-  { NULL, 0U 
-  }
+  FC_RESUME_REGION(baro_ref),
+  FC_RESUME_REGION(prev_rel_alt),
+  { NULL, 0U }
 };
 #endif
 
@@ -304,84 +292,34 @@ static inline uint8_t pressure_is_valid_baseline(float p) {
 }
 
 /*
- * Re-anchor so the given pressure reads exactly 0 m and clear drift state.
+ * Re-anchor so the given pressure reads exactly 0 m.
  */
-static void baro_reset_baseline(float pressure, uint32_t now) {
-  gnd_lvl_pressure = pressure;
-  alt_bias         = 0.0f;
-  prev_rel_alt     = 0.0f;
-  checkpoint_alt   = 0.0f;
-  last_alt_pres    = pressure;
-  still_ms         = 0;
-  last_tick        = now;
-  tick_valid       = 1;
+static void baro_reset_baseline(float pressure) {
+  baro_ref_reset(pressure, HAL_GetTick());
+  prev_rel_alt = 0.0f;
 }
 
 
 /* ------ Public API: altitude ------ */
 
 /*
- * Pressure -> altitude above the pad (hypsometric formula, datasheet §3.9),
- * with drift removal.
- *
- * Real altitude changes are fast; weather and thermal drift are slow. While
- * the vehicle is "still" (altitude stays within BARO_STILL_BAND_M for
- * BARO_STILL_TIME_MS) AND within BARO_GROUND_BAND_M of zero AND not flagged
- * in-flight, alt_bias is low-passed toward the current reading with time
- * constant BARO_GROUND_TAU_MS, pulling the output smoothly toward 0 m.
- *
- * Call once per NEW pressure sample, not on cached data.
+ * Pressure -> altitude above the ground reference (hypsometric formula,
+ * datasheet section 3.9). Does not move the reference.
  */
 float baro_relative_alt(float pressure) {
-  uint32_t now = HAL_GetTick();
   if (!pressure_in_sensor_range(pressure)) {
     return prev_rel_alt;
   }
 
-  last_alt_pres = pressure;
-
-  if (gnd_lvl_pressure <= 0.0f || !isfinite(gnd_lvl_pressure)) {
-    baro_reset_baseline(pressure, now);
+  if (!(baro_ref.ref > 0.0f)) {
+    baro_reset_baseline(pressure);
     return 0.0f;
   }
 
-  uint32_t dt = now - last_tick;
-  last_tick = now;
-
-  float rel_alt = altitude_from_pressures(pressure, gnd_lvl_pressure) - alt_bias;
+  float rel_alt = altitude_from_pressures(pressure, baro_ref.ref);
 
   if (!isfinite(rel_alt)) {
-    baro_reset_baseline(pressure, now);
-    return 0.0f;
-  }
-
-  /* First sample after boot/resume, or a long gap: restart the still window */
-  if (!tick_valid || dt > BARO_MAX_DT_MS) {
-    tick_valid = 1;
-    dt = 0;
-    still_ms = 0;
-    checkpoint_alt = rel_alt;
-  }
-
-  /* Still-window tracking */
-  if (fabsf(rel_alt - checkpoint_alt) > BARO_STILL_BAND_M) {
-    checkpoint_alt = rel_alt;
-    still_ms = 0;
-  } else if (still_ms < (0xFFFFFFFFu - dt)) {
-    still_ms += dt;
-  }
-
-  /* Slow ground tracking: drive rel_alt toward 0 */
-  if (!in_flight && dt > 0 &&
-      still_ms >= BARO_STILL_TIME_MS &&
-      fabsf(rel_alt) <= BARO_GROUND_BAND_M)
-  {
-    float alpha = (float)dt / ((float)BARO_GROUND_TAU_MS + (float)dt);
-    float adj = alpha * rel_alt;
-
-    alt_bias       += adj;
-    rel_alt        -= adj;
-    checkpoint_alt -= adj;  /* the correction itself must not look like motion */
+    return prev_rel_alt;
   }
 
   prev_rel_alt = rel_alt;
@@ -389,54 +327,16 @@ float baro_relative_alt(float pressure) {
 }
 
 /*
- * Correct drift against an external altitude reference (GPS, rangefinder,
- * known pad-relative elevation).
- *
- * known_alt_m : true altitude relative to the same zero as baro_relative_alt
- * weight      : 0..1, fraction of the error removed per call. Use a small
- *               weight (e.g. 0.01) in a loop for a complementary filter, or
- *               1.0 for a hard re-sync.
- *
- * Uses the most recent valid pressure passed to baro_relative_alt(). Call it
- * from the same thread that calls baro_relative_alt().
+ * Live sample path: track the ground reference against weather and sensor
+ * drift while still on the pad (on_pad: before Launch), freeze it from
+ * Launch on (baro_reference.h), then convert. Call once per NEW sample.
  */
-void baro_correct_altitude(float known_alt_m, float weight) {
-  if (!isfinite(known_alt_m) || gnd_lvl_pressure <= 0.0f || !pressure_in_sensor_range(last_alt_pres)) {
-    return;
+float baro_track_alt(float pressure, bool on_pad) {
+  last_tick = HAL_GetTick();
+  if (pressure_in_sensor_range(pressure) && baro_ref.ref > 0.0f) {
+    baro_ref_update(pressure, last_tick, on_pad);
   }
-
-  if (weight < 0.0f) {
-    weight = 0.0f;
-  } else if (weight > 1.0f) {
-    weight = 1.0f;
-  }
-
-  float rel_alt = altitude_from_pressures(last_alt_pres, gnd_lvl_pressure) - alt_bias;
-
-  if (!isfinite(rel_alt)) {
-    return;
-  }
-
-  alt_bias += weight * (rel_alt - known_alt_m);
-
-  prev_rel_alt   = altitude_from_pressures(last_alt_pres, gnd_lvl_pressure) - alt_bias;
-  checkpoint_alt = prev_rel_alt;
-  still_ms       = 0;
-}
-
-/*
- * Tell the driver whether the vehicle is airborne (launch detected, until
- * landed). While set, ground tracking is disabled so the zero can never be
- * pulled during flight.
- */
-void baro_set_in_flight(uint8_t flying) {
-  uint8_t f = flying ? 1 : 0;
-
-  if (f != in_flight) {
-    in_flight = f;
-    still_ms = 0;
-    checkpoint_alt = prev_rel_alt;
-  }
+  return baro_relative_alt(pressure);
 }
 
 /*
@@ -820,8 +720,6 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
   last_fresh = 0;
   last_pres  = 0.0f;
   last_temp  = 0.0f;
-  tick_valid = 0;
-  still_ms   = 0;
 
   /* Measure a validated ground baseline if requested */
   if (valid.rezero > 0)
@@ -854,7 +752,7 @@ HAL_StatusTypeDef baro_init(SPI_HandleTypeDef *hspi, const struct baro_config *c
       return HAL_ERROR;
     }
 
-    baro_reset_baseline(p, HAL_GetTick());
+    baro_reset_baseline(p);
   }
 
   return HAL_OK;
@@ -871,6 +769,6 @@ void baro_rezero(SPI_HandleTypeDef *hspi) {
 
   if (st == HAL_OK && pressure_is_valid_baseline(p))
   {
-    baro_reset_baseline(p, HAL_GetTick());
+    baro_reset_baseline(p);
   }
 }

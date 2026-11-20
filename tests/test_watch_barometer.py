@@ -297,6 +297,11 @@ class BaroscopeTests(unittest.TestCase):
         self.assertEqual(d['altitude_m'],1.25)
         self.assertEqual(d['before_bias_altitude_m'],1.5)
         self.assertAlmostEqual(d['predicted_velocity_m_s'],.1)
+        self.assertIsNone(d['reference_shift_pa'])
+        # Current firmware: the tracked ground reference (baro_reference.h).
+        v=values(tick=3,last=1);v.pop('alt_bias');v['baro_ref']=struct.pack('<4f',100120.,100300.,100100.,0.)
+        d=scope.decode(v)
+        self.assertEqual((d['baseline_pa'],d['reference_shift_pa'],d['bias_m']),(100120.,-180.,None))
     def test_imu_offsets_units_and_fc_bench_outputs(self):
         v=values();m=bytearray(v['meas'])
         struct.pack_into('<6f',m,24,1,2,3,-4,-5,-6);v['meas']=bytes(m)

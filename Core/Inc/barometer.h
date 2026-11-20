@@ -6,6 +6,7 @@
 #define BAROMETER_H
 
 #include "main.h"
+#include "baro_reference.h"
 
 
 // ==============================
@@ -182,18 +183,8 @@ enum baro_iir_coef : uint8_t {
 #define BARO_HYPSOMETRIC_EXPONENT   0.1903f
 #define INV_HYPSOMETRIC_EXPONENT    (1.0f / BARO_HYPSOMETRIC_EXPONENT)
 
-// Tunables to prevent drift
-//
-// While the vehicle is "still" (altitude stays within BARO_STILL_BAND_M for
-// BARO_STILL_TIME_MS), within BARO_GROUND_BAND_M of 0 m, and not flagged
-// in-flight, the altitude zero is low-passed toward the current reading with
-// time constant BARO_GROUND_TAU_MS.
- 
-#define BARO_STILL_BAND_M   0.15f     // Altitude window that counts as "not moving" (m). Keep above altitude noise
-#define BARO_STILL_TIME_MS  3000u     // How long altitude must stay inside the still window before tracking (ms)
-#define BARO_GROUND_BAND_M  0.5f      // Ground tracking only applies within +/- this band around 0 m (m)
-#define BARO_GROUND_TAU_MS  20000u    // Time constant for pulling the zero toward the current reading (ms)
-#define BARO_MAX_DT_MS      1000u     // A gap between altitude updates longer than this restarts the still window
+// Ground reference tracking against weather and sensor drift on the pad:
+// see baro_reference.h.
 
 // Size of one DMA record
 #define BARO_DMA_BUF_SIZE 8
@@ -233,13 +224,12 @@ struct baro_config {
 float baro_compensate_temp(uint32_t uncomp_temp);
 float baro_compensate_pres(uint32_t uncomp_press);
 
-/* Altitude above the pad. Call once per NEW pressure sample. */
+/* Altitude above the ground reference (does not move it). */
 float baro_relative_alt(float pressure);
 float baro_get_alt(SPI_HandleTypeDef *hspi);
 
-/* Drift control */
-void baro_correct_altitude(float known_alt_m, float weight);
-void baro_set_in_flight(uint8_t flying);
+/* Live samples: track the reference on the pad, freeze it from Launch on. */
+float baro_track_alt(float pressure, bool on_pad);
 uint8_t baro_sample_was_fresh(void);
 
 /* Public synchronous getters */

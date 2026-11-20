@@ -50,6 +50,7 @@ SedsResult seds_router_log_bytes_ex(SedsRouter *router,int dtype,const uint8_t *
 }
 ''' +checked_hooks(ROOT)+'\n'+(ROOT/'Core/Inc/fc_estimator_status.h').read_text()+r'''
 volatile uint8_t g_fc_est_phase;volatile uint32_t g_fc_est_cycles,g_fc_est_start;
+uint32_t baro_bits;uint32_t baro_ref_bits(void){return baro_bits;}
 '''+source+r'''
 int main(void){
  SedsRouter router=1;
@@ -97,8 +98,9 @@ int main(void){
   g_fc_est_phase=FC_EST_RUNNING;g_fc_est_cycles=3;g_fc_est_start=(uint32_t)t|1U;
   uptime=t+5U;board_health_poll(&router);assert(calls==before+1);
   uptime=t+250U;board_health_poll(&router);
-  assert(calls==before+2&&captured[13]==((0x4BU<<24)|(2U<<20)|3U)&&captured[15]==((uint32_t)t|1U));
-  assert(captured[2]-captured[15]==(uint32_t)(t+250U)-((uint32_t)t|1U)); /* time since start from one report */
+  assert(calls==before+2&&captured[13]==((0x4BU<<24)|(2U<<20)|3U)&&captured[15]==((((uint32_t)t|1U)>>4)&0x3FFFFU));
+  /* Time since start from one report, to 16 ticks, modulo 2^22 ticks. */
+  {uint32_t since=(captured[2]-((captured[15]&0x3FFFFU)<<4))&0x3FFFFFU;assert(since>=250U&&since<250U+16U);}
   /* Repeated 1 s after the change, then every 5 s. */
   uptime=t+1249U;board_health_poll(&router);assert(calls==before+2);
   g_fc_est_cycles=0x100005U; /* the cycle field wraps at 20 bits */
@@ -114,6 +116,21 @@ int main(void){
   uptime=t+7800U;board_health_poll(&router);assert(calls==before+7&&(captured[13]>>20&0xFU)==5U);
   assert(!(captured[1]&(4U|64U))); /* words 13/15 are not the generic counters */
   g_fc_est_phase=0;g_fc_est_cycles=0;g_fc_est_start=0;}
+ /* Word 15 bits 18..31: the barometer ground reference (mode, shift in Pa). */
+ {unsigned before=calls;baro_bits=((0xFF6U)<<2)|1U; /* tracking, -10 Pa */
+  uptime+=5000;board_health_poll(&router);
+  assert(calls==before+1&&captured[15]==(baro_bits<<18)&&captured[13]==(0x4BU<<24));
+  /* Freezing at Launch is sent at once, and so is thawing for a new flight. */
+  baro_bits=(0xFF6U<<2)|3U;uptime+=300;board_health_poll(&router);
+  assert(calls==before+2&&(captured[15]>>18)==baro_bits);
+  baro_bits=(0xFF6U<<2)|2U;uptime+=300;board_health_poll(&router);assert(calls==before+3);
+  /* Tracking <-> paused on the pad waits for the cadence. */
+  baro_bits=(0xFF6U<<2)|1U;uptime+=300;board_health_poll(&router);
+  uptime+=300;board_health_poll(&router);assert(calls==before+3);
+  /* A start stamp in the filter's field keeps the reference bits. */
+  g_fc_est_start=0x12345671U;uptime+=5000;board_health_poll(&router);
+  assert(calls==before+4&&captured[15]==((baro_bits<<18)|(0x1234567U&0x3FFFFU)));
+  g_fc_est_start=0;baro_bits=0;}
 #else
  uptime=999999;board_health_poll(&router);assert(!calls);
 #endif

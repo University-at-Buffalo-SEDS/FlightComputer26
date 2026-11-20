@@ -177,7 +177,8 @@ class EstimatorStatusTests(unittest.TestCase):
     def test_board_health_carries_the_status_in_words_13_and_15(self):
         source = (BASE / 'Core/Src/board_health.c').read_text()
         self.assertIn('words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);', source)
-        self.assertIn('words[15] = g_fc_est_start;', source)
+        self.assertIn('FC_EST_WORD15(g_fc_est_start, baro_ref_bits())', source)
+        self.assertIn('words[15] = word15;', source)
         header = (BASE / 'Core/Inc/fc_estimator_status.h').read_text()
         # Wire values the ground station decodes (GroundStation26 fc_estimator.rs).
         for value, name in enumerate(['IDLE', 'INIT', 'RUNNING', 'CONVERGED', 'PAUSED', 'STOPPED', 'DIVERGED']):

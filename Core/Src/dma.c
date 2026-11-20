@@ -92,7 +92,8 @@ bool try_fetch_baro(baro *buf)
 
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
-  buf->alt = baro_relative_alt(buf->prs);
+  /* The ground reference tracks drift on the pad and freezes at Launch. */
+  buf->alt = baro_track_alt(buf->prs, current() < Launch);
 
 #ifdef SD_AVAILABLE
   const float raw_sample[] = {(float)pres, (float)temp};
@@ -135,6 +136,7 @@ bool try_fetch_gyro(f_xyz *buf)
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
   buf->z = gz * inv_sens[init_rng];
+  baro_ref_gyro(buf->x, buf->y, buf->z, now_ms());
 
 #ifdef SD_AVAILABLE
   const float raw_sample[] = {(float)gx, (float)gy, (float)gz};
@@ -170,6 +172,7 @@ bool try_fetch_accl(f_xyz *buf)
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
   buf->z = az * lsb_to_g;
+  baro_ref_accel(buf->x, buf->y, buf->z, now_ms());
 
 #ifdef SD_AVAILABLE
   const float raw_sample[] = {(float)ax, (float)ay, (float)az};

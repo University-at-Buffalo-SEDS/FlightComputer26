@@ -120,7 +120,7 @@ class Firmware:
                 merged.append((address,data))
         self.flash = merged
         self.required = {'meas':48, 'uwTick':4, 'last_tick':4}
-        self.optional = {'gnd_lvl_pressure':4,'alt_bias':4,'prev_rel_alt':4,'imedsv':36,'g_fc_monitor':48}
+        self.optional = {'gnd_lvl_pressure':4,'alt_bias':4,'baro_ref':16,'prev_rel_alt':4,'imedsv':36,'g_fc_monitor':48}
         self.resolved = {}
         for name, size in (self.required | self.optional).items():
             matches = self.symbols.get(name, []) or [v for n, vals in self.symbols.items()
@@ -336,7 +336,7 @@ def decode(values):
     tick, last = u('uwTick'), u('last_tick')
     age = (tick-last) & 0xffffffff
     data = {'pressure_pa':f('meas',16),'temperature_c':f('meas',20),'altitude_m':f('meas',12),
-            'baseline_pa':f('gnd_lvl_pressure'),'bias_m':f('alt_bias'),
+            'baseline_pa':f('gnd_lvl_pressure') if 'gnd_lvl_pressure' in values else f('baro_ref'),'bias_m':f('alt_bias'),
             'driver_altitude_m':f('prev_rel_alt'),'predicted_altitude_m':f('imedsv',12),
             'predicted_velocity_m_s':f('imedsv',16),'uptime_ms':tick,'sample_tick_ms':last,
             'barometer_age_ms':age if age < 0x80000000 else None}
@@ -352,6 +352,9 @@ def decode(values):
                 data[name]=f('g_fc_monitor',24+offset*4)
     if data['pressure_pa'] is None or not 0 < data['pressure_pa'] <= 150000 or data['temperature_c'] is None:
         raise RuntimeError('Barometer not initialized or invalid; sample discarded')
+    # Ground reference (baro_reference.h: ref, boot, zero, frozen): its shift since boot.
+    ref, boot = f('baro_ref'), f('baro_ref', 4)
+    data['reference_shift_pa'] = ref - boot if ref is not None and boot is not None and boot > 0 else None
     if data['driver_altitude_m'] is not None and data['bias_m'] is not None:
         data['before_bias_altitude_m'] = data['driver_altitude_m']+data['bias_m']
     else:
@@ -361,7 +364,8 @@ def decode(values):
 FIELDS = [('pressure_pa','Pressure','Pa'),('temperature_c','Temperature','°C'),
           ('altitude_m','Measured altitude','m'),('before_bias_altitude_m','Before bias (derived)','m'),
           ('bias_m','Altitude bias','m'),('predicted_altitude_m','Kalman prediction altitude','m'),
-          ('predicted_velocity_m_s','Kalman prediction vertical velocity','m/s'),('baseline_pa','Pad pressure','Pa')]
+          ('predicted_velocity_m_s','Kalman prediction vertical velocity','m/s'),('baseline_pa','Pad pressure','Pa'),
+          ('reference_shift_pa','Pad pressure shift since boot (drift tracking)','Pa')]
 FIELDS += [(f'accel_{axis}',f'Accelerometer {axis.upper()}','driver units') for axis in 'xyz']
 FIELDS += [(f'gyro_{axis}_dps',f'Gyroscope {axis.upper()}','°/s') for axis in 'xyz']
 FIELDS += [('fc_kalman_altitude_m','FC bench Kalman altitude','m'),('fc_kalman_velocity_m_s','FC bench Kalman vertical velocity','m/s')]

@@ -66,6 +66,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     ${CMAKE_SOURCE_DIR}/Core/Src/main.c
     ${CMAKE_SOURCE_DIR}/Core/Src/barometer.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/baro_reference.c
     ${CMAKE_SOURCE_DIR}/Core/Src/gyroscope.c
     ${CMAKE_SOURCE_DIR}/Core/Src/accelerometer.c
     ${CMAKE_SOURCE_DIR}/Core/Src/dma.c

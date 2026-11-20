@@ -29,18 +29,23 @@ void board_health_poll(SedsRouter *router)
 #ifdef TELEMETRY_ENABLED
   static uint32_t last_report_ms, last_sent_ms;
   static uint32_t failures;
-  static uint8_t sent_phase;
+  static uint8_t sent_phase, sent_frozen;
   if (!router) return;
   const uint64_t uptime = board_uptime_ticks();
   const uint32_t now = (uint32_t)uptime;
   /* An estimator phase change (Launch starting the Kalman filter) is
    * reported at once, at most every 250 ms, and repeated 1 s later. */
   const uint8_t phase = g_fc_est_phase;
-  const bool changed = phase != sent_phase && (uint32_t)(now - last_sent_ms) >= 250U;
+  /* So is the barometer ground reference freezing at Launch. */
+  const uint32_t word15 = FC_EST_WORD15(g_fc_est_start, baro_ref_bits());
+  const uint8_t frozen = FC_EST_BARO_FROZEN(word15);
+  const bool changed = (phase != sent_phase || frozen != sent_frozen) &&
+                       (uint32_t)(now - last_sent_ms) >= 250U;
   if (!changed && (uint32_t)(now - last_report_ms) < 5000U) return;
   last_report_ms = changed ? now - 4000U : now;
   last_sent_ms = now;
   sent_phase = phase;
+  sent_frozen = frozen;
   board_temperature_poll();
 
   uint32_t words[24] = {1U, 2U, (uint32_t)uptime, (uint32_t)(uptime >> 32U), BOARD_UPTIME_FREQUENCY_HZ};
@@ -65,7 +70,7 @@ void board_health_poll(SedsRouter *router)
               (g_av_bay_underglow_network_seen != 0U ? 4U : 0U) |
               (g_flight_buzzer_network_seen != 0U ? 8U : 0U);
   words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);
-  words[15] = g_fc_est_start;
+  words[15] = word15;
 #ifdef SD_AVAILABLE
   words[1] |= 16U;
   words[16] = g_sd_enqueued_records; words[17] = g_sd_written_records;
