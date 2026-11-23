@@ -771,7 +771,9 @@ void sd_file_service_turn(void)
     if (!allowed || !sd_file_stream_session_active()) { dl_hash.active = false; return; }
     sd_file_request_t rq;
     uint32_t ticket;
-    if (!dl_hash.active && sd_file_stream_claim(&rq, &ticket)) { dl_request(&rq, ticket); dl_last_ms = now; }
+    /* One bounded step per turn: a request (its first hash step included), */
+    if (!dl_hash.active && sd_file_stream_claim(&rq, &ticket)) { dl_request(&rq, ticket); dl_last_ms = now; return; }
+    /* or 8 hash sectors, or one DATA message. */
     if (dl_hash.active) { dl_hash_step(); dl_last_ms = now; return; }
     if (sd_file_stream_transfer_active() && dl_open && sd_file_stream_produce(dl_read, NULL, now)) dl_last_ms = now;
 }
