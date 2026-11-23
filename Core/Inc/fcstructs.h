@@ -246,8 +246,9 @@ typedef enum flight_message : fu32 {
   Reinit_Barometer = Actionable_Decrees + 6,
   Reinit_IMU       = Actionable_Decrees + 7,
   Disable_IMU      = Actionable_Decrees + 8,
-  Evaluation_Relax = Actionable_Decrees + 9,
-  Evaluation_Focus = Actionable_Decrees + 10,
+  /* Retired (EvaluationRelax/Focus): never reuse these values. */
+  Retired_Evaluation_Relax = Actionable_Decrees + 9,
+  Retired_Evaluation_Focus = Actionable_Decrees + 10,
   Evaluation_Abort = Actionable_Decrees + 11,
   Advance_State    = Actionable_Decrees + 12,
   Rewind_State     = Actionable_Decrees + 13,
@@ -282,7 +283,7 @@ typedef enum flight_message : fu32 {
   /* User */
   Vigilant_Mode       = Runtime_Configuration | 1u,
   Eval_Successive     = Runtime_Configuration | (1u << 1),
-  Eval_Focused        = Runtime_Configuration | (1u << 2),
+  Retired_Eval_Focused = Runtime_Configuration | (1u << 2), /* never reuse */
   Eval_Abort_Flag     = Runtime_Configuration | (1u << 3),
   Reset_Failures      = Runtime_Configuration | (1u << 4),
   Measm_Reports       = Runtime_Configuration | (1u << 5),
@@ -358,8 +359,8 @@ typedef enum remote_cmd_compat : uint8_t
 
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,
-  Compat_Evaluation_Relax,
-  Compat_Evaluation_Focus,
+  Compat_Retired_Evaluation_Relax, /* 14: refused, never reuse */
+  Compat_Retired_Evaluation_Focus, /* 15: refused, never reuse */
   Compat_Evaluation_Abort,
   Compat_Reinit_Sensors,
   Compat_Reinit_Barometer,

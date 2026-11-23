@@ -66,8 +66,8 @@ static const fc_msg extmap[Compat_Messages] = {
 
     Deploy_Parachute,
     Expand_Parachute,
-    Evaluation_Relax,
-    Evaluation_Focus,
+    Invalid_Message, /* retired: EvaluationRelax */
+    Invalid_Message, /* retired: EvaluationFocus */
     Evaluation_Abort,
     Reinit_Sensors,
     Reinit_Barometer,
@@ -753,11 +753,6 @@ static inline void for_ascent_update(fu32 conf)
   maybe_log_measm(Baro, &meas.baro);
 
   sweetbench_catch(8);
-
-  if (conf & option(Eval_Focused))
-  {
-    tx_thread_relinquish();
-  }
 }
 
 static inline void for_ascent_predict(fu32 conf, fu8 *imu)
@@ -811,11 +806,6 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
   *imu &= ~(Gyro_Mask | Accl_Mask);
 
   maybe_log_measm(IMU, &meas.accl);
-
-  if (conf & option(Eval_Focused))
-  {
-    tx_thread_relinquish();
-  }
 }
 
 

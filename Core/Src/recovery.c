@@ -104,7 +104,6 @@ static struct accl_config accl_conf = {
 static const conf_dict confmap[] = {
   { Vigilant_Mode,    "vigilant" },
   { Eval_Successive,  "successive" },
-  { Eval_Focused,     "focused" },
   { Reset_Failures,   "fail-reset" },
   { Measm_Reports,    "measm-reports" },
   { Velocity_Checks,  "velocity-checks"}
@@ -335,29 +334,6 @@ static inline void barometer_fallback_vigilant(void)
 
 /* Intrusive control */
 
-static inline void evaluation_configure(bool focus)
-{
-  if (fc_recovery_eval_pause_requested()) return;
-
-  if (g_conf & option(Eval_Abort_Flag))
-  {
-    g_conf &= ~option(Eval_Abort_Flag);
-    tx_thread_resume(&evaluation_task);
-    message(id "restored evaluation", false);
-  }
-
-  /* Relaxed no longer exposes the evaluator: the estimator guard is not a
-   * mode. */
-  if (focus)
-  {
-    g_conf |= option(Eval_Focused);
-  }
-  else
-  {
-    g_conf &= ~option(Eval_Focused);
-  }
-}
-
 static inline void manual_deployment(bool apogee, bool force, bool manual)
 {
   if (manual ? fc_recovery_inhibits_manual_pyro()
@@ -541,12 +517,6 @@ static inline void process_action(fc_msg cmd, bool internal)
     case Disable_IMU:
       return sensor_init_supervised(Shut_Gyro | Shut_Accl);
 
-    case Evaluation_Relax:  
-      return evaluation_configure(false);
-
-    case Evaluation_Focus:
-      return evaluation_configure(true);
-
     case Evaluation_Abort:
       fc_recovery_request_eval_stop();
       break;
@@ -627,7 +597,8 @@ static inline constexpr fc_msg user_options()
     options |= k;
   }
 
-  return options;
+  /* Retired option bit: never settable again. */
+  return options & ~option(Retired_Eval_Focused);
 }
 
 static inline void update_global_config(fc_msg incoming)
@@ -754,6 +725,10 @@ static inline void process_gps_code(fc_msg code)
 bool fc_recovery_command_admissible(uint32_t command, bool internal)
 {
   const fc_msg cmd = (fc_msg)command;
+  /* Retired: EvaluationRelax/Focus switched the evaluator's preemption, which
+   * the estimator guard replaced. An old station's copy is refused (and
+   * acknowledged, so it is not retransmitted). */
+  if (cmd == Retired_Evaluation_Relax || cmd == Retired_Evaluation_Focus) return false;
   /* The operator's emergency Deploy/Expand passes every sequence hold. */
   if (!internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute))
     return !fc_recovery_inhibits_manual_pyro();
@@ -767,7 +742,6 @@ bool fc_recovery_command_admissible(uint32_t command, bool internal)
   switch (cmd) {
     case Launch_Signal: return !internal;
     case Deploy_Parachute: case Expand_Parachute:
-    case Evaluation_Focus: case Evaluation_Relax:
     case Advance_State: case Rewind_State: return false;
     default: return true;
   }

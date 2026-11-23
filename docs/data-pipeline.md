@@ -907,7 +907,9 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    into them (`arm_mat_mult_f32` does no size check) and corrupt the descent
    filter that times the main. This used to rest on the evaluation thread's
    threshold 0 (with `TX_DISABLE_PREEMPTION_THRESHOLD` it held off every
-   thread), which the GS `EvaluationRelax` command could switch off. Now the
+   thread), which the GS `EvaluationRelax` command could switch off; that
+   command and `EvaluationFocus` are retired (ids 14/15 refused, never
+   reused). Now the
    evaluation thread holds the estimator guard (`thread_comm.c`) for each pass
    and recovery holds it for each command and control step, so the two never
    interleave in any mode; the evaluator releases it for its confirm sleeps

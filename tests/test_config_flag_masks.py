@@ -38,7 +38,7 @@ def strip_comments(text):
 class ConfigFlagMasks(unittest.TestCase):
     def test_flags_are_tagged_and_the_tag_is_not_an_option_bit(self):
         flags = config_flags()
-        self.assertIn('Eval_Focused', flags)
+        self.assertIn('Retired_Eval_Focused', flags)
         self.assertIn('Vigilant_Mode', flags)
         self.assertIn('Using_Ascent_KF', flags)
         self.assertTrue(all(bit < 28 for bit in flags.values()), flags)
@@ -53,10 +53,9 @@ class ConfigFlagMasks(unittest.TestCase):
                     offenders.append(f'{path.relative_to(ROOT)}:{lineno}: {line.strip()}')
         self.assertEqual(offenders, [], 'test g_conf flags as conf & option(Flag)')
 
-    def test_focused_relinquish_uses_option(self):
+    def test_no_raw_focused_test_left(self):
         dist = (ROOT / 'Core/Src/distribution.c').read_text()
-        self.assertNotIn('conf & Eval_Focused', dist)
-        self.assertEqual(dist.count('conf & option(Eval_Focused)'), 2)
+        self.assertNotIn('Eval_Focused', dist)
 
     def test_operator_options_never_store_the_tag(self):
         recovery = (ROOT / 'Core/Src/recovery.c').read_text()

@@ -167,7 +167,6 @@
 #define REEF_ASSERT_INTERVAL 500
 
 #define USER_OPTIONS ( (fc_msg) (0                   	\
-                      | option(Eval_Focused)            \
                       | option(Reset_Failures)          \
                       | option(Measm_Reports)    		\
                       | option(Velocity_Checks)         \

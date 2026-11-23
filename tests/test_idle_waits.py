@@ -44,9 +44,7 @@ class IdleWaits(unittest.TestCase):
                 start = distribution.index(function)
                 body = distribution[start:distribution.index('\n}\n', start)]
                 self.assertIn('dma_wait_for_samples(', body)
-                # Only the deliberate Eval_Focused hand-off may still yield.
-                self.assertEqual(body.count('tx_thread_relinquish'),
-                                 body.count('Eval_Focused'))
+                self.assertNotIn('tx_thread_relinquish', body)
         predict = distribution[distribution.index('static inline void for_ascent_predict'):]
         predict = predict[:predict.index('\n}\n')]
         self.assertIn('dma_wait_for_samples(DMA_SENSOR_MASKS);', predict)

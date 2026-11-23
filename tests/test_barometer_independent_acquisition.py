@@ -22,7 +22,7 @@ typedef unsigned char fu8;
 typedef struct { float x,y,z; } f_xyz;
 typedef struct { float pressure, temperature, altitude; } baro;
 enum { Baro=0, IMU=1, Gyro_Mask=1, Accl_Mask=2, Baro_Mask=4,
-       TX_OR=0, Eval_Focused=8 };
+       TX_OR=0 };
 static struct { baro baro; f_xyz accl,gyro; } meas;
 static int meas_locks[2], eval_stage;
 static unsigned published, staged;
