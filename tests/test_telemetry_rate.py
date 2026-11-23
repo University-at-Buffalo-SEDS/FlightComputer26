@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = pathlib.Path(os.environ.get("FC_RATE_TEST_ROOT", pathlib.Path(__file__).resolve().parents[1]))
-STREAMS = ["GPS_DATA", "GYRO_DATA", "ACCEL_DATA", "BATTERY_VOLTAGE", "BATTERY_CURRENT", "BAROMETER_DATA", "FUEL_FLOW", "FUEL_TANK_PRESSURE", "KG1000", "KG50", "GPS_SATELLITE_NUMBER", "EULER_ANGLES", "IMU_DATA"]
+STREAMS = ["GPS_DATA", "GYRO_DATA", "ACCEL_DATA", "BATTERY_VOLTAGE", "BATTERY_CURRENT", "BAROMETER_DATA", "FUEL_FLOW", "OX_TANK_PRESSURE", "KG1000", "KG50", "GPS_SATELLITE_NUMBER", "EULER_ANGLES", "IMU_DATA"]
 
 
 class TelemetryRateTests(unittest.TestCase):
