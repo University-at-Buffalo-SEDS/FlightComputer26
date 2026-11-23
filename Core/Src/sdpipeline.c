@@ -63,6 +63,16 @@ static void sd_mark_launch_cutoff(void)
         sd_cutoff_set = true;
     }
 }
+
+/* Logging continues through Recovery until power-off, bounded: an hour after
+ * Landed (once the launch file has closed) the writer stops, flushes and, with
+ * FC_SD_SERVICE, keeps serving reads. Roughly 10-20 MB of descent-rate rows. */
+#define SD_RECOVERY_LOG_MS (60U * 60U * 1000U)
+static bool sd_recovery_log_expired(void)
+{
+    return sd_landed_seen && !sd_launch_active && !sd_launch_pending && !sd_cutoff_set &&
+           (uint32_t)(now_ms() - sd_landed_tick) >= SD_RECOVERY_LOG_MS;
+}
 static bool sd_writer_slot;
 static bool sd_retry_pending;
 static volatile bool sd_accepting;
@@ -741,6 +751,7 @@ void sd_pipeline_task()
         fc_lock(&line.lock);
         sd_mark_launch_cutoff();
         fc_unlock(&line.lock);
+        if (sd_recovery_log_expired()) { sd_conclude(); break; }
         g_fc_sd_state &= (uint8_t)~FC_SD_RETRY_PENDING; /* mounted and open */
         if (flight_sd_prepare_io() != FX_SUCCESS) {
             tx_thread_sleep((TX_TIMER_TICKS_PER_SECOND + 19U) / 20U);

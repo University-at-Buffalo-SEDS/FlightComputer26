@@ -65,6 +65,13 @@ rearming creates another unique launch file; a stale launch event while Landed
 cannot restart the launch recording. Boot/recovery while already Landed starts
 a bounded grace window using that boot's monotonic clock and a new unique file.
 
+Ordinary logging continues through Recovery (the flight state machine no
+longer stops the writer). One hour after Landed (`SD_RECOVERY_LOG_MS`), once the
+launch file has closed, the writer stops itself: it drains, flushes, closes
+the file and flushes the volume again. With the SD read service the volume then
+stays mounted for reads. Before that, reads are served between writer passes
+in the same thread.
+
 Both 32/16 KiB buffer configurations remain bounded. Initialized buffers accept
 records while an existing card opens. Full buffers and lock contention reject
 records immediately, leaving acquisition/control running. Partial FileX writes

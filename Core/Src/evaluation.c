@@ -255,6 +255,8 @@ static inline void detect_reefing(fu32 mode)
   }
 }
 
+static uint32_t landed_ms;
+
 static inline void detect_landed(fu32 mode)
 {
   float dh_1 = svec(0).alt - svec(1).alt;
@@ -277,20 +279,18 @@ static inline void detect_landed(fu32 mode)
   if (sm.confidence >= MIN_SAMP_LANDED)
   {
     flight_advance(Landed);
-    tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
+    landed_ms = now_ms();
   }
 }
 
+/* Descent runs in the distribution thread, which also consumes the sensors
+ * and feeds the SD log: wait out the announce delay without sleeping it. The
+ * SD writer keeps logging through Landed and Recovery (sdpipeline.c). */
 static inline void announce_recovery(fu32 mode)
 {
+  if ((uint32_t)(now_ms() - landed_ms) < RECOVERY_ANNOUNCE_DELAY) return;
   flight_advance(Recovery);
   message(id "recovery announced", true);
-
-#ifdef SD_AVAILABLE
-  sd_conclude();
-#endif
-
-  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY);
 }
 
 static inline void report_lowpass_gps(fu32 mode)

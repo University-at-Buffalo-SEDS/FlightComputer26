@@ -85,6 +85,14 @@ int main(void){
  sd_launch_completed=false;sd_launch_active=true;sd_file_open=1;line.cur=sd_writer_slot;
  sd_mark_launch_cutoff();assert(sd_cutoff_set&&sd_cutoff_offset==0);
  assert(sd_try_write_line());assert(g_sd_launch_closed==2&&!sd_launch_active);
+ /* Recovery logging ends one hour after Landed, never while a launch file is owed. */
+ sd_landed_seen=true;sd_landed_tick=UINT32_MAX-5;sd_cutoff_set=false;sd_launch_pending=false;
+ tick=sd_landed_tick+3599999;assert(!sd_recovery_log_expired());
+ tick=sd_landed_tick+3600000;assert(sd_recovery_log_expired());
+ sd_launch_active=true;assert(!sd_recovery_log_expired());sd_launch_active=false;
+ sd_launch_pending=true;assert(!sd_recovery_log_expired());sd_launch_pending=false;
+ sd_cutoff_set=true;assert(!sd_recovery_log_expired());sd_cutoff_set=false;
+ sd_landed_seen=false;assert(!sd_recovery_log_expired());
 }
 '''
   with tempfile.TemporaryDirectory() as tmp:
@@ -92,7 +100,9 @@ int main(void){
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(ROOT/'Core/Inc'),'-x','c','-','-o',str(exe)],input=code,text=True,check=True)
    subprocess.run([str(exe)],check=True)
    for old,new in [('>= 20000U','>= 19999U'),('>= 20000U','>= 20001U'),
-                   ('if (!sd_landed_seen) {','if (true) {')]:
+                   ('if (!sd_landed_seen) {','if (true) {'),
+                   ('(60U * 60U * 1000U)','(60U * 60U * 1000U - 1U)'),
+                   ('!sd_launch_active && !sd_launch_pending','!sd_launch_pending')]:
     mutant=code.replace(old,new);self.assertNotEqual(mutant,code)
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-I',str(ROOT/'Core/Inc'),'-x','c','-','-o',str(exe)],input=mutant,text=True,check=True)
     failed=subprocess.run([str(exe)],capture_output=True,text=True)

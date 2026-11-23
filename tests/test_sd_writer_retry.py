@@ -137,6 +137,9 @@ struct {unsigned full,off[2],cur,lock;bool free;} line;
 void fc_lock(unsigned *p){assert(!*p);*p=1;}
 void fc_unlock(unsigned *p){assert(*p);*p=0;}
 void sd_mark_launch_cutoff(void){}
+bool expired;unsigned conclude_calls;
+bool sd_recovery_log_expired(void){return expired;}
+void sd_conclude(void){++conclude_calls;}
 bool sd_cutoff_set;
 bool stopped,sd_launch_pending;
 unsigned sema_calls,write_calls,sleep_calls,shutdown_calls,clock_refreshes;
@@ -163,6 +166,12 @@ int main(void){sd_pipeline_task();assert(sema_calls==0&&write_calls==2&&sleep_ca
   with tempfile.TemporaryDirectory() as d:
    binary=pathlib.Path(d)/'pending'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-x','c','-','-o',str(binary)],input=harness,text=True,check=True)
+   subprocess.run([str(binary)],check=True)
+   # One hour after Landed the writer stops itself: clean shutdown, no write.
+   expired=harness.replace('int main(void){sd_pipeline_task();assert(sema_calls==0&&write_calls==2&&sleep_calls==1&&shutdown_calls==1&&clock_refreshes==1);}',
+     'int main(void){expired=true;sd_pipeline_task();assert(conclude_calls==1&&write_calls==0&&sema_calls==0&&shutdown_calls==1);}')
+   self.assertNotEqual(expired,harness)
+   subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-x','c','-','-o',str(binary)],input=expired,text=True,check=True)
    subprocess.run([str(binary)],check=True)
  def test_startup_retries_create_and_partial_header_without_recreating_semaphore(self):
   source=(ROOT/'Core/Src/sdpipeline.c').read_text()
