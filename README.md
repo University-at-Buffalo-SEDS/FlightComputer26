@@ -71,7 +71,9 @@ erase or reformat flight logs.
 
 The logger uses the same [CSV columns as DAQ](docs/sd-record-format.md),
 including independent boot uptime ticks, nominal clock frequency and record
-sequence. Failed/partial writes retain their buffers; shutdown drains the final
+sequence. Each file and part begins with a SEDS-SD format block
+(`format=fc,version=2`, schema hash and per-label units; see
+[docs/data-pipeline.md](docs/data-pipeline.md) 7.4). Failed/partial writes retain their buffers; shutdown drains the final
 short buffer. Large files rotate before 3 GiB without resetting uptime or the
 sequence. Storage and rejection counters distinguish buffered records from
 successful media flushes.

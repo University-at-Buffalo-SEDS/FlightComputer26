@@ -210,7 +210,7 @@ uint16_t sd_cutoff_offset,sd_writer_skip;
 #define sd_launch_landed(x) ((void)0)
 int sdio_disk,create_fail,header_fail;
 unsigned sema_creates,sema_deletes,creates,opens,writes,sleeps,shutdowns;
-char disk[512];unsigned position;
+char disk[1024];unsigned position;
 static inline int sd_pipeline_open(const char *why);
 const char *unique_sd_filename(uint32_t suffix){(void)suffix;return "test.csv";}
 UINT tx_semaphore_create(unsigned *s,const char *name,unsigned value){assert(!*s);*s=1;++sema_creates;return 0;}
@@ -232,7 +232,7 @@ int main(void){
  assert(line.off[0]==11&&sd_buffer_records[0]==1);
  assert(sd_accepting&&sd_file_open==1&&sema_creates==1&&sema_deletes==0);
  assert(creates==3&&opens==1&&writes==2&&sleeps==3&&g_sd_write_errors==3);
- assert(position==strlen(SD_CSV_HEADER)&&!memcmp(disk,SD_CSV_HEADER,position));
+ assert(position==strlen(SD_FILE_HEADER)&&!memcmp(disk,SD_FILE_HEADER,position));
  tx_semaphore_delete(&line.full);sd_file_open=0;sd_accepting=false;sd_prepared=false;
  create_fail=99;stop_on_sleep=true;
  unsigned oldcreates=creates,oldsleeps=sleeps;

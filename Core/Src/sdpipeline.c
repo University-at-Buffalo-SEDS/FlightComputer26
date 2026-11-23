@@ -554,7 +554,8 @@ static inline int sd_pipeline_open(const char *surprise)
     }
     if (sd_file_open == 2U)
     {
-        static const char header[] = SD_CSV_HEADER;
+        static const char header[] = SD_FILE_HEADER;
+        static_assert(BOARD_UPTIME_FREQUENCY_HZ == 1000U, "SD_FORMAT_BLOCK tick_hz");
         st = fx_file_seek(&file, 0U);
         if (st == FX_SUCCESS && !flight_sd_io_verified()) return IT_IS_NOW_OVER;
         if (st == FX_SUCCESS) st = fx_file_write(&file, (void *)header, sizeof(header) - 1U);

@@ -114,6 +114,19 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
+# SD format block firmware= field (informational only, never used for
+# acceptance). Only sdpipeline.c sees it, so a new commit rebuilds one file.
+execute_process(COMMAND git rev-parse --short=12 HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE FC_FIRMWARE_REV OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET RESULT_VARIABLE FC_FIRMWARE_REV_RESULT)
+if(NOT FC_FIRMWARE_REV_RESULT EQUAL 0 OR NOT FC_FIRMWARE_REV MATCHES "^[0-9a-f]+$")
+    set(FC_FIRMWARE_REV "unknown")
+endif()
+set_property(SOURCE ${CMAKE_SOURCE_DIR}/Core/Src/sdpipeline.c APPEND PROPERTY
+    COMPILE_DEFINITIONS FC_FIRMWARE_REV="${FC_FIRMWARE_REV}")
+message(STATUS "SD firmware revision:   ${FC_FIRMWARE_REV}")
+
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 

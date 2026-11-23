@@ -485,11 +485,51 @@ Other rules:
 
 ### 7.4 Record format
 
-One CSV header per file (`SD_CSV_HEADER`, `sd_record_format.h`), CRLF line ends:
+Every file and every 3 GiB part starts with the CSV header line followed by
+the SEDS-SD format block (`SD_FILE_HEADER` = `SD_CSV_HEADER` +
+`SD_FORMAT_BLOCK`, `sd_record_format.h`), CRLF line ends:
 
 ```
 timestamp_ms,monotonic_ms,sensor,value,raw_adc_code,raw_value,calibrated_value,time_source,adc_temperature_c,adc_temperature_code,uptime_ticks,uptime_frequency_hz,record_sequence
+# seds-sd,format=fc,version=2,board=FC,firmware=07cbca7e6746,tick_hz=1000,schema=e59ae8a7
+# seds-sd-columns,u64:ms,u64:ms,label,vec,vec,vec,vec,clock,f32:degC,i32:code,u64:tick,u32:Hz,u64:seq
+# seds-sd-records,accelerometer_sample:v=m/s2*3:a=i16*3:r=i16*3:c=m/s2*3,gyroscope_sample:v=deg/s*3:a=i16*3:r=i16*3:c=deg/s*3,barometer_sample:v=Pa;degC;m:a=u24*2;nan:r=u24*2;nan:c=Pa;degC;m
+# seds-sd-records,IMU:v=m/s2*3;deg/s*3,BARO:v=m;Pa;degC,EKF:v=1*4;m;m/s,DKF:v=deg*2;m;m/s,EULER:v=deg*3,QUAT:v=1*6,SIM:v=1;s;1*6,ACCL:v=m/s2*3,GYRO:v=deg/s*3
+# seds-sd-records,Message:v=text,Ordered:v=text,Error:v=text,Echo:v=text,launch_*:v=text,pyro_*:v=text
 ```
+
+Format block (grammar shared with the DAQ and the GroundStation):
+
+- Line 2 identifies the layout: `format=fc`, `version`, `board=FC`,
+  `firmware` (short git revision from CMake `git rev-parse --short=12 HEAD`,
+  `unknown` outside a git checkout; informational only, never used for
+  acceptance), `tick_hz` (default `uptime_frequency_hz`) and `schema`.
+- Line 3 gives each CSV column's type and unit, in column order. `vec` is a
+  quoted space-separated vector described by the record entry, `clock` is
+  `network|local`.
+- `# seds-sd-records` entries are `<label>(:<col>=<units>)+[@<tick_hz>]`.
+  Columns: `v` value, `a` raw_adc_code, `r` raw_value, `c` calibrated_value.
+  Units are `;`-separated, `<u>*<n>` repeats, `text` is a quoted text value,
+  raw descriptors may be types (`i16`, `u24`, `nan`). A label ending in `*` is
+  a prefix pattern (`launch_*` covers `launch_accepted` and `launch_detected`;
+  `pyro_*` covers every pyro event of 6.8). `SIM` units are kind-dependent
+  (kind, t s, six values); `QUAT` is q0..q3 then two zeros. `ACCL`, `GYRO`,
+  `Error` and `Echo` are labels the writer can map but no caller produces
+  today.
+- `schema` is the first 8 hex digits of SHA-256 over the exact bytes of line 3
+  and every records line (each with its CRLF), in file order. Lines 1-2 are
+  excluded, so the firmware revision never changes it.
+
+**Version rule.** Any change to line 3, to a record entry (adding, removing or
+changing a label, its columns, units or tick rate) or to the row layout must
+bump `SD_FORMAT_VERSION` and register the new version in the GroundStation26
+SD parser. `tests/test_sd_format_block.py` enforces it: it recomputes the hash
+from the compiled header text, checks it against the `schema=` constant and
+against a frozen `{version: hash}` table (`{2: 'e59ae8a7'}`), checks the
+grammar and scans the writer for label literals that are not declared. Files
+without the block (firmware before this change) are legacy **fc v1**; the GS
+reads them with the existing pin rules. Readers must skip every line whose
+first character is `#`.
 
 | Field | Content |
 | --- | --- |

@@ -50,4 +50,10 @@ I/O errors are counted rather than silently treated as written.
 
 DAQ and FC start a new large file part before 3 GiB, below FAT32's 4 GiB
 single-file limit. Uptime and sequence numbers continue across parts. Each
-part has a fresh CSV header; ordinary flushes keep the existing file open.
+part has a fresh CSV header and format block; ordinary flushes keep the existing file open.
+
+The FC writes a SEDS-SD format block (`# seds-sd`, `# seds-sd-columns`,
+`# seds-sd-records` lines) right after the CSV header of every file and part:
+`format=fc,version=2`. Files without it are legacy FC v1. The block, its
+schema hash and the version rule are described in
+[data-pipeline.md section 7.4](data-pipeline.md#74-record-format).
