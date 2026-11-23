@@ -1,9 +1,12 @@
-"""FC SD block-read service (P2P port 4511): wire, gating, session and FileX side.
+"""FC SD transfer service v2 (P2P port 4511): wire, gating, session and FileX side.
 
 Runs the production sources on the host: Core/Inc/sd_file_wire.h directly,
 Core/Src/sd_file_stream.c with SDK/RTOS stubs, and the FC_SD_SERVICE block of
-Core/Src/sdpipeline.c against a small FileX model."""
+Core/Src/sdpipeline.c against a small FileX model. The streaming engine itself
+(sd_xfer.c) is covered by tests/test_sd_xfer.py."""
+import hashlib
 import pathlib
+import sys
 import re
 import subprocess
 import tempfile
@@ -11,14 +14,19 @@ import unittest
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from native_sdk import configured_dependency_source  # noqa: E402
+ENGINE = [str(ROOT / 'Core/Src/sd_xfer.c'), str(ROOT / 'Core/Src/sd_xfer_codec.c')]
 CFLAGS = ['cc', '-std=gnu11', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
           '-Wno-unused-parameter', '-fsanitize=address,undefined', '-I', str(ROOT / 'Core/Inc')]
 
 
-def run_c(code):
+def run_c(code, extra=()):
+    if extra:
+        code = '#include <stddef.h>\n#include <stdint.h>\n' + crc_source() + code
     with tempfile.TemporaryDirectory() as tmp:
         exe = pathlib.Path(tmp) / 'check'
-        subprocess.run(CFLAGS + ['-x', 'c', '-', '-o', str(exe)], input=code, text=True, check=True)
+        subprocess.run(CFLAGS + ['-x', 'c', '-', '-x', 'none', *extra, '-o', str(exe)], input=code, text=True, check=True)
         return subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout
 
 
@@ -50,11 +58,17 @@ class WireTests(unittest.TestCase):
 #include <assert.h>
 #include <stdio.h>
 static uint8_t parse(const uint8_t *p, size_t n) { sd_file_request_t r; return sd_file_parse_request(p, n, &r); }
-static uint8_t read_req(uint32_t off, uint8_t dir, const char *name, int len_adjust)
+static size_t open_req(uint8_t *p, uint8_t xfer, uint8_t dir, const char *name)
 {
-    uint8_t p[200]; size_t n = strlen(name);
-    p[0] = 0x22; sd_file_put_u32(p + 1, off); p[5] = dir; p[6] = (uint8_t)n; memcpy(p + 7, name, n);
-    return parse(p, 7 + n + len_adjust);
+    size_t n = strlen(name);
+    const uint8_t fixed[19] = {0x25, xfer, dir, 1, 0x10, 0, 0, 0, 0, 0, 0, 0, 96, 0, 0xcc, 1, 8, 16, (uint8_t)n};
+    memcpy(p, fixed, 19); memcpy(p + 19, name, n); return 19 + n;
+}
+static uint8_t hash_req(uint8_t dir, const char *name, int len_adjust)
+{
+    uint8_t p[100]; size_t n = strlen(name);
+    p[0] = 0x27; p[1] = dir; p[2] = (uint8_t)n; memcpy(p + 3, name, n);
+    return parse(p, 3 + n + len_adjust);
 }
 int main(void)
 {
@@ -64,31 +78,36 @@ int main(void)
     sd_file_request_t r;
     assert(sd_file_parse_request(list, 4, &r) == 0 && r.op == 0x21 && r.index == 0x1234 && r.dir == 0);
     assert(parse(list_dir1, 4) == 1 && parse(list_short, 3) == 1);
-    const uint8_t unknown[] = {0x24}, empty[] = {0};
+    const uint8_t unknown[] = {0x24}, empty[] = {0}, read_v1[] = {0x22, 0, 0, 0, 0, 0, 8, 'i','r','e','c','.','c','s','v'};
     assert(parse(unknown, 1) == 1 && parse(empty, 0) == 1 && parse(NULL, 1) == 1);
-    assert(parse(list, 118) == 1);                       /* over the frame bound */
-    assert(read_req(0x01020304u, 0, "irec-1795392000-000.csv", 0) == 0);
-    assert(read_req(0, 0, "IREC_LAUNCH-5-001.CSV", 0) == 0);  /* case-insensitive */
-    assert(read_req(0, 1, "irec-1-000.csv", 0) == 1);    /* only dir 0 */
-    assert(read_req(0, 2, "irec-1-000.csv", 0) == 1);
-    assert(read_req(0, 0, "irec-1-000.csv", 1) == 1);    /* length mismatch */
-    assert(read_req(0, 0, "irec-1-000.csv", -1) == 1);
-    assert(read_req(0, 0, "IGT/IMU0.CSV", 0) == 1);      /* separator */
-    assert(read_req(0, 0, "../irec.csv", 0) == 1);
-    assert(read_req(0, 0, "IMU0.CSV", 0) == 1);          /* not a log */
-    assert(read_req(0, 0, "irec-1-000.txt", 0) == 1);
-    assert(read_req(0, 0, "irec.csv", 0) == 0);          /* shortest log name */
-    assert(read_req(0, 0, "irec csv.csv", 0) == 1);
+    assert(parse(read_v1, sizeof read_v1) == 1);         /* v1 READ is gone */
+    uint8_t p[120];
+    size_t n = open_req(p, 7, 0, "irec-1795392000-000.csv");
+    assert(sd_file_parse_request(p, n, &r) == 0 && r.op == 0x25 && r.open.xfer == 7 && r.open.flags == 1 &&
+           r.open.offset == 16 && r.open.length == 0 && r.open.rate == 96 * 16 && r.open.msg == 0x1cc &&
+           r.open.window == 8 && r.open.block_kib == 16 && !strcmp(r.name, "irec-1795392000-000.csv"));
+    assert(parse(p, n - 1) == 1 && parse(p, n + 1) == 1);  /* name length mismatch */
+    n = open_req(p, 0, 0, "irec.csv"); assert(parse(p, n) == 1);           /* xfer 0 is reserved */
+    n = open_req(p, 1, 1, "irec.csv"); assert(parse(p, n) == 1);           /* only dir 0 */
+    n = open_req(p, 1, 0, "IGT/IMU0.CSV"); assert(parse(p, n) == 1);
+    n = open_req(p, 1, 0, "../irec.csv"); assert(parse(p, n) == 1);
+    n = open_req(p, 1, 0, "notes.txt"); assert(parse(p, n) == 1);
+    n = open_req(p, 1, 0, "IREC_LAUNCH-5-001.CSV"); assert(parse(p, n) == 0);  /* case-insensitive */
+    assert(hash_req(0, "irec-1-000.csv", 0) == 0 && hash_req(0, "irec-1-000.csv", 1) == 1);
+    assert(hash_req(0, "irec-1-000.csv", -1) == 1 && hash_req(2, "irec-1-000.csv", 0) == 1);
+    assert(hash_req(0, "IMU0.CSV", 0) == 1);
     char longname[65]; memset(longname, 'a', 64); memcpy(longname, "irec", 4); memcpy(longname + 60, ".csv", 4); longname[64] = 0;
-    assert(read_req(0, 0, longname, 0) == 1);            /* 64 > SD_FILE_NAME_MAX */
+    assert(hash_req(0, longname, 0) == 1);               /* 64 > SD_FILE_NAME_MAX */
     longname[59] = 0; memcpy(longname + 55, ".csv", 5);
-    assert(read_req(0, 0, longname, 0) == 0);
-    uint8_t p[8] = {0x22, 0, 0, 0, 0, 0, 0, 'x'};
-    assert(parse(p, 7) == 1 && parse(p, 8) == 1);        /* zero-length name */
-    assert(sd_file_parse_request(cancel, 1, &r) == 0 && sd_file_parse_request(p, 7, &r) == 1 && r.op == 0x23);
+    assert(hash_req(0, longname, 0) == 0);
+    memset(longname, 'a', 63); memcpy(longname, "irec", 4); memcpy(longname + 59, ".csv", 4); longname[63] = 0;
+    n = open_req(p, 1, 0, longname); assert(n == SD_FILE_REQUEST_MAX && parse(p, n) == 0);
+    assert(parse(p, SD_FILE_REQUEST_MAX + 1) == 1);      /* over the request bound */
+    const uint8_t ack[11] = {0x26, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    assert(parse(ack, 11) == 1);                         /* ACK is not a request */
     puts("ok");
 }
-''')
+''', ENGINE)
         self.assertEqual(out.strip(), 'ok')
 
     def test_log_name_filter(self):
@@ -105,33 +124,29 @@ int main(void)
 ''')
         self.assertEqual(out.split(), ['1', '1', '1', '1', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0'])
 
-    def test_frame_encoding_with_crc(self):
+    def test_answer_encoding(self):
         out = run_c(r'''#include "sd_file_wire.h"
 #include <stdio.h>
 ''' + FRAME_PRINT + r'''
 int main(void)
 {
-    uint8_t f[SD_FILE_FRAME_MAX], data[100];
-    for (unsigned i = 0; i < 100; ++i) data[i] = (uint8_t)(i * 7);
-    hex("D", f, sd_file_encode_data(f, 0, SD_FILE_DATA_LAST | SD_FILE_DATA_CRC, 0x01020304u, 0x0a0b0c0du, data, 100, 0xdeadbeefu));
-    hex("D", f, sd_file_encode_data(f, 0, 0, 7, 9, data, 5, 0xdeadbeefu));
-    hex("D", f, sd_file_encode_data(f, 6, SD_FILE_DATA_LAST, 0, 0, NULL, 0, 0));
-    printf("Z %zu\n", sd_file_encode_data(f, 0, 0, 0, 0, data, 101, 0));
+    uint8_t f[SD_FILE_ANSWER_MAX];
     hex("L", f, sd_file_encode_list(f, 0, 0x0102, 0x11223344u, SD_FILE_ENTRY_OPEN, "irec-1-000.csv", 14));
     hex("L", f, sd_file_encode_list(f, 6, 3, 99, 1, "ignored", 7));
+    hex("S", f, sd_file_encode_status(f, SD_FILE_OP_OPEN, 2));
+    hex("S", f, sd_file_encode_status(f, SD_FILE_OP_HASH, 3));
+    hex("S", f, sd_file_encode_status(f, SD_FILE_OP_CANCEL, 0));
+    hex("S", f, sd_file_encode_status(f, 0x22, 1));
 }
-''')
-        d = frames(out, 'D')
-        self.assertEqual(len(d[0]), 115)
-        self.assertEqual(d[0][:11], bytes([0xa2, 0, 3, 4, 3, 2, 1, 0x0d, 0x0c, 0x0b, 0x0a]))
-        self.assertEqual(d[0][11:111], bytes((i * 7) & 0xff for i in range(100)))
-        self.assertEqual(d[0][111:], (0xdeadbeef).to_bytes(4, 'little'))
-        self.assertEqual(len(d[1]), 16)  # no CRC without the flag
-        self.assertEqual(d[2], bytes([0xa2, 6, 1] + [0] * 8))
-        self.assertIn('Z 0', out)
+''', ENGINE)
         l = frames(out, 'L')
         self.assertEqual(l[0], bytes([0xa1, 0, 0, 2, 1, 0x44, 0x33, 0x22, 0x11, 1, 14, 0]) + b'irec-1-000.csv')
         self.assertEqual(l[1], bytes([0xa1, 6, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0]))
+        st = frames(out, 'S')
+        self.assertEqual(st[0], bytes([0xa5, 2] + [0] * 17))
+        self.assertEqual(st[1], bytes([0xa7, 3] + [0] * 37))
+        self.assertEqual(st[2], bytes([0xa3, 0]))
+        self.assertEqual(st[3], bytes([0xa2, 1]))
 
     def test_gating_table(self):
         out = run_c(r'''#include "sd_file_wire.h"
@@ -159,6 +174,8 @@ STREAM_STUBS = r'''
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+typedef struct { char opaque[400]; } FX_FILE;
+typedef struct { uint32_t state[8]; uint64_t bits; uint8_t block[64]; size_t used; } launchcore_sha256_ctx_t;
 #include "sd_file_stream.h"
 typedef enum { SEDS_OK = 0, SEDS_ERR = -1, SEDS_BAD_ARG = -2 } SedsResult;
 typedef struct SedsRouter { int unused; } SedsRouter;
@@ -172,10 +189,9 @@ typedef SedsResult (*SedsP2pStreamHandlerFn)(const SedsP2pStreamEventView *, voi
 #define SEDS_P2P_STREAM_DATA 3U
 #define SEDS_P2P_STREAM_CLOSED 4U
 #define SEDS_P2P_STREAM_RESET 5U
-typedef struct { char opaque[400]; } FX_FILE;
 static uint32_t primask, tick, wakes, resets, queued, allocs, frees, send_fail;
 static uint8_t local_state; static bool net_known; static uint8_t net_state;
-static uint8_t sent[64][SD_FILE_FRAME_MAX]; static size_t sent_len[64]; static unsigned nsent;
+static uint8_t sent[64][SD_XFER_MSG_MAX]; static size_t sent_len[64]; static unsigned nsent;
 static SedsP2pStreamHandlerFn handler;
 static SedsRouter router;
 static uint32_t __get_PRIMASK(void) { return primask; }
@@ -192,12 +208,15 @@ void sd_pipeline_wake(void) { assert(!primask); ++wakes; }
 bool seds_router_sender_matches_hostname(const SedsRouter *r, const char *s, size_t n, const char *h, size_t hn)
 { (void)r; return n == hn && !memcmp(s, h, n); }
 SedsResult seds_router_send_p2p_stream(SedsRouter *r, uint32_t id, const uint8_t *p, size_t n)
-{ (void)r; assert(id == 7 && n <= SD_FILE_FRAME_MAX && !primask); if (send_fail) return SEDS_ERR;
+{ (void)r; assert(id == 7 && n <= SD_XFER_MSG_MAX && !primask); if (send_fail) return SEDS_ERR;
   memcpy(sent[nsent], p, n); sent_len[nsent++] = n; return SEDS_OK; }
 SedsResult seds_router_reset_p2p_stream(SedsRouter *r, uint32_t id) { (void)r; assert(id == 7); ++resets; return SEDS_OK; }
 int32_t seds_router_has_queued_work(SedsRouter *r) { (void)r; return (int32_t)queued; }
 SedsResult seds_router_bind_p2p_stream_port(SedsRouter *r, uint16_t port, SedsP2pStreamHandlerFn cb, void *u)
 { (void)r; (void)u; assert(port == 4511); handler = cb; return SEDS_OK; }
+static uint8_t file_bytes[6000];
+static bool file_read(void *ctx, uint32_t off, uint8_t *dst, uint32_t len)
+{ (void)ctx; if (off + len > sizeof file_bytes) return false; memcpy(dst, file_bytes + off, len); return true; }
 '''
 
 STREAM_MAIN = FRAME_PRINT + r'''
@@ -208,65 +227,80 @@ static SedsResult ev(uint8_t kind, const char *peer, const uint8_t *p, size_t n)
         .payload = p, .payload_len = n};
     return handler(&e, NULL);
 }
-static const uint8_t READ[] = {0x22, 0x10, 0, 0, 0, 0, 14, 'i','r','e','c','-','1','-','0','0','0','.','c','s','v'};
+/* OPEN xfer 5, SDX, offset 0, whole file, rate 100*16 B/s, msg 460, window 2, 16 KiB blocks. */
+static const uint8_t OPEN[] = {0x25, 5, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0xcc, 1, 2, 16, 14,
+                               'i','r','e','c','-','1','-','0','0','0','.','c','s','v'};
 static const uint8_t LIST[] = {0x21, 0, 0, 0}, CANCEL[] = {0x23};
+static const uint8_t READ_V1[] = {0x22, 0, 0, 0, 0, 0, 8, 'i','r','e','c','.','c','s','v'};
 static void pump(void) { for (unsigned i = 0; i < 400; ++i) { tick += 1; sd_file_stream_poll(); } }
 int main(void)
 {
+    for (unsigned i = 0; i < sizeof file_bytes; ++i) file_bytes[i] = (uint8_t)('a' + i % 26);
     assert(sd_file_stream_init(&router) == SEDS_OK && handler);
     local_state = 9;                                   /* Landed */
     /* Peer check: GS and RRLS only. */
     assert(ev(SEDS_P2P_STREAM_ACCEPTED, "VB", NULL, 0) == SEDS_BAD_ARG && allocs == 0);
     assert(ev(SEDS_P2P_STREAM_ACCEPTED, "RRLS", NULL, 0) == SEDS_OK && allocs == 1);
     assert(ev(SEDS_P2P_STREAM_ACCEPTED, "GS", NULL, 0) == SEDS_OK && allocs == 1); /* replaces it */
-    assert(sd_file_stream_session_active());
-    /* READ: the router callback only queues and wakes the SD thread. */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", READ, sizeof READ) == SEDS_OK && wakes == 1 && nsent == 0);
+    assert(sd_file_stream_session_active() && !sd_file_stream_transfer_active());
+    /* OPEN: the router callback only queues and wakes the SD thread. */
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", OPEN, sizeof OPEN) == SEDS_OK && wakes == 1 && nsent == 0);
     assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && nsent == 1);
     hex("BUSY", sent[0], sent_len[0]); nsent = 0;
     sd_file_request_t rq; uint32_t ticket;
-    assert(sd_file_stream_claim(&rq, &ticket) && rq.op == 0x22 && rq.offset == 16 && !strcmp(rq.name, "irec-1-000.csv"));
-    assert(!sd_file_stream_claim(&rq, &ticket));
+    assert(sd_file_stream_claim(&rq, &ticket) && rq.op == 0x25 && rq.open.xfer == 5 && !strcmp(rq.name, "irec-1-000.csv"));
+    assert(!sd_file_stream_claim(&rq, &ticket) && sd_file_stream_ticket_current(ticket));
     uint8_t *block = sd_file_stream_block();
-    assert(block && sd_file_stream_handle() == block + 512);
-    for (unsigned i = 0; i < 512; ++i) block[i] = (uint8_t)(i ^ 0x5a);
-    sd_file_result_t res = {.status = 0, .data_start = 16, .data_len = 250, .file_size = 4000, .offset = 16, .crc = 0x11223344u};
-    sd_file_stream_finish(ticket, &res);
-    /* Pacing: >= 2 ms between frames, >= 25 ms while the router is busy. */
+    assert(block && sd_file_stream_handle() == block + 512 && sd_file_stream_scratch());
+    sd_file_stream_open(ticket, &rq.open, sizeof file_bytes, false);
+    assert(sd_file_stream_transfer_active());
     tick = 1000; sd_file_stream_poll(); assert(nsent == 1);
-    sd_file_stream_poll(); tick += 1; sd_file_stream_poll(); assert(nsent == 1);
-    tick += 1; queued = 1; sd_file_stream_poll(); assert(nsent == 1);
-    tick += 22; sd_file_stream_poll(); assert(nsent == 1);
-    tick += 1; sd_file_stream_poll(); assert(nsent == 2);
-    queued = 0; send_fail = 1; tick += 2; sd_file_stream_poll(); assert(nsent == 2);  /* retried */
-    send_fail = 0; sd_file_stream_poll(); assert(nsent == 3);
-    pump(); assert(nsent == 3);
+    hex("OPENED", sent[0], sent_len[0]); nsent = 0;
+    /* DATA: one message per produce; paced at the station's rate and window. */
+    assert(sd_file_stream_produce(file_read, NULL, tick));
+    assert(!sd_file_stream_produce(file_read, NULL, tick));  /* slot still full */
+    tick += 2; sd_file_stream_poll(); assert(nsent == 1);
+    const uint32_t first = tick;
+    assert(sd_file_stream_produce(file_read, NULL, tick));
+    while (nsent == 1 && tick < first + 1000) { tick += 1; sd_file_stream_poll(); }
+    printf("GAP %u\n", tick - first);                  /* 460 B at 1600 B/s */
+    assert(!sd_file_stream_produce(file_read, NULL, tick));  /* window of 2 */
+    /* ACK from the station: window opens again; stale ids are ignored. */
+    const uint8_t stale[] = {0x26, 4, 2, 0, 0, 0, 0, 0, 100, 0, 2};
+    const uint8_t ack[] = {0x26, 5, 2, 0, 0, 0, 0, 0, 100, 0, 2};
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", stale, sizeof stale) == SEDS_OK && !sd_file_stream_produce(file_read, NULL, tick));
+    const uint32_t w = wakes;
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", ack, sizeof ack) == SEDS_OK && wakes == w + 1);
+    assert(sd_file_stream_produce(file_read, NULL, tick));
+    /* Busy router: at least 25 ms between frames. */
+    queued = 1; tick += 400; const uint32_t before = nsent;
+    sd_file_stream_poll(); assert(nsent == before + 1);
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    uint8_t answer[12] = {0xa1, 6};
+    sd_file_stream_answer(ticket, answer, sizeof answer);
+    tick += 10; sd_file_stream_poll(); assert(nsent == before + 1);
+    tick += 16; sd_file_stream_poll(); assert(nsent == before + 2);
+    queued = 0; send_fail = 1;
+    assert(sd_file_stream_produce(file_read, NULL, tick) || 1);
     for (unsigned i = 0; i < nsent; ++i) hex("DATA", sent[i], sent_len[i]);
-    nsent = 0;
-    /* CANCEL stales a busy answer. */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", READ, sizeof READ) == SEDS_OK);
-    assert(sd_file_stream_claim(&rq, &ticket));
+    nsent = 0; send_fail = 0;
+    /* CANCEL ends the transfer and drops the queued message. */
     assert(ev(SEDS_P2P_STREAM_DATA, "GS", CANCEL, 1) == SEDS_OK);
-    sd_file_stream_finish(ticket, &res); pump();
     assert(nsent == 1 && sent_len[0] == 2 && sent[0][0] == 0xa3 && sent[0][1] == 0); nsent = 0;
-    /* Bad requests answer at once with BAD_MESSAGE. */
+    assert(!sd_file_stream_transfer_active()); pump(); assert(nsent == 0);
+    /* Bad requests answer at once with BAD_MESSAGE, v1 READ included. */
     const uint8_t bad[] = {0x21, 1, 0, 0};
     assert(ev(SEDS_P2P_STREAM_DATA, "GS", bad, 4) == SEDS_OK && nsent == 1);
-    hex("BAD", sent[0], sent_len[0]); nsent = 0;
-    /* Error result: one LAST frame, no CRC. */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", READ, sizeof READ) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
-    sd_file_result_t eof = {.status = SD_FILE_STATUS_END, .file_size = 16, .offset = 16};
-    sd_file_stream_finish(ticket, &eof); pump();
-    hex("EOF", sent[0], sent_len[0]); nsent = 0;
-    /* LIST answer carries the name from the block. */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
-    memcpy(sd_file_stream_block(), "irec-1-000.csv", 14);
-    sd_file_result_t entry = {.status = 0, .flags = 1, .name_len = 14, .file_size = 300};
-    sd_file_stream_finish(ticket, &entry); pump();
-    hex("LIST", sent[0], sent_len[0]); nsent = 0;
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", READ_V1, sizeof READ_V1) == SEDS_OK && nsent == 2);
+    hex("BAD", sent[0], sent_len[0]); hex("BAD", sent[1], sent_len[1]); nsent = 0;
+    /* A CANCEL stales a busy answer. */
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", OPEN, sizeof OPEN) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", CANCEL, 1) == SEDS_OK); nsent = 0;
+    sd_file_stream_open(ticket, &rq.open, sizeof file_bytes, false);
+    pump(); assert(nsent == 0 && !sd_file_stream_transfer_active());
     /* Leaving the allowed states: a request is refused, the session is reset. */
     local_state = 2;                                   /* Armed */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && nsent == 1);
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", OPEN, sizeof OPEN) == SEDS_OK && nsent == 1);
     hex("STATE", sent[0], sent_len[0]); nsent = 0;
     sd_file_stream_handle_open(true);                  /* SD thread still owns the handle */
     sd_file_stream_poll();
@@ -279,11 +313,15 @@ int main(void)
     assert(ev(SEDS_P2P_STREAM_ACCEPTED, "GS", NULL, 0) == SEDS_ERR);
     net_known = true; net_state = 1;                   /* Startup + network Idle */
     assert(ev(SEDS_P2P_STREAM_ACCEPTED, "GS", NULL, 0) == SEDS_OK && allocs == 2);
-    /* A busy SD turn finishing after its session was reset publishes nothing. */
-    assert(ev(SEDS_P2P_STREAM_DATA, "GS", READ, sizeof READ) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    /* A transfer in flight ends with the session; a busy SD turn finishing
+     * after the reset publishes nothing. */
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", OPEN, sizeof OPEN) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    sd_file_stream_open(ticket, &rq.open, sizeof file_bytes, false); pump(); nsent = 0;
+    assert(sd_file_stream_produce(file_read, NULL, tick));
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
     net_state = 6;                                     /* network Armed */
-    sd_file_stream_poll(); assert(resets == 2);
-    sd_file_stream_finish(ticket, &res);
+    sd_file_stream_poll(); assert(resets == 2 && !sd_file_stream_transfer_active());
+    sd_file_stream_answer(ticket, answer, sizeof answer);
     net_state = 1; assert(ev(SEDS_P2P_STREAM_ACCEPTED, "GS", NULL, 0) == SEDS_OK);
     pump(); assert(nsent == 0);
     assert(ev(SEDS_P2P_STREAM_CLOSED, "GS", NULL, 0) == SEDS_OK && !sd_file_stream_session_active());
@@ -297,27 +335,27 @@ class StreamTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         src = strip_includes((ROOT / 'Core/Src/sd_file_stream.c').read_text())
-        cls.out = run_c(STREAM_STUBS + src + STREAM_MAIN)
+        cls.out = run_c(STREAM_STUBS + src + STREAM_MAIN, ENGINE)
 
-    def test_session_and_pacing(self):
+    def test_session_gating_and_answers(self):
         self.assertIn('done', self.out)
         self.assertEqual(frames(self.out, 'BUSY')[0], bytes([0xa1, 3] + [0] * 10))
         self.assertEqual(frames(self.out, 'BAD')[0], bytes([0xa1, 1] + [0] * 10))
-        self.assertEqual(frames(self.out, 'STATE')[0], bytes([0xa1, 2] + [0] * 10))
-        self.assertEqual(frames(self.out, 'EOF')[0], bytes([0xa2, 6, 1, 16, 0, 0, 0, 16, 0, 0, 0]))
-        self.assertEqual(frames(self.out, 'LIST')[0],
-                         bytes([0xa1, 0, 0, 0, 0, 44, 1, 0, 0, 1, 14, 0]) + b'irec-1-000.csv')
+        self.assertEqual(frames(self.out, 'BAD')[1], bytes([0xa2, 1]))
+        self.assertEqual(frames(self.out, 'STATE')[0], bytes([0xa5, 2, 5] + [0] * 16))
+        opened = frames(self.out, 'OPENED')[0]
+        self.assertEqual(opened[:4], bytes([0xa5, 0, 5, 1]))
+        self.assertEqual(opened[4:16], (6000).to_bytes(4, 'little') + bytes(4) + (6000).to_bytes(4, 'little'))
+        self.assertEqual(opened[16:], bytes([0xcc, 1, 16]))
 
-    def test_read_answer_is_split_with_crc_on_the_last_frame(self):
+    def test_data_is_paced_windowed_and_decodable(self):
+        gap = int(next(l.split()[1] for l in self.out.splitlines() if l.startswith('GAP ')))
         data = frames(self.out, 'DATA')
-        self.assertEqual([len(f) for f in data], [111, 111, 11 + 50 + 4])
-        self.assertEqual([f[2] for f in data], [0, 0, 0x03])
-        offsets = [int.from_bytes(f[3:7], 'little') for f in data]
-        self.assertEqual(offsets, [16, 116, 216])
-        self.assertTrue(all(int.from_bytes(f[7:11], 'little') == 4000 for f in data))
-        payload = data[0][11:] + data[1][11:] + data[2][11:-4]
-        self.assertEqual(payload, bytes((i ^ 0x5a) & 0xff for i in range(16, 266)))
-        self.assertEqual(data[2][-4:], (0x11223344).to_bytes(4, 'little'))
+        self.assertEqual(gap, -(-len(data[0]) * 1000 // 1600), 'first message length at 1600 B/s')
+        self.assertEqual([d[0] for d in data[:2]], [0xa6, 0xa6])
+        self.assertEqual([int.from_bytes(d[3:5], 'little') for d in data if d[0] == 0xa6][:3], [0, 1, 2])
+        self.assertTrue(all(len(d) <= 460 for d in data))
+        self.assertEqual(data[0][1:3], bytes([5, 0x05]))   # xfer 5, FIRST | SDX
 
 
 FILEX_STUBS = r'''
@@ -325,6 +363,7 @@ FILEX_STUBS = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include "sd_file_stream.h"
+#include "launchcore/image.h"
 typedef unsigned UINT; typedef unsigned long ULONG; typedef unsigned long long ULONG64; typedef char CHAR;
 #define FX_SUCCESS 0U
 #define FX_NOT_FOUND 4U
@@ -392,64 +431,92 @@ static UINT fx_file_read(FX_FILE *f, void *buf, ULONG want, ULONG *actual)
     *actual = n; return io_fail ? FX_IO_ERROR : FX_SUCCESS;
 }
 /* sd_file_stream.c side */
-static uint8_t block[512 + sizeof(FX_FILE)];
-static bool have_block = true, allowed = true, session = true, handle_open;
-static sd_file_request_t pending; static bool has_pending; static sd_file_result_t last; static unsigned finished;
-bool sd_file_stream_claim(sd_file_request_t *r, uint32_t *t) { if (!has_pending) return false; *r = pending; *t = 1; has_pending = false; return true; }
-uint8_t *sd_file_stream_block(void) { return have_block ? block : NULL; }
-void *sd_file_stream_handle(void) { return have_block ? block + 512 : NULL; }
+static uint8_t area[512 + sizeof(FX_FILE)]; static launchcore_sha256_ctx_t sha_ctx;
+static bool have_area = true, allowed = true, session = true, handle_open, xfer_active;
+static sd_file_request_t pending; static bool has_pending; static uint32_t ticket_now = 1;
+static uint8_t last[SD_FILE_ANSWER_MAX]; static size_t last_len; static unsigned answered;
+static uint32_t opened_size; static bool opened_growing; static uint8_t produced[2048]; static bool produce_ok;
+bool sd_file_stream_claim(sd_file_request_t *r, uint32_t *t) { if (!has_pending) return false; *r = pending; *t = ticket_now; has_pending = false; return true; }
+bool sd_file_stream_ticket_current(uint32_t t) { return t == ticket_now; }
+uint8_t *sd_file_stream_block(void) { return have_area ? area : NULL; }
+void *sd_file_stream_handle(void) { return have_area ? area + 512 : NULL; }
+void *sd_file_stream_scratch(void) { return &sha_ctx; }
 void sd_file_stream_handle_open(bool open) { handle_open = open; }
-void sd_file_stream_finish(uint32_t t, const sd_file_result_t *r) { (void)t; last = *r; ++finished; }
+void sd_file_stream_answer(uint32_t t, const uint8_t *f, size_t n) { if (t != ticket_now) return; memcpy(last, f, n); last_len = n; ++answered; }
+void sd_file_stream_open(uint32_t t, const sd_xfer_open_t *o, uint32_t size, bool growing)
+{ (void)o; opened_size = size; opened_growing = growing; xfer_active = true; uint8_t a[SD_XFER_OPEN_ANSWER] = {0xa5}; sd_file_stream_answer(t, a, sizeof a); }
+bool sd_file_stream_transfer_active(void) { return xfer_active; }
+bool sd_file_stream_produce(sd_xfer_read_fn read, void *ctx, uint32_t now)
+{   /* reads the whole (small) file the way the engine does: 1024, then the rest */
+    (void)now; const uint32_t first = opened_size < 1024U ? opened_size : 1024U;
+    produce_ok = read(ctx, 0, produced, first) && (opened_size <= 1024U || read(ctx, 1024, produced + 1024, opened_size - 1024U));
+    return produce_ok;
+}
 bool sd_file_stream_session_active(void) { return session; }
 bool sd_file_stream_state_allowed(void) { return allowed; }
 '''
 
 FILEX_MAIN = FRAME_PRINT + r'''
-static sd_file_result_t list(uint16_t index)
-{ pending = (sd_file_request_t){.op = SD_FILE_OP_LIST, .index = index}; has_pending = true; sd_file_service_turn(); return last; }
-static sd_file_result_t rd(const char *name, uint32_t offset)
+static void request(uint8_t op, uint16_t index, const char *name)
 {
-    pending = (sd_file_request_t){.op = SD_FILE_OP_READ, .offset = offset, .name_len = (uint8_t)strlen(name)};
-    strcpy(pending.name, name); has_pending = true; sd_file_service_turn(); return last;
+    pending = (sd_file_request_t){.op = op, .index = index, .name_len = (uint8_t)(name ? strlen(name) : 0)};
+    if (name) strcpy(pending.name, name);
+    has_pending = true; sd_file_service_turn();
+}
+static unsigned hash(const char *name)
+{
+    const unsigned before = answered; unsigned turns = 0;
+    request(SD_FILE_OP_HASH, 0, name);
+    while (answered == before && turns < 100) { sd_file_service_turn(); ++turns; }
+    return turns;
 }
 int main(void)
 {
-    sd_file_service_turn(); assert(finished == 0);    /* nothing claimed */
+    sd_file_service_turn(); assert(answered == 0);    /* nothing claimed */
     /* Enumeration: regular irec*.csv only, FileX order, END after the last. */
-    for (uint16_t i = 0; i < 5; ++i) {
-        sd_file_result_t r = list(i);
-        printf("LIST %u %u %lu %u %.*s\n", i, r.status, (unsigned long)r.file_size, r.flags, r.name_len, (char *)block);
-    }
-    sd_file_result_t r = list(1); assert(r.status == 0 && !memcmp(block, "IREC_LAUNCH", 11)); /* backwards restarts */
-    /* The writer's open file is flagged. */
+    for (uint16_t i = 0; i < 5; ++i) { request(SD_FILE_OP_LIST, i, NULL); hex("LIST", last, last_len); }
+    request(SD_FILE_OP_LIST, 1, NULL); assert(last[1] == 0 && !memcmp(last + 12, "IREC_LAUNCH", 11)); /* backwards restarts */
+    /* The writer's open file is flagged, in LIST and OPEN. */
     file.fx_file_name = "irec-1795392200-000.csv"; sd_file_open = 1;
-    r = list(2); assert(r.status == 0 && r.flags == SD_FILE_ENTRY_OPEN);
-    r = rd("irec-1795392200-000.csv", 0); assert(r.status == SD_FILE_STATUS_END && r.flags == SD_FILE_ENTRY_OPEN);
-    sd_file_open = 0;
-    /* Reads: block-aligned source, answer from the requested offset. */
+    request(SD_FILE_OP_LIST, 2, NULL); assert(last[1] == 0 && last[9] == SD_FILE_ENTRY_OPEN);
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392200-000.csv"); assert(last[0] == 0xa5 && opened_growing && opened_size == 0);
+    xfer_active = false; sd_file_open = 0;
+    /* OPEN keeps one read handle; DATA reads whole sectors through it. */
     const uint32_t o = opens;
-    r = rd("irec-1795392000-000.csv", 0); assert(r.status == 0 && r.data_start == 0 && r.data_len == 512 && r.file_size == 1300);
-    hex("BLK", block + r.data_start, r.data_len); printf("CRC %08x\n", r.crc);
-    r = rd("irec-1795392000-000.csv", 1100); assert(r.status == 0 && r.offset == 1100 && r.data_start == 76 && r.data_len == 200);
-    hex("BLK", block + r.data_start, r.data_len); printf("CRC %08x\n", r.crc);
-    assert(opens == o + 1);                            /* handle reused */
-    r = rd("irec-1795392000-000.csv", 1299); assert(r.status == 0 && r.data_len == 1);
-    r = rd("irec-1795392000-000.csv", 1300); assert(r.status == SD_FILE_STATUS_END && r.data_len == 0);
-    r = rd("irec-1795392000-000.csv", 1301); assert(r.status == SD_FILE_STATUS_BAD_OFFSET && r.file_size == 1300);
-    r = rd("irec-1795392000-000.csv", 0xffffffffu); assert(r.status == SD_FILE_STATUS_BAD_OFFSET);
-    r = rd("irec-missing.csv", 0); assert(r.status == SD_FILE_STATUS_NOT_FOUND);
-    r = rd("IREC_LAUNCH-1795392100-000.CSV", 0); assert(r.status == 0 && r.data_len == 512 && opens == o + 2);
-    /* I/O failure closes the handle and reports IO_ERROR. */
-    io_fail = 1; r = rd("IREC_LAUNCH-1795392100-000.CSV", 0); assert(r.status == SD_FILE_STATUS_IO_ERROR && !handle_open);
-    r = list(0); assert(r.status == SD_FILE_STATUS_IO_ERROR); io_fail = 0;
-    prepare_fail = 1; r = list(0); assert(r.status == SD_FILE_STATUS_IO_ERROR); prepare_fail = 0;
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(opened_size == 1300 && !opened_growing && handle_open);
+    sd_file_service_turn(); assert(produce_ok); hex("DATA", produced, 1300);
+    assert(opens == o + 1);
+    /* The handle stays open for a transfer however long the gaps. */
+    clock_ms += 10000; sd_file_service_turn(); assert(handle_open);
+    /* HASH: refused while a transfer runs, then SHA-256 of the whole file in bounded steps. */
+    request(SD_FILE_OP_HASH, 0, "irec-1795392000-000.csv"); assert(last[0] == 0xa7 && last[1] == SD_FILE_STATUS_BUSY && last_len == 39);
+    xfer_active = false;
+    printf("TURNS %u\n", hash("irec-1795392000-000.csv")); hex("HASH", last, last_len);
+    hash("IREC_LAUNCH-1795392100-000.CSV"); hex("HASH", last, last_len);
+    hash("irec-1795392200-000.csv"); hex("HASH", last, last_len);   /* empty file */
+    request(SD_FILE_OP_OPEN, 0, "irec-missing.csv"); assert(last[0] == 0xa5 && last[1] == SD_FILE_STATUS_NOT_FOUND);
+    request(SD_FILE_OP_HASH, 0, "irec-missing.csv"); assert(last[0] == 0xa7 && last[1] == SD_FILE_STATUS_NOT_FOUND);
+    /* I/O failure: the handle closes and the answer says IO_ERROR. */
+    request(SD_FILE_OP_OPEN, 0, "IREC_LAUNCH-1795392100-000.CSV"); assert(handle_open);
+    io_fail = 1; sd_file_service_turn(); assert(!produce_ok && !handle_open); xfer_active = false;
+    request(SD_FILE_OP_LIST, 0, NULL); assert(last[1] == SD_FILE_STATUS_IO_ERROR);
+    request(SD_FILE_OP_HASH, 0, "irec-1795392000-000.csv"); assert(last[1] == SD_FILE_STATUS_IO_ERROR);
+    io_fail = 0;
+    prepare_fail = 1; request(SD_FILE_OP_LIST, 0, NULL); assert(last[1] == SD_FILE_STATUS_IO_ERROR); prepare_fail = 0;
+    /* A cancelled hash stops quietly. */
+    request(SD_FILE_OP_HASH, 0, "irec-1795392000-000.csv"); const unsigned a = answered;
+    ++ticket_now; sd_file_service_turn(); sd_file_service_turn(); assert(answered == a);
     /* Gate re-checked in the SD thread; the handle closes when not allowed or idle. */
-    r = rd("irec-1795392000-000.csv", 0); assert(handle_open);
-    allowed = false; r = list(0); assert(r.status == SD_FILE_STATUS_BAD_STATE && !handle_open); allowed = true;
-    r = rd("irec-1795392000-000.csv", 0); assert(handle_open);
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(handle_open); xfer_active = false;
+    allowed = false; request(SD_FILE_OP_LIST, 0, NULL); assert(!handle_open); allowed = true;
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(handle_open);
+    allowed = false; request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv");
+    allowed = true; xfer_active = false;
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(handle_open); xfer_active = false;
     clock_ms += 3000; sd_file_service_turn(); assert(!handle_open);
-    r = rd("irec-1795392000-000.csv", 0); session = false; sd_file_service_turn(); assert(!handle_open); session = true;
-    have_block = false; r = list(0); assert(r.status == SD_FILE_STATUS_BAD_STATE);
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); session = false; sd_file_service_turn(); assert(!handle_open);
+    session = true; xfer_active = false;
+    have_area = false; request(SD_FILE_OP_LIST, 0, NULL); assert(last[1] == SD_FILE_STATUS_BAD_STATE);
     sd_pipeline_wake(); assert(line.full == 0); sd_prepared = true; sd_pipeline_wake(); assert(line.full == 1);
     puts("done");
 }
@@ -460,7 +527,7 @@ class FilexSideTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         src = (ROOT / 'Core/Src/sdpipeline.c').read_text()
-        start = src.index('#ifdef FC_SD_SERVICE\n/* Network SD read service')
+        start = src.index('#ifdef FC_SD_SERVICE\n/* Network SD transfer service')
         end = src.index('#else\n#define sd_file_service_turn()')
         block = src[start + len('#ifdef FC_SD_SERVICE\n'):end]
         # The handle flags sit above the writer, which clears them on a remount.
@@ -468,24 +535,36 @@ class FilexSideTests(unittest.TestCase):
         assert flags in src[:start]
         block = flags + block
         cls.block = block
-        cls.out = run_c(FILEX_STUBS + crc_source() + block + FILEX_MAIN)
+        lc = configured_dependency_source(ROOT, 'sedslaunchcore', 'SDK_FREE_LAUNCHCORE_SOURCE')
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = pathlib.Path(tmp) / 'check'
+            subprocess.run(CFLAGS + ['-I', str(lc / 'bootloader/include'), '-x', 'c', '-', '-x', 'none',
+                                     str(lc / 'bootloader/src/sha256.c'), '-o', str(exe)],
+                           input=FILEX_STUBS + block + FILEX_MAIN, text=True, check=True)
+            cls.out = subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout
+
+    @staticmethod
+    def content(entry, size):
+        return bytes((i * 31 + entry) & 0xff for i in range(size))
 
     def test_enumeration_filter(self):
         self.assertIn('done', self.out)
-        lines = [l.split() for l in self.out.splitlines() if l.startswith('LIST ')]
-        self.assertEqual(lines[0], ['LIST', '0', '0', '1300', '0', 'irec-1795392000-000.csv'])
-        self.assertEqual(lines[1], ['LIST', '1', '0', '512', '0', 'IREC_LAUNCH-1795392100-000.CSV'])
-        self.assertEqual(lines[2], ['LIST', '2', '0', '0', '0', 'irec-1795392200-000.csv'])
-        self.assertEqual(lines[3][:3], ['LIST', '3', '6'])  # END
-        self.assertEqual(lines[4][:3], ['LIST', '4', '6'])
+        lists = frames(self.out, 'LIST')
+        self.assertEqual(lists[0], bytes([0xa1, 0, 0, 0, 0]) + (1300).to_bytes(4, 'little') + bytes([0, 23, 0]) + b'irec-1795392000-000.csv')
+        self.assertEqual(lists[1][12:], b'IREC_LAUNCH-1795392100-000.CSV')
+        self.assertEqual(lists[2][12:], b'irec-1795392200-000.csv')
+        self.assertEqual(lists[3], bytes([0xa1, 6, 0, 3, 0] + [0] * 7))  # END
+        self.assertEqual(lists[4][:2], bytes([0xa1, 6]))
 
-    def test_crc_matches_zlib(self):
-        blocks = frames(self.out, 'BLK')
-        crcs = [int(l.split()[1], 16) for l in self.out.splitlines() if l.startswith('CRC ')]
-        self.assertEqual(blocks[0], bytes((i * 31 + 2) & 0xff for i in range(512)))
-        self.assertEqual(blocks[1], bytes((i * 31 + 2) & 0xff for i in range(1100, 1300)))
-        for data, crc in zip(blocks, crcs):
-            self.assertEqual(crc, zlib.crc32(data))
+    def test_data_reads_and_hashes_match_the_card(self):
+        self.assertEqual(frames(self.out, 'DATA')[0], self.content(2, 1300))
+        hashes = frames(self.out, 'HASH')
+        for answer, (entry, size) in zip(hashes, ((2, 1300), (5, 512), (8, 0))):
+            self.assertEqual(answer[:3], bytes([0xa7, 0, 0]))
+            self.assertEqual(int.from_bytes(answer[3:7], 'little'), size)
+            self.assertEqual(answer[7:], hashlib.sha256(self.content(entry, size)).digest())
+        turns = int(next(l.split()[1] for l in self.out.splitlines() if l.startswith('TURNS ')))
+        self.assertEqual(turns, 0, '1300 bytes hash within the first turn (8 sectors per turn)')
 
     def test_read_only_and_wired_into_the_sd_thread(self):
         self.assertNotIn('fx_file_write', self.block)

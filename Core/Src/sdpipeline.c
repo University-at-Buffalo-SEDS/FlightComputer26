@@ -16,7 +16,7 @@
 #include "ground_test.h"
 #ifdef FC_SD_SERVICE
 #include "sd_file_stream.h"
-#include "board_crc32.h"
+#include "launchcore/image.h"
 #endif
 
 #define id "SD "
@@ -605,16 +605,19 @@ static inline int sd_pipeline_open(const char *surprise)
 }
 
 #ifdef FC_SD_SERVICE
-/* Network SD read service (sd_file_stream.c), in this thread between writer
- * passes and, after sd_conclude, in a read-only loop. Each turn does at most
- * one 512-byte read or a bounded directory step. The read handle is a separate
- * FX_OPEN_FOR_READ owner in the borrowed block; it never writes. */
+/* Network SD transfer service v2 (sd_file_stream.c, sd_xfer.c), in this
+ * thread between writer passes and, after sd_conclude, in a read-only loop.
+ * Each turn does at most one bounded step: a directory step, one DATA message
+ * (at most one block re-encoded), or a hash step. The read handle is a
+ * separate FX_OPEN_FOR_READ owner in the borrowed area; it never writes. */
 #define SD_DL_IDLE_CLOSE_MS 3000U
 #define SD_DL_LIST_SCAN_PER_TURN 32U
+#define SD_DL_HASH_SECTORS_PER_TURN 8U
 #define dl_file (*(FX_FILE *)sd_file_stream_handle())
 static uint16_t dl_list_next;
 static ULONG dl_list_entry;
 static uint32_t dl_last_ms;
+static struct { bool active, growing; uint32_t ticket, pos, size; } dl_hash;
 volatile uint32_t g_sd_dl_errors;
 
 void sd_pipeline_wake(void)
@@ -634,94 +637,143 @@ static bool dl_growing(const char *name)
 
 /* LIST places the name at the start of the block. Only the iterator persists;
  * a long skip answers BUSY and continues on the station's retry. */
-static void dl_list(const sd_file_request_t *rq, sd_file_result_t *res, CHAR *name)
+static uint8_t dl_list(const sd_file_request_t *rq, CHAR *name, uint32_t *size, uint8_t *flags)
 {
     if (!dl_list_valid || rq->index < dl_list_next) {
         dl_list_valid = true; dl_list_next = 0U; dl_list_entry = 0U;
     }
-    res->status = SD_FILE_STATUS_BUSY;
     for (unsigned scanned = 0U; scanned < SD_DL_LIST_SCAN_PER_TURN; ++scanned) {
         UINT attributes = 0U, year, month, day, hour, minute, second;
-        ULONG size = 0U;
+        ULONG bytes = 0U;
         sdio_disk.fx_media_default_path.fx_path_current_entry = dl_list_entry;
-        const UINT st = fx_directory_next_full_entry_find(&sdio_disk, name, &attributes, &size,
+        const UINT st = fx_directory_next_full_entry_find(&sdio_disk, name, &attributes, &bytes,
                                                           &year, &month, &day, &hour, &minute, &second);
         dl_list_entry = sdio_disk.fx_media_default_path.fx_path_current_entry;
-        if (st == FX_NO_MORE_ENTRIES) { res->status = SD_FILE_STATUS_END; return; }
-        if (st != FX_SUCCESS || !flight_sd_io_verified()) {
-            dl_list_valid = false; res->status = SD_FILE_STATUS_IO_ERROR; return;
-        }
+        if (st == FX_NO_MORE_ENTRIES) return SD_FILE_STATUS_END;
+        if (st != FX_SUCCESS || !flight_sd_io_verified()) { dl_list_valid = false; return SD_FILE_STATUS_IO_ERROR; }
         name[FX_MAX_LONG_NAME_LEN - 1U] = '\0';
-        const size_t len = strlen(name);
         if ((attributes & (FX_DIRECTORY | FX_VOLUME | FX_HIDDEN | FX_SYSTEM)) != 0U ||
-            !sd_file_fc_log_name(name, len) || dl_list_next++ != rq->index) continue;
-        res->status = SD_FILE_STATUS_OK;
-        res->file_size = (uint32_t)size;
-        res->flags = dl_growing(name) ? SD_FILE_ENTRY_OPEN : 0U;
-        res->name_len = (uint8_t)len;
-        return;
+            !sd_file_fc_log_name(name, strlen(name)) || dl_list_next++ != rq->index) continue;
+        *size = (uint32_t)bytes;
+        *flags = dl_growing(name) ? SD_FILE_ENTRY_OPEN : 0U;
+        return SD_FILE_STATUS_OK;
     }
+    return SD_FILE_STATUS_BUSY;
 }
 
-/* One block from offset & ~511; the answer starts at the requested offset. */
-static void dl_read(const sd_file_request_t *rq, sd_file_result_t *res, uint8_t *block)
+/* Opens (or keeps) the read handle on name; *size is the size it sees. */
+static uint8_t dl_open_file(const char *name, uint32_t *size)
 {
-    const bool growing = dl_growing(rq->name);
-    if (dl_open && (strcmp(rq->name, dl_file.fx_file_name_buffer) != 0 ||
-                    (growing && rq->offset >= dl_file.fx_file_current_file_size)))
-        dl_close();
+    if (dl_open && (strcmp(name, dl_file.fx_file_name_buffer) != 0 || dl_growing(name))) dl_close();
     if (!dl_open) {
-        const UINT st = fx_file_open(&sdio_disk, &dl_file, (CHAR *)rq->name, FX_OPEN_FOR_READ);
-        if (st != FX_SUCCESS) {
-            res->status = st == FX_NOT_FOUND ? SD_FILE_STATUS_NOT_FOUND : SD_FILE_STATUS_IO_ERROR;
-            return;
-        }
+        const UINT st = fx_file_open(&sdio_disk, &dl_file, (CHAR *)name, FX_OPEN_FOR_READ);
+        if (st != FX_SUCCESS) return st == FX_NOT_FOUND ? SD_FILE_STATUS_NOT_FOUND : SD_FILE_STATUS_IO_ERROR;
         dl_open = true; sd_file_stream_handle_open(true);
     }
     const ULONG64 size64 = dl_file.fx_file_current_file_size;
-    const uint32_t size = size64 > UINT32_MAX ? UINT32_MAX : (uint32_t)size64;
-    res->file_size = size; res->offset = rq->offset;
-    res->flags = growing ? SD_FILE_ENTRY_OPEN : 0U;
-    if (rq->offset >= size) {
-        res->status = rq->offset == size ? SD_FILE_STATUS_END : SD_FILE_STATUS_BAD_OFFSET;
-        return;
+    *size = size64 > UINT32_MAX ? UINT32_MAX : (uint32_t)size64;
+    return SD_FILE_STATUS_OK;
+}
+
+/* sd_xfer read callback: whole 512-byte sectors (or the file tail). */
+static bool dl_read(void *ctx, uint32_t offset, uint8_t *dst, uint32_t len)
+{
+    (void)ctx;
+    if (!dl_open || flight_sd_prepare_io() != FX_SUCCESS || fx_file_seek(&dl_file, offset) != FX_SUCCESS) goto fail;
+    while (len) {
+        const ULONG want = len > 512U ? 512U : len;
+        ULONG actual = 0U;
+        if (fx_file_read(&dl_file, dst, want, &actual) != FX_SUCCESS || actual != want || !flight_sd_io_verified())
+            goto fail;
+        dst += want; len -= (uint32_t)want;
     }
-    const uint32_t start = rq->offset & ~(uint32_t)(SD_FILE_BLOCK_BYTES - 1U);
-    const uint32_t want = size - start < SD_FILE_BLOCK_BYTES ? size - start : SD_FILE_BLOCK_BYTES;
-    ULONG actual = 0U;
-    UINT st = fx_file_seek(&dl_file, start);
-    if (st == FX_SUCCESS) st = fx_file_read(&dl_file, block, want, &actual);
-    if (st != FX_SUCCESS || !flight_sd_io_verified() || actual <= rq->offset - start) {
-        dl_close();
-        res->status = SD_FILE_STATUS_IO_ERROR;
-        return;
+    return true;
+fail:
+    ++g_sd_dl_errors;
+    dl_close();
+    return false;
+}
+
+static void dl_hash_step(void)
+{
+    if (!sd_file_stream_ticket_current(dl_hash.ticket)) { dl_hash.active = false; return; }
+    launchcore_sha256_ctx_t *sha = sd_file_stream_scratch();
+    uint8_t *const block = sd_file_stream_block();
+    uint8_t ans[SD_FILE_HASH_ANSWER] = {SD_FILE_OP_HASH | SD_FILE_RESPONSE_FLAG, SD_FILE_STATUS_OK};
+    for (unsigned i = 0; i < SD_DL_HASH_SECTORS_PER_TURN && dl_hash.pos < dl_hash.size; ++i) {
+        const uint32_t n = dl_hash.size - dl_hash.pos > 512U ? 512U : dl_hash.size - dl_hash.pos;
+        if (!dl_read(NULL, dl_hash.pos, block, n)) {
+            ans[1] = SD_FILE_STATUS_IO_ERROR;
+            sd_file_stream_answer(dl_hash.ticket, ans, sizeof ans);
+            dl_hash.active = false;
+            return;
+        }
+        launchcore_sha256_update(sha, block, n);
+        dl_hash.pos += n;
     }
-    res->status = SD_FILE_STATUS_OK;
-    res->data_start = (uint16_t)(rq->offset - start);
-    res->data_len = (uint16_t)(actual - res->data_start);
-    res->crc = board_crc32_software(0U, block + res->data_start, res->data_len);
+    if (dl_hash.pos < dl_hash.size) { sd_pipeline_wake(); return; }
+    ans[2] = dl_hash.growing ? SD_XFER_ANSWER_GROWING : 0U;
+    sd_file_put_u32(ans + 3, dl_hash.size);
+    launchcore_sha256_final(sha, ans + 7);
+    sd_file_stream_answer(dl_hash.ticket, ans, sizeof ans);
+    dl_hash.active = false;
+}
+
+static void dl_request(const sd_file_request_t *rq, uint32_t ticket)
+{
+    uint8_t frame[SD_FILE_ANSWER_MAX];
+    uint32_t size = 0U;
+    uint8_t status = SD_FILE_STATUS_BAD_STATE;
+    uint8_t *const block = sd_file_stream_block();
+    if (!sd_file_stream_state_allowed() || !block) {
+        /* refused below */
+    } else if (flight_sd_prepare_io() != FX_SUCCESS) {
+        status = SD_FILE_STATUS_IO_ERROR;
+    } else if (rq->op == SD_FILE_OP_LIST) {
+        uint8_t flags = 0U;
+        status = dl_list(rq, (CHAR *)block, &size, &flags);
+        const size_t name_len = status == SD_FILE_STATUS_OK ? strlen((const char *)block) : 0U;
+        sd_file_stream_answer(ticket, frame, sd_file_encode_list(frame, status, rq->index, size, flags,
+                                                                 (const char *)block, name_len));
+        if (status == SD_FILE_STATUS_IO_ERROR) ++g_sd_dl_errors;
+        return;
+    } else if (rq->op == SD_FILE_OP_HASH && sd_file_stream_transfer_active()) {
+        status = SD_FILE_STATUS_BUSY;
+    } else {
+        status = dl_open_file(rq->name, &size);
+        if (status == SD_FILE_STATUS_OK && rq->op == SD_FILE_OP_OPEN) {
+            sd_file_stream_open(ticket, &rq->open, size, dl_growing(rq->name));
+            return;
+        }
+        if (status == SD_FILE_STATUS_OK) {
+            dl_hash.active = true; dl_hash.ticket = ticket; dl_hash.pos = 0U; dl_hash.size = size;
+            dl_hash.growing = dl_growing(rq->name);
+            launchcore_sha256_init(sd_file_stream_scratch());
+            dl_hash_step();
+            return;
+        }
+    }
+    if (status == SD_FILE_STATUS_IO_ERROR) ++g_sd_dl_errors;
+    size_t n = sd_file_encode_status(frame, rq->op, status);
+    if (rq->op == SD_FILE_OP_OPEN) frame[2] = rq->open.xfer;
+    sd_file_stream_answer(ticket, frame, n);
 }
 
 void sd_file_service_turn(void)
 {
     const bool allowed = sd_file_stream_state_allowed();
+    const uint32_t now = now_ms();
+    const bool busy = dl_hash.active || sd_file_stream_transfer_active();
     if ((!allowed || !sd_file_stream_session_active() ||
-         (uint32_t)(now_ms() - dl_last_ms) >= SD_DL_IDLE_CLOSE_MS) && (dl_open || dl_list_valid)) {
+         (!busy && (uint32_t)(now - dl_last_ms) >= SD_DL_IDLE_CLOSE_MS)) && (dl_open || dl_list_valid)) {
         dl_close(); dl_list_valid = false;
     }
+    if (!allowed || !sd_file_stream_session_active()) { dl_hash.active = false; return; }
     sd_file_request_t rq;
     uint32_t ticket;
-    if (!sd_file_stream_claim(&rq, &ticket)) return;
-    sd_file_result_t res = {.status = SD_FILE_STATUS_BAD_STATE};
-    uint8_t *const block = sd_file_stream_block();
-    if (allowed && block) {
-        if (flight_sd_prepare_io() != FX_SUCCESS) res.status = SD_FILE_STATUS_IO_ERROR;
-        else if (rq.op == SD_FILE_OP_LIST) dl_list(&rq, &res, (CHAR *)block);
-        else dl_read(&rq, &res, block);
-    }
-    if (res.status == SD_FILE_STATUS_IO_ERROR) ++g_sd_dl_errors;
-    dl_last_ms = now_ms();
-    sd_file_stream_finish(ticket, &res);
+    if (!dl_hash.active && sd_file_stream_claim(&rq, &ticket)) { dl_request(&rq, ticket); dl_last_ms = now; }
+    if (dl_hash.active) { dl_hash_step(); dl_last_ms = now; return; }
+    if (sd_file_stream_transfer_active() && dl_open && sd_file_stream_produce(dl_read, NULL, now)) dl_last_ms = now;
 }
 
 /* After sd_conclude (Recovery) or a stop before any log opened: the thread

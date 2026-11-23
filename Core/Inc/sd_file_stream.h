@@ -1,33 +1,33 @@
 #ifndef SD_FILE_STREAM_H
 #define SD_FILE_STREAM_H
-/* FC SD block-read service (flight image only, FC_SD_SERVICE). The router
- * callback copies one validated request into a single RAM slot and wakes the
- * SD thread; the SD thread performs one bounded read-only FileX operation for
- * it; the telemetry thread paces the answer out one frame at a time. */
+/* FC SD transfer service v2 (flight image only, FC_SD_SERVICE). The router
+ * callback queues one LIST/OPEN/HASH request in a RAM slot, applies ACKs and
+ * wakes the SD thread; the SD thread answers requests and builds DATA
+ * messages (sd_xfer.c) from the card; the telemetry thread sends answers and
+ * paces DATA out. */
 #include "sd_file_wire.h"
+#include "sd_xfer.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct {
-    uint8_t status;
-    uint8_t flags;          /* LIST/READ: SD_FILE_ENTRY_OPEN */
-    uint8_t name_len;       /* LIST: name bytes at the start of the block */
-    uint16_t data_len;      /* READ: bytes in the block */
-    uint16_t data_start;    /* READ: first valid byte in the block */
-    uint32_t file_size;
-    uint32_t offset;        /* READ: absolute offset of the first data byte */
-    uint32_t crc;           /* READ: CRC-32 of the data bytes */
-} sd_file_result_t;
-
-/* SD thread side. Claim moves a pending request to busy; finish publishes the
- * answer only if the stream session that asked is still current. The block
- * (512 B) and read handle exist only while a session or an open handle does. */
+/* SD thread side. Claim moves a pending request to busy; answer publishes a
+ * frame only if the stream session that asked is still current. The borrowed
+ * area (512-byte block, read handle, transfer state and workspace) exists
+ * only while a session or an open handle does. */
 bool sd_file_stream_claim(sd_file_request_t *request, uint32_t *ticket);
+bool sd_file_stream_ticket_current(uint32_t ticket);
 uint8_t *sd_file_stream_block(void);
 void *sd_file_stream_handle(void);
+void *sd_file_stream_scratch(void);          /* SHA-256 context while hashing */
 void sd_file_stream_handle_open(bool open);
-void sd_file_stream_finish(uint32_t ticket, const sd_file_result_t *result);
+void sd_file_stream_answer(uint32_t ticket, const uint8_t *frame, size_t len);
+/* OPEN: starts the transfer under the lock and answers it. */
+void sd_file_stream_open(uint32_t ticket, const sd_xfer_open_t *open, uint32_t file_size, bool growing);
+bool sd_file_stream_transfer_active(void);
+/* Builds the next DATA message if one is due and the send slot is free;
+ * true if it produced one. A read error ends the transfer. */
+bool sd_file_stream_produce(sd_xfer_read_fn read, void *ctx, uint32_t now_ms);
 bool sd_file_stream_session_active(void);
 /* Shared gate: local state and network FLIGHT_STATE (sd_file_fc_state_allowed). */
 bool sd_file_stream_state_allowed(void);

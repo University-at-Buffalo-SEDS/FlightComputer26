@@ -40,7 +40,7 @@ flowchart LR
   EVAL -- "log_periodic_f32" --> TLM
   TLM -- "CAN FD" --> RF["RF board relay"] -- radio --> GS["GroundStation<br/>rolling SQLite ring"]
   CARD -. "manual SD import" .-> GS
-  CARD -. "P2P 4511 SD read service<br/>(after landing)" .-> GS
+  CARD -. "P2P 4511 SD transfer v2<br/>(after landing)" .-> GS
 ```
 
 Acquisition and logging schedule. One pass of the ascent loop is shown; on the
@@ -647,39 +647,62 @@ and ground-test captures out of it (GroundStation26
 ### 8.2 Network SD read service and manual import
 
 The flight image serves its card over SEDSnet after landing ("SD file
-download protocol v1 + CRC", `sd_file_wire.h`, `sd_file_stream.c`, service
-block in `sdpipeline.c`). The GS, or the RRLS relay station, fetches the
-files with no card removal; the manual import below stays available.
+transfer protocol v2", `sd_file_wire.h`, `sd_file_stream.c`, the shared
+sender engine `sd_xfer.c` and encoder `sd_xfer_codec.c`, service block in
+`sdpipeline.c`). The GS, or the RRLS relay station, fetches the files with no
+card removal; the manual import below stays available. The full wire
+specification is GroundStation26 `docs/backend/sd-transfer.md`; the DAQ uses
+the same wire.
 
-Protocol (P2P stream port 4511, same opcodes and frames as the DAQ, all
-little-endian, every frame <= 117 bytes):
+Protocol (P2P stream port 4511, little-endian):
 
 | Request | Bytes | Answer |
 | --- | --- | --- |
 | LIST | `[0x21][dir u8][index u16]` | `[0xA1][status][dir][index u16][size u32][flags][name_len][0][name]` |
-| READ | `[0x22][offset u32][dir u8][name_len u8][name]` | one or more `[0xA2][status][flags][offset u32][file_size u32][data <=100 B]` |
-| CANCEL | `[0x23]` | `[0xA3][status]`; drops a pending answer |
+| OPEN | `[0x25][xfer][dir][flags][offset u32][length u32][rate u16][msg u16][window][block][name_len][name]` | `[0xA5][status][xfer][flags][size u32][offset u32][length u32][msg u16][block]`, then streamed DATA |
+| ACK | `[0x26][xfer][una u16][bitmap u32][rate u16][window]` | none |
+| HASH | `[0x27][dir][name_len][name]` | `[0xA7][status][flags][size u32][sha256]` |
+| CANCEL | `[0x23]` | `[0xA3][status]`; ends the transfer or hash |
 
+DATA is `[0xA6][xfer][flags][seq u16][block u32]`, on the last message of a
+block also `[raw_len u32][crc u32]`, then the body.
+
+- **Streaming.** One OPEN asks for a byte range (or the whole file); the FC
+  then sends DATA messages back to back. The range is cut into blocks of
+  `block` KiB (16 by default) that end on a CSV row; each block is encoded
+  independently and split into messages of at most `msg` bytes (the FC allows
+  up to 512). The station acknowledges selectively (ACK: lowest missing `seq`
+  plus a bitmap of the next 32) about once a second; the FC keeps at most
+  `window` messages unacknowledged and resends only the gaps, regenerating
+  the block that holds the first missing message. A block's raw length and
+  zlib CRC-32 of its bytes as read from the card travel in its last message.
+- **SDX encoding.** With OPEN flag 0x01 the FC sends each block in SDX, a
+  lossless binary form of the CSV rows: per-block label ids, numbers as
+  shape + digit integer, deltas against the same label's previous row
+  (timestamps, sequence numbers, vector elements, exponent changes included),
+  copies of repeated columns, and raw text for anything else. The station
+  rebuilds the exact bytes; the card keeps CSV. On FC launch files it is about
+  6.3 times smaller than the CSV (`tests/test_sd_xfer_codec.py`; the GS has
+  the measurements). There is no zstd on the FC: its smallest compressor
+  workspace (~30 KiB) does not fit this heap.
+- **HASH** reads the whole file and answers its size and SHA-256 (LaunchCore
+  `sha256.c`), 8 sectors per SD-thread turn, so the station can prove its copy
+  byte-identical to the card. It answers BUSY while a transfer runs.
 - Directory: only `dir` 0 = card root. LIST enumerates regular files named
   `irec*.csv` (case-insensitive; no directories, volume, hidden or system
   entries) in FileX directory order, one entry per request, and answers END
-  (6) after the last. READ accepts only such names (at most 63 characters).
-  Any other `dir`, name or length is BAD_MESSAGE (1).
-- Entry flag 0x01 (LIST and DATA): the file is the one the logger still has
-  open for writing; its size can grow (and the LIST size can lag until the
-  next media flush).
-- READ returns the 512-byte card block that holds `offset`, from `offset` to
-  the block end (or EOF), split into DATA frames of up to 100 bytes; flag
-  0x01 marks the last frame. The last frame of every OK answer that carries
-  data also sets flag 0x02 and appends 4 bytes: the zlib CRC-32 (IEEE,
-  reflected, init/xorout 0xFFFFFFFF, `board_crc32_software(0, ...)`) of all
-  data bytes of that READ answer, little-endian, after the data (frame <= 115
-  B). The requester verifies it and asks again on a mismatch. DAQ frames
-  never set 0x02.
-- `offset` == size answers END, `offset` > size BAD_OFFSET (7), a missing file
-  NOT_FOUND (4), a card error IO_ERROR (5), a second request while one is
-  pending BUSY (3; also returned for a LIST that needed more than 32
-  directory entries in one step, the requester simply repeats it).
+  (6) after the last. OPEN and HASH accept only such names (at most 63
+  characters). Any other `dir`, name or length, and the v1 READ (`0x22`), is
+  BAD_MESSAGE (1).
+- Entry flag 0x01 (LIST; 0x20 in DATA, 0x04 in the OPEN and HASH answers):
+  the file is the one the logger still has open for writing; its size can
+  grow (and the LIST size can lag until the next media flush). A transfer
+  covers the size seen at OPEN.
+- OPEN at `offset` == size answers END, beyond it BAD_OFFSET (7); a missing
+  file NOT_FOUND (4), a card error IO_ERROR (5), a second request while one
+  is pending BUSY (3; also returned for a LIST that needed more than 32
+  directory entries in one step, the requester simply repeats it). A new
+  OPEN replaces the running transfer.
 - Gating: allowed only while the local state is Landed (9) or Recovery (10),
   or the local state is Startup (0) and the network `FLIGHT_STATE` is known
   and is Startup (0) or Idle (1). Never in Postinit, Armed, Launch..Reefing,
@@ -689,34 +712,37 @@ little-endian, every frame <= 117 bytes):
   the same gate again before each card access.
 - Peers: the `GS` or the `RRLS` (`seds_router_sender_matches_hostname`),
   one session at a time; a new stream replaces the old one.
-- Work split: the router callback only validates and queues one request and
-  wakes the SD thread; the SD thread does one bounded read-only step (one
-  block, or up to 32 directory entries) through a separate `FX_OPEN_FOR_READ`
-  handle, never a write; the telemetry thread sends one frame per poll. The
-  512-byte block and the read handle are borrowed from the TLSF heap (with
-  its 4 KiB admission reserve) only while a session or the handle exists; the
-  handle closes after 3 s without requests.
+- Work split: the router callback validates and queues one request, applies
+  ACKs and wakes the SD thread; the SD thread does one bounded read-only step
+  (one DATA message with at most one block re-encoded, 8 hash sectors, or up
+  to 32 directory entries) through a separate `FX_OPEN_FOR_READ` handle,
+  never a write; the telemetry thread sends one frame per poll. The 512-byte
+  block, the read handle, the transfer state and its workspace (about 4.7 KiB
+  in all: 64 SDX contexts, a 1 KiB raw window, a 512-byte message) are
+  borrowed from the TLSF heap (with its 4 KiB admission reserve) only while a
+  session or the handle exists; the handle closes after 3 s without requests
+  unless a transfer or hash is running.
 - Pacing: at least 2 ms between frames, and at least 25 ms while the router
   has other queued work, so recovery GPS, commands and telemetry go first.
-  That caps the service near 50 KB/s of payload; the requester sets the
-  actual rate by sending one request at a time. The GS fetch runs at about
-  512 B/s of payload over the radio and 16 KiB/s on the bench; the RRLS
-  fetches at its own link's rate and forwards the files to the GS. At 512 B/s
-  a 10 MB launch file takes about 5.5 h (*derived*); at 16 KiB/s about 11 min.
+  DATA is also held to the station's `rate` (bytes per second of DATA, set in
+  OPEN and in every ACK; 0 pauses). A transfer ends after 15 s without an ACK,
+  on CANCEL, a new OPEN or a stream reset.
 - While logging (Startup/Idle on the pad, Landed, Recovery) the service runs
   in the SD thread between writer passes, so FileX is never entered by two
-  threads. A file being written is listed with the open flag; a reader opens
-  its own `FX_OPEN_FOR_READ` handle, whose size is the directory entry as of
-  the last 1 s media flush, so it reads a consistent flushed prefix (direct
-  sector writes invalidate any cached copy) and reopens to see more. After
-  the writer stops (one hour after Landed) the SD thread stays alive in a
-  read-only service loop on the still-mounted volume (7.6); a lost transport
-  is re-initialised by the normal once-per-second retry
+  threads. A file being written is listed with the open flag; OPEN and HASH
+  of it reopen its own `FX_OPEN_FOR_READ` handle, whose size is the directory
+  entry as of the last 1 s media flush, so a transfer or hash covers a
+  consistent flushed prefix (direct sector writes invalidate any cached copy;
+  the answers carry the growing flag and that size). A later OPEN from the
+  committed offset picks up what was written since. After the writer stops
+  (one hour after Landed, with its flush after close) the SD thread stays
+  alive in a read-only service loop on the still-mounted volume (7.6); a lost
+  transport is re-initialised by the normal once-per-second retry
   (`flight_sd_prepare_io`, same card only).
 - Build: CMake `FC_SD_SERVICE` (default ON) needs telemetry, `ONBOARD_SD` and
-  the TLSF allocator. The `--ground-test` image leaves it out: it does not fit
-  that image's flash. Counters: `g_sd_file_requests`, `g_sd_file_refused`,
-  `g_sd_file_aborts`, `g_sd_dl_errors`.
+  the TLSF allocator. The `--ground-test` image leaves it out. Counters:
+  `g_sd_file_requests`, `g_sd_file_refused`, `g_sd_file_aborts`,
+  `g_sd_file_data`, `g_sd_file_acks`, `g_sd_dl_errors`.
 
 Manual import (always possible, and the only way for a ground-test image):
 

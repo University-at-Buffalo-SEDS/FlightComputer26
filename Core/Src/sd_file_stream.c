@@ -1,45 +1,61 @@
-/* Core/Src/sd_file_stream.c: FC SD block-read service, router/telemetry side.
- * Adapted from the DAQ's sd_file_stream.c (same protocol, plus CRC). */
+/* Core/Src/sd_file_stream.c: FC SD transfer service v2, router/telemetry
+ * side (GroundStation26 docs/backend/sd-transfer.md). Same wire as the DAQ. */
 #include "sd_file_stream.h"
 #include "platform.h"
 #include "fctypes.h"
 #include "fcapi.h"
 #include "flight_state_cache.h"
 #include "telemetry_tlsf.h"
+#include "launchcore/image.h"
 
-/* Single slot, three owners in turn: router callback (IDLE->REQUESTED),
+/* Control slot, three owners in turn: router callback (IDLE->REQUESTED),
  * SD thread (REQUESTED->BUSY->READY) and telemetry poll (READY->IDLE).
  * Transitions use a short IRQ mask; no FileX, SDK or clock calls under it. */
 enum { SLOT_IDLE = 0, SLOT_REQUESTED, SLOT_BUSY, SLOT_READY };
 
-/* Send at once only while the router is otherwise idle, else wait out a long
- * gap, so recovery GPS and commands go first. The 2 ms spacing caps the
- * service near 50 KB/s of payload; the requester (GS or RRLS) sets the rate. */
+/* Answers go out at once while the router is otherwise idle, else after a
+ * 25 ms gap, so recovery GPS, commands and telemetry go first. DATA is also
+ * held to the station's rate (sd_xfer.c). */
 #define SD_FILE_MIN_FRAME_MS 2U
 #define SD_FILE_BUSY_FRAME_MS 25U
-#define SD_FILE_HANDLE_OFFSET SD_FILE_BLOCK_BYTES
+
+typedef union {
+    sd_xfer_work_t xfer;
+    launchcore_sha256_ctx_t sha;
+} sd_file_work_t;
+
+/* Borrowed from the SEDSnet heap (with its admission reserve) only while a
+ * station session exists: a 512-byte block, the FX_FILE read handle, the
+ * transfer state and its workspace. */
+typedef struct {
+    uint8_t block[512];
+    FX_FILE handle;
+    sd_xfer_t x;
+    sd_file_work_t work;
+} sd_file_area_t;
 
 static struct {
     volatile uint8_t slot;
+    volatile uint8_t msg_ready;    /* DATA message handed to the telemetry thread */
     bool connected;
-    uint16_t sent;                 /* READ bytes already framed */
+    uint8_t answer_len, msg_xfer;
+    uint16_t msg_len;
     uint32_t generation;           /* advanced on every session change */
     uint32_t request_generation;
     sd_file_request_t request;
-    sd_file_result_t result;
+    uint8_t answer[SD_FILE_ANSWER_MAX];
+    const uint8_t *msg;
     SedsRouter *router;
     uint32_t stream_id, peer_stream_id, peer_address;
     uint16_t peer_port;
     uint8_t peer_name_len;
     char peer_name[16];
-    uint32_t last_frame_ms;
+    uint32_t last_frame_ms, next_data_ms;
 } s;
-/* Borrowed from the SEDSnet heap (with its admission reserve) only while a
- * station session exists: one 512-byte block followed by the FX_FILE handle. */
-static uint8_t *s_block;
+static sd_file_area_t *s_area;
 static volatile bool s_handle_open;
 
-volatile uint32_t g_sd_file_requests, g_sd_file_refused, g_sd_file_aborts;
+volatile uint32_t g_sd_file_requests, g_sd_file_refused, g_sd_file_aborts, g_sd_file_data, g_sd_file_acks;
 
 static uint32_t lock(void) { uint32_t p = __get_PRIMASK(); __disable_irq(); return p; }
 static void unlock(uint32_t p) { __set_PRIMASK(p); }
@@ -59,17 +75,20 @@ bool sd_file_stream_claim(sd_file_request_t *request, uint32_t *ticket)
     return claimed;
 }
 
-uint8_t *sd_file_stream_block(void) { return s_block; }
-void *sd_file_stream_handle(void) { return s_block ? s_block + SD_FILE_HANDLE_OFFSET : NULL; }
+bool sd_file_stream_ticket_current(uint32_t ticket) { return ticket == s.generation && s.slot == SLOT_BUSY; }
+uint8_t *sd_file_stream_block(void) { return s_area ? s_area->block : NULL; }
+void *sd_file_stream_handle(void) { return s_area ? &s_area->handle : NULL; }
+void *sd_file_stream_scratch(void) { return s_area ? &s_area->work.sha : NULL; }
 void sd_file_stream_handle_open(bool open) { s_handle_open = open; }
 bool sd_file_stream_session_active(void) { return s.connected; }
+bool sd_file_stream_transfer_active(void) { return s_area && s_area->x.id; }
 
-void sd_file_stream_finish(uint32_t ticket, const sd_file_result_t *result)
+void sd_file_stream_answer(uint32_t ticket, const uint8_t *frame, size_t len)
 {
     const uint32_t p = lock();
     if (s.slot == SLOT_BUSY) {
-        if (ticket == s.generation && ticket == s.request_generation) {
-            s.result = *result; s.sent = 0U; s.slot = SLOT_READY;
+        if (ticket == s.generation && ticket == s.request_generation && len <= sizeof s.answer) {
+            memcpy(s.answer, frame, len); s.answer_len = (uint8_t)len; s.slot = SLOT_READY;
         } else {
             s.slot = SLOT_IDLE;
         }
@@ -77,44 +96,74 @@ void sd_file_stream_finish(uint32_t ticket, const sd_file_result_t *result)
     unlock(p);
 }
 
-static bool acquire_block(void)
+void sd_file_stream_open(uint32_t ticket, const sd_xfer_open_t *open, uint32_t file_size, bool growing)
 {
-    if (s_block) return true;
-    const size_t bytes = SD_FILE_HANDLE_OFFSET + sizeof(FX_FILE);
-    if (!telemetry_tlsf_admit(bytes + 4096U, bytes)) return false;
-    s_block = telemetry_tlsf_malloc(bytes);
-    return s_block != NULL;
+    uint8_t ans[SD_XFER_OPEN_ANSWER] = {0};
+    const uint32_t now = HAL_GetTick();
+    const uint32_t p = lock();
+    if (s_area && ticket == s.generation && ticket == s.request_generation) {
+        s.msg_ready = 0U;
+        (void)sd_xfer_begin(&s_area->x, open, file_size, growing, now, ans);
+    }
+    unlock(p);
+    sd_file_stream_answer(ticket, ans, sizeof ans);
+}
+
+bool sd_file_stream_produce(sd_xfer_read_fn read, void *ctx, uint32_t now_ms)
+{
+    if (!s_area || !s_area->x.id || s.msg_ready) return false;
+    uint32_t p = lock();
+    const sd_xfer_flow_t flow = s_area->x.flow;
+    const uint8_t xfer = s_area->x.id;
+    unlock(p);
+    const uint8_t *out = NULL;
+    const size_t n = sd_xfer_produce(&s_area->x, &s_area->work.xfer, &flow, read, ctx, now_ms, &out);
+    if (n == 0U || n == SIZE_MAX) return false;
+    p = lock();
+    s.msg = out; s.msg_len = (uint16_t)n; s.msg_xfer = xfer; s.msg_ready = 1U;
+    unlock(p);
+    return true;
+}
+
+static bool acquire_area(void)
+{
+    if (s_area) return true;
+    if (!telemetry_tlsf_admit(sizeof(sd_file_area_t) + 4096U, sizeof(sd_file_area_t))) return false;
+    s_area = telemetry_tlsf_malloc(sizeof(sd_file_area_t));
+    if (s_area) s_area->x.id = 0U;
+    return s_area != NULL;
 }
 
 /* Telemetry thread only: without a session no request can be created, so a
- * non-BUSY slot without an open handle leaves the block unowned. */
-static void release_block_if_unused(void)
+ * non-BUSY slot without an open handle leaves the area unowned. */
+static void release_area_if_unused(void)
 {
-    if (!s_block || s.connected) return;
+    if (!s_area || s.connected) return;
     const uint32_t p = lock();
-    uint8_t *block = s.slot == SLOT_BUSY || s_handle_open ? NULL : s_block;
-    if (block) s_block = NULL;
+    sd_file_area_t *area = s.slot == SLOT_BUSY || s_handle_open ? NULL : s_area;
+    if (area) s_area = NULL;
     unlock(p);
-    if (block) telemetry_tlsf_free(block);
+    if (area) telemetry_tlsf_free(area);
 }
 
-/* Drops any queued answer; a busy SD turn finishes into IDLE. Caller locks. */
+/* Drops any queued answer and ends the transfer; a busy SD turn finishes into
+ * IDLE. Caller locks. */
 static void end_session_locked(void)
 {
     s.connected = false;
     ++s.generation;
     if (s.slot != SLOT_BUSY) s.slot = SLOT_IDLE;
+    s.msg_ready = 0U;
+    if (s_area) s_area->x.id = 0U;
 }
 
-static SedsResult reply_status(uint32_t stream, uint8_t op, uint8_t status)
+static SedsResult reply_status(uint32_t stream, const uint8_t *request, size_t len, uint8_t status)
 {
-    uint8_t frame[SD_FILE_FRAME_MAX];
-    size_t len;
-    if (op == SD_FILE_OP_READ) len = sd_file_encode_data(frame, status, SD_FILE_DATA_LAST, 0U, 0U, NULL, 0U, 0U);
-    else if (op == SD_FILE_OP_LIST) len = sd_file_encode_list(frame, status, 0U, 0U, 0U, NULL, 0U);
-    else { frame[0] = (uint8_t)(op | SD_FILE_RESPONSE_FLAG); frame[1] = status; len = 2U; }
+    uint8_t frame[SD_FILE_ANSWER_MAX];
+    size_t n = sd_file_encode_status(frame, request[0], status);
+    if (request[0] == SD_FILE_OP_OPEN && len > 1U) frame[2] = request[1];   /* xfer */
     if (status != SD_FILE_STATUS_OK) ++g_sd_file_refused;
-    return seds_router_send_p2p_stream(s.router, stream, frame, len);
+    return seds_router_send_p2p_stream(s.router, stream, frame, n);
 }
 
 /* The GS, or the RRLS relay station (often nearer the landed rocket; it fetches
@@ -140,7 +189,7 @@ static SedsResult sd_file_stream_event(const SedsP2pStreamEventView *e, void *us
     (void)user;
     if (!authorized(e)) return SEDS_BAD_ARG;
     if (e->kind == SEDS_P2P_STREAM_ACCEPTED) {
-        if (!sd_file_stream_state_allowed() || !acquire_block()) { ++g_sd_file_refused; return SEDS_ERR; }
+        if (!sd_file_stream_state_allowed() || !acquire_area()) { ++g_sd_file_refused; return SEDS_ERR; }
         const uint32_t p = lock();
         end_session_locked();
         s.stream_id = e->stream_id; s.peer_stream_id = e->peer_stream_id;
@@ -157,23 +206,37 @@ static SedsResult sd_file_stream_event(const SedsP2pStreamEventView *e, void *us
         return SEDS_OK;
     }
     if (e->kind != SEDS_P2P_STREAM_DATA || !e->payload || !e->payload_len) return SEDS_BAD_ARG;
-    sd_file_request_t request;
     const uint8_t op = e->payload[0];
+    if (op == SD_FILE_OP_ACK) {
+        uint8_t xfer;
+        sd_xfer_flow_t flow;
+        if (!sd_xfer_parse_ack(e->payload, e->payload_len, &xfer, &flow)) return SEDS_BAD_ARG;
+        const uint32_t now = HAL_GetTick();
+        const uint32_t p = lock();
+        const bool applied = s_area && sd_xfer_ack(&s_area->x, xfer, &flow, now);
+        unlock(p);
+        if (applied) { ++g_sd_file_acks; sd_pipeline_wake(); }
+        return SEDS_OK;
+    }
+    sd_file_request_t request;
     const uint8_t status = sd_file_parse_request(e->payload, e->payload_len, &request);
-    if (status != SD_FILE_STATUS_OK) return reply_status(e->stream_id, op, status);
+    if (status != SD_FILE_STATUS_OK) return reply_status(e->stream_id, e->payload, e->payload_len, status);
     if (op == SD_FILE_OP_CANCEL) {
         const uint32_t p = lock();
         ++s.generation;                       /* stale any busy SD answer */
         if (s.slot != SLOT_BUSY) s.slot = SLOT_IDLE;
+        s.msg_ready = 0U;
+        if (s_area) s_area->x.id = 0U;
         unlock(p);
-        return reply_status(e->stream_id, op, SD_FILE_STATUS_OK);
+        return reply_status(e->stream_id, e->payload, e->payload_len, SD_FILE_STATUS_OK);
     }
-    if (!sd_file_stream_state_allowed()) return reply_status(e->stream_id, op, SD_FILE_STATUS_BAD_STATE);
+    if (!sd_file_stream_state_allowed())
+        return reply_status(e->stream_id, e->payload, e->payload_len, SD_FILE_STATUS_BAD_STATE);
     const uint32_t p = lock();
     const bool idle = s.slot == SLOT_IDLE;
     if (idle) { s.request = request; s.request_generation = s.generation; s.slot = SLOT_REQUESTED; }
     unlock(p);
-    if (!idle) return reply_status(e->stream_id, op, SD_FILE_STATUS_BUSY);
+    if (!idle) return reply_status(e->stream_id, e->payload, e->payload_len, SD_FILE_STATUS_BUSY);
     ++g_sd_file_requests;
     sd_pipeline_wake();
     return SEDS_OK;
@@ -198,32 +261,25 @@ void sd_file_stream_poll(void)
         (void)seds_router_reset_p2p_stream(s.router, stream);
         return;
     }
-    if (!s.connected) { release_block_if_unused(); return; }
-    if (s.slot != SLOT_READY) return;
-    const uint32_t gap = HAL_GetTick() - s.last_frame_ms;
-    if (gap < SD_FILE_MIN_FRAME_MS ||
-        (gap < SD_FILE_BUSY_FRAME_MS && seds_router_has_queued_work(s.router) != 0)) return;
-
-    uint8_t frame[SD_FILE_FRAME_MAX];
-    const sd_file_result_t *r = &s.result;
-    uint16_t chunk = 0U;
-    bool done = true;
-    size_t len;
-    if (s.request.op == SD_FILE_OP_LIST) {
-        len = sd_file_encode_list(frame, r->status, s.request.index, r->file_size, r->flags,
-                                  (const char *)s_block, r->name_len);
-    } else if (r->status != SD_FILE_STATUS_OK || r->data_len == 0U) {
-        len = sd_file_encode_data(frame, r->status, SD_FILE_DATA_LAST, r->offset, r->file_size, NULL, 0U, 0U);
-    } else {
-        const uint16_t remaining = (uint16_t)(r->data_len - s.sent);
-        chunk = remaining > SD_FILE_DATA_MAX ? SD_FILE_DATA_MAX : remaining;
-        done = chunk == remaining;
-        len = sd_file_encode_data(frame, r->status, done ? SD_FILE_DATA_LAST | SD_FILE_DATA_CRC : 0U,
-                                  r->offset + s.sent, r->file_size, s_block + r->data_start + s.sent,
-                                  chunk, r->crc);
+    if (!s.connected) { release_area_if_unused(); return; }
+    const uint32_t now = HAL_GetTick();
+    const uint32_t gap = now - s.last_frame_ms;
+    const bool busy = seds_router_has_queued_work(s.router) != 0;
+    if (gap < SD_FILE_MIN_FRAME_MS || (gap < SD_FILE_BUSY_FRAME_MS && busy)) return;
+    if (s.slot == SLOT_READY) {
+        if (seds_router_send_p2p_stream(s.router, s.stream_id, s.answer, s.answer_len) != SEDS_OK) return; /* retry */
+        s.last_frame_ms = now;
+        const uint32_t p = lock(); if (s.slot == SLOT_READY) s.slot = SLOT_IDLE; unlock(p);
+        return;
     }
-    if (seds_router_send_p2p_stream(s.router, s.stream_id, frame, len) != SEDS_OK) return; /* retry */
-    s.last_frame_ms = HAL_GetTick();
-    s.sent = (uint16_t)(s.sent + chunk);
-    if (done) { const uint32_t p = lock(); if (s.slot == SLOT_READY) s.slot = SLOT_IDLE; unlock(p); }
+    if (!s.msg_ready) return;
+    if (!s_area || s.msg_xfer != s_area->x.id) { s.msg_ready = 0U; return; }  /* cancelled */
+    const uint32_t rate = s_area->x.flow.rate;
+    if (!rate || (int32_t)(now - s.next_data_ms) < 0) return;
+    if (seds_router_send_p2p_stream(s.router, s.stream_id, s.msg, s.msg_len) != SEDS_OK) return; /* retry */
+    s.last_frame_ms = now;
+    s.next_data_ms = now + (uint32_t)(((uint64_t)s.msg_len * 1000U + rate - 1U) / rate);
+    ++g_sd_file_data;
+    s.msg_ready = 0U;
+    sd_pipeline_wake();
 }

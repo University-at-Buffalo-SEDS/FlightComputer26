@@ -45,6 +45,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 if(ENABLE_TELEMETRY)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/Core/Src/ota_stream.c")
 endif()
+# The SD transfer service's HASH answer (SHA-256 of the file on the card).
+if(FC_SD_SERVICE_ACTIVE)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE "${sedslaunchcore_SOURCE_DIR}/bootloader/src/sha256.c")
+endif()
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     "${CMAKE_SOURCE_DIR}/Bootloader"
     "${sedslaunchcore_SOURCE_DIR}/bootloader/include"

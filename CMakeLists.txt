@@ -322,16 +322,26 @@ if (INTEGRATED_GROUND_TEST)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_GROUND_TEST=1)
 endif()
 
-# SD block-read service on SEDSnet P2P port 4511 (GS/RRLS fetch the card after
-# landing). Flight image only: the --ground-test image has no flash left for
-# it. Needs telemetry, the SD logger and the TLSF heap (it borrows its block).
+# SD transfer service v2 on SEDSnet P2P port 4511 (GS/RRLS fetch the card
+# after landing; GroundStation26 docs/backend/sd-transfer.md). Flight image
+# only. Needs telemetry, the SD logger and the TLSF heap (it borrows its
+# block, read handle and transfer workspace there while a station session
+# exists). SHA-256 for the HASH answer is LaunchCore's (cmake/launchcore_stm32.cmake).
 option(FC_SD_SERVICE "Serve SD log files over SEDSnet P2P port 4511 (flight image only)" ON)
+set(FC_SD_SERVICE_ACTIVE OFF)
 if (FC_SD_SERVICE AND INTEGRATED_GROUND_TEST)
-    message(STATUS "SD read service:        OFF (does not fit the ground-test image)")
+    message(STATUS "SD read service:        OFF (not in the ground-test image)")
 elseif (FC_SD_SERVICE AND ENABLE_TELEMETRY AND ONBOARD_SD AND TELEMETRY_USE_TLSF)
-    message(STATUS "SD read service:        ON (P2P port 4511)")
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_SD_SERVICE=1)
-    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/sd_file_stream.c)
+    message(STATUS "SD read service:        ON (P2P port 4511, transfer v2)")
+    set(FC_SD_SERVICE_ACTIVE ON)
+    # 64 SDX token contexts and 512-byte DATA messages keep the borrowed
+    # workspace near 4.7 KiB; the radio uses ~460-byte messages anyway.
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_SD_SERVICE=1
+        SDX_CTX_ENTRIES=64U SD_XFER_MSG_MAX=512U)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/Core/Src/sd_file_stream.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/sd_xfer.c
+        ${CMAKE_SOURCE_DIR}/Core/Src/sd_xfer_codec.c)
 else()
     message(STATUS "SD read service:        OFF")
 endif()
