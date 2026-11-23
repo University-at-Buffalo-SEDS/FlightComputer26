@@ -18,6 +18,7 @@
 #include "av_bay_underglow.h"
 #endif
 #include "tx_thread.h"
+#include "thread_comm.h"
 
 #define id "RE "
 
@@ -336,7 +337,6 @@ static inline void barometer_fallback_vigilant(void)
 
 static inline void evaluation_configure(bool focus)
 {
-  UINT eval_old_pt, eval_new_pt;
   if (fc_recovery_eval_pause_requested()) return;
 
   if (g_conf & option(Eval_Abort_Flag))
@@ -346,20 +346,16 @@ static inline void evaluation_configure(bool focus)
     message(id "restored evaluation", false);
   }
 
+  /* Relaxed no longer exposes the evaluator: the estimator guard is not a
+   * mode. */
   if (focus)
   {
-    eval_new_pt = EVAL_PREEMPT_THRESHOLD;
     g_conf |= option(Eval_Focused);
   }
   else
   {
-    eval_new_pt = EVAL_PRIORITY;
     g_conf &= ~option(Eval_Focused);
   }
-
-  tx_thread_preemption_change(&evaluation_task,
-                              eval_new_pt,
-                              &eval_old_pt);
 }
 
 static inline void manual_deployment(bool apogee, bool force, bool manual)
@@ -928,10 +924,17 @@ void recovery_entry(ULONG st)
   {
     fc_msg msg;
     fc_monitor_bench_poll();
+    /* Every command and control step runs under the estimator guard, so it
+     * never lands in the middle of an evaluation pass (thread_comm.h). The
+     * guard is never held across the waits below. */
+    thread_comm_estimator_enter();
     fc_recovery_control_service();
+    thread_comm_estimator_leave();
     if (fc_recovery_take_sensor_restart()) {
+      thread_comm_estimator_enter();
       if (flight_mission_active())
         decode_flight_message(fc_mask(Launch_Signal));
+      thread_comm_estimator_leave();
       distribution_wake();
       telemetry_wake();
       continue;
@@ -953,7 +956,9 @@ void recovery_entry(ULONG st)
       continue;
     }
 
+    thread_comm_estimator_enter();
     fc_recovery_control_service();
+    thread_comm_estimator_leave();
     if (command_epoch != fc_recovery_epoch()) continue;
     g_recovery_commands_dequeued++;
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
@@ -967,7 +972,9 @@ void recovery_entry(ULONG st)
 #else
     const bool network_command = false;
 #endif
+    thread_comm_estimator_enter();
     decode_flight_message(msg);
+    thread_comm_estimator_leave();
     /* Commands change the configuration distribution's loops poll and the
      * latches (Abort status) the telemetry loop publishes. */
     distribution_wake();

@@ -163,6 +163,9 @@ UINT _txe_event_flags_get(TX_EVENT_FLAGS_GROUP *g, ULONG r, UINT o, ULONG *a, UL
 UINT _txe_thread_create(TX_THREAD *t, CHAR *n, VOID (*e)(ULONG), ULONG i, VOID *s, ULONG z, UINT p, UINT pt, ULONG ts, UINT a, UINT c)
 { (void)t; (void)n; (void)e; (void)i; (void)s; (void)z; (void)p; (void)pt; (void)ts; (void)a; (void)c; return TX_SUCCESS; }
 void board_watchdog_progress(uint32_t m) { (void)m; }
+void thread_comm_estimator_enter(void) {}
+void thread_comm_estimator_leave(void) {}
+void thread_comm_estimator_sleep(ULONG ticks) { _tx_thread_sleep(ticks); }
 void distribution_wake(void) {}
 bool fc_recovery_eval_pause_requested(void) { return false; }
 void fc_recovery_evaluation_quiescent(void) {}

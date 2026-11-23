@@ -45,18 +45,13 @@ UINT create_recovery_task(TX_BYTE_POOL *);
 /* Evaluation Task */
 
 #define EVAL_INPUT 0
-#define EVAL_TIME_SLICE 25
-#define EVAL_SLEEP_NO_DATA 20
-#define EVAL_SLEEP_RT_CONF 10
 #define EVAL_PRIORITY 5
-/* 0: while Focused, no thread preempts an evaluation pass, including the
- * priority-0 recovery task. A manual Deploy/Expand runs descent_initialize,
- * which rebinds the Kalman matrices to the 4x4 descent set; preempting
- * ascent_predict/update mid-step would write 6x6 results into them. With
- * TX_DISABLE_PREEMPTION_THRESHOLD any threshold other than the priority is 0
- * anyway, and no thread runs at 1-4, so a narrower threshold buys nothing.
- * A pass is ~1 ms; pyro pulses are timed in SysTick, not by a thread. */
-#define EVAL_PREEMPT_THRESHOLD 0
+/* No preemption threshold and no time slice. A manual Deploy/Expand runs
+ * descent_initialize, which rebinds the Kalman matrices to the 4x4 descent
+ * set; an ascent predict/update interrupted by it would write 6x6 results
+ * into them. The estimator guard (thread_comm.h) keeps recovery commands out
+ * of a pass; the other priority-5 threads never preempt it (no slicing). A
+ * pass is ~1 ms; pyro pulses are timed in SysTick, not by a thread. */
 /* Flight-state changes publish through the SEDSNet router's immediate send
  * path on this stack (measured 6.4 KiB through Landed in simulation). */
 #define EVAL_STACK_BYTES (12U * 1024U)

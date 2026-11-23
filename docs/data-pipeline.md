@@ -141,7 +141,7 @@ Lower number = higher priority.
 | Telemetry task | 5 (`TLMT_PRIORITY`), slice 50 | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
 | DMA task | 5, no slice | 4096 B | DRDY event flags (1-tick poll) | picks the next ready sensor, runs one SPI1 DMA read, waits on completion (`DMA_TIMEOUT_MS` 20) | `dma.c` |
 | Distribution task | 5, slice 25 | 16 KiB | `sample_ready` flags (1-tick poll) | conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c` |
-| Evaluation task | 5, slice 25, threshold 1 requested | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee | `evaluation.c`, `recovery.c` (`enter_launch`) |
+| Evaluation task | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee; holds the estimator guard for each pass | `evaluation.c`, `thread_comm.c`, `recovery.c` (`enter_launch`) |
 | SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
 | EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and an event flag | `main.c`, `dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
@@ -150,12 +150,12 @@ Lower number = higher priority.
 | SysTick | SHPR byte 0x40 | - | 1 kHz | `fc_runtime_tick`: HAL tick, pyro pulse countdown, then ThreadX tick | `tx_initialize_low_level.S`, `deployment_pulse.c` |
 | TIM6 | `TICK_INT_PRIORITY` 15 | - | 1 kHz | HAL tick before ThreadX only; suspended at the first SysTick | `stm32h5xx_hal_timebase_tim.c`, `deployment_pulse.c` |
 
-`TX_DISABLE_PREEMPTION_THRESHOLD` is defined (`tx_user.h:159`). ThreadX then
-turns any threshold other than the thread's own priority into 0
-(`tx_thread_create.c:196`). The evaluation thread's threshold
-(`EVAL_PREEMPT_THRESHOLD` 0) means that while it runs, no thread preempts it,
-not even the recovery task; this keeps an EKF step atomic against a manual
-deployment's `descent_initialize`. See section 9, item 5.
+An evaluation pass and a recovery command never interleave: the evaluation
+thread holds the estimator guard (`thread_comm.c`, a priority-inheriting
+mutex) for each pass and gives it up while it sleeps, and the recovery task
+holds it while it executes a command or a control step. This keeps an EKF step
+atomic against a manual deployment's `descent_initialize`. See section 9,
+item 5, and `docs/task-layout.md`.
 
 ### Sensor acquisition per flight phase
 
@@ -900,30 +900,21 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    `docs/sd-flight-recordings.md:90` says it remains enabled;
    `FX_ENABLE_FAULT_TOLERANT` only compiles it and `fx_fault_tolerant_enable`
    is never called.
-5. **Analysed, kept: the evaluation thread is not preemptible by any
-   thread.** With `TX_DISABLE_PREEMPTION_THRESHOLD` (`tx_user.h:159`) any
-   threshold other than the priority becomes 0 (`tx_thread_create.c:196-202`,
-   `tx_thread_preemption_change.c`); `EVAL_PREEMPT_THRESHOLD` now says 0. This
-   is deliberate:
-   - The evaluation thread runs only from Launch to Apogee (descent runs in
-     the distribution thread). A pass is about 1 ms (ascent predict ~20 us,
-     update ~15 us, CSV formatting, the ~0.3 ms retained-checkpoint CRC) per
-     40 ms baro cycle (estimated from the ELF at 250 MHz, not measured).
-   - It only holds off the priority-0 recovery task and the ThreadX timer
-     thread, by at most one pass. Their deadlines are 200-3000 ms; pyro
-     pulses are timed in SysTick (`deployment_pulse.c`), and GS commands
-     reach recovery through the priority-5 telemetry thread, which cannot
-     run during a pass anyway. DMA, distribution, telemetry and SD share
-     priority 5 and are unaffected.
-   - It protects a real critical section: a manual Deploy/Expand runs
-     `descent_initialize`, which rebinds `kf.mxp`/`mxq`/... to the 4x4
-     descent matrices. Preempting `ascent_predict`/`ascent_update` there
-     would write 6x6 results into them (`arm_mat_mult_f32` does no size
-     check) and corrupt the descent filter that times the main.
-   - No thread uses priorities 1-4, so a real threshold of 1 (enabling the
-     kernel feature, about +190 B) would equal full preemption and open that
-     race. The GS `Evaluation_Relax` command already does so (threshold 5);
-     keep it to the pad. Test: `test_evaluation_preemption.py`.
+5. **Changed: the evaluation pass is protected by an explicit guard, not a
+   preemption threshold.** A manual Deploy/Expand runs `descent_initialize`,
+   which rebinds `kf.mxp`/`mxq`/... to the 4x4 descent matrices; an
+   `ascent_predict`/`ascent_update` interrupted there would write 6x6 results
+   into them (`arm_mat_mult_f32` does no size check) and corrupt the descent
+   filter that times the main. This used to rest on the evaluation thread's
+   threshold 0 (with `TX_DISABLE_PREEMPTION_THRESHOLD` it held off every
+   thread), which the GS `EvaluationRelax` command could switch off. Now the
+   evaluation thread holds the estimator guard (`thread_comm.c`) for each pass
+   and recovery holds it for each command and control step, so the two never
+   interleave in any mode; the evaluator releases it for its confirm sleeps
+   exactly where the CPU was released before. It has no time slice, so the
+   other priority-5 threads still never run inside a pass. A pass is about
+   1 ms per 40 ms baro cycle; a command that arrives during one waits for its
+   end, as before. Tests: `test_evaluation_preemption.py`, `test_thread_comm.py`.
 6. **Fixed: the host IGT replay used a 10 ms baro period; the board uses
    40 ms** (`Baro_ODR_25`, `recovery.c`). `tools/igt_replay_host.py` now
    steps the baro every 40 ms (`BARO_PERIOD_MS`), and GroundStation26

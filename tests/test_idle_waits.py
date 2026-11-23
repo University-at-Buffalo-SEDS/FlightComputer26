@@ -72,7 +72,7 @@ class IdleWaits(unittest.TestCase):
 
     def test_distribution_wakes_on_commands_gps_and_evaluator_stage(self):
         recovery = (ROOT / 'Core/Src/recovery.c').read_text()
-        self.assertRegex(recovery, r'(?s)decode_flight_message\(msg\);\s*/\*.*?\*/\s*'
+        self.assertRegex(recovery, r'(?s)decode_flight_message\(msg\);\s*thread_comm_estimator_leave\(\);\s*/\*.*?\*/\s*'
                                    r'distribution_wake\(\);\s*telemetry_wake\(\);')
         distribution = (ROOT / 'Core/Src/distribution.c').read_text()
         gps = distribution[distribution.index('process_gps_packet(const uint8_t *data'):]

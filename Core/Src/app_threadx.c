@@ -29,6 +29,7 @@
 #include "platform.h"
 #include "fctasks.h"
 #include "fcapi.h"
+#include "thread_comm.h"
 #ifdef TELEMETRY_USE_TLSF
 #include "telemetry_tlsf.h"
 #endif
@@ -117,6 +118,11 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
    * retries initialization and exposes unavailable/drop counters. */
   (void)sd_pipeline_prepare();
 #endif
+
+  if (thread_comm_init() != TX_SUCCESS)
+  {
+    startup_fault(8U);
+  }
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
   ret = create_telemetry_task(memory_ptr);

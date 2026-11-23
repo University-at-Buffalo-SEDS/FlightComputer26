@@ -13,6 +13,7 @@
 #include "sweetbench.h"
 #include "fc_estimator_status.h"
 #include "ground_test.h"
+#include "thread_comm.h"
 
 #define id "EV "
 
@@ -130,7 +131,7 @@ static inline void detect_boost(fu32 mode)
     flight_advance(Launch);
     timer_update(Auxiliary);
     extremes.max_vel = svec(0).vel;
-    tx_thread_sleep(LAUNCH_CONFIRM_DELAY);
+    thread_comm_estimator_sleep(LAUNCH_CONFIRM_DELAY);
   }
 }
 
@@ -203,7 +204,7 @@ static inline void detect_apogee(fu32 mode)
     descent_initialize(mode);
     flight_advance(Apogee);
     extremes.max_alt = svec(0).alt;
-    tx_thread_sleep(APOGEE_CONFIRM_DELAY);
+    thread_comm_estimator_sleep(APOGEE_CONFIRM_DELAY);
   }
 }
 
@@ -306,7 +307,7 @@ static inline void report_lowpass_gps(fu32 mode)
     log_f32(SEDS_DT_GPS_DATA, 3, &lowpass);
   }
 
-  tx_thread_sleep(RECOVERY_ANNOUNCE_DELAY / 1000);
+  thread_comm_estimator_sleep(RECOVERY_ANNOUNCE_DELAY / 1000);
 
 #endif
 }
@@ -549,8 +550,10 @@ void evaluation_entry(ULONG _)
   float dt = 0;
 
   evaluation_control_barrier();
+  thread_comm_estimator_enter();
   enter_flight_mode(conf);
   fc_watchdog_checkpoint();
+  thread_comm_estimator_leave();
 
   MrAnalog (conf & option(Eval_Abort_Flag))
   {
@@ -565,6 +568,9 @@ void evaluation_entry(ULONG _)
     { continue; }
 
     evaluation_control_barrier();
+    /* One pass (a predict, or an update and the state machine) never
+     * interleaves a recovery command such as a manual Deploy/Expand. */
+    thread_comm_estimator_enter();
     accum |= done;
 
     if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
@@ -592,6 +598,7 @@ void evaluation_entry(ULONG _)
       dt = fsec(timer_exchange(AscentKF));
       ascent_predict(dt, conf);
     }
+    thread_comm_estimator_leave();
   }
 }
 
@@ -618,8 +625,10 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
                         pointer,
                         EVAL_STACK_BYTES,
                         EVAL_PRIORITY,
-                        EVAL_PREEMPT_THRESHOLD,
-                        EVAL_TIME_SLICE,
+                        /* No preemption threshold: thread_comm's estimator
+                         * guard keeps recovery out of a pass. */
+                        EVAL_PRIORITY,
+                        TX_NO_TIME_SLICE,
                         TX_DONT_START);
 
   if (st != TX_SUCCESS)

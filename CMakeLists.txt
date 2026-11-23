@@ -75,6 +75,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/ground_test.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
     ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/thread_comm.c
     ${CMAKE_SOURCE_DIR}/Core/Src/fc_recovery_owner.c
     ${CMAKE_SOURCE_DIR}/Core/Src/deployment_pulse.c
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c

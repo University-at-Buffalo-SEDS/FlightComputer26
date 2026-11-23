@@ -85,6 +85,7 @@ static void log_flight_state(int *s) { (void)s; }
 static void timer_update(int t) { (void)t; aux_ms = sim_ms; }
 static uint32_t timer_fetch(int t) { (void)t; return sim_ms - aux_ms; }
 static void tx_thread_sleep(uint32_t ticks) { skip_ms += ticks; }
+static void thread_comm_estimator_sleep(uint32_t ticks) { tx_thread_sleep(ticks); }
 static void descent_initialize(fu32 c) { (void)c; }
 static state current(void) { return load(&sm.flight, Acq); }
 static bool beyond(state b) { return current() > b; }
