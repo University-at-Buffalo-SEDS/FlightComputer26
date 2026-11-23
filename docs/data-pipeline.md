@@ -87,11 +87,12 @@ gantt
   Armed, countdown (~10 s, GS)        :s3, 00:00:50, 10s
   Launch..Coast (ascent EKF)          :s4, 00:01:00, 30s
   Apogee..Reefing (descent KF)        :s5, 00:01:30, 60s
-  Landed (5 s sleep)                  :crit, s6, 00:02:30, 5s
-  Recovery (SD logging stopped, read service on) :s7, 00:02:35, 20s
+  Landed (5 s announce delay)         :s6, 00:02:30, 5s
+  Recovery (logging on, read service on) :s7, 00:02:35, 40s
   section SD file
   irec-<t>-000.csv (ordinary)         :f1, 00:00:00, 50s
-  irec_LAUNCH-<t>-000.csv             :active, f2, 00:00:50, 105s
+  irec_LAUNCH-<t>-000.csv             :active, f2, 00:00:50, 120s
+  irec-<t>-000.csv (after Landed + 20 s) :f3, 00:02:50, 25s
   section IMU on SD
   100 Hz                              :i1, 00:00:00, 50s
   ~25 Hz (one per EKF cycle)          :i2, 00:00:50, 40s
@@ -128,7 +129,7 @@ Lower number = higher priority.
 | DMA task | 5, no slice | 4096 B | DRDY event flags (1-tick poll) | picks the next ready sensor, runs one SPI1 DMA read, waits on completion (`DMA_TIMEOUT_MS` 20) | `dma.c` |
 | Distribution task | 5, slice 25 | 16 KiB | `sample_ready` flags (1-tick poll) | conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c` |
 | Evaluation task | 5, slice 25, threshold 1 requested | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee | `evaluation.c`, `recovery.c` (`enter_launch`) |
-| SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives `sd_conclude` | `app_filex.c`, `sdpipeline.c` |
+| SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
 | EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and an event flag | `main.c`, `dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
 | FDCAN1 IT0/IT1 | NVIC 0 | - | CAN RX/TX | wake telemetry, TX pump | `stm32h5xx_hal_msp.c` |
@@ -138,9 +139,10 @@ Lower number = higher priority.
 
 `TX_DISABLE_PREEMPTION_THRESHOLD` is defined (`tx_user.h:159`). ThreadX then
 turns any threshold other than the thread's own priority into 0
-(`tx_thread_create.c:196`). The evaluation thread's requested threshold 1
-(`EVAL_PREEMPT_THRESHOLD`) therefore becomes 0: while it runs, no thread
-preempts it, not even the recovery task. See section 9.
+(`tx_thread_create.c:196`). The evaluation thread's threshold
+(`EVAL_PREEMPT_THRESHOLD` 0) means that while it runs, no thread preempts it,
+not even the recovery task; this keeps an EKF step atomic against a manual
+deployment's `descent_initialize`. See section 9, item 5.
 
 ### Sensor acquisition per flight phase
 
@@ -155,7 +157,7 @@ SD rate follows this table.
 | Postinit (`POSTINIT_DURATION` 5000 ms) | `post_initialization` | 100 Hz (averaged for attitude) | not consumed | 25 Hz | `distribution.c`, `fcconfig.h` |
 | Launch to Coast | ascent: one IMU pair, then one baro per cycle | ~25 Hz | ~25 Hz | 25 Hz | `distribution.c`, `evaluation.c` |
 | Apogee to Landed | `descent_full_cycle` | off | off | 25 Hz | `kalman.c` (`descent_initialize` sends `Disable_IMU`), `dma.c` |
-| Landed | distribution sleeps `RECOVERY_ANNOUNCE_DELAY` 5000 ms | off | off | none | `evaluation.c:279` |
+| Landed, Recovery | `descent_full_cycle`; Recovery is announced `RECOVERY_ANNOUNCE_DELAY` 5000 ms after Landed without sleeping | off | off | 25 Hz | `evaluation.c` (`announce_recovery`) |
 
 ## 4. Stream summary
 
@@ -459,7 +461,8 @@ irec_LAUNCH-<time>-<nnn>.csv   launch file
 | File | Starts | Ends |
 | --- | --- | --- |
 | Ordinary | when the SD task opens the card at boot | when the launch file starts, or at a 3 GiB part limit (new ordinary part) |
-| Launch | the next write after a `launch_accepted` or `launch_detected` row; at boot if the restored state is past Armed | Recovery (`sd_conclude`, about 5 s after Landed, section 9); the 20 s Landed cut-off in the code is not reached |
+| Launch | the next write after a `launch_accepted` or `launch_detected` row; at boot if the restored state is past Armed | 20 s after Landed (`sd_mark_launch_cutoff`); later rows go to a new ordinary file |
+| Ordinary after Landed | Landed + 20 s | power-off, or 1 h after Landed (`SD_RECOVERY_LOG_MS`), when the writer stops, flushes and closes it |
 
 The GS sends the FC Launch command together with the Valve Board sequence
 command when the operator presses Launch (GroundStation26
@@ -481,8 +484,11 @@ Other rules:
   continue.
 - Every reset or power cycle starts a new file; nothing is appended to an old
   one.
-- Designed but not reached (section 9): 20 s after Landed (`sd_mark_launch_cutoff`)
-  the launch file closes and later rows go to a new ordinary file.
+- 20 s after Landed (`sd_mark_launch_cutoff`) the launch file closes and later
+  rows go to a new ordinary file. Logging continues through Recovery; one hour
+  after Landed (`SD_RECOVERY_LOG_MS`) the writer stops by itself (as a clean
+  stop, 7.6), which bounds a vehicle left powered: about 10-20 MB at descent
+  rates. There is no operator stop command.
 
 ### 7.4 Record format
 
@@ -608,7 +614,8 @@ Lost on a reset, watchdog reset or power loss (`sdbuf` is not preserved):
 
 So expect up to about 2 s of rows to be missing at the end of a file cut by
 power loss (*derived*), and possibly lost clusters (fault-tolerant mode is
-off, 7.1). A clean stop (`sd_conclude`) drains both buffers and queued events,
+off, 7.1). A clean stop (`sd_conclude`, now only the writer's own one-hour post-Landed
+limit) drains both buffers and queued events,
 flushes and closes the file; it counts what it could not save in
 `g_sd_shutdown_lost_records` and `g_sd_shutdown_lost_events`. With the SD read
 service (flight image, `FC_SD_SERVICE`) the flushed volume then stays mounted
@@ -688,11 +695,16 @@ little-endian, every frame <= 117 bytes):
   512 B/s of payload over the radio and 16 KiB/s on the bench; the RRLS
   fetches at its own link's rate and forwards the files to the GS. At 512 B/s
   a 10 MB launch file takes about 5.5 h (*derived*); at 16 KiB/s about 11 min.
-- After `sd_conclude` (Recovery) the SD thread stays alive in a read-only
-  service loop on the still-mounted volume (7.6); a lost transport is
-  re-initialised by the normal once-per-second retry (`flight_sd_prepare_io`,
-  same card only). Before that (Startup/Idle on the pad, the Landed window)
-  the service runs between writer passes.
+- While logging (Startup/Idle on the pad, Landed, Recovery) the service runs
+  in the SD thread between writer passes, so FileX is never entered by two
+  threads. A file being written is listed with the open flag; a reader opens
+  its own `FX_OPEN_FOR_READ` handle, whose size is the directory entry as of
+  the last 1 s media flush, so it reads a consistent flushed prefix (direct
+  sector writes invalidate any cached copy) and reopens to see more. After
+  the writer stops (one hour after Landed) the SD thread stays alive in a
+  read-only service loop on the still-mounted volume (7.6); a lost transport
+  is re-initialised by the normal once-per-second retry
+  (`flight_sd_prepare_io`, same card only).
 - Build: CMake `FC_SD_SERVICE` (default ON) needs telemetry, `ONBOARD_SD` and
   the TLSF allocator. The `--ground-test` image leaves it out: it does not fit
   that image's flash. Counters: `g_sd_file_requests`, `g_sd_file_refused`,
@@ -769,20 +781,20 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
 | Baro reference | not logged (implicit in `alt`) | `BOARD_HEALTH` word 15 |
 | Launch site | not logged | `LAUNCH_SITE` echo |
 | IGT replay | `SIM` at most 20 Hz per kind | `SIM_SAMPLE` 5 Hz per kind |
-| After Recovery | nothing new (logging stopped); the card is served read-only (8.2) | all network streams continue |
+| After Recovery | logging continues (new ordinary file from Landed + 20 s) until power-off or 1 h after Landed; the card is served for reads throughout (8.2) | all network streams continue |
 
 ## 9. Known gaps and bugs found
 
-1. **SD logging stops at Recovery, before the Landed window.** On Landed the
-   distribution task sleeps `RECOVERY_ANNOUNCE_DELAY` 5000 ms
-   (`evaluation.c:279-280`); on the next baro sample `announce_recovery`
-   calls `sd_conclude()` (`evaluation.c:284-290`), which ends the SD task for
-   the rest of the boot (`sdpipeline.c:580`, `621`, `491`). The 20 s
-   post-Landed window (`sdpipeline.c:55`) and the new ordinary file after it,
-   described in `docs/sd-flight-recordings.md`, are never reached. No sensor
-   rows are written during the 5 s sleep, and nothing at all after Recovery.
-   The SD thread no longer ends there: it keeps the flushed volume mounted
-   and serves reads (8.2) for the rest of the boot (flight image).
+1. **Fixed: SD logging stopped at Recovery, before the Landed window.** On
+   Landed the distribution task slept `RECOVERY_ANNOUNCE_DELAY` 5000 ms, and
+   `announce_recovery` then called `sd_conclude()`, so the 20 s Landed window
+   was never logged and nothing after Recovery. Now Recovery is announced
+   5 s after Landed without sleeping the sensor thread, the FSM no longer
+   stops the writer, the launch file closes at Landed + 20 s and logging
+   continues into a new ordinary file until power-off or one hour after
+   Landed (`SD_RECOVERY_LOG_MS`, 7.3). Reads are served between writer
+   passes in the same thread (8.2). Tests: `test_sd_recovery_logging.py`,
+   `test_launch_landed_window.py`.
 2. **IMU logging in flight is ~25 Hz, not 100 Hz, and ends at Apogee.** The
    ascent loop consumes one IMU pair per baro-paced EKF cycle
    (`distribution.c` `for_ascent_predict/update`, `evaluation.c`), and
@@ -796,18 +808,35 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    `docs/sd-flight-recordings.md:90` says it remains enabled;
    `FX_ENABLE_FAULT_TOLERANT` only compiles it and `fx_fault_tolerant_enable`
    is never called.
-5. **Evaluation thread is not preemptible by any thread.** With
-   `TX_DISABLE_PREEMPTION_THRESHOLD` (`tx_user.h:159`) the requested threshold
-   1 (`evaluation.c:621`) becomes 0 (`tx_thread_create.c:196-202`), so the
-   priority-0 recovery task waits for each evaluation pass. `Evaluation_Focus`
-   / `Evaluation_Relax` (`recovery.c:351-360`) toggle between "no
-   preemption" and normal, not "only recovery may preempt".
-6. **Host IGT replay uses a 10 ms baro period; the board uses 40 ms.**
-   `tools/igt_replay_host.py:230` and `docs/integrated-ground-test.md:76`
-   (FC repo) say "a baro conversion every 10 ms ... exactly as on the board",
-   but `baro_conf.odr` is `Baro_ODR_25` (`recovery.c`). The FSM counts samples
-   (`MIN_SAMP_*`, 8-entry history), so host results run on a 4x faster
-   schedule than flight.
+5. **Analysed, kept: the evaluation thread is not preemptible by any
+   thread.** With `TX_DISABLE_PREEMPTION_THRESHOLD` (`tx_user.h:159`) any
+   threshold other than the priority becomes 0 (`tx_thread_create.c:196-202`,
+   `tx_thread_preemption_change.c`); `EVAL_PREEMPT_THRESHOLD` now says 0. This
+   is deliberate:
+   - The evaluation thread runs only from Launch to Apogee (descent runs in
+     the distribution thread). A pass is about 1 ms (ascent predict ~20 us,
+     update ~15 us, CSV formatting, the ~0.3 ms retained-checkpoint CRC) per
+     40 ms baro cycle (estimated from the ELF at 250 MHz, not measured).
+   - It only holds off the priority-0 recovery task and the ThreadX timer
+     thread, by at most one pass. Their deadlines are 200-3000 ms; pyro
+     pulses are timed in SysTick (`deployment_pulse.c`), and GS commands
+     reach recovery through the priority-5 telemetry thread, which cannot
+     run during a pass anyway. DMA, distribution, telemetry and SD share
+     priority 5 and are unaffected.
+   - It protects a real critical section: a manual Deploy/Expand runs
+     `descent_initialize`, which rebinds `kf.mxp`/`mxq`/... to the 4x4
+     descent matrices. Preempting `ascent_predict`/`ascent_update` there
+     would write 6x6 results into them (`arm_mat_mult_f32` does no size
+     check) and corrupt the descent filter that times the main.
+   - No thread uses priorities 1-4, so a real threshold of 1 (enabling the
+     kernel feature, about +190 B) would equal full preemption and open that
+     race. The GS `Evaluation_Relax` command already does so (threshold 5);
+     keep it to the pad. Test: `test_evaluation_preemption.py`.
+6. **Fixed: the host IGT replay used a 10 ms baro period; the board uses
+   40 ms** (`Baro_ODR_25`, `recovery.c`). `tools/igt_replay_host.py` now
+   steps the baro every 40 ms (`BARO_PERIOD_MS`), and GroundStation26
+   `test-data/igt/VALIDATION.md` has the re-run results. Test:
+   `test_igt_replay_host_rate.py`.
 7. **FC `GPS_DATA` in Recovery is relative.** `report_lowpass_gps` sends
    |dlat|, |dlon| from the rail reference (`distribution.c:249-250`,
    `evaluation.c:306`) under the type whose schema says latitude/longitude.
