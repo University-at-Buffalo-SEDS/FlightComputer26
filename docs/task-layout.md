@@ -69,8 +69,9 @@ fallback region (`telemetry_tlsf_register_pool`).
 - **Filter swap.** `descent_initialize` repoints the shared Kalman matrices
   to the 4x4 descent set. An ascent predict/update interrupted by it writes
   6x6 results into 4x4 storage. Today only the evaluation thread's threshold
-  0 prevents that, and the GS `EvaluationRelax` command (threshold back to 5)
-  removes the protection.
+  0 prevented that, and the GS `EvaluationRelax` command (threshold back to
+  5) removed the protection. Now: the estimator guard (step 4); Relax/Focus
+  are retired (step 5).
 - Priorities 1-4 are unused, so a threshold of 1 would equal no threshold.
 - SD logging continues through Landed and Recovery; the SD read service runs
   on the SD thread between writer passes and after the writer stops.
@@ -120,7 +121,7 @@ Each item says why removing it is safe.
    `EvaluationRelax` can no longer open the race. Safe: the guard excludes
    exactly what threshold 0 excluded (recovery during a pass; ISRs and the
    equal-priority threads were never involved), and the evaluator gives the
-   guard up wherever it sleeps today. Later (step 7) the swap moves into the
+   guard up wherever it sleeps today. Later (step 9) the swap moves into the
    estimator thread itself and needs no lock at all.
 2. **Two-thread ascent pipeline.** Distribution stages an IMU pair, the
    evaluator predicts, sets `Ascent_KF_Staged` in the global config word,
@@ -226,25 +227,29 @@ Flash should shrink (one thread and the dead options gone).
 
 ## 5. Migration plan
 
-Each step is one commit, behaviour-preserving, verified with the host suite,
+Each step is one commit, verified with the host suite,
 both image builds and the IGT host replay (identical results and per-cycle
 traces); the scheduling steps also with the native HITL flight.
 
 | # | Step | Files | Status |
 | --- | --- | --- | --- |
-| 1 | This document | `docs/task-layout.md` | this commit |
-| 2 | `thread_comm` command queue with an explicit origin; host test | new `thread_comm.[ch]`, `recovery.c`, `distribution.c`, `kalman.c`, `fchooks.c`, `fcapi.h`, `fccommon.h` | next |
-| 3 | Explicit estimator guard instead of threshold 0; no slice on the evaluator | `thread_comm.c`, `evaluation.c`, `recovery.c`, `fctasks.h`, `test_evaluation_preemption.py`, `data-pipeline.md` 9.5 | next |
-| 4 | Remove `PARALLEL_PREDICT_UPDATE` and `MESSAGE_BATCHING` code | `kalman.c`, `evaluation.c`, `distribution.c`, `fccommon.h`, `fcapi.h` (CMake/`build.py` flags after the IGT SD-service work lands) | next |
-| 5 | Health deadlines from the SysTick timer into the control loop | `recovery.c` | waiting for confirmation |
-| 6 | Acquisition thread: DMA task + sensor half of distribution; plain sensor order; spinlocks → PRIMASK copies | `dma.c`, `distribution.c`, `fctasks.h`, `app_threadx.c`, stack tests | waiting for confirmation |
-| 7 | Estimator thread: evaluation + descent; filter swap by request; drop `Ascent_KF_Staged`, `eval_stage` | `evaluation.c`, `distribution.c`, `kalman.c`, `recovery.c`, `igt_replay_host.py` driver | waiting for confirmation |
-| 8 | Priority bands (control 4, SD 6), no slices, `FC-Threads.h`, file renames | `fctasks.h`, `app_filex.c`, `telemetry.c`, tests | after the SD/link work lands |
-| 9 | Macro clean-up per file; `g_conf` handshake bits into `thread_comm` | as touched | last |
+| 1 | This document | `docs/task-layout.md` | done (5bbbc97) |
+| 2 | Remove `PARALLEL_PREDICT_UPDATE` and `MESSAGE_BATCHING` (code, CMake options, `build.py` flags) | `kalman.c`, `evaluation.c`, `distribution.c`, `fccommon.h`, `fcapi.h`, `CMakeLists.txt`, `build.py` | done (50346fb) |
+| 3 | Flag tests through `option()` everywhere (`conf & Eval_Focused` in `distribution.c`, `conf & Using_Ascent_KF` in the fake station; equivalent today only because bit 29 is never stored) | `distribution.c`, `fakestation.c`, `test_config_flag_masks.py` | done (17c50a1) |
+| 4 | Explicit estimator guard instead of threshold 0; no slice on the evaluator; `thread_comm.[ch]` started | `thread_comm.[ch]`, `evaluation.c`, `recovery.c`, `fctasks.h`, `app_threadx.c`, `CMakeLists.txt`, tests, `data-pipeline.md` 9.5 | done (f69844a) |
+| 5 | Retire `EvaluationRelax`/`EvaluationFocus` and the Focused option (ids 14/15 reserved and refused) | `fcstructs.h`, `recovery.c`, `distribution.c`, `fcconfig.h`, `simulation.h`; GroundStation26 separately | done (4f4d755) |
+| 6 | `thread_comm` command queue with an explicit origin (replaces `seds_syscall` and the `g_last_network_flight_command_msg` correlation); host test | `thread_comm.[ch]`, `recovery.c`, `distribution.c`, `kalman.c`, `fchooks.c`, `fcapi.h`; about a dozen spliced test harnesses stub `tx_queue_send(&seds_syscall, ...)` | next |
+| 7 | Health deadlines from the SysTick timer into the control loop | `recovery.c` | waiting for confirmation |
+| 8 | Acquisition thread: DMA task + sensor half of distribution; plain sensor order; spinlocks → PRIMASK copies | `dma.c`, `distribution.c`, `fctasks.h`, `app_threadx.c`, stack tests | waiting for confirmation |
+| 9 | Estimator thread: evaluation + descent; filter swap applied by the estimator between passes (the guard then goes); drop `Ascent_KF_Staged`, `eval_stage` | `evaluation.c`, `distribution.c`, `kalman.c`, `recovery.c`, `igt_replay_host.py` driver | waiting for confirmation |
+| 10 | Priority bands (control 4, SD 6), no slices, `FC-Threads.h`, file renames | `fctasks.h`, `app_filex.c`, `telemetry.c`, tests | after the SD/link work lands |
+| 11 | Macro clean-up per file; `g_conf` handshake bits into `thread_comm` | as touched | last |
 
 Files other work is changing now (rebase before touching):
 `sdpipeline.c`, `ground_test.[ch]`, `board_health.c`, `sd_file_wire.h`,
 `CMakeLists.txt`, `build.py` (IGT SD service); `telemetry.c`, `can_bus.c`,
 the CAN/radio headers (link headers); SEDSnet configuration and
-`CMakeLists.txt` (SEDSnet 7). Steps 2-4 avoid all of them; step 8 touches
-`telemetry.c` and `app_filex.c` and waits.
+`CMakeLists.txt` (SEDSnet 7). Steps 2-5 touch only small, separate hunks of
+`CMakeLists.txt` (the source list and the removed options) and `build.py`
+(the removed flags); step 10 touches `telemetry.c` and `app_filex.c` and
+waits.
