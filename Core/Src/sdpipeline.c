@@ -357,6 +357,7 @@ static inline __attribute__((cold)) void sd_pipeline_shutdown(const char *unluck
 
 #ifdef FC_SD_SERVICE
 static bool dl_open, dl_list_valid;
+static struct { bool active, growing; uint32_t ticket, pos, size; } dl_hash;
 #endif
 
 static inline bool sd_io_failed(UINT status)
@@ -527,7 +528,10 @@ void sd_pipeline_media_remounted(void)
     sd_file_open = 0U;
     sd_retry_pending = false;
 #ifdef FC_SD_SERVICE
-    sd_file_stream_handle_open(dl_open = dl_list_valid = false);
+    /* The read handle died with the aborted mount (never closed on it); the
+     * transfer, a running hash and the listing iterator end with it. */
+    sd_file_stream_handle_open(dl_open = dl_list_valid = dl_hash.active = false);
+    sd_file_stream_media_remounted();
 #endif
 }
 
@@ -617,7 +621,6 @@ static inline int sd_pipeline_open(const char *surprise)
 static uint16_t dl_list_next;
 static ULONG dl_list_entry;
 static uint32_t dl_last_ms;
-static struct { bool active, growing; uint32_t ticket, pos, size; } dl_hash;
 volatile uint32_t g_sd_dl_errors;
 
 void sd_pipeline_wake(void)

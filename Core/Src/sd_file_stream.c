@@ -54,6 +54,7 @@ static struct {
 } s;
 static sd_file_area_t *s_area;
 static volatile bool s_handle_open;
+static volatile bool s_media_lost;   /* SD thread -> telemetry: reset the session */
 
 volatile uint32_t g_sd_file_requests, g_sd_file_refused, g_sd_file_aborts, g_sd_file_data, g_sd_file_acks;
 
@@ -250,11 +251,29 @@ SedsResult sd_file_stream_init(SedsRouter *router)
     return seds_router_bind_p2p_stream_port(router, SD_FILE_STREAM_PORT, sd_file_stream_event, NULL);
 }
 
+/* SD thread, after a remount (sd_pipeline_media_remounted): the read handle
+ * belonged to the aborted mount. The transfer, any queued DATA or answer and
+ * a busy request (a running hash) end now; the telemetry thread then resets
+ * the stream, so the station re-opens it and re-OPENs from its committed
+ * offset on the new mount. */
+void sd_file_stream_media_remounted(void)
+{
+    const uint32_t p = lock();
+    ++s.generation;
+    if (s.slot != SLOT_BUSY) s.slot = SLOT_IDLE;
+    s.msg_ready = 0U;
+    if (s_area) s_area->x.id = 0U;
+    s_handle_open = false;
+    s_media_lost = s.connected;
+    unlock(p);
+}
+
 void sd_file_stream_poll(void)
 {
     if (!s.router) return;
-    if (s.connected && !sd_file_stream_state_allowed()) {
-        /* Leaving the allowed states ends the session at once. */
+    if (s.connected && (s_media_lost || !sd_file_stream_state_allowed())) {
+        /* Leaving the allowed states, or a remount, ends the session at once. */
+        s_media_lost = false;
         const uint32_t stream = s.stream_id;
         const uint32_t p = lock(); end_session_locked(); unlock(p);
         ++g_sd_file_aborts;

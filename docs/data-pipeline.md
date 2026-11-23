@@ -747,6 +747,12 @@ block also `[raw_len u32][crc u32]`, then the body.
   alive in a read-only service loop on the still-mounted volume (7.6); a lost
   transport is re-initialised by the normal once-per-second retry
   (`flight_sd_prepare_io`, same card only).
+- A fresh remount (another card, or one that left its slot; 7.1) ends the
+  service session at once: the read handle is dropped with the aborted
+  mount, the transfer, a running hash and the listing iterator end, and the
+  stream is reset. The station reconnects and re-OPENs from its committed
+  offset on the new mount (`sd_pipeline_media_remounted`,
+  `sd_file_stream_media_remounted`).
 - Build: CMake `FC_SD_SERVICE` (default ON) needs telemetry, `ONBOARD_SD` and
   the TLSF allocator. The `--ground-test` image leaves it out. Counters:
   `g_sd_file_requests`, `g_sd_file_refused`, `g_sd_file_aborts`,

@@ -29,6 +29,9 @@ bool sd_file_stream_transfer_active(void);
  * true if it produced one. A read error ends the transfer. */
 bool sd_file_stream_produce(sd_xfer_read_fn read, void *ctx, uint32_t now_ms);
 bool sd_file_stream_session_active(void);
+/* SD thread: the card was remounted fresh; ends the transfer, any queued
+ * answer or busy request, and has the telemetry thread reset the session. */
+void sd_file_stream_media_remounted(void);
 /* Shared gate: local state and network FLIGHT_STATE (sd_file_fc_state_allowed). */
 bool sd_file_stream_state_allowed(void);
 

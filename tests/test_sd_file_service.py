@@ -326,6 +326,23 @@ int main(void)
     pump(); assert(nsent == 0);
     assert(ev(SEDS_P2P_STREAM_CLOSED, "GS", NULL, 0) == SEDS_OK && !sd_file_stream_session_active());
     sd_file_stream_poll(); assert(frees == 2);
+    /* A remount during an active transfer: DATA stops, the queued message and
+     * a busy answer are dropped, the stream is reset and the area released. */
+    assert(ev(SEDS_P2P_STREAM_ACCEPTED, "GS", NULL, 0) == SEDS_OK && allocs == 3);
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", OPEN, sizeof OPEN) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    sd_file_stream_open(ticket, &rq.open, sizeof file_bytes, false); pump(); nsent = 0;
+    assert(sd_file_stream_produce(file_read, NULL, tick) && sd_file_stream_transfer_active());
+    assert(ev(SEDS_P2P_STREAM_DATA, "GS", LIST, sizeof LIST) == SEDS_OK && sd_file_stream_claim(&rq, &ticket));
+    sd_file_stream_handle_open(true);
+    sd_file_stream_media_remounted();
+    assert(!sd_file_stream_transfer_active() && !sd_file_stream_ticket_current(ticket));
+    sd_file_stream_answer(ticket, answer, sizeof answer);
+    sd_file_stream_poll();
+    assert(resets == 3 && !sd_file_stream_session_active() && nsent == 0);
+    assert(!sd_file_stream_produce(file_read, NULL, tick));
+    sd_file_stream_poll(); assert(frees == 3 && !sd_file_stream_block());
+    /* Without a session a remount resets nothing. */
+    sd_file_stream_media_remounted(); sd_file_stream_poll(); assert(resets == 3);
     puts("done");
 }
 '''
@@ -359,6 +376,7 @@ class StreamTests(unittest.TestCase):
 
 
 FILEX_STUBS = r'''
+#define FC_SD_SERVICE 1
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -454,6 +472,8 @@ bool sd_file_stream_produce(sd_xfer_read_fn read, void *ctx, uint32_t now)
 }
 bool sd_file_stream_session_active(void) { return session; }
 bool sd_file_stream_state_allowed(void) { return allowed; }
+static unsigned remounts_seen; static bool sd_retry_pending;
+void sd_file_stream_media_remounted(void) { ++remounts_seen; xfer_active = false; ++ticket_now; }
 '''
 
 FILEX_MAIN = FRAME_PRINT + r'''
@@ -522,6 +542,23 @@ int main(void)
     request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); session = false; sd_file_service_turn(); assert(!handle_open);
     session = true; xfer_active = false;
     have_area = false; request(SD_FILE_OP_LIST, 0, NULL); assert(last[1] == SD_FILE_STATUS_BAD_STATE);
+    /* A remount mid-transfer and mid-hash: the dead handle is dropped (not
+     * closed on the aborted mount), the hash stops, the stream layer is told. */
+    have_area = true;
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(handle_open && xfer_active);
+    const uint32_t closed = closes;
+    sd_file_open = 1; sd_retry_pending = true;
+    sd_pipeline_media_remounted();
+    assert(!handle_open && !xfer_active && remounts_seen == 1 && closes == closed && !sd_file_open && !sd_retry_pending);
+    sd_file_open = 0;
+    request(SD_FILE_OP_HASH, 0, "IREC_LAUNCH-1795392100-000.CSV");
+    const unsigned before_remount = answered;
+    sd_pipeline_media_remounted(); sd_file_service_turn(); sd_file_service_turn();
+    assert(answered == before_remount && !handle_open);
+    /* The next OPEN on the new mount opens a fresh handle. */
+    const uint32_t reopened = opens;
+    request(SD_FILE_OP_OPEN, 0, "irec-1795392000-000.csv"); assert(handle_open && opens == reopened + 1);
+    xfer_active = false;
     sd_pipeline_wake(); assert(line.full == 0); sd_prepared = true; sd_pipeline_wake(); assert(line.full == 1);
     puts("done");
 }
@@ -536,9 +573,11 @@ class FilexSideTests(unittest.TestCase):
         end = src.index('#else\n#define sd_file_service_turn()')
         block = src[start + len('#ifdef FC_SD_SERVICE\n'):end]
         # The handle flags sit above the writer, which clears them on a remount.
-        flags = 'static bool dl_open, dl_list_valid;\n'
+        flags = 'static bool dl_open, dl_list_valid;\nstatic struct { bool active, growing; uint32_t ticket, pos, size; } dl_hash;\n'
         assert flags in src[:start]
-        block = flags + block
+        remount = src[src.index('void sd_pipeline_media_remounted(void)'):]
+        remount = remount[:remount.index('\n}\n') + 3]
+        block = flags + block + remount
         cls.block = block
         lc = configured_dependency_source(ROOT, 'sedslaunchcore', 'SDK_FREE_LAUNCHCORE_SOURCE')
         with tempfile.TemporaryDirectory() as tmp:
