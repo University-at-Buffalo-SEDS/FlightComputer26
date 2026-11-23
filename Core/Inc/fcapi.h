@@ -40,10 +40,6 @@ fi16 seds_ftoa4(char *dst, fu16 capacity, const float *data, fu8 count);
 
 /* Kalman filter */
 
-#ifdef PARALLEL_PREDICT_UPDATE
-extern TX_BYTE_POOL kfpool;
-#endif
-
 extern quat qv;
 extern kf_svec imedsv;
 extern void *kfpool_buf;

@@ -15,7 +15,6 @@ class QualificationContractTests(unittest.TestCase):
         handler = source.split("dispatch_flight_cmd", 1)[1].split(
             "static inline SedsResult pulse_ground", 1
         )[0]
-        handler = handler.split("#else /* MESSAGE_BATCHING_ENABLED */", 1)[1]
         self.assertLess(
             handler.index("g_last_network_flight_command_msg = msg;"),
             handler.index("tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)"),

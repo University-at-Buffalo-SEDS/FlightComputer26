@@ -42,12 +42,6 @@ OPTIONS: (option not specified -> opposite is true)
         fullcmd         Expect full 4-byte commands in handler.
                         Otherwise expect 1-byte codes.
 
-        batching        In handler, dispatch potentially several
-                        batched messages at once. 
-
-        parallelkf      Enable parallel predict/update support.
-                        Partially implemented, deferred until 2027.
-
         configure       Configure for specified preset and exit.
 
         nogps           No external GPS device. Rely on Barometer
@@ -169,7 +163,6 @@ ALL_OPTIONS     = { "no-watchdog", "allocator-tlsf", "packet-store-compact", "se
                         "groundtest",
                         "clean",
                         "fullcmd",
-                        "batching",
                         "configure",
                         "nogps",
                         "nosd",
@@ -178,7 +171,6 @@ ALL_OPTIONS     = { "no-watchdog", "allocator-tlsf", "packet-store-compact", "se
                         "userflags",
                         "sensortest",
                         "nousb",
-                        "parallelkf",
                         "gmath",
                         "lunatic",
                         "simulation",
@@ -298,7 +290,6 @@ def configure(buildir: Path, preset: str, options: dict):
         # Defaults for IREC 2026 (except compilation flags)
         # Debug preset will forcefully disable telemetry
         # and things that depend on it.
-        batch           = "-DMESSAGE_BATCHING=OFF"
         telem           = "-DENABLE_TELEMETRY=ON"
         compat          = "-DTELEMETRY_COMPAT=ON"
         gps             = "-DEXTERNAL_GPS=ON"
@@ -316,7 +307,6 @@ def configure(buildir: Path, preset: str, options: dict):
         # and runtime memory on the H523 application slot.
         usb             = ("-DUSB_ENUM=OFF" if preset == "Release"
                            else "-DUSB_ENUM=ON")
-        parkf           = "-DPARALLEL_KF=OFF"
         mathdbg         = "-DDEBUG_MATH=OFF"
         lunatic         = "-DIGNORE_STATES=OFF"
         simul           = "-DSWAP_CONFIG=OFF"
@@ -347,12 +337,6 @@ def configure(buildir: Path, preset: str, options: dict):
 
         if options["fullcmd"]:
                 compat = "-DTELEMETRY_COMPAT=OFF"
-
-        if options["batching"]:
-                batch  = "-DMESSAGE_BATCHING=ON"
-
-        if options["parallelkf"]:
-                parkf = "-DPARALLEL_KF=ON"
 
         if options["bench"]:
                 bench = "-DFC_BENCH=ON"
@@ -390,7 +374,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 "-DSEDSNET_COMPACT_PACKET_COMPRESSION=OFF",
                 "-DENABLE_BOARD_WATCHDOG=" + ("OFF" if options.get("no-watchdog") else "ON"),
                 "-DSEDS_FIRMWARE_SIM_TEST=" + ("ON" if os.environ.get("SEDS_FIRMWARE_SIM_TEST") == "1" else "OFF"),
-                batch,
                 compat,
                 gps,
                 sd,
@@ -398,7 +381,6 @@ def configure(buildir: Path, preset: str, options: dict):
                 flags,
                 sensortest,
                 usb,
-                parkf,
                 mathdbg,
                 lunatic,
                 simul,
@@ -888,8 +870,6 @@ def run_tests(argv: list[str], *, build_args: argparse.Namespace | None = None) 
 
 FLAG_HELP = {
     "fullcmd": ("full-cmd", "Disable legacy one-byte command compatibility."),
-    "batching": ("batching", "Enable command message batching."),
-    "parallelkf": ("parallel-kf", "Enable experimental parallel Kalman predict/update support."),
     "notelemetry": ("no-telemetry", "Disable telemetry and dependent GPS/SD features."),
     "nogps": ("no-gps", "Disable the external GPS device."),
     "nosd": ("no-sd", "Disable on-board SD logging."),

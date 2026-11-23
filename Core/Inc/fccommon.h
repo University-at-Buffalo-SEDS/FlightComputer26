@@ -81,21 +81,7 @@
 #define LARGEST_POOL maxq(DKF_PREDICT_BYTES, DKF_UPDATE_BYTES,  \
                           EKF_PREDICT_BYTES, EKF_UPDATE_BYTES)
 
-#ifdef PARALLEL_PREDICT_UPDATE
-
-#define KFP_OVERHEAD (4 * sizeof(size_t))
-
-#define KF_POOL_USED maxd(DKF_PREDICT_BYTES + DKF_UPDATE_BYTES, \
-                          EKF_PREDICT_BYTES + EKF_UPDATE_BYTES)
-
-#else
-
-#define KFP_OVERHEAD 0
-#define KF_POOL_USED LARGEST_POOL
-
-#endif /* PARALLEL_PREDICT_UPDATE */
-
-#define KF_POOL_SIZE (KF_POOL_USED + KFP_OVERHEAD)
+#define KF_POOL_SIZE LARGEST_POOL
 
 
 /* Recovery */

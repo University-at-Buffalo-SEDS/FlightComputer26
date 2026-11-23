@@ -302,27 +302,6 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   fc_msg msg;
   UINT st = TX_SUCCESS;
 
-#ifdef MESSAGE_BATCHING_ENABLED
-
-  UINT tlmt_old_pr;
-
-  tx_thread_priority_change(&telemetry_thread, 0,
-                                   &tlmt_old_pr);
-
-  for (fu16 k = 0; k < len; k += MIN_CMD_SIZE)
-  {
-    msg = decode_cmd(data + k);
-
-    st += msg != Invalid_Message && fc_recovery_command_admissible((uint32_t)msg, false)
-              ? tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)
-              : INVALID_MESSAGE_STATUS;
-  }
-
-  tx_thread_priority_change(&telemetry_thread,
-                            TLMT_PRIORITY, &tlmt_old_pr);
-
-#else /* MESSAGE_BATCHING_ENABLED */
-
   msg = decode_cmd(data);
 
   g_network_flight_commands_received++;
@@ -350,8 +329,6 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   {
     g_network_flight_commands_accepted++;
   }
-
-#endif /* MESSAGE_BATCHING_ENABLED */
 
   /* An invalid or unadmitted command is refused for good: acknowledge it so
    * it is not retransmitted (and run late). A full queue is retried. */

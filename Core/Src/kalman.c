@@ -15,10 +15,6 @@
 #include "fc_monitor_bench.h"
 
 
-#ifdef PARALLEL_PREDICT_UPDATE
-TX_BYTE_POOL kfpool;
-#endif
-
 quat qv = {0};
 kf_svec imedsv = {0};
 static kf_matrix kf = {0};
@@ -56,54 +52,17 @@ const fc_resume_region fc_resume_kalman[] = {
 
 
 
+/* One scratch area (evaluation.c) for every predict/update step: the steps
+ * never overlap, so they share the largest one's size. */
 static inline float *kfalloc(size_t size)
 {
-#ifdef PARALLEL_PREDICT_UPDATE
-  if (size == 0 || size > LARGEST_POOL)
-  {
-    size = LARGEST_POOL;
-  }
-
-  TX_THREAD *curr;
-  UINT st, old_pt;
-  void *ptr;
-
-  request: do
-  {
-    st = tx_byte_allocate(&kfpool, &ptr, size, 5);
-  }
-  while (st == TX_WAIT_ABORTED);
-
-  if (st != TX_SUCCESS)
-  {
-    if ((curr = tx_thread_identify()) == TX_NULL)
-    {
-      return NULL; /* Friendliness has its limits */
-    }
-
-    tx_thread_preemption_change(curr, 1, &old_pt);
-    tx_thread_relinquish();
-
-    goto request;
-  }
-
-  return (float *)ptr;
-
-#else
+  (void)size;
   return (float *)kfpool_buf;
-
-#endif /* PARALLEL_PREDICT_UPDATE */
 }
 
 static inline void kffree(float *ptr)
 {
-#ifdef PARALLEL_PREDICT_UPDATE
-  tx_byte_release((void *)ptr);
-
-#else
-  return;
-
-#endif /* PARALLEL_PREDICT_UPDATE */
+  (void)ptr;
 }
 
 static inline void clear_shared_buffers(bool ascent)
