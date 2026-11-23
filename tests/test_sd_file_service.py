@@ -494,6 +494,11 @@ int main(void)
     printf("TURNS %u\n", hash("irec-1795392000-000.csv")); hex("HASH", last, last_len);
     hash("IREC_LAUNCH-1795392100-000.CSV"); hex("HASH", last, last_len);
     hash("irec-1795392200-000.csv"); hex("HASH", last, last_len);   /* empty file */
+    /* A file the writer still appends: the hash covers the size its directory
+     * entry had at the last media flush, and says so (growing flag). */
+    file.fx_file_name = "IREC_LAUNCH-1795392100-000.CSV"; sd_file_open = 1;
+    hash("IREC_LAUNCH-1795392100-000.CSV"); hex("GROWING", last, last_len);
+    sd_file_open = 0;
     request(SD_FILE_OP_OPEN, 0, "irec-missing.csv"); assert(last[0] == 0xa5 && last[1] == SD_FILE_STATUS_NOT_FOUND);
     request(SD_FILE_OP_HASH, 0, "irec-missing.csv"); assert(last[0] == 0xa7 && last[1] == SD_FILE_STATUS_NOT_FOUND);
     /* I/O failure: the handle closes and the answer says IO_ERROR. */
@@ -563,6 +568,10 @@ class FilexSideTests(unittest.TestCase):
             self.assertEqual(answer[:3], bytes([0xa7, 0, 0]))
             self.assertEqual(int.from_bytes(answer[3:7], 'little'), size)
             self.assertEqual(answer[7:], hashlib.sha256(self.content(entry, size)).digest())
+        growing = frames(self.out, 'GROWING')[0]
+        self.assertEqual(growing[:3], bytes([0xa7, 0, 0x04]))
+        self.assertEqual(int.from_bytes(growing[3:7], 'little'), 512)
+        self.assertEqual(growing[7:], hashlib.sha256(self.content(5, 512)).digest())
         turns = int(next(l.split()[1] for l in self.out.splitlines() if l.startswith('TURNS ')))
         self.assertEqual(turns, 0, '1300 bytes hash within the first turn (8 sectors per turn)')
 

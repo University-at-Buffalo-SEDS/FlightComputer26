@@ -194,6 +194,14 @@ Every SD row goes to whichever file is open at the moment it is written
 Producers publish in their own thread; nothing is queued in SEDSnet for
 sensor data (`log_telemetry_asynchronous`, `telemetry.c`).
 
+- No payload compression on transmit: `telemetry.c` sets
+  `payload_compress_threshold = SIZE_MAX` (zstd's compressor workspace does
+  not fit the heap). Because of that the images link
+  `Core/Src/zstd_compress_stub.c` in place of zstd's compressor (about 27 KB
+  of flash that never ran); a call returns zstd's error and SEDSnet sends the
+  payload uncompressed. Decompression is unchanged: compressed frames from
+  other nodes still decode (`tests/test_zstd_compress_stub.py`).
+
 - `log_f32` (baro, GPS, launch site, initial attitude) passes the shared
   per-type limiter `fc_telemetry_rate_allow` (`telemetry_rate.c`): at most one
   packet per `FC_TELEMETRY_PERIOD_MS` for `GPS_DATA`, `GYRO_DATA`,
