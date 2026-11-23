@@ -79,7 +79,8 @@ CSV set or an estimator change before a ground test:
 python3 tools/igt_replay_host.py ../GroundStation26/test-data/igt/nominal_10k --trace /tmp/trace.csv
 ```
 
-It runs the evaluator on the board's schedule (a baro conversion every 10 ms,
-the ascent predict on the IMU just after it, `tx_thread_sleep()` honoured),
+It runs the evaluator on the board's schedule (a baro conversion every 40 ms
+from `Baro_ODR_25` in `recovery.c`, the ascent predict on the IMU just after
+it, `tx_thread_sleep()` honoured),
 but it does not model CPU time, sensor faults or telemetry. Those need the
 native SITL (`igt_flow`, FirmwareSimulator) or the board.

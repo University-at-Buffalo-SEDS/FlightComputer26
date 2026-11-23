@@ -11,8 +11,9 @@ Compiles, for a 32-bit host (gcc -m32, like the native SITL):
   * CMSIS-DSP                the matrix/trig functions they call;
 against the board's real headers, with ThreadX/HAL calls stubbed. A small
 driver plays the distribution and evaluation tasks' schedule: the replay is
-sampled exactly as on the board (baro conversions every 10 ms drive the
-evaluator; ascent predict on the IMU just after each baro update; descent
+sampled exactly as on the board (baro conversions every 40 ms, the board's
+Baro_ODR_25 in recovery.c, drive the evaluator; ascent predict on the IMU
+just after each baro update; descent
 predict/update on every baro sample; replayed GPS at 10 Hz, its first descent
 fix becoming the rail reference), and tx_thread_sleep() pauses the evaluator
 for its real duration. Deployments go to a dry-run stub.
@@ -187,6 +188,9 @@ void kalman_seed_attitude(const f_xyz *accl);
 static const char *names[] = {"Startup", "Postinit", "Armed", "Launch", "Ascent", "Coast", "Apogee",
                               "Descent", "Reefing", "Landed", "Recovery"};
 
+/* recovery.c baro_conf.odr = Baro_ODR_25: one conversion every 40 ms. The FSM
+ * counts samples (MIN_SAMP_*, 8-entry history), so the period sets its timing. */
+#define BARO_PERIOD_MS 40U
 int main(int argc, char **argv)
 {
   snprintf(igt_root, sizeof igt_root, "%s", argv[1]);
@@ -227,7 +231,7 @@ int main(int argc, char **argv)
     if (host_now % 50U == 0) igt_sd_service();  /* IGT_SD_PERIOD_MS = LOG_RATE_SD */
     float a[3] = {0, 0, GRAVITY_SI}, g[3] = {0, 0, 0}, b[3] = {0, 101325, 20};
     /* The DMA callbacks replace every real sample with the replay. */
-    const bool baro_due = host_now % 10U == 0U;
+    const bool baro_due = host_now % BARO_PERIOD_MS == 0U;
     if (baro_due) igt_override_baro(b, host_now);
     if (!igt_sim_running() && end_after == 0) end_after = host_now + 6000;
     if (end_after && host_now >= end_after) break;
@@ -235,7 +239,7 @@ int main(int argc, char **argv)
     if (host_now < host_wake) continue;
     conf = load(&g_conf, Acq);
     if (conf & option(Using_Ascent_KF)) {
-      if (!predicted && host_now % 10U == 1U) {
+      if (!predicted && host_now % BARO_PERIOD_MS == 1U) {
         igt_override_accl(a, host_now); igt_override_gyro(g, host_now);
         memcpy(&meas.accl, a, sizeof a); memcpy(&meas.gyro, g, sizeof g);
         dt = fsec(timer_exchange(AscentKF));
