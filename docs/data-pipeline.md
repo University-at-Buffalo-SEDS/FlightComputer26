@@ -40,6 +40,7 @@ flowchart LR
   EVAL -- "log_periodic_f32" --> TLM
   TLM -- "CAN FD" --> RF["RF board relay"] -- radio --> GS["GroundStation<br/>rolling SQLite ring"]
   CARD -. "manual SD import" .-> GS
+  CARD -. "P2P 4511 SD read service<br/>(after landing)" .-> GS
 ```
 
 Acquisition and logging schedule. One pass of the ascent loop is shown; on the
@@ -87,7 +88,7 @@ gantt
   Launch..Coast (ascent EKF)          :s4, 00:01:00, 30s
   Apogee..Reefing (descent KF)        :s5, 00:01:30, 60s
   Landed (5 s sleep)                  :crit, s6, 00:02:30, 5s
-  Recovery (SD stopped)               :s7, 00:02:35, 20s
+  Recovery (SD logging stopped, read service on) :s7, 00:02:35, 20s
   section SD file
   irec-<t>-000.csv (ordinary)         :f1, 00:00:00, 50s
   irec_LAUNCH-<t>-000.csv             :active, f2, 00:00:50, 105s
@@ -127,7 +128,7 @@ Lower number = higher priority.
 | DMA task | 5, no slice | 4096 B | DRDY event flags (1-tick poll) | picks the next ready sensor, runs one SPI1 DMA read, waits on completion (`DMA_TIMEOUT_MS` 20) | `dma.c` |
 | Distribution task | 5, slice 25 | 16 KiB | `sample_ready` flags (1-tick poll) | conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c` |
 | Evaluation task | 5, slice 25, threshold 1 requested | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee | `evaluation.c`, `recovery.c` (`enter_launch`) |
-| SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks) | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading | `app_filex.c`, `sdpipeline.c` |
+| SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives `sd_conclude` | `app_filex.c`, `sdpipeline.c` |
 | EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and an event flag | `main.c`, `dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
 | FDCAN1 IT0/IT1 | NVIC 0 | - | CAN RX/TX | wake telemetry, TX pump | `stm32h5xx_hal_msp.c` |
@@ -608,8 +609,11 @@ Lost on a reset, watchdog reset or power loss (`sdbuf` is not preserved):
 So expect up to about 2 s of rows to be missing at the end of a file cut by
 power loss (*derived*), and possibly lost clusters (fault-tolerant mode is
 off, 7.1). A clean stop (`sd_conclude`) drains both buffers and queued events,
-flushes, closes the file and closes the media; it counts what it could not
-save in `g_sd_shutdown_lost_records` and `g_sd_shutdown_lost_events`.
+flushes and closes the file; it counts what it could not save in
+`g_sd_shutdown_lost_records` and `g_sd_shutdown_lost_events`. With the SD read
+service (flight image, `FC_SD_SERVICE`) the flushed volume then stays mounted
+for reads only; without it (`--ground-test`) the media is closed as before.
+Nothing is written after the stop either way.
 
 A watchdog resume in flight re-opens a new launch file at boot because the
 restored state is past Armed (`sd_launch_active = beyond(Armed)`,
@@ -625,9 +629,76 @@ SQLite ring (64 MB segments, 50 GB budget by default) and cuts launch, HITL
 and ground-test captures out of it (GroundStation26
 `docs/backend/rolling-recording.md`).
 
-### 8.2 Manual SD import
+### 8.2 Network SD read service and manual import
 
-The FC does not serve its card over the network. After recovery:
+The flight image serves its card over SEDSnet after landing ("SD file
+download protocol v1 + CRC", `sd_file_wire.h`, `sd_file_stream.c`, service
+block in `sdpipeline.c`). The GS, or the RRLS relay station, fetches the
+files with no card removal; the manual import below stays available.
+
+Protocol (P2P stream port 4511, same opcodes and frames as the DAQ, all
+little-endian, every frame <= 117 bytes):
+
+| Request | Bytes | Answer |
+| --- | --- | --- |
+| LIST | `[0x21][dir u8][index u16]` | `[0xA1][status][dir][index u16][size u32][flags][name_len][0][name]` |
+| READ | `[0x22][offset u32][dir u8][name_len u8][name]` | one or more `[0xA2][status][flags][offset u32][file_size u32][data <=100 B]` |
+| CANCEL | `[0x23]` | `[0xA3][status]`; drops a pending answer |
+
+- Directory: only `dir` 0 = card root. LIST enumerates regular files named
+  `irec*.csv` (case-insensitive; no directories, volume, hidden or system
+  entries) in FileX directory order, one entry per request, and answers END
+  (6) after the last. READ accepts only such names (at most 63 characters).
+  Any other `dir`, name or length is BAD_MESSAGE (1).
+- Entry flag 0x01 (LIST and DATA): the file is the one the logger still has
+  open for writing; its size can grow (and the LIST size can lag until the
+  next media flush).
+- READ returns the 512-byte card block that holds `offset`, from `offset` to
+  the block end (or EOF), split into DATA frames of up to 100 bytes; flag
+  0x01 marks the last frame. The last frame of every OK answer that carries
+  data also sets flag 0x02 and appends 4 bytes: the zlib CRC-32 (IEEE,
+  reflected, init/xorout 0xFFFFFFFF, `board_crc32_software(0, ...)`) of all
+  data bytes of that READ answer, little-endian, after the data (frame <= 115
+  B). The requester verifies it and asks again on a mismatch. DAQ frames
+  never set 0x02.
+- `offset` == size answers END, `offset` > size BAD_OFFSET (7), a missing file
+  NOT_FOUND (4), a card error IO_ERROR (5), a second request while one is
+  pending BUSY (3; also returned for a LIST that needed more than 32
+  directory entries in one step, the requester simply repeats it).
+- Gating: allowed only while the local state is Landed (9) or Recovery (10),
+  or the local state is Startup (0) and the network `FLIGHT_STATE` is known
+  and is Startup (0) or Idle (1). Never in Postinit, Armed, Launch..Reefing,
+  or with an unknown network state. Refused requests answer BAD_STATE (2), a
+  stream is not accepted outside these states, and an open session is reset
+  (stream RESET) as soon as the state leaves the set. The SD thread checks
+  the same gate again before each card access.
+- Peers: the `GS` or the `RRLS` (`seds_router_sender_matches_hostname`),
+  one session at a time; a new stream replaces the old one.
+- Work split: the router callback only validates and queues one request and
+  wakes the SD thread; the SD thread does one bounded read-only step (one
+  block, or up to 32 directory entries) through a separate `FX_OPEN_FOR_READ`
+  handle, never a write; the telemetry thread sends one frame per poll. The
+  512-byte block and the read handle are borrowed from the TLSF heap (with
+  its 4 KiB admission reserve) only while a session or the handle exists; the
+  handle closes after 3 s without requests.
+- Pacing: at least 2 ms between frames, and at least 25 ms while the router
+  has other queued work, so recovery GPS, commands and telemetry go first.
+  That caps the service near 50 KB/s of payload; the requester sets the
+  actual rate by sending one request at a time. The GS fetch runs at about
+  512 B/s of payload over the radio and 16 KiB/s on the bench; the RRLS
+  fetches at its own link's rate and forwards the files to the GS. At 512 B/s
+  a 10 MB launch file takes about 5.5 h (*derived*); at 16 KiB/s about 11 min.
+- After `sd_conclude` (Recovery) the SD thread stays alive in a read-only
+  service loop on the still-mounted volume (7.6); a lost transport is
+  re-initialised by the normal once-per-second retry (`flight_sd_prepare_io`,
+  same card only). Before that (Startup/Idle on the pad, the Landed window)
+  the service runs between writer passes.
+- Build: CMake `FC_SD_SERVICE` (default ON) needs telemetry, `ONBOARD_SD` and
+  the TLSF allocator. The `--ground-test` image leaves it out: it does not fit
+  that image's flash. Counters: `g_sd_file_requests`, `g_sd_file_refused`,
+  `g_sd_file_aborts`, `g_sd_dl_errors`.
+
+Manual import (always possible, and the only way for a ground-test image):
 
 1. Take the card out and copy the `irec*.csv` files.
 2. In the GS, Data Export > SD recovery, import the files against any
@@ -637,11 +708,13 @@ The FC does not serve its card over the network. After recovery:
    (`recording_sd_import.py`). Rows are keyed by board, boot, stream, sensor,
    `uptime_ticks` and `record_sequence`; a file with regressing uptime (mixed
    boots) is refused. `recording_sd_resolve.py` maps FC labels to GS types
-   (`barometer_sample`, `BARO`, `IMU`, `*_sample`, `EKF`, `DKF`).
+   (`barometer_sample`, `BARO`, `IMU`, `*_sample`, `EKF`, `DKF`). Files with
+   the format block (7.4) are accepted by `format=fc` and `version`; headerless
+   files are legacy fc v1.
 
 ### 8.3 Automatic matching to the launch capture
 
-Independently of the import, every imported file is offered to
+Independently of the import, every imported or network-fetched file is offered to
 `board_sd::offer_file` (`backend/src/recording_store/board_sd.rs`):
 
 - `irec*` names are FC files; `_LAUNCH` marks a launch file.
@@ -664,7 +737,9 @@ Import the launch file first, then the ordinary file. An imported ordinary
 file only fills lead-ups for launch files already attached; when a launch file
 is attached later, the GS looks for ordinary files only in
 `sd-downloads/<board>/` (network downloads, `local_ordinary_files`), which FC
-imports never populate. There is no network fetch for the FC (the DAQ has one).
+imports never populate. A network fetch over the read service (8.2) can land
+there, so the GS can fetch the launch file first and then cut the lead-up
+from the ordinary file with range reads, as it does for the DAQ.
 
 ### 8.5 IGT replay
 
@@ -694,7 +769,7 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
 | Baro reference | not logged (implicit in `alt`) | `BOARD_HEALTH` word 15 |
 | Launch site | not logged | `LAUNCH_SITE` echo |
 | IGT replay | `SIM` at most 20 Hz per kind | `SIM_SAMPLE` 5 Hz per kind |
-| After Recovery | nothing (SD stopped) | all network streams continue |
+| After Recovery | nothing new (logging stopped); the card is served read-only (8.2) | all network streams continue |
 
 ## 9. Known gaps and bugs found
 
@@ -706,6 +781,8 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    post-Landed window (`sdpipeline.c:55`) and the new ordinary file after it,
    described in `docs/sd-flight-recordings.md`, are never reached. No sensor
    rows are written during the 5 s sleep, and nothing at all after Recovery.
+   The SD thread no longer ends there: it keeps the flushed volume mounted
+   and serves reads (8.2) for the rest of the boot (flight image).
 2. **IMU logging in flight is ~25 Hz, not 100 Hz, and ends at Apogee.** The
    ascent loop consumes one IMU pair per baro-paced EKF cycle
    (`distribution.c` `for_ascent_predict/update`, `evaluation.c`), and
@@ -747,7 +824,9 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
     ordinary file before the launch file leaves no lead-up
     (GroundStation26 `backend/src/recording_store/board_sd.rs`
     `offer_file`, `local_ordinary_files`). GroundStation26
-    `docs/backend/rolling-recording.md` does not mention the order.
+    `docs/backend/rolling-recording.md` does not mention the order. A
+    network fetch (8.2) avoids it once the GS stores fetched FC files in
+    `sd-downloads/FC/`.
 11. **`igt_csv.py` uses summary rows from an FC SD log.** It reads `IMU` /
     `BARO` (at most 20 Hz) and ignores the full-rate `*_sample` rows.
 12. **Minor.** `dma.c:46` uses `DMA_BARO_OFFSET` for the accelerometer entry

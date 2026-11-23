@@ -24,6 +24,12 @@ Sizes, Release, measured against SEDSnet 6.0.3 (main ebdb444):
 | flight (default) | 467,064 B (+404 B vs dev e615de3) | 7,560 B | +0 B |
 | `--ground-test` | 473,152 B (−128 B vs the previous ground-test build) | 1,472 B | 198,912 B |
 
+Since then the SEDS-SD format block (+648 B flight, +652 B ground test) and
+the flight-only SD read service (+3,400 B) were added: flight 471,192 B
+(3,432 B free), `--ground-test` 473,892 B (732 B free). The ground-test image
+has no network SD read service (CMake `FC_SD_SERVICE` is forced off there);
+copy its card by hand.
+
 The flight image's +404 B covers:
 
 - the `SIM_SAMPLE` and `LAUNCH_SITE` schema entries;

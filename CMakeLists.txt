@@ -321,6 +321,20 @@ if (INTEGRATED_GROUND_TEST)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_GROUND_TEST=1)
 endif()
 
+# SD block-read service on SEDSnet P2P port 4511 (GS/RRLS fetch the card after
+# landing). Flight image only: the --ground-test image has no flash left for
+# it. Needs telemetry, the SD logger and the TLSF heap (it borrows its block).
+option(FC_SD_SERVICE "Serve SD log files over SEDSnet P2P port 4511 (flight image only)" ON)
+if (FC_SD_SERVICE AND INTEGRATED_GROUND_TEST)
+    message(STATUS "SD read service:        OFF (does not fit the ground-test image)")
+elseif (FC_SD_SERVICE AND ENABLE_TELEMETRY AND ONBOARD_SD AND TELEMETRY_USE_TLSF)
+    message(STATUS "SD read service:        ON (P2P port 4511)")
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE FC_SD_SERVICE=1)
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/Core/Src/sd_file_stream.c)
+else()
+    message(STATUS "SD read service:        OFF")
+endif()
+
 if (TEST_DESCENT)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DESCENT_TEST)
 endif()

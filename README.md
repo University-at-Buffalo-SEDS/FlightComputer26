@@ -69,6 +69,13 @@ start, the board publishes a rate-limited warning, and it retries the card.
 Format a new card as FAT on a computer before inserting it; firmware does not
 erase or reformat flight logs.
 
+After landing (and on the pad in Startup while the network is Startup/Idle)
+the flight image serves its `irec*.csv` files read-only to the GroundStation
+or the RRLS over SEDSnet P2P port 4511, with a CRC-32 on every 512-byte read;
+see [docs/data-pipeline.md](docs/data-pipeline.md) 8.2. CMake option
+`FC_SD_SERVICE` (default ON). The `--ground-test` image does not include it
+(no flash left); recover a ground-test card by hand.
+
 The logger uses the same [CSV columns as DAQ](docs/sd-record-format.md),
 including independent boot uptime ticks, nominal clock frequency and record
 sequence. Each file and part begins with a SEDS-SD format block

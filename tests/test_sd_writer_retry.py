@@ -125,6 +125,8 @@ bool sd_io_failed(unsigned status){return status!=0U;}
 #define SD_FLUSH_INTERVAL 1000U
 #define SD_POST_MARGIN 100U
 #define SDFlush 0
+#define sd_file_service_turn() ((void)0)
+#define sd_file_service_forever() ((void)0)
 #define WE_ARE_SO_BACK 0
 #define id "SD "
 #define MrAnalog(condition) while(!(condition))

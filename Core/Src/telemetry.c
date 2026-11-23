@@ -22,6 +22,9 @@ extern int telemetry_router_leave(void);
 #include "network_stamp.h"
 #include "telemetry_rate.h"
 #include "ota_stream.h"
+#ifdef FC_SD_SERVICE
+#include "sd_file_stream.h"
+#endif
 #include "sim_network_probe.h"
 #include "board_can_priority.h"
 #include "fctypes.h"
@@ -763,6 +766,9 @@ static SedsResult telemetry_poll_discovery_locked(void) {
    * on indefinitely. */
   (void)flight_buzzer_poll(g_router.r);
   ota_stream_poll();
+#ifdef FC_SD_SERVICE
+  sd_file_stream_poll();
+#endif
   g_telemetry_service_stage = 303U;
   g_telemetry_service_stage = 611U;
   const SedsResult result = seds_router_poll_discovery(g_router.r, &did_queue);
@@ -928,6 +934,13 @@ static SedsResult init_telemetry_router_locked(void) {
     return result;
   }
   g_telemetry_service_stage = 33U;
+#ifdef FC_SD_SERVICE
+  result = sd_file_stream_init(r);
+  if (result != SEDS_OK) {
+    seds_router_free(r);
+    return result;
+  }
+#endif
   g_discovery_schema_announced = 0U;
   g_discovery_schema_retry_ms = 0ULL;
   result = flight_state_cache_init(r);
