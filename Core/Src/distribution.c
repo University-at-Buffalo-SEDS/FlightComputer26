@@ -754,7 +754,7 @@ static inline void for_ascent_update(fu32 conf)
 
   sweetbench_catch(8);
 
-  if (conf & Eval_Focused)
+  if (conf & option(Eval_Focused))
   {
     tx_thread_relinquish();
   }

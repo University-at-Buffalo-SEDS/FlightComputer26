@@ -13,7 +13,7 @@ static conditional void rollback_after_hitl(void)
 
 	fu32 conf = load(&g_conf, Acq);
 
-	if (!(conf & Using_Ascent_KF))
+	if (!(conf & option(Using_Ascent_KF)))
 	{
 		ascent_initialize(conf);
 	}
