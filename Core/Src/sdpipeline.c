@@ -495,6 +495,12 @@ static inline void sd_pipeline_shutdown(const char *unluck)
 #ifndef FC_SD_SERVICE
     st = fx_media_close(&sdio_disk);
     if (sd_io_failed(st)) log_err(id "mclose %s %u", unluck, st);
+#else
+    /* fx_file_close() writes the final directory entry (file size) into the
+     * media cache; without fx_media_close() nothing else writes it out, so
+     * flush again or an AV-bay power-off could leave the size stale. */
+    st = fx_media_flush(&sdio_disk);
+    if (sd_io_failed(st)) log_err(id "mflush %s %u", unluck, st);
 #endif
     /* With the read service the flushed volume stays mounted, read-only from
      * here on; flight_sd_prepare_io() re-initialises a lost transport. */

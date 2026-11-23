@@ -494,6 +494,9 @@ class FilexSideTests(unittest.TestCase):
         self.assertIn('sd_file_service_forever();\n        return;', task)
         shutdown = src[src.index('static inline void sd_pipeline_shutdown'):src.index('static inline int sd_pipeline_init(')]
         self.assertRegex(shutdown, r'#ifndef FC_SD_SERVICE\n\s+st = fx_media_close')
+        # With the service the volume stays mounted: the directory entry that
+        # fx_file_close() caches must be flushed again before a power-off.
+        self.assertRegex(shutdown, r'fx_file_close\(&file\)[\s\S]*#else[\s\S]*fx_media_flush\(&sdio_disk\)[\s\S]*#endif')
         tel = (ROOT / 'Core/Src/telemetry.c').read_text()
         self.assertIn('sd_file_stream_init(r)', tel)
         self.assertIn('sd_file_stream_poll();', tel)
