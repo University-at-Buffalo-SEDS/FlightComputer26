@@ -436,7 +436,15 @@ on the stand the FC replays `/IGT/IMU0.CSV`, `/IGT/BARO0.CSV` and optional
   until a card mounts, so a card inserted after boot is picked up. Until the
   log file is open, `g_fc_sd_state` = `FC_SD_NOT_READY` (word 6 bit 30).
 - After a transport error the SD task re-initialises SDMMC1 at most once per
-  second and refuses a card with a different CID or size.
+  second. A seated card (it answers the first re-initialisation with the same
+  CID and size) resumes on its retained mount and log handle. A card that left
+  the slot (re-initialisation found no card), or another CID or size in the
+  slot, may have been rewritten elsewhere (another IGT dataset): the old mount
+  is dropped with `fx_media_abort` (nothing from its FAT, directory or sector
+  cache is written) and the card now in the slot is opened fresh, retried every
+  second until it mounts (`g_sd_remounts`). Logging continues in a new log part;
+  rows not yet flushed to the old card (at most `SD_FLUSH_INTERVAL`) are lost
+  with it. Retry SD then re-runs IGT validation against the new contents.
 - FileX uses a one-sector (512 B) media cache (`fx_sd_media_memory`).
   `FX_ENABLE_FAULT_TOLERANT` is compiled in, but `fx_fault_tolerant_enable()`
   is never called, so fault-tolerant mode is not active.

@@ -10,12 +10,19 @@
 
 extern SD_HandleTypeDef hsd1;
 /* One mounted card owns all retained FileX cache, handles and pending offsets.
- * No allocation, remount or producer-side recovery is permitted. */
+ * A transient fault on a seated card resumes on that state. A card that left
+ * its slot (no answer to re-initialisation, or another CID/size answering)
+ * may have been rewritten elsewhere: the cached FAT, directory and sectors
+ * are dropped unwritten and whatever card is there now is mounted fresh. */
 static uint32_t mounted_cid[4], mounted_blocks, retry_at;
 static VOID (*source_driver)(FX_MEDIA *);
-static uint8_t driver_io_failed;
+static FX_MEDIA *mount_media;
+static CHAR *mount_name;
+static VOID *mount_info, *mount_memory;
+static ULONG mount_memory_size;
+static uint8_t driver_io_failed, card_left;
 static uint8_t mounted_identity, transport_lost, retry_started, dma_quiesced;
-volatile uint32_t g_sd_transport_retries, g_sd_card_identity_mismatches;
+volatile uint32_t g_sd_transport_retries, g_sd_card_identity_mismatches, g_sd_remounts;
 volatile uint32_t g_sd_runtime_failures, g_sd_last_io_status;
 
 static UINT quiesce_transport(void)
@@ -104,6 +111,7 @@ UINT flight_sd_prepare_io(void)
    * resetting interrupted card commands as well as the peripheral state. */
   if (HAL_SD_Init(&hsd1) != HAL_OK) {
     ++g_sd_init_failures;
+    card_left = 1U; /* out of the slot: whatever comes back is mounted fresh */
     dma_quiesced = quiesce_transport() == FX_SUCCESS;
     return FX_IO_ERROR;
   }
@@ -112,8 +120,24 @@ UINT flight_sd_prepare_io(void)
       (memcmp(mounted_cid, hsd1.CID, sizeof mounted_cid) != 0 ||
        mounted_blocks != hsd1.SdCard.LogBlockNbr)) {
     ++g_sd_card_identity_mismatches;
-    dma_quiesced = quiesce_transport() == FX_SUCCESS;
-    return FX_IO_ERROR;
+    card_left = 1U;
+  }
+  if (card_left) {
+    /* Abort, not close: a close or flush would write the old card's cached
+     * FAT and directory onto this one. The open writes nothing; it starts
+     * with an empty cache, so no stale sector survives the swap. */
+    (void)fx_media_abort(mount_media);
+    sd_pipeline_media_remounted();
+    if (fx_media_open(mount_media, mount_name, flight_sd_media_driver, mount_info,
+                      mount_memory, mount_memory_size) != FX_SUCCESS) {
+      ++g_sd_mount_failures;
+      dma_quiesced = quiesce_transport() == FX_SUCCESS;
+      return FX_IO_ERROR;
+    }
+    memcpy(mounted_cid, hsd1.CID, sizeof mounted_cid);
+    mounted_blocks = hsd1.SdCard.LogBlockNbr;
+    card_left = 0U;
+    ++g_sd_remounts;
   }
   transport_lost = 0U;
   /* Controller initialization is not successful record write/flush progress. */
@@ -137,6 +161,8 @@ UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
   /* One application media owner supplies the original driver on every mount.
    * Preserve NULL for FileX validation instead of replacing it with a wrapper. */
   if (media_driver != flight_sd_media_driver) source_driver = media_driver;
+  mount_media = media_ptr; mount_name = media_name; mount_info = driver_info_ptr;
+  mount_memory = memory_ptr; mount_memory_size = memory_size;
   uint32_t failed_retries = 0U;
   for (;;) {
     if (g_sd_initialized == 0U) {
@@ -156,7 +182,7 @@ UINT flight_fx_media_open(FX_MEDIA *media_ptr, CHAR *media_name,
       if (result == FX_SUCCESS) {
         memcpy(mounted_cid, hsd1.CID, sizeof mounted_cid);
         mounted_blocks = hsd1.SdCard.LogBlockNbr; mounted_identity = 1U;
-        transport_lost = 0U; retry_started = 0U;
+        transport_lost = 0U; retry_started = 0U; card_left = 0U;
         g_sd_ready = driver_io_failed ? 0U : 1U;
         return result;
       }

@@ -8,6 +8,9 @@
 /* Sole storage owner only; no FileX call may be active at retry/quiescence. */
 void flight_sd_note_io_failure(UINT status);
 UINT flight_sd_prepare_io(void);
+/* Called from flight_sd_prepare_io() when the card left its slot: every
+ * FX_FILE on the old mount is aborted, so the owner reopens what it needs. */
+void sd_pipeline_media_remounted(void);
 /* False means FileX success still has unresolved actual driver evidence. */
 bool flight_sd_note_progress(void);
 /* No readiness/status mutation; fence a following FileX operation. */

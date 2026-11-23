@@ -463,6 +463,10 @@ class FilexSideTests(unittest.TestCase):
         start = src.index('#ifdef FC_SD_SERVICE\n/* Network SD read service')
         end = src.index('#else\n#define sd_file_service_turn()')
         block = src[start + len('#ifdef FC_SD_SERVICE\n'):end]
+        # The handle flags sit above the writer, which clears them on a remount.
+        flags = 'static bool dl_open, dl_list_valid;\n'
+        assert flags in src[:start]
+        block = flags + block
         cls.block = block
         cls.out = run_c(FILEX_STUBS + crc_source() + block + FILEX_MAIN)
 

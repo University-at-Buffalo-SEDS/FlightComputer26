@@ -355,6 +355,10 @@ static inline __attribute__((cold)) int sd_pipeline_open(const char *surprise);
 static inline __attribute__((cold)) int sd_pipeline_init(const char *surprise);
 static inline __attribute__((cold)) void sd_pipeline_shutdown(const char *unluck);
 
+#ifdef FC_SD_SERVICE
+static bool dl_open, dl_list_valid;
+#endif
+
 static inline bool sd_io_failed(UINT status)
 {
     if (status == FX_SUCCESS) {
@@ -516,6 +520,17 @@ static inline void sd_pipeline_shutdown(const char *unluck)
      * here on; flight_sd_prepare_io() re-initialises a lost transport. */
 }
 
+/* The card left its slot and a fresh mount replaces the old one: the log
+ * handle is aborted, so the retained row goes whole into a new log part. */
+void sd_pipeline_media_remounted(void)
+{
+    sd_file_open = 0U;
+    sd_retry_pending = false;
+#ifdef FC_SD_SERVICE
+    sd_file_stream_handle_open(dl_open = dl_list_valid = false);
+#endif
+}
+
 static inline int sd_pipeline_init(const char *surprise)
 {
     UINT st = sd_pipeline_prepare();
@@ -597,7 +612,6 @@ static inline int sd_pipeline_open(const char *surprise)
 #define SD_DL_IDLE_CLOSE_MS 3000U
 #define SD_DL_LIST_SCAN_PER_TURN 32U
 #define dl_file (*(FX_FILE *)sd_file_stream_handle())
-static bool dl_open, dl_list_valid;
 static uint16_t dl_list_next;
 static ULONG dl_list_entry;
 static uint32_t dl_last_ms;

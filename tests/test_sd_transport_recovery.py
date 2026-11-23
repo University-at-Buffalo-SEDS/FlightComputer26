@@ -43,8 +43,8 @@ typedef struct {unsigned count,created;} TX_SEMAPHORE;
 typedef struct {unsigned mounted;UINT fx_media_driver_request,fx_media_driver_status;} FX_MEDIA;
 Registers regs; SD_HandleTypeDef hsd1={.Instance=&regs};
 unsigned ticks,irq_enabled=1,pending_irq,barriers,resets,initializations,sema_creates;
-unsigned card_present=1,mount_failures,protocol_multiblock;
-uint32_t physical_cid[4]={1,2,3,4},expected_cid[4]={1,2,3,4},physical_blocks=10000;
+unsigned card_present=1,mount_failures,protocol_multiblock,aborts,opens,remount_hooks;
+uint32_t physical_cid[4]={1,2,3,4},expected_cid[4]={1,2,3,4},physical_blocks=10000,expected_blocks=10000;
 extern volatile uint32_t g_sd_ready;
 void HAL_NVIC_DisableIRQ(int irq){assert(irq==SDMMC1_IRQn);irq_enabled=0;}
 void HAL_NVIC_ClearPendingIRQ(int irq){assert(irq==SDMMC1_IRQn&&!irq_enabled);pending_irq=0;}
@@ -72,8 +72,11 @@ void tx_thread_sleep(unsigned count){ticks+=count;}
 UINT flight_sd_dma_prepare(void);void flight_sd_dma_release(void);UINT flight_sd_dma_drain(void);
 UINT fx_media_open(FX_MEDIA*m,CHAR*n,VOID(*d)(FX_MEDIA*),VOID*i,VOID*b,ULONG s){
  (void)n;(void)d;(void)i;(void)b;(void)s;assert(flight_sd_dma_prepare()==FX_SUCCESS);
- if(mount_failures){--mount_failures;return FX_IO_ERROR;}m->mounted=1;return FX_SUCCESS;
+ if(mount_failures){--mount_failures;return FX_IO_ERROR;}assert(!m->mounted);m->mounted=1;++opens;return FX_SUCCESS;
 }
+/* Abort writes nothing: the old card's cache must never reach the new one. */
+UINT fx_media_abort(FX_MEDIA*m){assert(m->mounted);m->mounted=0;++aborts;return FX_SUCCESS;}
+void sd_pipeline_media_remounted(void);
 '''
 WRITER=r'''
 struct {ULONG fx_file_current_file_size;} file;
@@ -89,7 +92,7 @@ FX_MEDIA sdio_disk;char disk[1024];unsigned position,durable_size,fail_status,fa
 void fc_lock(int*p){assert(!*p);*p=1;}void fc_unlock(int*p){assert(*p);*p=0;}
 void sd_service_events(bool draining){(void)draining;}void sd_handoff_tail(void){}
 uint32_t now_ms(void){return ticks;}
-static void verify_same_card(void){assert(card_present&&!transport_lost&&!memcmp(physical_cid,expected_cid,sizeof expected_cid)&&physical_blocks==10000);}
+static void verify_same_card(void){assert(card_present&&!transport_lost&&!memcmp(physical_cid,expected_cid,sizeof expected_cid)&&physical_blocks==expected_blocks);}
 UINT fx_file_seek(void*f,ULONG at){(void)f;assert(!line.lock);if(seek_failure){seek_failure=0;return FX_IO_ERROR;}verify_same_card();position=at;return FX_SUCCESS;}
 UINT fx_file_write(void*f,void*b,ULONG n){
  (void)f;assert(!line.lock);verify_same_card();++write_calls;ticks+=7;
@@ -103,12 +106,15 @@ UINT fx_file_write(void*f,void*b,ULONG n){
 }
 UINT fx_media_flush(void*m){(void)m;assert(!line.lock);++flush_calls;if(flush_failure){flush_failure=0;return FX_IO_ERROR;}verify_same_card();durable_size=file.fx_file_current_file_size;return FX_SUCCESS;}
 UINT fx_file_close(void*f){(void)f;++close_calls;return FX_SUCCESS;}UINT fx_media_close(void*m){(void)m;return FX_SUCCESS;}
-static inline int sd_pipeline_open(const char*s){(void)s;assert(!"unexpected rotation/open in retained-write control");return 1;}
+/* Only a remount (the card left its slot) may open a new part here. */
+unsigned allow_part,parts;
+static inline int sd_pipeline_open(const char*s){(void)s;assert(allow_part&&"unexpected rotation/open in retained-write control");
+ ++parts;memcpy(disk,"header\n",7);file.fx_file_current_file_size=position=7;sd_file_open=1;return WE_ARE_SO_BACK;}
 '''
 MAIN=r'''
 static const char row[]="1700000000123,9876,raw,1.25\n";
 static void begin(void){
- FX_MEDIA media={0};assert(flight_fx_media_open(&media,"test",0,0,0,0)==FX_SUCCESS);
+ static FX_MEDIA media;assert(flight_fx_media_open(&media,"test",0,0,0,0)==FX_SUCCESS);
  assert(sema_creates==2&&g_sd_ready==1);memcpy(disk,"header\n",7);file.fx_file_current_file_size=position=7;
  memcpy(sdbuf[0],row,sizeof row-1);line.off[0]=sizeof row-1;sd_buffer_records[0]=1;
 }
@@ -139,11 +145,19 @@ int main(int argc,char**argv){assert(argc==2);unsigned scenario=(unsigned)strtou
  assert(!irq_enabled&&!regs.IDMACTRL&&!regs.DCTRL&&!pending_irq&&!sd_tx_semaphore.count&&!sd_rx_semaphore.count);
  /* A latched old IRQ cannot now generate a completion for a new write. */
  if(irq_enabled&&pending_irq)HAL_SD_TxCpltCallback(&hsd1);assert(!sd_tx_semaphore.count);
+ /* The card left its slot (no answer to re-initialisation), or another card
+  * answers: its cache is dropped unwritten and the volume mounted fresh; the
+  * retained row goes whole into a new part. A seated card resumes in place. */
  if(scenario==3){card_present=0;assert(!sd_try_write_line());assert(!g_sd_ready&&!g_sd_written_records);card_present=1;ticks+=1000;}
- if(scenario==4||scenario==5){if(scenario==4)physical_cid[0]=9;else physical_blocks++;
-  unsigned before=write_calls;for(unsigned n=0;n<3;n++){ticks+=1000;assert(!sd_try_write_line());}
-  assert(write_calls==before&&g_sd_card_identity_mismatches==3&&!g_sd_ready&&sd_retry_pending);return 0;}
- assert(sd_try_write_line());exact_row();assert(g_sd_ready&&!protocol_multiblock&&g_sd_transport_retries>=1);
+ if(scenario==4)physical_cid[0]=9;
+ if(scenario==5)physical_blocks++;
+ const bool swapped=scenario>=3&&scenario<=5;
+ if(swapped){allow_part=1;memcpy(expected_cid,physical_cid,sizeof expected_cid);expected_blocks=physical_blocks;ticks+=1000;}
+ const unsigned writes_before=write_calls;
+ assert(sd_try_write_line());exact_row();
+ assert(aborts==swapped&&opens==1U+swapped&&g_sd_remounts==swapped&&parts==swapped);
+ assert(g_sd_card_identity_mismatches==(scenario==4||scenario==5));
+ if(swapped)assert(write_calls==writes_before+1); /* the whole row, once, at the new part's start */assert(g_sd_ready&&!protocol_multiblock&&g_sd_transport_retries>=1);
  assert(g_sd_max_write_ms==7&&!g_sd_flushed_records);
  flush_failure=1;assert(sd_io_failed(fx_media_flush(&sdio_disk)));assert(!g_sd_ready&&!g_sd_flushed_records);
  ticks+=1000;assert(flight_sd_prepare_io()==FX_SUCCESS);assert(!g_sd_ready); /* HAL init is not write proof */
