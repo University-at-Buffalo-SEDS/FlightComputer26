@@ -174,14 +174,7 @@ enum baro_iir_coef : uint8_t {
 #define BARO_SENSOR_MIN_PA 30000.0f
 #define BARO_SENSOR_MAX_PA 125000.0f
  
-// Altitude to pressure compression constant
-#define ALT_PRES_CONST 44330.0f
-#define INV_PRES_CONST (1.0f / ALT_PRES_CONST)
-
-// Hypsometric helpers
-#define BARO_SEA_LEVEL_PRESSURE_PA  101325.0f
-#define BARO_HYPSOMETRIC_EXPONENT   0.1903f
-#define INV_HYPSOMETRIC_EXPONENT    (1.0f / BARO_HYPSOMETRIC_EXPONENT)
+// Pressure to altitude above the pad: baro_agl() in baro_reference.h.
 
 // Ground reference tracking against weather and sensor drift on the pad:
 // see baro_reference.h.

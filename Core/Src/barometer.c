@@ -278,10 +278,6 @@ static inline HAL_StatusTypeDef baro_check_drdy(SPI_HandleTypeDef *hspi) {
 
 /* ------ Altitude helpers ------ */
 
-static inline float altitude_from_pressures(float p, float p0) {
-  return ALT_PRES_CONST * (1.0f - powf(p / p0, BARO_HYPSOMETRIC_EXPONENT));
-}
-
 /* Sample is plausible for the sensor itself (works at apogee pressures) */
 static inline uint8_t pressure_in_sensor_range(float p) {
   return isfinite(p) && p >= BARO_SENSOR_MIN_PA && p <= BARO_SENSOR_MAX_PA;
@@ -303,8 +299,9 @@ static void baro_reset_baseline(float pressure) {
 /* ------ Public API: altitude ------ */
 
 /*
- * Pressure -> altitude above the ground reference (hypsometric formula,
- * datasheet section 3.9). Does not move the reference.
+ * Pressure -> altitude above the ground reference (baro_agl: hypsometric
+ * equation with the ISA pad temperature, right at any site elevation).
+ * Does not move the reference.
  */
 float baro_relative_alt(float pressure) {
   if (!pressure_in_sensor_range(pressure)) {
@@ -316,7 +313,7 @@ float baro_relative_alt(float pressure) {
     return 0.0f;
   }
 
-  float rel_alt = altitude_from_pressures(pressure, baro_ref.ref);
+  float rel_alt = baro_agl(pressure, baro_ref.ref);
 
   if (!isfinite(rel_alt)) {
     return prev_rel_alt;

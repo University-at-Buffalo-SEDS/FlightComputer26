@@ -77,6 +77,25 @@ void baro_ref_gyro(float x, float y, float z, uint32_t now);
 float baro_ref_update(float p, uint32_t now, bool on_pad);
 uint8_t baro_ref_mode(void);
 
+/*
+ * Height above the reference p0 for pressure p (m): the ISA pressure altitude
+ * of p minus that of p0,
+ *   h(p) = T0/L * (1 - (p / P0)^(R*L/g0)),   AGL = h(p) - h(p0)
+ *        = T0/L * (p0 / P0)^(R*L/g0) * (1 - (p / p0)^(R*L/g0)),
+ * the hypsometric equation with the ISA temperature at the pad's pressure
+ * altitude (T0/L * (p0/P0)^(R*L/g0) = T_pad/L). The sea-level form
+ * T0/L * (1 - (p/p0)^...) assumes a 15 C pad and reads about 2% high at a
+ * 900 m site. The ISA pad temperature, not the BMP390's: that sensor sits in
+ * the avionics bay and reads the electronics, not the air.
+ * The pad factor is recomputed only when p0 changes (every sample while the
+ * reference tracks on the pad, never after the freeze at Launch). Not
+ * reentrant: the distribution thread is the only caller in flight.
+ */
+#define BARO_ISA_T0_L  44330.77f   /* 288.15 K / 0.0065 K/m */
+#define BARO_ISA_EXP   0.190263f   /* R*L/g0 = 287.053 * 0.0065 / 9.80665 */
+#define BARO_ISA_P0    101325.0f
+float baro_agl(float p, float p0);
+
 /* For FC BOARD_HEALTH word 15 bits 18..31 (fc_estimator_status.h): bits
  * 0..1 the mode, bits 2..13 the reference minus the boot reference in Pa
  * (signed, saturating at +-2047). 0 before there is a reference. */

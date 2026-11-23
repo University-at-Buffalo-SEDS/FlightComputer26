@@ -26,6 +26,16 @@ static inline float ema_gain(uint32_t dt, uint32_t tau)
 
 static inline void disturbed(uint32_t now) { s.calm_since = now; }
 
+float baro_agl(float p, float p0)
+{
+  static float key, scale; /* p0 and T_pad/L for it */
+  if (p0 != key) {
+    scale = BARO_ISA_T0_L * powf(p0 * (1.0f / BARO_ISA_P0), BARO_ISA_EXP);
+    key = p0;
+  }
+  return scale * (1.0f - powf(p / p0, BARO_ISA_EXP));
+}
+
 void baro_ref_reset(float p, uint32_t now)
 {
   if (!(baro_ref.boot > 0.0f)) baro_ref.boot = p;

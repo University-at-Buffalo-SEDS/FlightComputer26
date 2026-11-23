@@ -26,7 +26,7 @@ static float noise(float amp) /* uniform in [-amp, amp] */
   rng = rng * 1664525u + 1013904223u;
   return amp * ((float)(rng >> 8) / 8388608.0f - 1.0f);
 }
-static float alt(float p, float p0) { return 44330.0f * (1.0f - powf(p / p0, 0.1903f)); }
+static float alt(float p, float p0) { return baro_agl(p, p0); }
 
 /* Plant */
 static double pad;           /* true ambient pressure at the vehicle (Pa) */
@@ -244,23 +244,26 @@ FLIGHT = r"""
 #include "fcconfig.h"
 
 /* A long pad sit with weather moving the pressure, then a flight, through the
- * FC's live path: baro_reference.c for the reference and barometer.c's
- * hypsometric altitude; Launch is the evaluator's detect_boost rule (AGL at
+ * FC's live path: baro_reference.c for the reference and baro_agl() for the
+ * altitude, at pads from 110 m to 2000 m MSL in an ISA atmosphere; Launch is the evaluator's detect_boost rule (AGL at
  * least LAUNCH_MIN_ALT and rising for MIN_SAMP_LAUNCH samples); the main
  * opens where the barometric AGL first falls to REEF_TARGET_ALT. Compared with
  * a reference fixed at the zero (no compensation). */
-static float agl(double p, float p0) { return 44330.0f * (1.0f - powf((float)p / p0, 0.1903f)); }
-static double pressure(double h, double p0) { return p0 * pow(1.0 - h / 44330.0, 1.0 / 0.1903); }
+static float agl(double p, float p0) { return baro_agl((float)p, p0); }
+/* ISA truth: the pressure h m above the level where it is p0. */
+static double isa_h(double p) { return 288.15 / 0.0065 * (1.0 - pow(p / 101325.0, 287.05287 * 0.0065 / 9.80665)); }
+static double isa_p(double h) { return 101325.0 * pow(1.0 - h * 0.0065 / 288.15, 9.80665 / (287.05287 * 0.0065)); }
+static double pressure(double h, double p0) { return isa_p(isa_h(p0) + h); }
 static uint32_t rng = 7u;
 static float noise(float amp) { rng = rng * 1664525u + 1013904223u; return amp * ((float)(rng >> 8) / 8388608.0f - 1.0f); }
 
 typedef struct { float apogee_err, main_true, launch_t; } result;
 
-static result fly(double hours, double hpa_per_h, int compensate)
+static result fly(double hours, double hpa_per_h, int compensate, double pad_msl)
 {
   memset(&baro_ref, 0, sizeof baro_ref);
   uint32_t now = 1000u;
-  double ground = 100000.0;              /* true ground pressure */
+  double ground = isa_p(pad_msl);        /* true ground pressure */
   const double rate = hpa_per_h * 100.0 / 3600.0;
   baro_ref_reset((float)ground, now);    /* Postinit's zero */
   const float zero = baro_ref.ref;
@@ -293,9 +296,9 @@ static result fly(double hours, double hpa_per_h, int compensate)
     if (phase == 3 && alt <= REEF_TARGET_ALT) { phase = 4; r.main_true = (float)h; }
     if (phase == 5) break;
   }
-  printf("%s %.1f h at %+.1f hPa/h: pad AGL at ignition %+.2f m, launch detected T+%.2f s, "
+  printf("pad %4.0f m MSL, %s %.1f h at %+.1f hPa/h: pad AGL at ignition %+.2f m, launch detected T+%.2f s, "
          "apogee %.1f m read as %.1f m, main at true %.1f m (target %.1f m)\n",
-         compensate ? "compensated" : "fixed ref  ", hours, hpa_per_h, r.apogee_err, r.launch_t,
+         pad_msl, compensate ? "compensated" : "fixed ref  ", hours, hpa_per_h, r.apogee_err, r.launch_t,
          h_apogee, max_agl, r.main_true, REEF_TARGET_ALT);
   r.apogee_err = max_agl - h_apogee;
   return r;
@@ -303,17 +306,74 @@ static result fly(double hours, double hpa_per_h, int compensate)
 
 int main(void)
 {
-  const double cases[][2] = {{2.0, -3.0}, {1.0, +4.0}, {4.0, -1.5}};
+  /* hours, hPa/h, pad m MSL (110.9 m: 100000 Pa) */
+  const double cases[][3] = {{2.0, -3.0, 110.9}, {1.0, +4.0, 110.9}, {4.0, -1.5, 110.9},
+                             {2.0, -3.0, 890.0}, {1.0, +4.0, 1500.0}, {4.0, -1.5, 2000.0}};
   for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
-    result good = fly(cases[i][0], cases[i][1], 1);
-    result bad = fly(cases[i][0], cases[i][1], 0);
+    result good = fly(cases[i][0], cases[i][1], 1, cases[i][2]);
+    result bad = fly(cases[i][0], cases[i][1], 0, cases[i][2]);
     assert(fabsf(good.apogee_err) < 3.0f);
     assert(fabsf(good.main_true - REEF_TARGET_ALT) < 3.0f);
     assert(good.launch_t > 0.0f && good.launch_t < 1.0f);
-    /* Without compensation the error is the weather's 8 m per hPa. */
+    /* Without compensation the error is the weather's 8 m (or more, higher up) per hPa. */
     const float drift_m = (float)(fabs(cases[i][0] * cases[i][1]) * 8.0);
     assert(fabsf(bad.apogee_err) > 0.7f * drift_m || fabsf(bad.main_true - REEF_TARGET_ALT) > 0.7f * drift_m);
   }
+  return 0;
+}
+"""
+
+ALTITUDE = r"""
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include "baro_reference.h"
+#include "fcconfig.h"
+
+/* baro_agl() against ISA truth (double, from the constants' definitions) at
+ * pads from sea level to 2000 m MSL, 0-5000 m above them. */
+static double isa_h(double p) { return 288.15 / 0.0065 * (1.0 - pow(p / 101325.0, 287.05287 * 0.0065 / 9.80665)); }
+static double isa_p(double h) { return 101325.0 * pow(1.0 - h * 0.0065 / 288.15, 9.80665 / (287.05287 * 0.0065)); }
+static float sea_level_form(float p, float p0) { return 44330.0f * (1.0f - powf(p / p0, 0.1903f)); }
+
+int main(void)
+{
+  const double pads[] = {0.0, 890.016, 1500.0, 2000.0};
+  for (unsigned i = 0; i < sizeof pads / sizeof pads[0]; ++i) {
+    const float p0 = (float)isa_p(pads[i]);
+    double worst = 0.0, worst_rel = 0.0, old_rel = 0.0;
+    for (double h = 0.0; h <= 5000.0; h += 5.0) {
+      const float p = (float)isa_p(pads[i] + h);
+      const double got = baro_agl(p, p0);
+      /* The truth for the float pressures handed over. */
+      const double truth = isa_h(p) - isa_h(p0);
+      const double err = got - truth;
+      if (fabs(err) > worst) worst = fabs(err);
+      if (h >= 100.0) {
+        if (fabs(err) / h > worst_rel) worst_rel = fabs(err) / h;
+        const double old = (sea_level_form(p, p0) - truth) / h;
+        if (fabs(old) > fabs(old_rel)) old_rel = old;
+      }
+      assert(fabs(err) < 0.05 + 2e-5 * h);
+      /* Also against the nominal height (pressure rounded to float). */
+      assert(fabs(got - h) < 0.05 + 2e-5 * h);
+    }
+    /* The main: the first ISA pressure at or below REEF_TARGET_ALT, coming
+     * down in 1 cm steps, is the right true height. */
+    double cross = -1.0;
+    for (double h = 600.0; h >= 0.0; h -= 0.01) {
+      if (baro_agl((float)isa_p(pads[i] + h), p0) <= REEF_TARGET_ALT) { cross = h; break; }
+    }
+    printf("pad %7.1f m MSL (%.1f Pa): worst |err| %.3f m (%.4f%%), main at true %.2f m; "
+           "sea-level form off by %+.2f%%\n",
+           pads[i], (double)p0, worst, worst_rel * 100.0, cross, old_rel * 100.0);
+    assert(fabs(cross - REEF_TARGET_ALT) < 0.05);
+    if (pads[i] > 800.0) assert(old_rel > 0.018); /* the bug this replaces */
+  }
+  /* The cached pad factor follows a changing reference. */
+  const float a = (float)isa_p(0.0), b = (float)isa_p(2000.0), p = (float)isa_p(3000.0);
+  const float ab = baro_agl(p, b), aa = baro_agl(p, a), ab2 = baro_agl(p, b);
+  assert(ab == ab2 && fabsf(ab - 1000.0f) < 0.1f && fabsf(aa - 3000.0f) < 0.1f);
   return 0;
 }
 """
@@ -346,6 +406,19 @@ class BaroReferenceTests(unittest.TestCase):
             print(result.stdout)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_altitude_at_any_pad_elevation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / 'a.c').write_text(ALTITUDE)
+            exe = out / 'alt'
+            subprocess.run(['cc', '-std=gnu11', '-O1', '-Wall', '-Wextra', '-Werror',
+                            '-fsanitize=address,undefined', '-I', str(BASE / 'Core/Inc'),
+                            str(out / 'a.c'), str(BASE / 'Core/Src/baro_reference.c'),
+                            '-o', str(exe), '-lm'], check=True)
+            result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
+            print(result.stdout)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_live_path_wiring(self):
         dma = (BASE / 'Core/Src/dma.c').read_text()
         # Every fresh live sample: the reference sees the real sensors, and
@@ -363,6 +436,10 @@ class BaroReferenceTests(unittest.TestCase):
         self.assertLess(regions.index('FC_RESUME_REGION(baro_ref)'), regions.index('FC_RESUME_REGION(prev_rel_alt)'))
         self.assertIn('baro_reset_baseline(p);', baro)
         self.assertNotIn('alt_bias', baro)
+        # One pressure-to-altitude conversion, the site-elevation-correct one.
+        self.assertIn('float rel_alt = baro_agl(pressure, baro_ref.ref);', baro)
+        self.assertNotIn('44330', baro)
+        self.assertNotIn('44330', (BASE / 'Core/Inc/barometer.h').read_text())
         cmake = (BASE / 'CMakeLists.txt').read_text()
         self.assertIn('Core/Src/baro_reference.c', cmake)
 
