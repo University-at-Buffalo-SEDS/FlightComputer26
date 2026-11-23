@@ -33,9 +33,11 @@ copy its card by hand.
 Both images now link `Core/Src/zstd_compress_stub.c` in place of zstd's
 compressor, which the FC never runs (`payload_compress_threshold = SIZE_MAX`
 in `telemetry.c`): -27,352 B. The SD transfer v2 service (streaming, SDX
-encoder, SHA-256) then added 5,568 B to the flight image. Release, against
-SEDSnet main ebdb444: flight 449,448 B (25,176 B free, RAM +108 B),
-`--ground-test` 446,536 B (28,088 B free, RAM unchanged).
+encoder, SHA-256, remount handling) then added 5,636 B to the flight image.
+Release, against SEDSnet main ebdb444, on top of the card-swap remount
+change (flight 472,008 B with 2,616 B free, `--ground-test` 474,256 B with
+368 B free): flight 450,292 B (24,332 B free, RAM 261,352 B),
+`--ground-test` 446,904 B (27,720 B free, RAM 264,460 B).
 
 The flight image's +404 B covers:
 
