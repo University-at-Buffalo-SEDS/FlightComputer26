@@ -178,6 +178,16 @@ static inline void estimator_cycle(float probe)
 
 /* FSM helpers */
 
+/* A transition check: unless 'cond' holds, the sample is spurious for this
+ * check (handle_spurious, with the condition's text) and the caller returns. */
+#define RETURN_UNLESS(mode, cond)             \
+  do {                                        \
+    if (!(cond)) {                            \
+      handle_spurious((mode), #cond);         \
+      return;                                 \
+    }                                         \
+  } while (0)
+
 static inline void handle_spurious(fu32 mode, const char *cond)
 {
   if (sm.confidence >= SPURIOUS_THRESHOLD)
@@ -227,15 +237,15 @@ static inline void detect_boost(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(fabsf(svec(0).vel) >= LAUNCH_MIN_VEL);
-    Require(fabsf(svec(0).vel) > fabsf(svec(2).vel));
-    Require(fabsf(svec(2).vel) > fabsf(svec(4).vel));
+    RETURN_UNLESS(mode, fabsf(svec(0).vel) >= LAUNCH_MIN_VEL);
+    RETURN_UNLESS(mode, fabsf(svec(0).vel) > fabsf(svec(2).vel));
+    RETURN_UNLESS(mode, fabsf(svec(2).vel) > fabsf(svec(4).vel));
   }
   else
   {
-    Require(svec(0).alt >= LAUNCH_MIN_ALT);
-    Require(svec(0).alt > svec(2).alt);
-    Require(svec(2).alt > svec(4).alt);
+    RETURN_UNLESS(mode, svec(0).alt >= LAUNCH_MIN_ALT);
+    RETURN_UNLESS(mode, svec(0).alt > svec(2).alt);
+    RETURN_UNLESS(mode, svec(2).alt > svec(4).alt);
   }
 
   sm.confidence += 1;
@@ -253,18 +263,18 @@ static inline void detect_ascent(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(fabsf(svec(0).vel) >= ASCENT_MIN_VEL);
-    Require(fabsf(svec(0).vel) > fabsf(svec(3).vel));
+    RETURN_UNLESS(mode, fabsf(svec(0).vel) >= ASCENT_MIN_VEL);
+    RETURN_UNLESS(mode, fabsf(svec(0).vel) > fabsf(svec(3).vel));
   }
   else
   {
     float dh_0_3 = svec(0).alt - svec(3).alt;
     float dh_4_7 = svec(4).alt - svec(7).alt;
-    Require(dh_0_3 > dh_4_7);
+    RETURN_UNLESS(mode, dh_0_3 > dh_4_7);
   }
 
-  Require(svec(0).alt > svec(3).alt);
-  Require(svec(3).alt > svec(6).alt);
+  RETURN_UNLESS(mode, svec(0).alt > svec(3).alt);
+  RETURN_UNLESS(mode, svec(3).alt > svec(6).alt);
 
   sm.confidence += 1;
 
@@ -281,7 +291,7 @@ static inline void detect_coast(fu32 mode)
 
   if (mode & option(Velocity_Checks))
   {
-    Require(svec(0).vel < svec(6).vel);
+    RETURN_UNLESS(mode, svec(0).vel < svec(6).vel);
     sm.confidence += 1;
   }
 
@@ -297,18 +307,18 @@ static inline void detect_apogee(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(within(svec(2).vel, APOGEE_MAX_VEL));
-    Require(within(svec(0).vel, APOGEE_MAX_VEL));
+    RETURN_UNLESS(mode, within(svec(2).vel, APOGEE_MAX_VEL));
+    RETURN_UNLESS(mode, within(svec(0).vel, APOGEE_MAX_VEL));
   }
   else
   {
-    Require(svec(0).alt > VIGILANT_MIN_APG);
+    RETURN_UNLESS(mode, svec(0).alt > VIGILANT_MIN_APG);
 
     float dh_0_2 = svec(0).alt - svec(2).alt;
     float dh_2_4 = svec(2).alt - svec(4).alt;
 
-    Require(within(dh_0_2, APOGEE_ALT_TLR));
-    Require(within(dh_2_4, APOGEE_ALT_TLR));
+    RETURN_UNLESS(mode, within(dh_0_2, APOGEE_ALT_TLR));
+    RETURN_UNLESS(mode, within(dh_2_4, APOGEE_ALT_TLR));
   }
 
   sm.confidence += 1;
@@ -326,18 +336,18 @@ static inline void detect_descent(fu32 mode)
 {
   if (mode & option(Velocity_Checks))
   {
-    Require(svec(0).vel <= -DESCENT_MIN_VEL);
-    Require(svec(0).alt < svec(2).alt);
+    RETURN_UNLESS(mode, svec(0).vel <= -DESCENT_MIN_VEL);
+    RETURN_UNLESS(mode, svec(0).alt < svec(2).alt);
   }
   else
   {
     float dh_3_0 = svec(3).alt - svec(0).alt;
     float dh_6_3 = svec(6).alt - svec(3).alt;
-    Require(fabsf(dh_3_0) > fabsf(dh_6_3));
+    RETURN_UNLESS(mode, fabsf(dh_3_0) > fabsf(dh_6_3));
   }
 
-  Require(svec(1).alt < svec(5).alt);
-  Require(svec(4).alt < svec(7).alt);
+  RETURN_UNLESS(mode, svec(1).alt < svec(5).alt);
+  RETURN_UNLESS(mode, svec(4).alt < svec(7).alt);
 
   sm.confidence += 1;
 
@@ -357,9 +367,9 @@ static inline void detect_descent(fu32 mode)
 
 static inline void detect_reefing(fu32 mode)
 {
-  Require(svec(0).alt <= REEF_TARGET_ALT);
-  Require(svec(0).alt < svec(2).alt);
-  Require(svec(2).alt < svec(4).alt);
+  RETURN_UNLESS(mode, svec(0).alt <= REEF_TARGET_ALT);
+  RETURN_UNLESS(mode, svec(0).alt < svec(2).alt);
+  RETURN_UNLESS(mode, svec(2).alt < svec(4).alt);
 
   sm.confidence += 1;
 
@@ -381,13 +391,13 @@ static inline void detect_landed(fu32 mode)
 
   /* Steady descent under the main also has near-constant altitude steps and
    * velocity; only a resting vehicle near the pad baseline is on the ground. */
-  Require(svec(0).alt <= LANDED_MAX_ALT);
-  Require(within(svec(0).vel, LANDED_MAX_VEL));
-  Require(within(svec(4).vel, LANDED_MAX_VEL));
-  Require(within(dh_1, ALT_TOLER));
-  Require(within(dh_4, ALT_TOLER));
-  Require(within(dv_1, VEL_TOLER));
-  Require(within(dv_4, VEL_TOLER));
+  RETURN_UNLESS(mode, svec(0).alt <= LANDED_MAX_ALT);
+  RETURN_UNLESS(mode, within(svec(0).vel, LANDED_MAX_VEL));
+  RETURN_UNLESS(mode, within(svec(4).vel, LANDED_MAX_VEL));
+  RETURN_UNLESS(mode, within(dh_1, ALT_TOLER));
+  RETURN_UNLESS(mode, within(dh_4, ALT_TOLER));
+  RETURN_UNLESS(mode, within(dv_1, VEL_TOLER));
+  RETURN_UNLESS(mode, within(dv_4, VEL_TOLER));
 
   sm.confidence += 1;
 

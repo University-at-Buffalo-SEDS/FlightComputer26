@@ -166,17 +166,12 @@
 #define proxim_lon(k)                         \
   within((k) - LAUNCH_SITE_LON, GPS_TOLER)
 
-/* Go 'k' state vectors back, 0 to get the current vector.
- */
+/* The estimator's state history (sv, sm.idx): svec(0) is the slot the
+ * current step writes, svec(1) the last one written, and so on back to
+ * STATE_HISTORY - 1. A macro, not an accessor function: it is an lvalue
+ * (the filters write through it), and an inline accessor changed the
+ * compiler's inlining of the state machine (task-layout step 11). */
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
-
-#define Require(cond)                         \
-  do {                                        \
-    if (!(cond)) {                            \
-      handle_spurious(mode, #cond);           \
-      return;                                 \
-    }                                         \
-  } while (0)
 
 #define try_init_sensor(_fn, _ctr, _sn)       \
   do {                                        \

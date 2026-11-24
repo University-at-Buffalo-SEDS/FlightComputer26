@@ -47,7 +47,6 @@ typedef int16_t fi16; typedef int32_t fi32;
 #define option(opt) ((opt) & ~Runtime_Configuration)
 #define within(expr, bound) (fabsf((float)(expr)) <= (bound))
 #define svec(k) (sv[(((sm.idx) - (k)) & STATE_HISTORY_MASK)])
-#define Require(cond) do { if (!(cond)) { handle_spurious(mode, #cond); return; } } while (0)
 #define MAX_SPURIOUS_REPORT_SIZE 96
 #define MAX_METRIC_REPORT_SIZE 96
 #define id "EV "
