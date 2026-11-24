@@ -226,8 +226,51 @@ def s_baro_only(d, rng):
     tumble(d, 25.0, imu=False)
 
 
+def s_imu_stuck(d, rng):
+    """The IMU freezes at rest-like readings from coast to the end."""
+    d.each('IMU', 22.0, 1e9, lambda row, t: row.__setitem__(slice(1, 7), [0.1, -0.1, G, 0.5, -0.5, 0.2]))
+
+
+def s_imu_bias(d, rng):
+    """The accelerometer's long axis gains a 3 g bias from coast on."""
+    d.each('IMU', 22.0, 1e9, lambda row, t: row.__setitem__(3, row[3] + 3 * G))
+
+
+def s_baro_stuck_descent(d, rng):
+    """The barometer freezes 10 s after apogee for the rest of the flight."""
+    held = {}
+    def f(row, t):
+        held.setdefault('v', row[1:3])
+        row[1:3] = held['v']
+    d.each('BARO', d.event('apogee_s', 36.6) + 10.0, 1e9, f)
+
+
+def s_baro_noise_descent(d, rng):
+    """A failing barometer: 200 m white noise from apogee on."""
+    d.each('BARO', d.event('apogee_s', 36.6), 1e9, lambda row, t: baro_shift(row, rng.gauss(0, 200.0)))
+
+
 BREAKUPS = {'breakup_at_max_q': r_maxq, 'breakup_in_coast': r_coast, 'tumble_with_pressure_jumps': r_pressure_walk}
-ONE_SENSOR = {'imu_only_tumble': s_imu_only, 'baro_only_chaos': s_baro_only}
+# A break-up seen by one sensor, or one sensor failing outright: no abort,
+# and the other sensors must still bring both chutes at sane times.
+ONE_SENSOR = {'imu_only_tumble': s_imu_only, 'baro_only_chaos': s_baro_only, 'imu_stuck_rest': s_imu_stuck,
+              'imu_accel_bias_3g': s_imu_bias, 'baro_stuck_in_descent': s_baro_stuck_descent,
+              'baro_noise_200m_in_descent': s_baro_noise_descent}
+
+
+def main_crossing(src: Path, apogee_s: float) -> float:
+    """When the dataset's own barometer (0.5 s median) first falls below
+    457.2 m after apogee: the FC's main trigger, whatever the scripted main
+    of the variant (off_nominal opens its chute late, at 300 m)."""
+    with (src / 'IGT' / 'BARO0.CSV').open() as f:
+        rows = [(int(r['t_ms']) / 1000.0, float(r['alt_m'])) for r in csv.DictReader(f)]
+    for i, (t, _) in enumerate(rows):
+        if t <= apogee_s:
+            continue
+        window = sorted(a for tt, a in rows[max(0, i - 12):i + 13])
+        if window[len(window) // 2] < 457.2:
+            return t
+    return float('inf')
 
 
 def run(exe: Path, folder: Path) -> dict:
@@ -256,7 +299,7 @@ def main(argv=None) -> int:
             cases.append((base.name, 'as given', None, 'quiet'))
             for name, fn in FAULTS.items():
                 cases.append((base.name, name, fn, 'quiet'))
-        nominal = [p for p in sets if p.name in ('nominal_10k', 'measured_motor', 'high_wind')]
+        nominal = [p for p in sets if p.name in ('nominal_10k', 'measured_motor', 'high_wind', 'off_nominal')]
         for base in nominal:
             for name, fn in BREAKUPS.items():
                 cases.append((base.name, name, fn, 'fire'))
@@ -274,30 +317,39 @@ def main(argv=None) -> int:
             r = run(exe, folder)
             fired = 'rud_abort_s' in r
             apogee = r.get('Apogee_s', -1)
-            # quiet: an intact flight with faults; no abort and both chutes.
-            # nofire: a break-up seen by one sensor only; no abort (the
-            # mangled data need not reach a deployment). fire: abort before
-            # Apogee.
-            ok = (not fired and r.get('drogue_s', -1) > 0 and r.get('main_s', -1) > 0) if want == 'quiet' \
-                else (not fired) if want == 'nofire' \
+            # quiet / nofire: no abort, and both chutes at sane times against
+            # the dataset's truth (it is replayed open loop): the drogue
+            # within 4 s after the true apogee, the main within 4 s (about
+            # 100 m under the drogue) of the true 457.2 m crossing. fire:
+            # abort before Apogee.
+            truth = json.loads((src / 'summary.json').read_text())
+            truth['main_trigger_s'] = main_crossing(src, truth['apogee_s'])
+            sane = (truth['apogee_s'] <= r.get('drogue_s', -1) <= truth['apogee_s'] + 4.0 and
+                    abs(r.get('main_s', -1e9) - truth['main_trigger_s']) <= 4.0)
+            row_sane = sane
+            ok = (not fired and sane) if want in ('quiet', 'nofire') \
                 else (fired and (apogee < 0 or r['rud_abort_s'] < apogee))
             bad += not ok
-            row = {'set': set_name, 'case': case, 'want': want, 'fired': fired, 'ok': ok, **r}
+            row = {'set': set_name, 'case': case, 'want': want, 'fired': fired, 'ok': ok, 'sane': row_sane,
+                   'true_apogee_s': truth['apogee_s'], 'true_main_trigger_s': truth['main_trigger_s'], **r}
             results.append(row)
             print(f"{'ok ' if ok else 'BAD'} {set_name:18} {case:32} want={want:6} "
                   f"{'FIRED at %.2f s' % r['rud_abort_s'] if fired else 'no abort':16} "
                   f"motion {r['rud_max_motion']:2}/{int(th['RUD_MOTION_MIN'])} pressure {r['rud_max_pressure']:2}/{int(th['RUD_PRESSURE_MIN'])} "
                   f"|w_xy| {r['rud_max_gyro_xy_dps']:6.0f} |a_xy| {r['rud_max_accel_xy_mps2']:5.1f} "
-                  f"baro {r['rud_max_baro_rate_mps']:6.0f} joint {r['rud_max_joint_pct']:3}% drogue {r.get('drogue_s', -1):6.2f} main {r.get('main_s', -1):6.2f}",
+                  f"baro {r['rud_max_baro_rate_mps']:6.0f} joint {r['rud_max_joint_pct']:3}% "
+                  f"drogue {r.get('drogue_s', -1) - truth['apogee_s']:+6.2f} s after apogee, "
+                  f"main {r.get('main_s', -1e9) - truth['main_trigger_s']:+6.2f} s from 457 m",
                   flush=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    quiet = [r for r in results if r['want'] == 'quiet' and r['case'] in ('as given',)]
-    if quiet:
-        print('margins on the datasets as given (armed, Launch..Coast):')
-        print(f"  |gyro x,y| max {max(r['rud_max_gyro_xy_dps'] for r in quiet):.0f} deg/s vs {th['RUD_TUMBLE_DPS']:.0f}; "
-              f"|accel x,y| max {max(r['rud_max_accel_xy_mps2'] for r in quiet):.1f} m/s^2 vs {th['RUD_LATERAL_MPS2']:.0f}; "
-              f"baro rate max {max(r['rud_max_baro_rate_mps'] for r in quiet):.0f} m/s vs {th['RUD_PRESSURE_RATE_MPS']:.0f}")
+    print('raw maxima on the datasets as given (armed, Launch..Coast; a single step gives one vote):')
+    for r in results:
+        if r['case'] == 'as given':
+            print(f"  {r['set']:18} |gyro x,y| {r['rud_max_gyro_xy_dps']:6.0f} deg/s (vs {th['RUD_TUMBLE_DPS']:.0f}), "
+                  f"|accel x,y| {r['rud_max_accel_xy_mps2']:5.1f} m/s^2 (vs {th['RUD_LATERAL_MPS2']:.0f}), "
+                  f"baro {r['rud_max_baro_rate_mps']:5.0f} m/s (vs {th['RUD_PRESSURE_RATE_MPS']:.0f}); "
+                  f"votes motion {r['rud_max_motion']}/{int(th['RUD_MOTION_MIN'])}, pressure {r['rud_max_pressure']}/{int(th['RUD_PRESSURE_MIN'])}")
     faults = [r for r in results if r['want'] != 'fire']
     worst = max(faults, key=lambda r: r['rud_max_joint_pct'])
     print(f"  over all {len(faults)} must-not-fire cases: the closest both votes came at once is "

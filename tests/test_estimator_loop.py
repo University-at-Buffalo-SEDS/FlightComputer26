@@ -61,6 +61,8 @@ static bool apogee_now;
 static void evaluate_rocket_state(fu32 c, float dt){ (void)c; (void)dt; assert(guard); note("E");
   if (apogee_now) { apogee_now = false; g_conf &= ~Using_Ascent_KF; note("APOGEE"); } }
 static void distribution_wake(void){}
+static void estimator_ascent_update(void){ ascent_update(); }
+static void estimator_descent_step(fu32 c, float dt){ descent_predict(dt); descent_update(); evaluate_rocket_state(c, dt); }
 /* The control thread parks and terminates a stopped evaluator here. */
 static void evaluation_control_barrier(void){ assert(!guard); if (g_conf & Eval_Abort_Flag) longjmp(stopped, 1); }
 static void thread_comm_estimator_enter(void){ assert(!guard); guard = 1; }

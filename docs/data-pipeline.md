@@ -348,7 +348,11 @@ break-up detector between Launch and Apogee) stops the estimator in every
 phase: no automatic drogue or main after it, manual Deploy/Expand still
 work. The detector's message is the ordered `RUD: break-up detected;
 automatic deployment stopped`. Criteria, audit and evidence:
-`docs/rud-abort.md`.
+`docs/rud-abort.md`. One failing sensor does not cost the chutes: an
+implausible or frozen barometer is replaced by IMU dead reckoning in ascent
+and GPS altitude (or the prediction) in descent, and an ascent velocity
+that disagrees with its own altitude trend hands Apogee detection to the
+barometer (`sensor_plausibility.c`, same document, section 5).
 
 - Each FSM advance writes an `Ordered` SD row "EV new flight state: n" and
   queues `FLIGHT_STATE` with the network mapping `global_state_of`

@@ -76,6 +76,7 @@ static void log_periodic_f32(int k, unsigned n, const float *v) { (void)k; (void
 static void message(const char *m, bool c) { (void)m; (void)c; }
 static void ascent_initialize(fu32 c) { (void)c; }
 static void distribution_wake(void) {}
+static void sensor_verdicts_reset(void) {}
 static bool fc_recovery_eval_pause_requested(void) { return pause_requests && pause_requests--; }
 static void fc_recovery_evaluation_quiescent(void) {}
 static void fc_recovery_evaluation_running(void) {}

@@ -295,6 +295,8 @@ static void log_metric(const char *s,int v,int b) {(void)s;(void)v;(void)b;}
 static void vigilant_watchdog(fu32 c,state s,float dt) {(void)c;(void)s;(void)dt;}
 /* The break-up detector is covered by test_rud_detect.py. */
 static void watch_for_breakup(fu32 c,state s) {(void)c;(void)s;}
+static void watch_velocity(fu32 c,float dt) {(void)c;(void)dt;}
+static int ekf_velocity_trusted(void) {return 1;}
 static void propel_kalman_state(fu32 c) {(void)c;published++;}
 static void fc_watchdog_checkpoint(void) {checkpoints++;}
 static void board_watchdog_progress(unsigned m) {assert(m==4);progress++;}

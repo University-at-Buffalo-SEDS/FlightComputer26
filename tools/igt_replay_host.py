@@ -284,7 +284,7 @@ int main(int argc, char **argv)
         predicted = true;
       } else if (predicted && baro_due) {
         memcpy(&meas.baro, b, sizeof b);
-        ascent_update();
+        estimator_ascent_update();
         predicted = false;
         rud_shadow(conf);
         evaluate_rocket_state(conf, dt);
@@ -297,11 +297,10 @@ int main(int argc, char **argv)
         meas.gps.sea = fix.sea;
         meas.gps.lon = fabsf(fix.lon - rail.lon);
         meas.gps.lat = fabsf(fix.lat - rail.lat);
+        timer_update(HeartbeatRF);
       }
       dt = fsec(timer_exchange(DescentKF));
-      descent_predict(dt);
-      descent_update();
-      evaluate_rocket_state(conf, dt);
+      estimator_descent_step(conf, dt);
     } else continue;
     /* evaluate_rocket_state advanced sm.idx: the newest estimate is svec(1). */
     const kf_svec *s = &svec(1);
@@ -350,7 +349,8 @@ def build(work: Path) -> Path:
     objs = []
     fw = base + ['-include', str(work / 'pre.h')] + defs + incs
     jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/estimator_thread.c'),
-            (fw, ROOT / 'Core/Src/rud_detect.c'), (fw, work / 'driver.c')]
+            (fw, ROOT / 'Core/Src/rud_detect.c'), (fw, ROOT / 'Core/Src/sensor_plausibility.c'),
+            (fw, work / 'driver.c')]
     jobs += [(fw, ROOT / 'Drivers/CMSIS/DSP/Source' / s) for s in DSP]
     jobs.append((base + ['-DIGT_HOST_TEST', '-DFC_GROUND_TEST=1', f'-I{work}', f'-I{ROOT / "Core/Inc"}'],
                  ROOT / 'Core/Src/ground_test.c'))

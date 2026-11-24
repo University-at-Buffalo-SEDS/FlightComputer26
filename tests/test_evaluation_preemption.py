@@ -51,11 +51,11 @@ class EvaluationPreemption(unittest.TestCase):
         # The guard is taken after the pause barrier (a quiescent evaluator never
         # holds it) and given back before the next wait.
         self.assertLess(passes.rindex('evaluation_control_barrier();'), passes.index('thread_comm_estimator_enter();'))
-        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('ascent_update();'))
+        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('estimator_ascent_update();'))
         self.assertLess(passes.index('ascent_predict(dt, conf);'), passes.rindex('thread_comm_estimator_leave();'))
         # The descent filter and state machine run in the same guarded pass.
-        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('descent_predict(dt);'))
-        self.assertLess(passes.index('evaluate_rocket_state(conf, dt);'), passes.rindex('thread_comm_estimator_leave();'))
+        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('estimator_descent_step(conf, dt);'))
+        self.assertLess(passes.index('estimator_descent_step(conf, dt);'), passes.rindex('thread_comm_estimator_leave();'))
         # Every early exit gives the guard back.
         self.assertEqual(passes.count('thread_comm_estimator_enter();'), 1)
         self.assertEqual(passes.count('thread_comm_estimator_leave();'), 2)

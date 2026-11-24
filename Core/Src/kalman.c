@@ -262,11 +262,24 @@ void descent_predict(const float dt)
   kffree(start);
 }
 
+/* No usable measurement this step: keep the prediction (dead reckoning). */
+void descent_hold(void)
+{
+  memcpy(dkf_view(&svec(0)), dkf_view(&imedsv), fbyte(DKF_STATE));
+}
+
 void descent_update(void)
+{
+  descent_update_z(dkf_view(&meas.gps));
+}
+
+/* z: GPS longitude and latitude offsets from the rail, altitude above the
+ * pad (normally the barometer's; meas.gps and meas.baro are adjacent). */
+void descent_update_z(const float *z)
 {
   matrix v_sv0 = {DKF_STATE, 1, dkf_view(&svec(0))};
   matrix v_sv1 = {DKF_STATE, 1, dkf_view(&imedsv)};
-  matrix v_msm = {DKF_MEASM, 1, dkf_view(&meas.gps)};
+  matrix v_msm = {DKF_MEASM, 1, (float *)z};
 
   float *start = kfalloc(DKF_UPDATE_BYTES);
 
@@ -507,6 +520,14 @@ void ascent_predict(const float dt, fu32 conf)
   mx_add(&m_pq, &kf.mxq, &kf.mxp);
 
   kffree(start);
+}
+
+/* No usable barometer this step: keep the IMU prediction (dead reckoning).
+ * The covariance stays the predicted one. */
+void ascent_hold(void)
+{
+  memcpy(ekf_view(&svec(0)), ekf_view(&imedsv), fbyte(EKF_STATE));
+  EKF_F[0][1] = 0;
 }
 
 void ascent_update(void)

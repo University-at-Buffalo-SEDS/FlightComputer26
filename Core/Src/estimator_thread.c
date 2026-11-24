@@ -15,6 +15,7 @@
 #include "ground_test.h"
 #include "thread_comm.h"
 #include "rud_detect.h"
+#include "sensor_plausibility.h"
 
 #define id "EV "
 
@@ -51,6 +52,31 @@ uncached volatile float kalt, kvel;
  * stay available. */
 static rud_state rud;
 volatile uint32_t g_fc_rud_aborts __attribute__((used, externally_visible));
+
+/* One faulty sensor must not cost the chutes (sensor_plausibility.h). */
+static plaus_state plaus;
+volatile uint8_t g_fc_sensor_fallback __attribute__((used, externally_visible));
+#define GPS_FRESH_MS 2000U
+
+static inline void note_fallback(void)
+{
+  g_fc_sensor_fallback = (uint8_t)((plaus_baro_ok(&plaus) ? 0U : 1U) |
+                                   (plaus_velocity_ok(&plaus) ? 0U : 2U));
+}
+
+static inline bool ekf_velocity_trusted(void) { return plaus_velocity_ok(&plaus); }
+static inline bool barometer_trusted(void) { return plaus_baro_ok(&plaus); }
+static inline void sensor_verdicts_reset(void) { plaus_reset(&plaus); }
+
+/* The ascent filter's velocity against the trend of its own altitude. */
+static inline void watch_velocity(fu32 conf, float dt)
+{
+  if (!(conf & option(Using_Ascent_KF)) || dt <= 0.0f) return;
+  const float trend = (svec(0).alt - svec(STATE_HISTORY - 1).alt) /
+                      (dt * (float)(STATE_HISTORY - 1));
+  plaus_velocity(&plaus, svec(0).vel, trend);
+  note_fallback();
+}
 
 static inline void watch_for_breakup(fu32 conf, state curr)
 {
@@ -376,7 +402,7 @@ false_positive_risk(float alt, float vel, float dt, state now, fu32 mode)
 
   for (fu8 k = 1; k < STATE_HISTORY; ++k)
   {
-    float frame_vel = mode & option(Velocity_Checks)
+    float frame_vel = (mode & option(Velocity_Checks)) && ekf_velocity_trusted()
                     ? svec(k - 1).vel
                     : (svec(k - 1).alt - svec(k).alt) / dt;
 
@@ -397,9 +423,12 @@ false_positive_risk(float alt, float vel, float dt, state now, fu32 mode)
 
 static inline void vigilant_watchdog(fu32 mode, state now, float dt)
 {
+  /* An untrusted filter velocity (a bad IMU) hands over to the barometer,
+   * unless the barometer is the implausible one. */
   bool trust_kf = sm.kf_deviations <= KF_FLUC_THRES
                   && svec(0).alt <= VIGILANT_MAX_ALT
-                  && svec(0).alt >= VIGILANT_MIN_ALT;
+                  && svec(0).alt >= VIGILANT_MIN_ALT
+                  && (ekf_velocity_trusted() || !barometer_trusted());
 
   float alt = trust_kf ? svec(0).alt : meas.baro.alt;
   float vel = trust_kf ? svec(0).vel : (alt - svec(7).alt) /
@@ -512,7 +541,11 @@ void evaluate_rocket_state(fu32 conf, float dt)
       return;
   }
 
-  if (curr < Reefing && (conf & option(Vigilant_Mode)))
+  watch_velocity(conf, dt);
+
+  /* Vigilant mode, and in any case while the filter velocity is untrusted:
+   * then the barometer alone can still find Apogee. */
+  if (curr < Reefing && ((conf & option(Vigilant_Mode)) || !ekf_velocity_trusted()))
   {
     vigilant_watchdog(conf, curr, dt);
   }
@@ -531,6 +564,7 @@ static inline void enter_flight_mode(fu32 conf)
   g_fc_est_phase = FC_EST_INIT;
   g_fc_est_start = 0;
   if (g_fc_watchdog_resumed && !restored_entry) { restored_entry = true; return; }
+  sensor_verdicts_reset();
 
   if (conf & option(Launch_Requested))
   {
@@ -556,6 +590,50 @@ static inline void enter_flight_mode(fu32 conf)
   }
 }
 
+
+/* The ascent update: the barometer, or IMU dead reckoning while the
+ * barometer is implausible. Also run by the IGT host replay. */
+void estimator_ascent_update(void)
+{
+  bool usable = plaus_baro(&plaus, now_ms(), meas.baro.alt);
+  if (usable && plaus_baro_suspect(&plaus))
+  {
+    const float innovation = meas.baro.alt - imedsv.alt;
+    usable = innovation <= PLAUS_BARO_GATE_M && innovation >= -PLAUS_BARO_GATE_M;
+  }
+  if (usable) ascent_update();
+  else ascent_hold();
+  note_fallback();
+}
+
+/* One descent step: predict, then the barometer; GPS altitude while the
+ * barometer is implausible and a fix is fresh; else the prediction alone.
+ * Then the state machine. Also run by the IGT host replay. */
+void estimator_descent_step(fu32 conf, float dt)
+{
+  /* Descent takes every sample of a plausible barometer, ejection pulses
+   * included, as it always did: the low-order descent filter absorbs single
+   * steps, and the drogue timing depends on it. */
+  (void)plaus_baro(&plaus, now_ms(), meas.baro.alt);
+  descent_predict(dt);
+  /* On the ground (Landed on) every deployment is done and a resting
+   * barometer may repeat itself: always take it, as before. */
+  if (plaus_baro_ok(&plaus) || current() >= Landed)
+  {
+    descent_update();
+  }
+  else if (timer_fetch(HeartbeatRF) < GPS_FRESH_MS)
+  {
+    const float z[3] = { meas.gps.lon, meas.gps.lat, meas.gps.sea - LAUNCH_SITE_SEA };
+    descent_update_z(z);
+  }
+  else
+  {
+    descent_hold();
+  }
+  note_fallback();
+  evaluate_rocket_state(conf, dt);
+}
 
 /* Task */
 
@@ -632,9 +710,7 @@ void estimator_thread_entry(ULONG _)
     {
       conf = load(&g_conf, Acq);
       dt = fsec(timer_exchange(DescentKF));
-      descent_predict(dt);
-      descent_update();
-      evaluate_rocket_state(conf, dt);
+      estimator_descent_step(conf, dt);
     }
     else
     {
@@ -644,7 +720,7 @@ void estimator_thread_entry(ULONG _)
       {
         accum &= ~(EVALUATION_STAGED | Baro_Mask);
 
-        ascent_update();
+        estimator_ascent_update();
 
         conf = fetch_and(&g_conf,
                          ~option(Ascent_KF_Staged), AcqRel);

@@ -89,6 +89,11 @@ static void thread_comm_estimator_sleep(uint32_t ticks) { tx_thread_sleep(ticks)
 static void descent_initialize(fu32 c) { (void)c; }
 /* The break-up detector is covered by test_rud_detect.py. */
 #define watch_for_breakup(conf, curr) ((void)(conf), (void)(curr))
+/* Healthy sensors: the single-sensor fallbacks are covered by
+ * test_sensor_plausibility.py and tools/rud_sweep.py. */
+#define watch_velocity(conf, dt) ((void)(conf), (void)(dt))
+static bool ekf_velocity_trusted(void) { return true; }
+static bool barometer_trusted(void) { return true; }
 static state current(void) { return load(&sm.flight, Acq); }
 static bool beyond(state b) { return current() > b; }
 static bool fc_watchdog_can_actuate(void) { return true; }

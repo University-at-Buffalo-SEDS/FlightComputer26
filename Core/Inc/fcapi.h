@@ -50,10 +50,13 @@ extern void *kfpool_buf;
 
 void descent_predict(const float);
 void descent_update(void);
+void descent_update_z(const float *z);
+void descent_hold(void);
 void descent_initialize(fu32);
 
 void ascent_predict(const float, fu32);
 void ascent_update(void);
+void ascent_hold(void);
 void ascent_initialize(fu32);
 
 bool accel_to_quaternion(const f_xyz *, uint32_t epoch);
@@ -72,6 +75,8 @@ extern measm meas;
 extern spinlock meas_locks[];
 
 void evaluate_rocket_state(fu32, float);
+void estimator_ascent_update(void);
+void estimator_descent_step(fu32, float);
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 SedsResult on_fc_packet(const SedsPacketView *, void *);

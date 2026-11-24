@@ -41,8 +41,23 @@ same step:
 
 | Vote | Sensor | Condition on a step | Needed | Intact flight (IGT datasets, armed) | Margin |
 | --- | --- | --- | --- | --- | --- |
-| motion | IMU (BMI088: gyroscope and accelerometer share one package, so they count as one sensor) | tumbling, \|gyro x,y\| ≥ 360 deg/s (pitch/yaw; z is the long axis), or lateral load \|accel x,y\| ≥ 49 m/s² (5 g) | 22 of 25 steps (0.88 s) | ≤ 20 deg/s and ≤ 6.1 m/s² (off_nominal's 10 ms IMU spike: one vote) | 18× and 8× on the readings |
-| pressure | barometer | \|altitude step\| / dt ≥ 450 m/s | 12 of 25 steps | ≤ 224 m/s (max speed 220 m/s); outliers and steps give single votes (5 at most in the noisiest dataset) | 2× on the rate |
+| motion | IMU (BMI088: gyroscope and accelerometer share one package, so they count as one sensor) | tumbling, \|gyro x,y\| ≥ 360 deg/s (pitch/yaw; z is the long axis), or lateral load \|accel x,y\| ≥ 49 m/s² (5 g) | 22 of 25 steps (0.88 s) | 0 votes in four datasets (readings ≤ 20 deg/s, ≤ 6.1 m/s²); 1 vote in off_nominal (see below) |
+| pressure | barometer | \|altitude step\| / dt ≥ 450 m/s | 12 of 25 steps | 0 votes in four datasets (≤ 224 m/s; max speed 220 m/s); 5 votes in early_apogee_noise (outliers, a pressure step) |
+
+The per-step thresholds are not the filter, the vote counts are. A single
+reading can be far past a threshold in an intact flight:
+
+- off_nominal has a 10 ms IMU spike during the coast (2500 deg/s, 400 m/s²,
+  clipped by the sensor). It falls on one estimator step: the detector saw
+  1800 deg/s and 212 m/s² and counted one vote of the 22 needed.
+- early_apogee_noise has barometer outliers. Single steps reach 1115 m/s,
+  for 5 votes of the 12 needed.
+
+`tools/rud_sweep.py` prints these per-dataset raw maxima next to the votes.
+So one implausible reading, or a short burst of them, never comes close.
+What protects against a false abort is the persistence (0.88 s of
+the IMU, half the window of the barometer) and the need for both sensors at
+once.
 
 Why it cannot fire on the listed non-events:
 
@@ -88,8 +103,8 @@ The sweep replays every IGT dataset through the host build of the real
 estimator, state machine and detector (`tools/igt_replay_host.py
 --rud-margins`).
 
-**Must not fire:** 55 cases, no abort, drogue and main in every one. The 5
-datasets as given, each also with these faults:
+**Must not fire:** 55 cases, no abort, and both chutes at sane times
+(below). The 5 datasets as given, each also with these faults:
 
 - barometer outliers on 10 % of samples (±15–40 m);
 - 60 m barometer bursts at max-Q and in coast;
@@ -107,16 +122,87 @@ lateral load, ±600 m port pressure swing) and a tumble with random
 barometer jumps, on nominal_10k, measured_motor and high_wind. The detector
 fires 0.88–0.90 s after the break-up starts (the motion vote's hold time).
 
-**One sensor only:** 6 cases, no abort: the IMU tumble alone, and the
-barometer chaos alone.
+**One sensor failing (no abort expected), 24 cases on nominal_10k,
+measured_motor, high_wind and off_nominal:**
 
-Result: 70/70 cases as expected. In the must-not-fire cases, the closest
-both votes came at the same step is 36 % of firing (IMU saturation 0.3 s
-together with barometer bursts).
+- an IMU tumble alone, an IMU frozen at rest, a 3 g accelerometer bias;
+- barometer chaos alone, a barometer frozen 10 s after apogee, 200 m
+  barometer noise from apogee on.
+
+**Must fire:** the 3 break-ups on each of those 4 flights, 12 cases.
+
+"Sane" is checked against each dataset's truth (the replay is open loop):
+the drogue within 4 s after the true apogee, and the main within 4 s (about
+100 m under the drogue) of the true 457.2 m crossing.
+
+Result: 91/91 cases as expected:
+
+- In all 79 no-abort cases the drogue comes 0.8–2.3 s after the true apogee
+  and the main within ±0.25 s of the 457.2 m crossing.
+- All 12 break-ups abort before Apogee, 0.88–0.90 s after onset.
+- The closest any no-abort case came to firing is 36 %.
 
 Reproduce:
 
     python3 tools/rud_sweep.py <GroundStation26>/test-data/igt --json out.json
 
-Host test of the trigger rule: `tests/test_rud_detect.py`. Estimator loop
-with both filters: `tests/test_estimator_loop.py`.
+Host test of the trigger rule: `tests/test_rud_detect.py`. Single-sensor
+verdicts: `tests/test_sensor_plausibility.py`. Estimator loop with both
+filters: `tests/test_estimator_loop.py`.
+
+## 5. One faulty sensor must not cost the chutes (`Core/Src/sensor_plausibility.c`)
+
+The first sweep found a critical gap that predates this branch: one sensor
+failing for the rest of the flight could stop a deployment with no abort.
+The same cases fail identically on origin/dev 592785b, and on this branch
+before the fix (16 of 24 cases):
+
+| Single-sensor fault | Before (drogue / main vs truth) | After |
+| --- | --- | --- |
+| IMU tumbling from the coast on | **no apogee, no drogue, no main** (all 4 flights) | drogue +2.2–2.3 s, main +0.1 s |
+| barometer chaos from the coast on | **no drogue/main** (2 flights), **drogue +215–230 s, main at the ground** (2) | drogue +1.1–1.5 s, main −0.2–+0.2 s |
+| barometer frozen 10 s after apogee | drogue on time, **main 111–127 s late (at the ground)** | main −0.2–+0.2 s |
+| 200 m barometer noise from apogee on | drogue +5–19 s, main −6–+3 s | drogue +0.8–1.9 s, main ±0.2 s |
+| IMU frozen at rest, 3 g accelerometer bias | already fine (Vigilant mode) | unchanged |
+
+Causes:
+
+- **IMU fault:** the ascent EKF's altitude follows the barometer, but its
+  velocity follows the bad IMU (it stayed at +40 m/s after apogee). The
+  velocity-based Apogee check never passes, and Vigilant mode trusted that
+  velocity.
+- **Barometer fault:** the filters take every sample. In ascent a few wild
+  samples throw the EKF velocity off by 200 m/s. In descent the descent
+  filter's only altitude input is the barometer, so a frozen or wild
+  barometer freezes or randomises the descent.
+
+The fix: two verdicts, kept by the estimator on every step:
+
+| Verdict | Condition | Hold / clear | Action |
+| --- | --- | --- | --- |
+| barometer implausible | its altitude moves faster than 450 m/s on 12 of the last 25 steps, or repeats the bit-identical value for 50 steps (2 s) | clears at ≤ 2 such steps in the window, or when it moves again | ascent: IMU dead reckoning (`ascent_hold`). Descent: GPS altitude above the pad while a fix is fresh (< 2 s), else the prediction (`descent_hold`). From Landed on the barometer is always taken, as before |
+| barometer sample unusable (ascent) | that sample moved faster than 450 m/s; or, while any such step is in the window, it is more than 150 m from the prediction | per sample | that step dead-reckons |
+| ascent velocity untrusted | the EKF velocity differs from the trend of its own altitude by more than 40 m/s on 25 consecutive steps (1 s) | 25 agreeing steps | Vigilant's Apogee check runs on the barometer and the altitude trend, and runs even with Vigilant mode off |
+
+Margins on the intact datasets:
+
+- **Velocity verdict:** EKF velocity against its altitude trend stays within
+  14 m/s in four datasets. early_apogee_noise reaches 273 m/s on single
+  steps, but its longest run above 40 m/s is 13 steps, against the 25
+  needed.
+- **Barometer verdict:** pressure votes as in section 2. No dataset repeats
+  an altitude.
+- **IGT replay:**
+  - high_wind, measured_motor, nominal_10k and off_nominal replay
+    byte-identical.
+  - early_apogee_noise keeps every deployment decision and time. Coast is
+    reached 40 ms earlier and the estimated maximum velocity is 230.4 →
+    229.7 m/s at 15.84 → 15.00 s, because its barometer outliers are no
+    longer fed to the ascent filter.
+
+Limits:
+
+- A barometer that fails in descent with no GPS is dead-reckoned from the
+  last good descent velocity. The main then comes at the predicted 457 m,
+  which the sweep does not cover.
+- Two failed sensors are beyond this, as is a break-up, which is section 2.
