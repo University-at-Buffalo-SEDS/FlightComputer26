@@ -227,23 +227,26 @@ Flash should shrink (one thread and the dead options gone).
 
 ## 5. Migration plan
 
-Each step is one commit, verified with the host suite,
-both image builds and the IGT host replay (identical results and per-cycle
-traces); the scheduling steps also with the native HITL flight.
+Each step is one commit, verified with the host suite, both image builds
+and the IGT host replay (identical results and per-cycle traces); the
+scheduling steps also with the native HITL flight. The estimator guard
+(step 4) stays: it is what keeps a manual Deploy/Expand, Advance/Rewind or
+any other command from landing inside a pass, not only the filter swap, so
+the swap already happens between passes.
 
 | # | Step | Files | Status |
 | --- | --- | --- | --- |
-| 1 | This document | `docs/task-layout.md` | done (5bbbc97) |
-| 2 | Remove `PARALLEL_PREDICT_UPDATE` and `MESSAGE_BATCHING` (code, CMake options, `build.py` flags) | `kalman.c`, `evaluation.c`, `distribution.c`, `fccommon.h`, `fcapi.h`, `CMakeLists.txt`, `build.py` | done (50346fb) |
-| 3 | Flag tests through `option()` everywhere (`conf & Eval_Focused` in `distribution.c`, `conf & Using_Ascent_KF` in the fake station; equivalent today only because bit 29 is never stored) | `distribution.c`, `fakestation.c`, `test_config_flag_masks.py` | done (17c50a1) |
-| 4 | Explicit estimator guard instead of threshold 0; no slice on the evaluator; `thread_comm.[ch]` started | `thread_comm.[ch]`, `evaluation.c`, `recovery.c`, `fctasks.h`, `app_threadx.c`, `CMakeLists.txt`, tests, `data-pipeline.md` 9.5 | done (f69844a) |
-| 5 | Retire `EvaluationRelax`/`EvaluationFocus` and the Focused option (ids 14/15 reserved and refused) | `fcstructs.h`, `recovery.c`, `distribution.c`, `fcconfig.h`, `simulation.h`; GroundStation26 separately | done (4f4d755) |
-| 6 | `thread_comm` command queue with an explicit origin (replaces `seds_syscall` and the `g_last_network_flight_command_msg` correlation); host test | `thread_comm.[ch]`, `recovery.c`, `distribution.c`, `kalman.c`, `fchooks.c`, `fcapi.h`; about a dozen spliced test harnesses stub `tx_queue_send(&seds_syscall, ...)` | next |
-| 7 | Health deadlines from the SysTick timer into the control loop | `recovery.c` | waiting for confirmation |
-| 8 | Acquisition thread: DMA task + sensor half of distribution; plain sensor order; spinlocks → PRIMASK copies | `dma.c`, `distribution.c`, `fctasks.h`, `app_threadx.c`, stack tests | waiting for confirmation |
-| 9 | Estimator thread: evaluation + descent; filter swap applied by the estimator between passes (the guard then goes); drop `Ascent_KF_Staged`, `eval_stage` | `evaluation.c`, `distribution.c`, `kalman.c`, `recovery.c`, `igt_replay_host.py` driver | waiting for confirmation |
-| 10 | Priority bands (control 4, SD 6), no slices, `FC-Threads.h`, file renames | `fctasks.h`, `app_filex.c`, `telemetry.c`, tests | after the SD/link work lands |
-| 11 | Macro clean-up per file; `g_conf` handshake bits into `thread_comm` | as touched | last |
+| 1 | This document | `docs/task-layout.md` | done (52448e4) |
+| 2 | Remove `PARALLEL_PREDICT_UPDATE` and `MESSAGE_BATCHING` (code, CMake options, `build.py` flags) | `kalman.c`, `evaluation.c`, `distribution.c`, `fccommon.h`, `fcapi.h`, `CMakeLists.txt`, `build.py` | done (9813dd1) |
+| 3 | Flag tests through `option()` everywhere | `distribution.c`, `fakestation.c`, `test_config_flag_masks.py` | done (a6ebffe) |
+| 4 | Explicit estimator guard instead of threshold 0; no slice on the evaluator; `thread_comm.[ch]` started | `thread_comm.[ch]`, `evaluation.c`, `recovery.c`, `fctasks.h`, `app_threadx.c`, `CMakeLists.txt`, tests | done (1fd75bb) |
+| 5 | Retire `EvaluationRelax`/`EvaluationFocus` and the Focused option (ids 14/15 reserved and refused) | `fcstructs.h`, `recovery.c`, `distribution.c`, `fcconfig.h`, `simulation.h`; GroundStation26 and the frontend separately | done (890e158) |
+| 6 | `thread_comm` command queue with an explicit origin (replaces `seds_syscall` and the `g_last_network_flight_command_msg` correlation) | `thread_comm.[ch]`, `recovery.c`, `distribution.c`, `kalman.c`, `fchooks.c`, `fcapi.h`, harnesses | done (7f8dd41) |
+| 7 | Health checks from the SysTick timer into the control loop, same 900/450 ms grid | `recovery.c`, `fcconfig.h`, `simulation.h` | done (a9c5218) |
+| 8 | The distribution thread reads the sensors itself; the DMA thread, its selector and the `dma_locks` spinlocks go; ThreadX pool -4 KiB | `dma.c`, `fctasks.h`, `app_threadx.c`, `app_azure_rtos_config.h`, `.ioc`, tests | done (6b2fad4) |
+| 9 | Estimator thread: evaluation + descent (the descent filter and state machine leave the distribution thread) | `evaluation.c`, `distribution.c`, `kalman.c`, `recovery.c`, `igt_replay_host.py` driver | waiting: an `Evaluation_Abort` in descent stops only the ascent evaluator today, so the descent state machine (in distribution) still fires the main; moving descent into the estimator would stop it. Needs a decision on what Evaluation_Abort should stop |
+| 10 | Control at priority 4 and no time slices | `fctasks.h`, `recovery.c`, `distribution.c`, `telemetry.c`, tests, `data-pipeline.md` | done (4ed35e2). Not done: SD writer at 6 (telemetry yields only to equal priorities while it has backlog, so a lower SD thread would starve under load); `FC-Threads.h` and `<name>_thread.c` renames wait for step 9 |
+| 11 | Macro clean-up: `MrAnalog`, `WE_ARE_SO_BACK`, `IT_IS_NOW_OVER` spelled out in the thread files | `recovery.c`, `evaluation.c`, `distribution.c`, `dma.c`, `fchooks.c`, `platform.h` | done (f6086f6, .text identical). Left: `sdpipeline.c`/`telemetry.c` spellings, `Require`/`svec`, `g_conf` handshake bits (after step 9) |
 
 Files other work is changing now (rebase before touching):
 `sdpipeline.c`, `ground_test.[ch]`, `board_health.c`, `sd_file_wire.h`,
