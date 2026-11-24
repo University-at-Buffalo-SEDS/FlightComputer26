@@ -1630,7 +1630,7 @@ void telemetry_entry(ULONG _)
   g_telemetry_service_stage = 1U;
 #ifdef FAKESTATION
 
-  tx_thread_sleep(TLMT_TIME_SLICE * 10);
+  tx_thread_sleep(500U);
   return emulate_handler_caller();
 
 #else
@@ -1751,7 +1751,7 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
                         /* No preemption threshold */
                         TLMT_PRIORITY,
                         TLMT_PRIORITY,
-                        TLMT_TIME_SLICE,
+                        TX_NO_TIME_SLICE,
                         TX_AUTO_START);
 
   if (st != TX_SUCCESS)

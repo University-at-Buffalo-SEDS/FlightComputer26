@@ -908,7 +908,7 @@ void recovery_entry(ULONG st)
   health_start();
 
   /* Flight state is restored before ThreadX starts and then converges through
-   * its managed network variable. Publishing it here lets this priority-0
+   * its managed network variable. Publishing it here lets this highest-priority
    * task preempt telemetry while telemetry is inside discovery, then enter
    * the same router from a second thread. Under a busy CAN topology that can
    * deadlock both tasks immediately after a reboot. Leave all router work to

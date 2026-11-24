@@ -275,7 +275,7 @@ int32_t fc_recovery_request_startup(uint32_t expected)
     return -14;
 }
 
-/* Only the existing priority-0 control owner calls this. It performs no SDK,
+/* Only the existing highest-priority control owner calls this. It performs no SDK,
  * flash, logging, or sensor initialization and never spins awaiting a peer. */
 void fc_recovery_control_service(void)
 {

@@ -78,12 +78,21 @@ class EvaluationPreemption(unittest.TestCase):
                 self.assertFalse(held, line)
         self.assertFalse(held)
 
+    def test_no_time_slices(self):
+        for name in ('distribution.c', 'telemetry.c', 'recovery.c', 'evaluation.c'):
+            create = (ROOT / 'Core/Src' / name).read_text()
+            create = create[create.index('tx_thread_create('):]
+            create = re.sub(r'/\*.*?\*/', '', create[:create.index(');')], flags=re.S)
+            self.assertIn('TX_NO_TIME_SLICE', create, name)
+        self.assertNotRegex((ROOT / 'Core/Inc/fctasks.h').read_text(), r'TIME_SLICE')
+
     def test_no_thread_between_recovery_and_the_application_group(self):
         tasks = (ROOT / 'Core/Inc/fctasks.h').read_text()
         priorities = {name: macro(tasks, name) for name in
                       ('RECV_PRIORITY', 'EVAL_PRIORITY', 'DIST_PRIORITY', 'TLMT_PRIORITY')}
-        self.assertEqual(priorities['RECV_PRIORITY'], 0)
-        self.assertFalse([n for n, p in priorities.items() if 1 <= p <= 4], priorities)
+        # Control above the application group, nothing in between.
+        self.assertEqual(priorities['RECV_PRIORITY'], 4)
+        self.assertEqual({p for n, p in priorities.items() if n != 'RECV_PRIORITY'}, {5})
         creates = []
         for path in list((ROOT / 'Core/Src').glob('*.c')) + [ROOT / 'FileX/App/app_filex.c']:
             text = path.read_text()

@@ -12,7 +12,6 @@
 
 #define TLMT_INPUT 0
 #define TLMT_PRIORITY 5
-#define TLMT_TIME_SLICE 50
 #define TLMT_STACK_BYTES (48U * 1024U)
 #define TLMT_STACK_ULONG (TLMT_STACK_BYTES / sizeof(ULONG))
 
@@ -29,10 +28,12 @@ UINT create_telemetry_task(TX_BYTE_POOL *);
 #endif /* TELEMETRY_ENABLED + FAKESTATION */
 
 
-/* Recovery Task */
+/* Recovery (control) Task. Thread priorities, as on the other boards: 4
+ * control, 5 telemetry, acquisition (distribution) and evaluation, 5 FileX
+ * (FX_APP_THREAD_PRIO). No time slices and no preemption thresholds. */
 
 #define RECV_INPUT 0
-#define RECV_PRIORITY 0
+#define RECV_PRIORITY 4
 #define RECV_STACK_BYTES (12U * 1024U)
 #define RECV_STACK_ULONG (RECV_STACK_BYTES / sizeof(ULONG))
 
@@ -66,8 +67,6 @@ UINT create_evaluation_task(TX_BYTE_POOL *);
 /* Distribution Task */
 
 #define DIST_INPUT 0
-#define DIST_TIME_SLICE 25
-#define DIST_SLEEP_NO_DATA 25
 #define DIST_PRIORITY 5
 /* Sensor publication, the Launch ignition request and the descent evaluator
  * all run the SEDSNet router's immediate send path here. 8 KiB overflowed at

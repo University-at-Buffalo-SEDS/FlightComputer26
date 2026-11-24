@@ -26,9 +26,8 @@ flowchart LR
     DMA["GPDMA1 ch0/ch1<br/>SPI1 8-byte TxRx"]
   end
   ACC & GYR & BAR -- DRDY --> EXTI
-  EXTI --> DMAT["DMA task<br/>sensor selector"]
-  DMAT --> DMA --> DMAT
-  DMAT -- "taskrx[] + sample_ready" --> DIST["Distribution task<br/>convert, validate,<br/>baro reference, descent KF"]
+  EXTI -- "drdy + event" --> DIST["Distribution task<br/>read every ready sensor,<br/>convert, validate,<br/>baro reference, descent KF"]
+  DIST --> DMA --> DIST
   GPSB -- "FDCAN1 1 Mbit/s" --> TLM["Telemetry task<br/>SEDSnet router"]
   TLM -- "on_fc_packet" --> DIST
   DIST -- "eval_stage flags" --> EVAL["Evaluation task<br/>ascent EKF + FSM"]
@@ -50,20 +49,17 @@ pad the distribution task consumes every sample instead (section 3).
 sequenceDiagram
   autonumber
   participant S as Sensor (DRDY)
-  participant D as DMA task
   participant X as Distribution
   participant E as Evaluation
   participant B as SD buffer
   participant W as SD task
   participant N as SEDSnet / CAN
-  S->>D: EXTI rising edge (event flag)
-  D->>S: SPI1 DMA, 8 bytes (timeout 20 ms)
-  D->>X: copy to taskrx, set sample_ready
+  S->>X: EXTI rising edge (drdy flag, event)
+  X->>S: SPI1 DMA, 8 bytes per ready sensor (timeout 20 ms), into taskrx
   X->>B: gyroscope/accelerometer_sample row (every consumed sample)
   X->>E: eval_stage Gyro|Accl
   E->>E: ascent_predict(dt)
-  S->>D: baro DRDY (every 40 ms)
-  D->>X: baro sample
+  S->>X: baro DRDY (every 40 ms); X reads it
   X->>B: barometer_sample row, BARO row if 50 ms elapsed
   X->>N: BAROMETER_DATA if 200 ms elapsed
   X->>E: eval_stage Baro
@@ -136,13 +132,12 @@ Lower number = higher priority.
 
 | Context | Priority | Stack | Period / trigger | Work | Source |
 | --- | --- | --- | --- | --- | --- |
-| Recovery task | 0 (`RECV_PRIORITY`) | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `fctasks.h`, `recovery.c`, `thread_comm.c` |
-| Telemetry task | 5 (`TLMT_PRIORITY`), slice 50 | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
-| DMA task | 5, no slice | 4096 B | DRDY event flags (1-tick poll) | picks the next ready sensor, runs one SPI1 DMA read, waits on completion (`DMA_TIMEOUT_MS` 20) | `dma.c` |
-| Distribution task | 5, slice 25 | 16 KiB | `sample_ready` flags (1-tick poll) | conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c` |
+| Recovery (control) task | 4 (`RECV_PRIORITY`), no slice | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `fctasks.h`, `recovery.c`, `thread_comm.c` |
+| Telemetry task | 5 (`TLMT_PRIORITY`), no slice | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
+| Distribution task | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c`, `dma.c` |
 | Evaluation task | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee; holds the estimator guard for each pass | `evaluation.c`, `thread_comm.c`, `recovery.c` (`enter_launch`) |
 | SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
-| EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and an event flag | `main.c`, `dma.c` |
+| EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and wake the distribution thread | `main.c`, `dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
 | FDCAN1 IT0/IT1 | NVIC 0 | - | CAN RX/TX | wake telemetry, TX pump | `stm32h5xx_hal_msp.c` |
 | SDMMC1 | NVIC 0 | - | card I/O | FileX driver | `stm32h5xx_hal_msp.c` |
@@ -158,8 +153,8 @@ item 5, and `docs/task-layout.md`.
 
 ### Sensor acquisition per flight phase
 
-The DMA task reads every DRDY, but the distribution task only consumes what
-its current loop asks for; an unconsumed sample is overwritten by the next
+The distribution task reads every ready sensor whenever it waits for
+samples, but only consumes what its current loop asks for; an unconsumed sample is overwritten by the next
 one. SD raw rows are written at consumption (`try_fetch_*`, `dma.c`), so the
 SD rate follows this table.
 
@@ -288,7 +283,7 @@ the contiguous `measm` struct: ax ay az (m/s^2), gx gy gz (deg/s).
 | --- | --- |
 | Part | Bosch BMP390 (`barometer.h`) |
 | Config | OSR pressure x8, temperature x1, `Baro_ODR_25` (40 ms, `BARO_PERIOD_MS_FROM_ODRSEL`), `Baro_IIR_Coef_3` (`recovery.c` `baro_conf`). GPS-loss fallback: IIR 15 (`barometer_fallback_vigilant`) |
-| Bus | SPI1 + GPDMA, DRDY PC7 (non-latched; DMA task also polls the level once per high period) |
+| Bus | SPI1 + GPDMA, DRDY PC7 (non-latched; the distribution task also polls the level once per high period) |
 | Conversion | datasheet compensation with NVM trims (`baro_compensate_temp/pres`); altitude `baro_agl(p, ref)` against the tracked ground reference (6.9) |
 | Units | pressure Pa, temperature degC (die), altitude m above the ground reference |
 | Validation | pressure `MIN_PRS`..`MAX_PRS` (57200..110000 Pa), altitude `MIN_ALT`..`MAX_ALT` (-30..4572 m) |

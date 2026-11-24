@@ -1043,7 +1043,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
                         DIST_PRIORITY,
                         /* No preemption threshold */
                         DIST_PRIORITY,
-                        DIST_TIME_SLICE,
+                        TX_NO_TIME_SLICE,
                         TX_AUTO_START);
 
   if (st != TX_SUCCESS)
