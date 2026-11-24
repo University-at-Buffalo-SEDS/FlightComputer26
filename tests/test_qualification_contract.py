@@ -185,12 +185,12 @@ class QualificationContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         create = recovery[recovery.index("UINT create_recovery_task") :]
-        timer = create.index("tx_timer_create(&monotonic_checks")
         thread = create.index("tx_thread_create(&recovery_task")
         auto_start = create.index("TX_AUTO_START", thread)
 
-        self.assertLess(timer, thread)
         self.assertGreater(auto_start, thread)
+        # No ThreadX timer: the health checks run in the control loop.
+        self.assertNotIn("tx_timer_create", recovery)
         # The command queue is created by thread_comm_init before any thread.
         comm = (root / "Core" / "Src" / "thread_comm.c").read_text(encoding="utf-8")
         init = comm[comm.index("UINT thread_comm_init(void)") :]

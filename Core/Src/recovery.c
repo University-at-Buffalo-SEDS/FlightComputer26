@@ -24,7 +24,6 @@
 
 
 TX_THREAD recovery_task;
-TX_TIMER monotonic_checks;
 
 volatile uint32_t g_network_flight_commands_processed
     __attribute__((used, externally_visible)) = 0U;
@@ -800,7 +799,10 @@ static inline conditional void autostart_on_timeout(void)
 #endif
 }
 
-static void fc_timer_routine(ULONG _)
+/* Ground station heartbeat loss and GPS gap. Runs in the control thread
+ * every HEALTH_CHECK_TICKS (health_service below); it used to run as a
+ * ThreadX timer inside the SysTick interrupt. */
+static void health_check(void)
 {
   sweetbench_catch(6);
 
@@ -834,12 +836,41 @@ static void fc_timer_routine(ULONG _)
       thread_comm_send(cmd, TX_NO_WAIT);
     }
   }
-  else if (gps_interval < TX_TIMER_TICKS)
+  else if (gps_interval < HEALTH_CHECK_TICKS)
   {
     g_conf |= option(GPS_Available);
   }
 
   sweetbench_start(6, 10);
+}
+
+
+/* The same schedule as the old timer: first HEALTH_CHECK_FIRST_TICKS after
+ * the command loop starts, then every HEALTH_CHECK_TICKS on a fixed grid. A
+ * check delayed by a command still runs once per missed slot. */
+static bool health_active;
+static ULONG health_due;
+
+static void health_start(void)
+{
+  health_due = tx_time_get() + HEALTH_CHECK_FIRST_TICKS;
+  health_active = true;
+}
+
+static void health_service(void)
+{
+  while (health_active && (LONG)(tx_time_get() - health_due) >= 0)
+  {
+    health_check();
+    health_due += HEALTH_CHECK_TICKS;
+  }
+}
+
+/* The longest the command wait may block before the next check is due. */
+static ULONG health_wait(ULONG limit)
+{
+  const ULONG left = health_due - tx_time_get();
+  return (LONG)left <= 0 ? TX_NO_WAIT : (left < limit ? left : limit);
 }
 
 
@@ -874,7 +905,7 @@ void recovery_entry(ULONG st)
     timer_update(DescentKF);
     if (g_conf & option(Using_Ascent_KF)) tx_thread_resume(&evaluation_task);
   }
-  tx_timer_activate(&monotonic_checks);
+  health_start();
 
   /* Flight state is restored before ThreadX starts and then converges through
    * its managed network variable. Publishing it here lets this priority-0
@@ -887,6 +918,7 @@ void recovery_entry(ULONG st)
   MrAnalog (WE_ARE_SO_BACK)
   {
     thread_comm_msg_t msg;
+    health_service();
     fc_monitor_bench_poll();
     /* Every command and control step runs under the estimator guard, so it
      * never lands in the middle of an evaluation pass (thread_comm.h). The
@@ -913,7 +945,7 @@ void recovery_entry(ULONG st)
     recovery_update_stack_profile();
     /* Thread suspension */
     board_watchdog_progress(BOARD_WATCHDOG_CONTROL);
-    st = thread_comm_receive(&msg, TX_TIMER_TICKS_PER_SECOND / 4U);
+    st = thread_comm_receive(&msg, health_wait(TX_TIMER_TICKS_PER_SECOND / 4U));
 
     if (st != TX_SUCCESS)
     {
@@ -962,16 +994,6 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
    * with TX_AUTO_START this highest-priority thread can preempt its creator
    * immediately, and an uncreated queue would make its receive fail in a
    * tight loop, starving telemetry and every other task. */
-  st = tx_timer_create(&monotonic_checks, id "T",
-                       fc_timer_routine, 0, TX_TIMER_INITIAL,
-                       TX_TIMER_TICKS, TX_NO_ACTIVATE);
-
-  if (st != TX_SUCCESS)
-  {
-    log_err(id "timer %s %u", critical, st);
-    return IT_IS_NOW_OVER;
-  }
-
   st = tx_thread_create(&recovery_task,
                         "Recovery Task",
                         recovery_entry,

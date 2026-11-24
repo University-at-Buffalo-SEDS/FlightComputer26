@@ -61,7 +61,7 @@ int main(void) {
     def test_recovery_initializes_sensors_before_command_loop_on_cold_boot(self):
         source = (ROOT / "Core/Src/recovery.c").read_text()
         startup = source[source.index("void recovery_entry"):
-                         source.index("tx_timer_activate(&monotonic_checks)")]
+                         source.index("health_start();")]
         block = startup[startup.index("if (g_fc_watchdog_resumed)\n"):]
         self.assertIn("sensor_init_supervised(Wild_Mask);\n  if (g_fc_watchdog_resumed && !fc_recovery_inhibits_pyro())", block)
         distribution = (ROOT / "Core/Src/distribution.c").read_text()

@@ -136,8 +136,7 @@ Lower number = higher priority.
 
 | Context | Priority | Stack | Period / trigger | Work | Source |
 | --- | --- | --- | --- | --- | --- |
-| Recovery task | 0 (`RECV_PRIORITY`) | 12 KiB | blocks on `seds_syscall` queue (`FC_MSG_Q_SIZE` 8), 250 ms timeout | commands, sensor (re)init, deployments, rate changes | `fctasks.h`, `recovery.c` |
-| ThreadX timer thread | ThreadX default (0) | ThreadX default (1024 B) | `monotonic_checks`: first 900 ms (`TX_TIMER_INITIAL`), then every 450 ms (`TX_TIMER_TICKS`) | GS heartbeat loss (`GND_TIMEOUT` 3000 ms), GPS gap (`GPS_DELAY_MS` 200 ms) | `recovery.c`, `fcconfig.h` |
+| Recovery task | 0 (`RECV_PRIORITY`) | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `fctasks.h`, `recovery.c`, `thread_comm.c` |
 | Telemetry task | 5 (`TLMT_PRIORITY`), slice 50 | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
 | DMA task | 5, no slice | 4096 B | DRDY event flags (1-tick poll) | picks the next ready sensor, runs one SPI1 DMA read, waits on completion (`DMA_TIMEOUT_MS` 20) | `dma.c` |
 | Distribution task | 5, slice 25 | 16 KiB | `sample_ready` flags (1-tick poll) | conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c` |
@@ -147,7 +146,7 @@ Lower number = higher priority.
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
 | FDCAN1 IT0/IT1 | NVIC 0 | - | CAN RX/TX | wake telemetry, TX pump | `stm32h5xx_hal_msp.c` |
 | SDMMC1 | NVIC 0 | - | card I/O | FileX driver | `stm32h5xx_hal_msp.c` |
-| SysTick | SHPR byte 0x40 | - | 1 kHz | `fc_runtime_tick`: HAL tick, pyro pulse countdown, then ThreadX tick | `tx_initialize_low_level.S`, `deployment_pulse.c` |
+| SysTick | SHPR byte 0x40 | - | 1 kHz | `fc_runtime_tick`: HAL tick, pyro pulse countdown, then ThreadX tick (no application timers) | `tx_initialize_low_level.S`, `deployment_pulse.c` |
 | TIM6 | `TICK_INT_PRIORITY` 15 | - | 1 kHz | HAL tick before ThreadX only; suspended at the first SysTick | `stm32h5xx_hal_timebase_tim.c`, `deployment_pulse.c` |
 
 An evaluation pass and a recovery command never interleave: the evaluation

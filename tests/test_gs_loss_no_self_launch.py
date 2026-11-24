@@ -30,7 +30,7 @@ STUB = r'''
 typedef uint32_t fu32; typedef uint16_t fu16; typedef unsigned long ULONG;
 #define TELEMETRY_ENABLED 1
 #define TX_NO_WAIT 0
-#define TX_TIMER_TICKS 100
+#define HEALTH_CHECK_TICKS 100
 #define GND_TIMEOUT 3000
 #define GPS_DELAY_MS 1000
 #define TO_ABORT 120
@@ -53,21 +53,21 @@ static bool fc_recovery_flight_is_admitted(void) { return admitted; }
 MAIN = r'''
 int main(void) {
   g_conf = option(In_Aborted_State) | option(GPS_Available);
-  heartbeat_age = GND_TIMEOUT - 1; fc_timer_routine(0);
+  heartbeat_age = GND_TIMEOUT - 1; health_check();
   assert(!sent && !(g_conf & option(Lost_GroundStation)));
   heartbeat_age = GND_TIMEOUT + 1;
-  for (unsigned i = 0; i < 5; ++i) fc_timer_routine(0);
+  for (unsigned i = 0; i < 5; ++i) health_check();
   assert(!sent && smon.to_abort == TO_ABORT);
   assert(g_conf & option(Lost_GroundStation));
   assert(g_conf & option(Reset_Failures));
   assert(g_conf & option(In_Aborted_State)); /* still awaiting a command */
   /* In flight the loss holds after the heartbeat returns. */
-  heartbeat_age = 0; past_armed = true; fc_timer_routine(0);
+  heartbeat_age = 0; past_armed = true; health_check();
   assert(g_conf & option(Lost_GroundStation));
-  past_armed = false; admitted = true; fc_timer_routine(0);
+  past_armed = false; admitted = true; health_check();
   assert(g_conf & option(Lost_GroundStation));
   /* On the pad it clears, so a GS outage does not latch until power cycle. */
-  admitted = false; fc_timer_routine(0);
+  admitted = false; health_check();
   assert(!(g_conf & option(Lost_GroundStation)));
   assert(!sent);
   return 0;
@@ -81,7 +81,7 @@ class GroundStationLossTests(unittest.TestCase):
         types = (ROOT / 'Core/Inc/fcstructs.h').read_text()
         enum = types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;') + len('} fc_msg;')]
         enum = enum.replace('flight_message : fu32', 'flight_message').replace('UINT_FAST32_MAX', 'UINT32_MAX')
-        routine = extract(recovery, 'static void fc_timer_routine(')
+        routine = extract(recovery, 'static void health_check(')
         with tempfile.TemporaryDirectory() as directory:
             src = Path(directory) / 'probe.c'
             exe = Path(directory) / 'probe'
