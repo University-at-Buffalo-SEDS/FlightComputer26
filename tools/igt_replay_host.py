@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -174,6 +175,37 @@ void fc_recovery_evaluation_running(void) {}
 void fc_recovery_ota_reset_retire_locked(void) {}
 bool fc_recovery_postinit_allowed(uint32_t e) { (void)e; return true; }
 void fc_sd_capture_event(unsigned e, bool r) { (void)e; (void)r; }
+/* The break-up detector's abort (rud_detect.c): the estimator stops. */
+static double rud_abort_t = -1;
+void fc_recovery_request_eval_stop(void) { if (rud_abort_t < 0) rud_abort_t = replay_s(); }
+/* --margins: a shadow detector on the same inputs reports how close each
+ * vote came (the firmware's own detector is static in evaluation.c). */
+#include "rud_detect.h"
+static rud_state shadow; static bool margins;
+static unsigned max_motion, max_pressure, max_joint; static float max_wxy, max_axy, max_rate;
+static void rud_shadow(fu32 conf)
+{
+  const state curr = current();
+  const rud_input in = { .t_ms = host_now, .armed = curr >= Launch && curr <= Coast && (conf & option(Using_Ascent_KF)),
+    .gyro = { meas.gyro.x, meas.gyro.y, meas.gyro.z }, .accel = { meas.accl.x, meas.accl.y, meas.accl.z },
+    .baro_alt = meas.baro.alt };
+  const float last = shadow.last_alt; const uint32_t last_t = shadow.last_t; const bool had = shadow.have_baro;
+  (void)rud_step(&shadow, &in);
+  if (!in.armed) return;
+  const float wxy = sqrtf(in.gyro[0]*in.gyro[0] + in.gyro[1]*in.gyro[1]);
+  const float axy = sqrtf(in.accel[0]*in.accel[0] + in.accel[1]*in.accel[1]);
+  if (wxy > max_wxy) max_wxy = wxy;
+  if (axy > max_axy) max_axy = axy;
+  if (had && in.t_ms != last_t) { const float r = fabsf(in.baro_alt - last) / ((in.t_ms - last_t) * 0.001f); if (r > max_rate) max_rate = r; }
+  const unsigned m = (unsigned)__builtin_popcount(shadow.motion & ((1ul << RUD_WINDOW) - 1ul));
+  const unsigned p = (unsigned)__builtin_popcount(shadow.pressure & ((1ul << RUD_WINDOW) - 1ul));
+  if (m > max_motion) max_motion = m;
+  if (p > max_pressure) max_pressure = p;
+  /* How close both votes came at the same step: 100 fires. */
+  const unsigned jm = 100U * m / RUD_MOTION_MIN, jp = 100U * p / RUD_PRESSURE_MIN;
+  const unsigned j = jm < jp ? jm : jp;
+  if (j > max_joint) max_joint = j;
+}
 void sd_append_f32(SedsDataType t, const float *v, fu8 n) { (void)t; (void)v; (void)n; }
 void sd_append_string(SedsDataType t, const char *s) { (void)t; printf("[%9.3f] %s\n", replay_s(), s); }
 void sd_conclude(void) {}
@@ -198,6 +230,7 @@ static const char *names[] = {"Startup", "Postinit", "Armed", "Launch", "Ascent"
 int main(int argc, char **argv)
 {
   snprintf(igt_root, sizeof igt_root, "%s", argv[1]);
+  margins = getenv("IGT_RUD_MARGINS") != NULL;
   if (argc > 4) {
     g_launch_site[0] = strtof(argv[3], NULL); g_launch_site[1] = strtof(argv[4], NULL);
     g_launch_site[2] = strtof(argv[5], NULL);
@@ -240,7 +273,7 @@ int main(int argc, char **argv)
     if (!igt_sim_running() && end_after == 0) end_after = host_now + 6000;
     if (end_after && host_now >= end_after) break;
     if (replay_s() > 1500) break;
-    if (host_now < host_wake) continue;
+    if (host_now < host_wake || rud_abort_t >= 0) continue;
     conf = load(&g_conf, Acq);
     if (conf & option(Using_Ascent_KF)) {
       if (!predicted && host_now % BARO_PERIOD_MS == 1U) {
@@ -253,6 +286,7 @@ int main(int argc, char **argv)
         memcpy(&meas.baro, b, sizeof b);
         ascent_update();
         predicted = false;
+        rud_shadow(conf);
         evaluate_rocket_state(conf, dt);
       } else continue;
     } else if (baro_due) {
@@ -279,6 +313,10 @@ int main(int argc, char **argv)
     while (last < now) { ++last; times[last] = replay_s(); }
   }
   printf("RESULT {");
+  if (rud_abort_t >= 0) printf("\"rud_abort_s\": %.3f, ", rud_abort_t);
+  if (margins) printf("\"rud_max_motion\": %u, \"rud_max_pressure\": %u, \"rud_max_gyro_xy_dps\": %.1f, "
+                      "\"rud_max_accel_xy_mps2\": %.1f, \"rud_max_baro_rate_mps\": %.1f, \"rud_max_joint_pct\": %u, ",
+                      max_motion, max_pressure, max_wxy, max_axy, max_rate, max_joint);
   for (unsigned i = Launch; i < Flight_States; ++i) printf("\"%s_s\": %.3f, ", names[i], times[i]);
   printf("\"drogue_s\": %.3f, \"drogue_est_alt_m\": %.2f, \"main_s\": %.3f, \"main_est_alt_m\": %.2f, "
          "\"est_apogee_m\": %.2f, \"est_apogee_s\": %.3f, \"est_max_vel_mps\": %.2f, \"est_max_vel_s\": %.3f, "
@@ -311,7 +349,8 @@ def build(work: Path) -> Path:
     incs = [f'-I{ROOT / d}' for d in inc]
     objs = []
     fw = base + ['-include', str(work / 'pre.h')] + defs + incs
-    jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/evaluation.c'), (fw, work / 'driver.c')]
+    jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/evaluation.c'),
+            (fw, ROOT / 'Core/Src/rud_detect.c'), (fw, work / 'driver.c')]
     jobs += [(fw, ROOT / 'Drivers/CMSIS/DSP/Source' / s) for s in DSP]
     jobs.append((base + ['-DIGT_HOST_TEST', '-DFC_GROUND_TEST=1', f'-I{work}', f'-I{ROOT / "Core/Inc"}'],
                  ROOT / 'Core/Src/ground_test.c'))
@@ -331,6 +370,8 @@ def main(argv=None) -> int:
     ap.add_argument('--json', type=Path, help='write the result here')
     ap.add_argument('--trace', type=Path, help='per-cycle estimator trace CSV')
     ap.add_argument('--quiet', action='store_true', help='only the result line')
+    ap.add_argument('--rud-margins', action='store_true',
+                    help="add how close the break-up detector's votes came (rud_detect.h) to the result")
     a = ap.parse_args(argv)
     folder = a.folder.resolve()
     root = folder.parent if folder.name.upper() == 'IGT' else folder
@@ -340,7 +381,8 @@ def main(argv=None) -> int:
         cmd = [str(exe), str(root), str(a.trace.resolve()) if a.trace else '']
         if a.site:
             cmd += a.site.split(',')
-        out = subprocess.run(cmd, capture_output=True, text=True)
+        env = dict(os.environ, IGT_RUD_MARGINS='1') if a.rud_margins else None
+        out = subprocess.run(cmd, capture_output=True, text=True, env=env)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     if out.returncode != 0:

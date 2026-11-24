@@ -343,6 +343,13 @@ During an IGT replay the estimator outputs go out only as `SIM` /
 Local states (`fcstructs.h`): Startup 0, Postinit 1, Armed 2, Launch 3,
 Ascent 4, Coast 5, Apogee 6, Descent 7, Reefing 8, Landed 9, Recovery 10.
 
+An evaluation abort (the operator's `EvaluationAbort`, or the automatic
+break-up detector between Launch and Apogee) stops the estimator in every
+phase: no automatic drogue or main after it, manual Deploy/Expand still
+work. The detector's message is the ordered `RUD: break-up detected;
+automatic deployment stopped`. Criteria, audit and evidence:
+`docs/rud-abort.md`.
+
 - Each FSM advance writes an `Ordered` SD row "EV new flight state: n" and
   queues `FLIGHT_STATE` with the network mapping `global_state_of`
   (`fcapi.h`). The telemetry task republishes it every 2000 ms

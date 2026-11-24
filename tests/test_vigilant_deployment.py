@@ -87,6 +87,8 @@ static uint32_t timer_fetch(int t) { (void)t; return sim_ms - aux_ms; }
 static void tx_thread_sleep(uint32_t ticks) { skip_ms += ticks; }
 static void thread_comm_estimator_sleep(uint32_t ticks) { tx_thread_sleep(ticks); }
 static void descent_initialize(fu32 c) { (void)c; }
+/* The break-up detector is covered by test_rud_detect.py. */
+#define watch_for_breakup(conf, curr) ((void)(conf), (void)(curr))
 static state current(void) { return load(&sm.flight, Acq); }
 static bool beyond(state b) { return current() > b; }
 static bool fc_watchdog_can_actuate(void) { return true; }

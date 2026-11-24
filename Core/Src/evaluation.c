@@ -14,6 +14,7 @@
 #include "fc_estimator_status.h"
 #include "ground_test.h"
 #include "thread_comm.h"
+#include "rud_detect.h"
 
 #define id "EV "
 
@@ -42,6 +43,31 @@ const fc_resume_region fc_resume_evaluation[] = {
 uncached volatile float kalt, kvel;
 #endif
 
+
+/* Break-up (RUD) detector, rud_detect.h: armed from Launch until Apogee,
+ * while the ascent filter (and so the IMU) runs. On a detection the
+ * estimator stops itself exactly as an operator Evaluation_Abort would: no
+ * automatic drogue or main after it; the operator's manual Deploy/Expand
+ * stay available. */
+static rud_state rud;
+volatile uint32_t g_fc_rud_aborts __attribute__((used, externally_visible));
+
+static inline void watch_for_breakup(fu32 conf, state curr)
+{
+  const rud_input in = {
+    .t_ms = now_ms(),
+    .armed = curr >= Launch && curr <= Coast && (conf & option(Using_Ascent_KF)),
+    .gyro = { meas.gyro.x, meas.gyro.y, meas.gyro.z },
+    .accel = { meas.accl.x, meas.accl.y, meas.accl.z },
+    .baro_alt = meas.baro.alt,
+  };
+  if (rud_step(&rud, &in))
+  {
+    ++g_fc_rud_aborts;
+    message(id "RUD: break-up detected; automatic deployment stopped", true);
+    fc_recovery_request_eval_stop();
+  }
+}
 
 /* Estimator status (fc_estimator_status.h) */
 
@@ -467,6 +493,8 @@ void evaluate_rocket_state(fu32 conf, float dt)
 #endif
 
   state curr = current();
+
+  watch_for_breakup(conf, curr);
 
   switch (curr)
   {
