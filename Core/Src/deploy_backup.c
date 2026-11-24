@@ -48,9 +48,15 @@ void backup_dr_trust(backup_dr *d, uint32_t t_ms, float alt, float vel, bool mea
   d->ref_vel = vel;
   d->ref_ms = t_ms;
   d->have_ref = true;
+  d->ref_measured = measured;
   d->active = false;
 }
 
+void backup_dr_measured_only(backup_dr *d)
+{
+  if (!d->have_ref || d->ref_measured || !d->have_clean) return;
+  backup_dr_trust(d, d->clean_ms, d->clean_alt, d->clean_vel, true);
+}
 
 void backup_dr_chutes(backup_dr *d, uint32_t t_ms, bool drogue_out, bool main_out)
 {
@@ -115,4 +121,16 @@ float backup_dr_step(backup_dr *d, uint32_t t_ms, float fallback_alt, float *vel
   }
   *vel = -d->fall;
   return d->alt;
+}
+
+bool backup_apogee_possible(const backup_dr *d, uint32_t t_ms)
+{
+  if (!d->have_clean || d->clean_vel <= 0.0f) return true;
+  return reached(t_ms, d->clean_ms + (uint32_t)(d->clean_vel / DR_DECEL_MAX * 1000.0f));
+}
+
+bool backup_drogue_due(uint32_t since_launch_ms, bool climbing)
+{
+  if (since_launch_ms < BACKUP_DROGUE_MS) return false;
+  return !climbing || since_launch_ms >= BACKUP_DROGUE_MS + BACKUP_DROGUE_HOLD_MS;
 }

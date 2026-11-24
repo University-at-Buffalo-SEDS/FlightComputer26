@@ -74,9 +74,10 @@ class SensorPlausibility(unittest.TestCase):
 
     def test_wired_into_the_estimator(self):
         est = (ROOT / 'Core/Src/estimator_thread.c').read_text()
-        asc = est[est.index('void estimator_ascent_update(void)'):]
+        asc = est[est.index('void estimator_ascent_update(bool fresh)'):]
         asc = asc[:asc.index('\n}\n')]
         self.assertIn('plaus_baro_suspect(&plaus)', asc)
+        self.assertIn('svec(0).alt = imedsv.alt = imu_track.alt;', asc)
         self.assertIn('if (usable) ascent_update();\n  else ascent_hold();', asc)
         des = est[est.index('void estimator_descent_step('):]
         des = des[:des.index('\n}\n')]
@@ -85,13 +86,14 @@ class SensorPlausibility(unittest.TestCase):
         self.assertIn('meas.gps.sea - LAUNCH_SITE_SEA', des)
         self.assertIn("((conf & option(Vigilant_Mode)) || !ekf_velocity_trusted())", est)
         self.assertIn('Core/Src/sensor_plausibility.c', (ROOT / 'CMakeLists.txt').read_text())
-        # The estimator loop and the IGT host replay take the same steps.
+        # The estimator loop and the IGT host replay take the same passes.
+        passes = est[est.index('void estimator_pass('):]
+        self.assertIn('estimator_ascent_update(fresh);', passes)
+        self.assertIn('estimator_descent_step(conf, dt, in);', passes)
         loop = est[est.index('void estimator_thread_entry('):]
-        self.assertIn('estimator_ascent_update();', loop)
-        self.assertIn('estimator_descent_step(conf, dt);', loop)
+        self.assertIn('estimator_pass(ascent, done & request);', loop)
         replay = (ROOT / 'tools/igt_replay_host.py').read_text()
-        self.assertIn('estimator_ascent_update();', replay)
-        self.assertIn('estimator_descent_step(conf, dt);', replay)
+        self.assertIn('estimator_pass(ascent, done);', replay)
 
 
 if __name__ == '__main__':

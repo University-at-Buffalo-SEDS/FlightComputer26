@@ -51,11 +51,15 @@ class EvaluationPreemption(unittest.TestCase):
         # The guard is taken after the pause barrier (a quiescent evaluator never
         # holds it) and given back before the next wait.
         self.assertLess(passes.rindex('evaluation_control_barrier();'), passes.index('thread_comm_estimator_enter();'))
-        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('estimator_ascent_update();'))
-        self.assertLess(passes.index('ascent_predict(dt, conf);'), passes.rindex('thread_comm_estimator_leave();'))
-        # The descent filter and state machine run in the same guarded pass.
-        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('estimator_descent_step(conf, dt);'))
-        self.assertLess(passes.index('estimator_descent_step(conf, dt);'), passes.rindex('thread_comm_estimator_leave();'))
+        # One pass (estimator_pass: a predict, or an update and the state
+        # machine, ascent or descent, or a silent sensor's step, and the
+        # drogue timer) runs inside the guard.
+        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('estimator_pass(ascent, done & request);'))
+        self.assertLess(passes.index('estimator_pass(ascent, done & request);'), passes.rindex('thread_comm_estimator_leave();'))
+        one = body(evaluation, 'void estimator_pass(bool ascent, ULONG done)')
+        for step in ('estimator_ascent_update(fresh);', 'ascent_predict(dt, conf);', 'estimator_ascent_baro_only(&dt);',
+                     'estimator_descent_step(conf, dt, in);', 'backup_deployments();'):
+            self.assertIn(step, one)
         # Every early exit gives the guard back.
         self.assertEqual(passes.count('thread_comm_estimator_enter();'), 1)
         self.assertEqual(passes.count('thread_comm_estimator_leave();'), 2)

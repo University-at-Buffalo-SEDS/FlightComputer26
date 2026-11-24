@@ -74,9 +74,16 @@ extern sv_meta sm;
 extern measm meas;
 extern spinlock meas_locks[];
 
+/* What brought a descent step: a barometer sample, a GPS fix (outside
+ * Vigilant mode), or a silent barometer's period. */
+typedef enum { EST_NONE, EST_BARO, EST_GPS, EST_SILENT } est_input;
+
 void evaluate_rocket_state(fu32, float);
-void estimator_ascent_update(void);
-void estimator_descent_step(fu32, float);
+void estimator_ascent_update(bool fresh);
+void estimator_descent_step(fu32, float, est_input);
+ULONG estimator_request(bool ascent);
+void estimator_pass(bool ascent, ULONG done);
+void estimator_left_ascent(void);
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 SedsResult on_fc_packet(const SedsPacketView *, void *);

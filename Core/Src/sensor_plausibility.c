@@ -44,6 +44,13 @@ bool plaus_baro(plaus_state *p, uint32_t t_ms, float alt)
   return !vote && !p->baro_bad && !p->baro_stuck;
 }
 
+void plaus_baro_missing(plaus_state *p)
+{
+  p->baro_votes = (p->baro_votes << 1) | 1U;
+  const unsigned n = (unsigned)__builtin_popcount((unsigned)(p->baro_votes & WINDOW_MASK));
+  if (n >= RUD_PRESSURE_MIN) p->baro_bad = true;
+}
+
 bool plaus_baro_ok(const plaus_state *p)
 {
   return !p->baro_bad && !p->baro_stuck;
@@ -52,6 +59,11 @@ bool plaus_baro_ok(const plaus_state *p)
 bool plaus_baro_suspect(const plaus_state *p)
 {
   return (p->baro_votes & WINDOW_MASK) != 0U;
+}
+
+bool plaus_baro_repeat(const plaus_state *p)
+{
+  return p->stuck_run != 0U;
 }
 
 bool plaus_baro_clean(const plaus_state *p)
@@ -81,4 +93,26 @@ void plaus_velocity(plaus_state *p, float ekf_vel, float trend_vel)
 bool plaus_velocity_ok(const plaus_state *p)
 {
   return !p->vel_bad;
+}
+
+void plaus_imu(plaus_state *p, const float accel_gyro[6])
+{
+  if (p->have_imu && memcmp(p->last_imu, accel_gyro, sizeof p->last_imu) == 0)
+  {
+    if (p->imu_stuck_run < PLAUS_IMU_STUCK_STEPS) ++p->imu_stuck_run;
+  }
+  else p->imu_stuck_run = 0;
+  p->imu_stuck = p->imu_stuck_run >= PLAUS_IMU_STUCK_STEPS;
+  memcpy(p->last_imu, accel_gyro, sizeof p->last_imu);
+  p->have_imu = true;
+}
+
+void plaus_imu_silent(plaus_state *p, bool silent)
+{
+  p->imu_silent = silent;
+}
+
+bool plaus_imu_ok(const plaus_state *p)
+{
+  return !p->vel_bad && !p->imu_stuck && !p->imu_silent;
 }

@@ -1,8 +1,8 @@
-"""The main without a trustworthy altitude, deploy_backup.c, on the host.
+"""Chutes without trustworthy sensors, deploy_backup.c, on the host.
 
-The dead-reckoned descent that times the main when no altitude can be
-trusted: it must stay below the true altitude, so the main is early, never
-late. Checked here against simulated flights with drag (the
+The drogue timer, and the dead-reckoned descent that times the main when no
+altitude can be trusted: it must stay below the true altitude, so the main
+is early, never late. Checked here against simulated flights with drag (the
 open-loop IGT replay cannot show the free fall before a late drogue). The
 sweep over flight data is tools/rud_sweep.py; docs/rud-abort.md section 6."""
 from pathlib import Path
@@ -67,6 +67,13 @@ static float fly(double h, double v, double t_fail, double t_drogue, double v_dr
 
 int main(void)
 {
+  /* The timer, and its hold for a trustworthy climb. */
+  assert(!backup_drogue_due(BACKUP_DROGUE_MS - 1U, false));
+  assert(backup_drogue_due(BACKUP_DROGUE_MS, false));
+  assert(!backup_drogue_due(BACKUP_DROGUE_MS, true));
+  assert(!backup_drogue_due(BACKUP_DROGUE_MS + BACKUP_DROGUE_HOLD_MS - 1U, true));
+  assert(backup_drogue_due(BACKUP_DROGUE_MS + BACKUP_DROGUE_HOLD_MS, true));
+
   /* Under the drogue at 25 m/s: the prediction descends at 28.75 m/s; the
    * main comes (3000 - 457) / 28.75 s after the reference. */
   backup_dr_reset(&d);
@@ -86,19 +93,25 @@ int main(void)
   h = backup_dr_step(&d, 31000U, 0.0f, &v); assert(fabsf(h - (100.0f - DR_MAIN_MPS)) < 0.01f);
   h = backup_dr_step(&d, 60000U, 0.0f, &v); assert(h == 0.0f && v == 0.0f);
 
-  /* A reference that is not measured is capped by the no-drag ballistic
-   * flight from the last measured one. */
+  /* An IMU-only reference is capped by the no-drag ballistic flight from the
+   * last clean barometer state, and dropped when the drogue timer fires. */
   backup_dr_reset(&d);
   backup_dr_trust(&d, 22000U, 1978.0f, 150.0f, true);
+  assert(!backup_apogee_possible(&d, 22000U + 7000U));
+  assert(backup_apogee_possible(&d, 22000U + 7700U));
   backup_dr_trust(&d, 40000U, 5000.0f, 300.0f, false);
   assert(d.ref_alt <= 1978.0f + 150.0f * 150.0f / (2.0f * DR_G) + 0.01f && d.ref_vel == 0.0f);
+  backup_dr_measured_only(&d);
+  assert(d.ref_ms == 22000U && d.ref_alt == 1978.0f && d.ref_vel == 150.0f);
   /* No reference at all (a restart): the fallback altitude. */
   backup_dr_reset(&d);
   h = backup_dr_step(&d, 5000U, 800.0f, &v); assert(h == 800.0f);
 
   /* Against simulated flights: references in coast (the barometer lost at
    * 22 s on the 10k and the measured-motor flights), at apogee and under
-   * the drogue, drogues on time and up to 10 s late, drogue rates 15 % either side of the model, a falling body
+   * the drogue, drogues on time and up to 10 s late (the timer comes 2.9 s
+   * after the 10k flight's usual drogue and 10.1 s after the measured
+   * motor's), drogue rates 15 % either side of the model, a falling body
    * with little or much drag. The main is never under 457 m. */
   const float coast[][2] = { {1978.0f, 150.0f}, {1240.0f, 72.0f}, {2381.0f, 115.0f} };
   const float rates[] = { 25.0f / 1.15f, 25.0f, 25.0f * 1.15f };
@@ -128,7 +141,7 @@ int main(void)
 
 
 class DeployBackup(unittest.TestCase):
-    def test_dead_reckoning(self):
+    def test_timer_and_dead_reckoning(self):
         with tempfile.TemporaryDirectory() as tmp:
             src, exe = Path(tmp) / 'b.c', Path(tmp) / 'b'
             src.write_text(HARNESS)
@@ -142,6 +155,26 @@ class DeployBackup(unittest.TestCase):
         est = (ROOT / 'Core/Src/estimator_thread.c').read_text()
         self.assertIn('Core/Src/deploy_backup.c', (ROOT / 'CMakeLists.txt').read_text())
         self.assertIn('Core/Src/deploy_backup.c', (ROOT / 'tools/igt_replay_host.py').read_text())
+        loop = est[est.index('void estimator_thread_entry('):]
+        # The estimator never waits forever: a silent sensor still gets steps
+        # and the drogue timer its checks.
+        self.assertIn('TX_OR_CLEAR, &done, EST_STEP_MS);', loop)
+        self.assertNotIn('TX_WAIT_FOREVER', loop[:loop.index('UINT create_estimator_thread(')])
+        passes = est[est.index('void estimator_pass('):]
+        passes = passes[:passes.index('\n}\n')]
+        self.assertTrue(passes.rstrip().endswith('backup_deployments();'))
+        backup = est[est.index('static void backup_deployments(void)'):]
+        backup = backup[:backup.index('\n}\n')]
+        self.assertIn('option(Parachute_Deployed)', backup)
+        # Armed only by a measured climb, kept across a watchdog restart: a
+        # false Launch detection on the pad never fires a chute there.
+        self.assertIn('!backup_armed', backup)
+        self.assertIn('FC_RESUME_REGION(backup_armed)', est)
+        self.assertEqual(est.count('backup_armed = 1U;'), 2)
+        self.assertIn('BACKUP_ARM_ALT', est)
+        self.assertIn('backup_drogue_due(timer_fetch(LaunchClock), climbing)', backup)
+        self.assertIn('release_parachute(false, false);', backup)
+        self.assertIn('backup_dr_measured_only(&dr);', backup)
         descent = est[est.index('void estimator_descent_step('):]
         descent = descent[:descent.index('\n}\n')]
         self.assertIn('descent_dead_reckon(t);', descent)

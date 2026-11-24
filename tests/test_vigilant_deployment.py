@@ -71,7 +71,7 @@ static stats extremes;
 static float kalt, kvel;
 static uint32_t sim_ms, aux_ms, skip_ms;
 static unsigned drogue, mains; static float drogue_alt, main_alt;
-enum { Auxiliary };
+enum { Auxiliary, LaunchClock };
 static uint32_t __get_PRIMASK(void) { return 0; }
 static void __disable_irq(void) {}
 static void __set_PRIMASK(uint32_t m) { (void)m; }
@@ -94,6 +94,9 @@ static void descent_initialize(fu32 c) { (void)c; }
 #define watch_velocity(conf, dt) ((void)(conf), (void)(dt))
 static bool ekf_velocity_trusted(void) { return true; }
 static bool barometer_trusted(void) { return true; }
+/* The drogue timer and the dead-reckoned main are covered by
+ * test_deploy_backup.py, test_estimator_loop.py and tools/rud_sweep.py. */
+static bool apogee_source_trusted(void) { return true; }
 static state current(void) { return load(&sm.flight, Acq); }
 static bool beyond(state b) { return current() > b; }
 static bool fc_watchdog_can_actuate(void) { return true; }

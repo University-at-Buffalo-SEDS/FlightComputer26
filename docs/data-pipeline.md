@@ -135,7 +135,7 @@ Lower number = higher priority.
 | Control thread (`control_thread`) | 4 (`CONTROL_PRIORITY`), no slice | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `FC-Threads.h`, `control_thread.c`, `thread_comm.c` |
 | Telemetry thread (`telemetry_thread`) | 5 (`TELEMETRY_PRIORITY`), no slice | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `FC-Threads.h`, `telemetry.c` |
 | Sensor thread (`sensor_thread`) | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging; offers samples to the estimator (`eval_stage`) | `sensor_thread.c`, `sensor_dma.c` |
-| Estimator thread (`estimator_thread`) | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | the estimator: ascent EKF predict/update, descent KF, the whole flight state machine (Launch to Recovery); holds the estimator guard for each pass | `estimator_thread.c`, `thread_comm.c`, `control_thread.c` (`enter_launch`) |
+| Estimator thread (`estimator_thread`) | 5, no slice, no threshold | 12 KiB | `eval_stage` flags, or 40 ms without one (`EST_STEP_MS`); created suspended, resumed at Launch acceptance | the estimator: ascent EKF predict/update, descent KF, the whole flight state machine (Launch to Recovery), the steps of a silent sensor and the drogue timer (`docs/rud-abort.md` section 7); holds the estimator guard for each pass | `estimator_thread.c`, `deploy_backup.c`, `thread_comm.c`, `control_thread.c` (`enter_launch`) |
 | SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
 | EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and wake the distribution thread | `main.c`, `sensor_dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `sensor_dma.c` |
@@ -355,7 +355,12 @@ own altitude trend hands Apogee detection to the barometer
 (`sensor_plausibility.c`, same document, section 5). With no trustworthy
 altitude in descent (no fresh, moving GPS fix either) the main is timed
 from the last trustworthy one at a fast-biased descent rate: early, never
-late (`deploy_backup.c`, section 6).
+late (`deploy_backup.c`, section 6). Two failing sensors do not cost them
+either (section 7): a silent sensor no longer stalls the estimator, and the
+drogue fires 30 s after Launch if nothing has fired it.
+`g_fc_backup_drogues` counts the timer's drogues; `g_fc_sensor_fallback`
+shows the fallbacks (1 barometer, 2 velocity, 4 IMU frozen or silent, 8
+dead reckoning).
 
 - Each FSM advance writes an `Ordered` SD row "EV new flight state: n" and
   queues `FLIGHT_STATE` with the network mapping `global_state_of`

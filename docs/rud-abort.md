@@ -30,8 +30,9 @@ bad readings:
 | Sensor failure count (`process_sensor_report`) | out-of-band samples (`validate_*`: accel outside ±24 g, gyro outside ±2000 deg/s, pressure outside 57.2–110 kPa, altitude outside −30..4572 m). A saturated BMI088 reads at most its full scale, so saturation never counts | a running count, one up per bad sample and one down per good one (`Reset_Failures`, on by default). Only before Apogee (or for a bad barometer without trustworthy GPS); IMU and baro are validated only in ascent and on the pad | ≥ 40: sensor re-initialisation; ≥ 120: on the pad `In_Aborted_State` (await a command); in flight a sensor restart that restarts the estimator, then a ×10 threshold. Never stops deployment |
 | GPS delayed/malformed | `GPS_DELAY_MS` 200 ms gaps or bad packets, 40 of either | count | barometer-only Vigilant mode; deployment continues |
 | Filter fluctuation | `kf_deviations` > 80 | count | Vigilant mode trusts the raw barometer; deployment continues |
-| Sensor plausibility (section 5) | an implausible or frozen barometer; an untrusted ascent velocity | 0.5-2 s | the filters fall back on the other sensors; deployment continues |
+| Sensor plausibility (sections 5, 7) | an implausible, frozen or silent barometer; an untrusted ascent velocity, a frozen or silent IMU | 0.2-2 s | the filters fall back on the other sensors; deployment continues |
 | Dead-reckoned descent (section 6) | no trustworthy altitude in descent | per step | times the main from the last trustworthy altitude |
+| Drogue timer (section 7) | no drogue 30 s after Launch | – | fires the drogue |
 | Watchdog resume rejected | checkpoint invalid at boot | – | holds the sequence at boot (no flight in progress) |
 
 ## 2. Break-up detector (`Core/Src/rud_detect.c`)
@@ -138,12 +139,13 @@ the drogue within 1 s before to 4 s after the true apogee, and the main at a
 true altitude of 457.2 ± 100 m (4 s under the drogue; section 6.3 explains
 why altitude and not time).
 
-Result (this section's 91 cases; with section 6's, 161/161):
+Result (this section's 91 cases; with sections 6 and 7, 261/261):
 
 - In all 79 no-abort cases the drogue comes 0.8–2.3 s after the true apogee
   and the main within ±0.25 s of the 457.2 m crossing.
 - All 12 break-ups abort before Apogee, 0.88–0.90 s after onset.
-- The closest any no-abort case came to firing is 36 %.
+- The closest any no-abort case came to firing is 36 % (over all 234
+  must-not-fire cases, sections 6 and 7 included).
 
 Reproduce:
 
@@ -210,7 +212,8 @@ Limits:
   work: a frozen barometer had pulled the descent velocity to zero before
   its verdict, so the prediction never descended (main at the ground, or no
   drogue).
-- Two failed sensors are beyond this, as is a break-up, which is section 2.
+- ~~Two failed sensors are beyond this.~~ Section 7. A break-up is
+  section 2.
 
 ## 6. A barometer failing in descent without GPS
 
@@ -257,6 +260,9 @@ descent: 15 % from the bias, on a rate that may itself be 15 % slow.
 **GPS.** A fix counts only while fresh (2 s) and while its altitude moves
 (changed within 2 s). A receiver repeating its last fix is stale.
 
+**A silent barometer** (no sample for 200 ms) gets a step without it every
+barometer period, from section 7 on.
+
 ### 6.3 Tolerances
 
 The checks are on the true altitude when the main fires, read from the
@@ -281,13 +287,13 @@ bodies with little or much drag. The main never comes below 456 m: one
 
 ### 6.4 Sweep
 
-`tools/rud_sweep.py` adds 70 cases, on all five datasets: the barometer
+`tools/rud_sweep.py` adds 80 cases, on all five datasets: the barometer
 frozen at apogee, 10 s after it and at 830 m; wild (200 m noise) from
-apogee and 10 s after it; offset ±100 m 20 s after it. Each with GPS absent
-and with GPS stale (a held fix).
+apogee and 10 s after it; silent 10 s after it (section 7); offset ±100 m
+20 s after it. Each with GPS absent and with GPS stale (a held fix).
 
-Result: **161/161 as expected**, and the 79 must-not-fire cases of sections
-4-5 keep their deployments.
+All are as expected (261/261 with section 7), and the 79 must-not-fire
+cases of sections 4-5 keep their deployments.
 
 | Failure, GPS absent or stale | Drogue after the true apogee | Main, true altitude |
 | --- | --- | --- |
@@ -295,7 +301,7 @@ Result: **161/161 as expected**, and the 79 must-not-fire cases of sections
 | frozen 10 s after apogee | +1.3 s | 586-736 m |
 | frozen at 830 m | +1.3 s | 511-515 m |
 | wild from apogee | +0.7-0.9 s | 642-784 m |
-| wild 10 s after apogee | +1.3 s | 588-737 m |
+| wild or silent 10 s after apogee | +1.3 s | 588-737 m |
 | offset +100 m (reads high) | +1.3 s | 355-357 m (the barometer's) |
 | offset −100 m | +1.3 s | 555 m (the barometer's) |
 
@@ -307,3 +313,178 @@ for the descent filter, and GPS saved it there; without GPS it would not
 have. Section 7 covers both.
 
 Reproduce: `python3 tools/rud_sweep.py <GroundStation26>/test-data/igt`.
+
+## 7. Silent sensors, two sensors failing, and the drogue timer
+
+### 7.1 What existed
+
+There was no time-based backup:
+
+- **Vigilant mode** (`vigilant_watchdog`, on by default) is a second Apogee
+  check on the barometer and the altitude trend, not a timer. It needs a
+  working barometer.
+- **No apogee timeout.** `MOTOR_BURN_TIME` (3.5 s) only gates Coast.
+- **The estimator waited forever** for its samples (`TX_WAIT_FOREVER`). Any
+  of these stalled the whole state machine:
+  - a silent IMU in ascent (no data-ready);
+  - a silent barometer in ascent, or one reading outside the validation
+    band (rejected in `for_ascent_update`, never offered);
+  - a silent barometer in descent (GPS stages a step only outside Vigilant
+    mode).
+
+  The hardware watchdog would then restart the board every 16 s, and the
+  restart resumes into the same wait. The host replay could not show this:
+  it always supplied samples.
+- **A barometer frozen in ascent** fed its repeats to the filter until its
+  2 s verdict, pulling the velocity to zero: a false Apogee 5-13 s early (the
+  existing `baro_freeze_3s` case, section 6.4). Without GPS the dead-reckoned
+  descent (section 6) would then fire the drogue at speed.
+- **A wild barometer in ascent** had its samples within 150 m of the
+  prediction used until its verdict (0.5 s). With GPS stale, that put a
+  drogue 3.7 s early.
+
+### 7.2 Behaviour
+
+**Silent sensors.** The estimator now wakes at least every barometer period
+(40 ms, `EST_STEP_MS`). A sensor that delivers nothing for 200 ms
+(`EST_SILENT_MS`) is silent:
+
+- A silent IMU in ascent: the steps run on the barometer alone, with the
+  velocity from its trend. The filter velocity is untrusted, so Vigilant's
+  Apogee check decides.
+- A silent barometer in ascent: the staged prediction is updated without it
+  (IMU dead reckoning), once per period. Each missing sample votes, so 12
+  make the barometer implausible.
+- A silent barometer in descent: a step without it every period (GPS, else
+  section 6's dead reckoning).
+
+`estimator_pass` takes these steps for the thread and the IGT host replay
+alike. The replay can now make a sensor silent (`IGT_SILENT`).
+
+**Barometer frozen in ascent.** In ascent a sample that repeats the last one
+bit for bit, while the filter moves at 5 m/s or more, is not used (0.2 m a
+step, 150 times the BMP390's resolution; at rest a quantised one may
+repeat). This removes the false Apogee.
+
+**Re-seat at the barometer verdict.** When a barometer turns implausible in
+ascent, the filter re-seats on its last clean step carried forward by the
+IMU alone. That undoes whatever its samples did before the verdict. A
+barometer that never reaches the verdict (bursts, outliers) is untouched.
+
+Two alternatives were tried and rejected:
+
+- A tighter 50 m gate fixed the wild case, but during an IMU transient it
+  locked a good barometer out, giving a false Apogee 8 s early in three
+  datasets.
+- Anchoring the gate on the barometer failed the same way: it carried the
+  transient's velocity.
+
+**IMU verdict.** The IMU is untrusted while frozen (50 bit-identical pairs),
+silent, or while the velocity verdict is bad. The velocity verdict needs the
+barometer: while that is implausible it keeps its last value, so an IMU
+found bad before the barometer failed stays untrusted.
+
+**Nothing trustworthy for Apogee** (barometer implausible and IMU
+untrusted): no sensor Apogee; the drogue timer fires it. On the IMU alone,
+Apogee is not believed before the last clean barometer state could have
+reached it (at 2 g).
+
+**Drogue timer** (`deploy_backup.h`):
+
+- The drogue fires `BACKUP_DROGUE_MS` = 30.0 s after Launch if nothing has
+  fired it.
+- The flight model (GS `tools/flight_profile`, the 10,000 ft flight, the
+  longest planned) reaches apogee 25.9 s after the FC detects Launch.
+- The margin, 4.1 s: the model's apogee time is uncertain by about 1 s (Cd
+  10 %, impulse 5 %), and the sensor path itself fires 0.8-2.3 s after
+  apogee. The latest sensor-path drogue in the whole sweep is 28.16 s after
+  Launch.
+- While a trustworthy barometer still climbs, the timer waits up to 10 s
+  more.
+- It is armed only once a measured altitude has reached 30 m
+  (`FLYING_ALTITUDE`). A false Launch detection on the pad, after a misfire
+  with people approaching, must never fire a chute there. The arming is
+  kept across a watchdog restart.
+- It runs on every pass, including the wakes without a sample.
+- `LaunchClock` is a flight timer, so it survives a watchdog restart.
+- `g_fc_backup_drogues` counts its drogues.
+
+**Main timer.** This is section 6's dead-reckoned descent: from a reference
+at the drogue, (h_ref - 457 m) / 28.75 m/s after it, early by up to 25 %.
+
+- An IMU-only reference (barometer out in ascent) is capped by the no-drag
+  ballistic flight from the last clean barometer step: in coast nothing
+  climbs higher or faster.
+- When the drogue timer fires, nothing found Apogee, so the reference goes
+  back to the last clean barometer step. That is a lower bound while
+  climbing, and the prediction then falls freely until the drogue.
+
+### 7.3 Required behaviour and tolerances
+
+As section 6.3, with two more kinds:
+
+- **Drogue by the timer:** at 30.0 s after Launch.
+- **Main with no trustworthy reference:** not under 357 m, and after the
+  drogue.
+
+Saturated IMU with a wild barometer is the break-up signature (section 2).
+By design it aborts before Apogee, with no automatic chutes; the operator's
+Deploy/Expand remain.
+
+`tests/test_deploy_backup.py` also covers late drogues. The timer comes
+2.9 s after the 10k flight's usual drogue and 10.1 s after the measured
+motor's. A real flight falls freely until then, which the open-loop replay
+cannot show; the main is still never below 456 m.
+
+### 7.4 Sweep and matrix
+
+`tools/rud_sweep.py` adds 85 cases: 17 failures (two single silent
+sensors, the rest two or three sensors), each on all five datasets. Onset is
+in coast (22 s) or 10 s after apogee.
+
+Result: **261/261 as expected**:
+
+- The drogue timer fires in none of the 79 must-not-fire cases.
+- Those cases keep their deployments: drogue 0.8-2.3 s after apogee, main
+  within ±0.25 s of 457 m.
+
+| Failure (onset) | Drogue after the true apogee | Main, true altitude | How |
+| --- | --- | --- | --- |
+| IMU silent in ascent | +1.2-1.3 s | 454-455 m | barometer alone in ascent, then as usual |
+| baro silent in ascent, GPS present | +0.6-1.6 s | 451-461 m | Apogee from the IMU; main on GPS |
+| IMU + baro in ascent (silent/silent, frozen/frozen, frozen/wild, silent/wild), GPS present | +4.1 s (10k) .. +11.3 s (measured motor) | 444-461 m | drogue timer; main on GPS |
+| IMU saturated + baro wild in ascent | – | – | break-up abort 0.88 s after onset (section 2) |
+| IMU + GPS in ascent (silent/absent, frozen/stale) | +1.2-1.4 s | 454-455 m | barometer |
+| baro + GPS in ascent (silent/absent, frozen/absent, wild/stale) | −0.6..+0.7 s | 668-913 m | Apogee from the IMU; main dead-reckoned |
+| IMU + baro in descent (the IMU is off after Apogee) | +1.3 s | 444-461 m | GPS |
+| IMU + GPS in descent | +1.3 s | 454-455 m | barometer |
+| baro + GPS in descent (silent/absent, frozen/stale) | +1.3 s | 541-736 m | dead-reckoned |
+| all three in ascent (silent, or frozen + absent) | +4.1..+11.3 s | 1273-2244 m | drogue timer; main early from the last clean altitude |
+
+Timer drogue times are against the truth vehicle, whose drogue opened 1.2 s
+after apogee. On the measured-motor flight (1.5 km), with all three
+failed, both chutes open together, at the timer.
+
+### 7.5 Limits
+
+- **The drogue timer assumes the planned flight.** On the measured motor
+  (1,512 m, apogee 18.7 s after Launch) it fires 11.3 s after apogee, after
+  about 11 s of free fall (roughly 80-90 m/s). A flight much lower than
+  1.2 km could pass 457 m before it. Set `BACKUP_DROGUE_MS` per flight from
+  the motor that flies (deploy_backup.h).
+- **Pre-existing early Apogee state.** On early_apogee_noise, 0.3 s of IMU
+  saturation together with the dataset's false-descent pressure step gives
+  an Apogee state 7.7 s early. It is the same on origin/dev. The drogue is
+  still on time (+1.3 s): the descent filter waits for the fall on the
+  barometer. The sweep reports it as a warning.
+- **Barometer offsets** are unobservable without GPS. With GPS present, a
+  plausible barometer is still not checked against it (a possible
+  follow-up).
+- **IMU-only after the barometer fails.** An IMU that also fails without
+  being frozen or silent (a bias) cannot be verified. The ballistic cap and
+  the timer's reset to the clean barometer step limit the damage: with all
+  three failed, both chutes come out early.
+
+Reproduce: `python3 tools/rud_sweep.py <GroundStation26>/test-data/igt`;
+`tests/test_deploy_backup.py`, `tests/test_estimator_loop.py`,
+`tests/test_sensor_plausibility.py`.

@@ -258,10 +258,11 @@ ONE_SENSOR = {'imu_only_tumble': s_imu_only, 'baro_only_chaos': s_baro_only, 'im
               'baro_noise_200m_in_descent': s_baro_noise_descent}
 
 
-# Barometer failures in descent, with GPS absent or stale (docs/rud-abort.md
-# section 6). Each takes the onset time t0; an absent GPS delivers nothing
-# (IGT_SILENT, tools/igt_replay_host.py); a stale GPS keeps sending its last
-# fix (the replay holds the last row: the rows after t0 are dropped).
+# Sensor failures for the barometer-in-descent and two-sensor sweeps
+# (docs/rud-abort.md section 6). Each takes the onset time t0; a 'silent'
+# sensor delivers nothing (IGT_SILENT, tools/igt_replay_host.py), as a dead
+# one; a 'stale' GPS keeps sending its last fix (the replay holds the last
+# row: the rows after t0 are dropped).
 def x_baro_frozen(d, rng, t0):
     held = {}
     def f(row, t):
@@ -280,19 +281,28 @@ def x_baro_offset(dh):
     return f
 
 
+def x_imu_rest(d, rng, t0):
+    d.each('IMU', t0, 1e9, lambda row, t: row.__setitem__(slice(1, 7), [0.1, -0.1, G, 0.5, -0.5, 0.2]))
+
+
+def x_imu_saturated(d, rng, t0):
+    d.each('IMU', t0, 1e9, lambda row, t: row.__setitem__(slice(1, 7), [ACC_MAX, ACC_MAX, ACC_MAX, DPS_MAX, DPS_MAX, DPS_MAX]))
+
+
 def x_gps_stale(d, rng, t0):
     d.drop('GPS', t0, 1e9)
 
 
 # name -> (data faults [(fn, onset key)], silent sensors [(sensor, onset key)],
 #          what is expected: drogue 'sensor' (within [-1, +4] s of the true
-#          apogee); main 'measured' (barometer or GPS: true altitude 457 +/-
-#          100 m), 'dr' (dead reckoning from the true altitude at 'ref':
-#          457 - 100 m up to 457 + 25 % of the descent from there + 100 m) or
-#          'offset' (the barometer's offset is unobservable: 457 - offset +/-
-#          100 m).
-# Onsets: 'apogee', 'apogee+10', 'apogee+20', 'main-15' (about 830 m),
-# 'apogee-5' (GPS).
+#          apogee) or 'timer' (BACKUP_DROGUE_MS after Launch); main 'measured'
+#          (barometer or GPS: true altitude 457 +/- 100 m), 'dr' (dead
+#          reckoning from the true altitude at 'ref': 457 - 100 m up to
+#          457 + 25 % of the descent from there + 100 m), 'offset' (the
+#          barometer's offset is unobservable: 457 - offset +/- 100 m), 'early'
+#          (no trustworthy reference: not under 357 m) or 'abort').
+# Onsets: 'coast' 22 s (after burnout in every set, before apogee), 'apogee',
+# 'apogee+10', 'apogee+20', 'main-15' (about 830 m), 'apogee-5' (GPS).
 def baro_descent_cases():
     faults = {
         'baro_frozen_at_apogee': ([(x_baro_frozen, 'apogee')], [], 'dr', 'apogee'),
@@ -300,6 +310,7 @@ def baro_descent_cases():
         'baro_frozen_at_830m': ([(x_baro_frozen, 'main-15')], [], 'dr', 'main-15'),
         'baro_wild_at_apogee': ([(x_baro_wild, 'apogee')], [], 'dr', 'apogee'),
         'baro_wild_apogee+10': ([(x_baro_wild, 'apogee+10')], [], 'dr', 'apogee+10'),
+        'baro_silent_apogee+10': ([], [('baro', 'apogee+10')], 'dr', 'apogee+10'),
         'baro_offset+100m': ([(x_baro_offset(100.0), 'apogee+20')], [], ('offset', 100.0), None),
         'baro_offset-100m': ([(x_baro_offset(-100.0), 'apogee+20')], [], ('offset', -100.0), None),
     }
@@ -309,6 +320,37 @@ def baro_descent_cases():
         for gname, (gdata, gsilent) in gps.items():
             out[f'{fname}+{gname}'] = (data + gdata, silent + gsilent, 'sensor', main, ref)
     return out
+
+
+def two_sensor_cases():
+    a, dsc = 'coast', 'apogee+10'
+    return {
+        # One silent sensor (dead, unplugged): the other one carries on.
+        'asc:imu_silent': ([], [('imu', a)], 'sensor', 'measured', None),
+        'asc:baro_silent': ([], [('baro', a)], 'sensor', 'measured', None),
+        # IMU + barometer, ascent: nothing finds Apogee; GPS brings the main.
+        'asc:imu+baro_silent': ([], [('imu', a), ('baro', a)], 'timer', 'measured', None),
+        'asc:imu_rest+baro_frozen': ([(x_imu_rest, a), (x_baro_frozen, a)], [], 'timer', 'measured', None),
+        'asc:imu_rest+baro_wild': ([(x_imu_rest, a), (x_baro_wild, a)], [], 'timer', 'measured', None),
+        'asc:imu_silent+baro_wild': ([(x_baro_wild, a)], [('imu', a)], 'timer', 'measured', None),
+        # A saturated IMU with a wild barometer is the break-up signature.
+        'asc:imu_saturated+baro_wild': ([(x_imu_saturated, a), (x_baro_wild, a)], [], 'abort', 'abort', None),
+        # IMU + GPS, ascent: the barometer finds Apogee and brings the main.
+        'asc:imu_silent+gps_absent': ([], [('imu', a), ('gps', a)], 'sensor', 'measured', None),
+        'asc:imu_rest+gps_stale': ([(x_imu_rest, a), (x_gps_stale, a)], [], 'sensor', 'measured', None),
+        # Barometer + GPS, ascent: the IMU finds Apogee; the main is dead-reckoned.
+        'asc:baro_silent+gps_absent': ([], [('baro', a), ('gps', a)], 'sensor', 'dr', 'apogee'),
+        'asc:baro_frozen+gps_absent': ([(x_baro_frozen, a)], [('gps', a)], 'sensor', 'dr', 'apogee'),
+        'asc:baro_wild+gps_stale': ([(x_baro_wild, a), (x_gps_stale, a)], [], 'sensor', 'dr', 'apogee'),
+        # Descent: the IMU is off after Apogee, so IMU + X is X alone.
+        'desc:imu+baro_silent': ([], [('imu', dsc), ('baro', dsc)], 'sensor', 'measured', None),
+        'desc:imu_silent+gps_absent': ([], [('imu', dsc), ('gps', dsc)], 'sensor', 'measured', None),
+        'desc:baro_silent+gps_absent': ([], [('baro', dsc), ('gps', dsc)], 'sensor', 'dr', dsc),
+        'desc:baro_frozen+gps_stale': ([(x_baro_frozen, dsc), (x_gps_stale, dsc)], [], 'sensor', 'dr', dsc),
+        # All three: the drogue timer, and the main early.
+        'asc:all_three_silent': ([], [('imu', a), ('baro', a), ('gps', a)], 'timer', 'early', None),
+        'asc:imu_rest+baro_frozen+gps_absent': ([(x_imu_rest, a), (x_baro_frozen, a)], [('gps', a)], 'timer', 'early', None),
+    }
 
 
 def main_crossing(src: Path, apogee_s: float) -> float:
@@ -356,19 +398,25 @@ def run(exe: Path, folder: Path, silent: str = '') -> dict:
     raise RuntimeError(f'{folder}: no result\n{out.stdout[-2000:]}{out.stderr[-2000:]}')
 
 
-def judge(r: dict, truth: dict, alt_at, want: str, drogue: str, main: str, ref) -> tuple[bool, str]:
+def backup_drogue_ms() -> float:
+    text = (ROOT / 'Core/Inc/deploy_backup.h').read_text()
+    return float(re.search(r'#define BACKUP_DROGUE_MS\s+([0-9]+)U', text).group(1))
+
+
+def judge(r: dict, truth: dict, alt_at, want: str, drogue: str, main: str, ref, backup_s: float) -> tuple[bool, str]:
     """The outcome against the dataset's truth (it is replayed open loop).
 
     Drogue 'sensor': within [-1, +4] s of the true apogee (1 s early is under
     10 m/s; the sensor path itself lags 0.8-2.3 s), and the Apogee state not
     more than 2 s before the true apogee (a false Apogee switches to the
-    descent filter: reported as a warning, see early_apogee_state).
+    descent filter: reported as a warning, see early_apogee_state). 'timer':
+    at BACKUP_DROGUE_MS after Launch.
     Main: the true altitude when it fires (the dataset's own barometer).
     'measured' 457 +/- 100 m (4 s under the drogue); 'dr' from 357 m up to
     457 m plus 25 % of the descent from the reference altitude (the fast
     bias, 15 % on a rate that may be 15 % slow) plus 100 m; 'offset' the
-    unobservable offset moves it: 457 - offset +/- 100 m. 'abort': the
-    break-up detector fires before Apogee."""
+    unobservable offset moves it: 457 - offset +/- 100 m; 'early' not under
+    357 m. 'abort': the break-up detector fires before Apogee."""
     fired = 'rud_abort_s' in r
     ap = truth['apogee_s']
     if want == 'fire' or main == 'abort':
@@ -378,15 +426,20 @@ def judge(r: dict, truth: dict, alt_at, want: str, drogue: str, main: str, ref) 
     d, m = r.get('drogue_s', -1), r.get('main_s', -1)
     if d < 0 or m < 0:
         return False, 'no drogue' if d < 0 else 'no main'
-    ok_d = ap - 1.0 <= d <= ap + 4.0
+    if drogue == 'timer':
+        ok_d = abs(d - r['Launch_s'] - backup_s) <= 0.1
+    else:
+        ok_d = ap - 1.0 <= d <= ap + 4.0
     h = alt_at(m)
     if main == 'measured':
         ok_m = abs(h - 457.2) <= 100.0
     elif main == 'dr':
         h_ref = alt_at(ref)
         ok_m = 357.2 <= h <= 457.2 + 0.25 * max(0.0, h_ref - 457.2) + 100.0
-    else:
+    elif isinstance(main, tuple):
         ok_m = abs(h - (457.2 - main[1])) <= 100.0
+    else:
+        ok_m = h >= 357.2 and m >= d
     note = '' if ok_d else 'drogue '
     note += '' if ok_m else 'main'
     return ok_d and ok_m, note.strip()
@@ -398,6 +451,7 @@ def main(argv=None) -> int:
     ap.add_argument('--json', type=Path)
     a = ap.parse_args(argv)
     th = thresholds()
+    backup_s = backup_drogue_ms() / 1000.0
     sets = sorted(p for p in a.igt.iterdir() if (p / 'IGT').is_dir())
     work = Path(tempfile.mkdtemp(prefix='rud-sweep-'))
     results, bad = [], 0
@@ -416,9 +470,11 @@ def main(argv=None) -> int:
                 cases.append((base.name, name, fn, [], 'fire', None, 'abort', None))
             for name, fn in ONE_SENSOR.items():
                 cases.append((base.name, name, fn, [], 'nofire', 'sensor', 'measured', None))
-        for base in sets:
-            for name, (data, silent, drogue, main_kind, ref) in baro_descent_cases().items():
-                cases.append((base.name, name, data, silent, 'baro_descent', drogue, main_kind, ref))
+        for group, table in (('baro_descent', baro_descent_cases()), ('two_sensors', two_sensor_cases())):
+            for base in sets:
+                for name, (data, silent, drogue, main_kind, ref) in table.items():
+                    want = 'fire' if main_kind == 'abort' else group
+                    cases.append((base.name, name, data, silent, want, drogue, main_kind, ref))
         for i, (set_name, case, fn, silent, want, drogue, main_kind, ref) in enumerate(cases):
             folder = work / f'case{i}'
             src = a.igt / set_name
@@ -439,19 +495,21 @@ def main(argv=None) -> int:
             r = run(exe, folder, spec)
             fired = 'rud_abort_s' in r
             ok, why = judge(r, truth, true_alt(src), want, drogue, main_kind,
-                            onset(ref, truth) if ref else None)
+                            onset(ref, truth) if ref else None, backup_s)
             bad += not ok
-            early = r.get('Apogee_s', -1) > 0 and r['Apogee_s'] < truth['apogee_s'] - 2.0 and not fired
+            early = (r.get('Apogee_s', -1) > 0 and r['Apogee_s'] < truth['apogee_s'] - 2.0 and not fired
+                     and not r.get('backup_drogues'))
             h_main = true_alt(src)(r['main_s']) if r.get('main_s', -1) > 0 else float('nan')
             row = {'set': set_name, 'case': case, 'want': want, 'fired': fired, 'ok': ok, 'why': why,
                    'expect_drogue': drogue, 'expect_main': main_kind if isinstance(main_kind, str) else 'offset',
                    'silent': spec, 'true_apogee_s': truth['apogee_s'], 'true_main_trigger_s': truth['main_trigger_s'],
                    'main_true_alt_m': h_main, 'early_apogee_state': early, **r}
             results.append(row)
-            if want == 'baro_descent':
+            if want in ('baro_descent', 'two_sensors'):
                 print(f"{'ok ' if ok else 'BAD'} {set_name:18} {case:44} "
                       f"{'FIRED at %.2f s' % r['rud_abort_s'] if fired else 'no abort':16} "
-                      f"drogue {r.get('drogue_s', -1) - truth['apogee_s']:+6.2f} s after apogee, "
+                      f"drogue {r.get('drogue_s', -1) - truth['apogee_s']:+6.2f} s after apogee (L+{r.get('drogue_s', -1) - r['Launch_s']:5.2f}"
+                      f"{', timer' if r.get('backup_drogues') else ''}), "
                       f"main {r.get('main_s', -1e9) - truth['main_trigger_s']:+7.2f} s from 457 m, at a true {h_main:6.0f} m"
                       f"{'  [' + why + ']' if why and not ok else ''}", flush=True)
                 continue
@@ -480,12 +538,17 @@ def main(argv=None) -> int:
     print('matrix (failure -> drogue after the true apogee, main at a true altitude; min..max over the datasets):')
     by_case = {}
     for r in results:
-        if r['want'] == 'baro_descent':
+        if r['want'] in ('baro_descent', 'two_sensors') or (r['want'] == 'fire' and r['case'] in two_sensor_cases()):
             by_case.setdefault(r['case'], []).append(r)
     for case, rows in by_case.items():
+        if all('rud_abort_s' in r for r in rows):
+            print(f"  {case:44} break-up abort {min(r['rud_abort_s'] - 22.0 for r in rows):.2f}-"
+                  f"{max(r['rud_abort_s'] - 22.0 for r in rows):.2f} s after onset; no automatic chutes")
+            continue
         dd = [r['drogue_s'] - r['true_apogee_s'] for r in rows]
         hm = [r['main_true_alt_m'] for r in rows]
-        print(f"  {case:44} drogue {min(dd):+6.2f}..{max(dd):+6.2f} s, main at {min(hm):5.0f}..{max(hm):5.0f} m"
+        how = 'timer' if any(r.get('backup_drogues') for r in rows) else 'sensors'
+        print(f"  {case:44} drogue {min(dd):+6.2f}..{max(dd):+6.2f} s ({how}), main at {min(hm):5.0f}..{max(hm):5.0f} m"
               f"  {sum(r['ok'] for r in rows)}/{len(rows)} ok")
     early = [r for r in results if r['early_apogee_state']]
     print(f"warning: the Apogee state (the switch to the descent filter) more than 2 s before the true apogee in "

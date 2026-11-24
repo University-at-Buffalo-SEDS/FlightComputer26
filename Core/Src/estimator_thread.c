@@ -31,11 +31,17 @@ sv_meta sm = {Startup, G_Startup, 0, 0, 0};
 
 static stats extremes = {0};
 
+/* The drogue timer arms only once a measured altitude has shown flight
+ * (BACKUP_ARM_ALT): a false Launch detection on the pad, after a misfire,
+ * must never fire a chute there. Kept across a watchdog restart. */
+static uint8_t backup_armed;
+
 #if BOARD_WATCHDOG_ENABLE
 const fc_resume_region fc_resume_evaluation[] = {
   FC_RESUME_REGION(sv),
   FC_RESUME_REGION(sm),
   FC_RESUME_REGION(extremes),
+  FC_RESUME_REGION(backup_armed),
   { NULL, 0U }
 };
 #endif
@@ -55,31 +61,53 @@ static rud_state rud;
 volatile uint32_t g_fc_rud_aborts __attribute__((used, externally_visible));
 
 /* One faulty sensor must not cost the chutes (sensor_plausibility.h), and
- * a barometer failing in descent without GPS must not cost the main
- * (deploy_backup.h, docs/rud-abort.md section 6). */
+ * neither must two (deploy_backup.h, docs/rud-abort.md section 6). */
 static plaus_state plaus;
 static backup_dr dr;
 volatile uint8_t g_fc_sensor_fallback __attribute__((used, externally_visible));
+volatile uint32_t g_fc_backup_drogues __attribute__((used, externally_visible));
 #define GPS_FRESH_MS 2000U
 /* A GPS altitude that has not moved for this long is a held, stale fix. */
 #define GPS_STUCK_MS 2000U
+/* The estimator wakes at least once per barometer period (Baro_ODR_25); a
+ * sensor that delivers nothing for EST_SILENT_MS is silent. */
+#define EST_STEP_MS   40U
+#define EST_SILENT_MS 200U
 
+static uint32_t last_imu_ms, last_baro_ms, last_step_ms;
+static float dt;   /* the last filter step's */
+/* The ascent filter carried forward from its last clean barometer step by
+ * the IMU alone: where it re-seats when the barometer turns implausible. */
+static struct { float alt, vel; bool have, baro_was_ok; } imu_track;
 static struct { float sea; uint32_t moved_ms; bool seen; } gps_watch;
+
+static inline bool ekf_velocity_trusted(void) { return plaus_imu_ok(&plaus); }
+static inline bool barometer_trusted(void) { return plaus_baro_ok(&plaus); }
+/* With neither, nothing can find Apogee: the drogue timer does. On the IMU
+ * alone, not before the last clean barometer state could have reached it. */
+static inline bool apogee_source_trusted(void)
+{
+  return barometer_trusted() ||
+         (ekf_velocity_trusted() && backup_apogee_possible(&dr, now_ms()));
+}
 
 static inline void note_fallback(void)
 {
   g_fc_sensor_fallback = (uint8_t)((plaus_baro_ok(&plaus) ? 0U : 1U) |
                                    (plaus_velocity_ok(&plaus) ? 0U : 2U) |
+                                   (plaus.imu_stuck || plaus.imu_silent ? 4U : 0U) |
                                    (dr.active ? 8U : 0U));
 }
 
-static inline bool ekf_velocity_trusted(void) { return plaus_velocity_ok(&plaus); }
-static inline bool barometer_trusted(void) { return plaus_baro_ok(&plaus); }
 static inline void sensor_verdicts_reset(void)
 {
   plaus_reset(&plaus);
+  backup_armed = 0U;
   backup_dr_reset(&dr);
+  last_imu_ms = last_baro_ms = last_step_ms = now_ms();
   gps_watch.seen = false;
+  imu_track.have = false;
+  imu_track.baro_was_ok = true;
 }
 
 /* A fresh GPS fix whose altitude still moves: GPS_FRESH_MS since the last
@@ -98,10 +126,14 @@ static inline void note_chutes(uint32_t t)
   backup_dr_chutes(&dr, t, c & option(Parachute_Deployed), c & option(Parachute_Expanded));
 }
 
-/* The ascent filter's velocity against the trend of its own altitude. */
+/* The ascent filter's velocity against the trend of its own altitude. It
+ * needs the barometer: while that is implausible (the filter dead-reckons
+ * on the IMU, so its altitude follows its velocity) the verdict keeps its
+ * last value, and with a silent IMU there is no filter velocity. */
 static inline void watch_velocity(fu32 conf, float dt)
 {
   if (!(conf & option(Using_Ascent_KF)) || dt <= 0.0f) return;
+  if (!barometer_trusted() || plaus.imu_silent) return;
   const float trend = (svec(0).alt - svec(STATE_HISTORY - 1).alt) /
                       (dt * (float)(STATE_HISTORY - 1));
   plaus_velocity(&plaus, svec(0).vel, trend);
@@ -179,7 +211,7 @@ static inline void flight_advance(state promotion)
   __set_PRIMASK(reset_mask);
   if (wrong_sequence) message(id "enter vigilant mode", false);
 
-  if (promotion == Launch) fc_sd_capture_event(FC_LOG_LAUNCH_DETECTED, false);
+  if (promotion == Launch) { timer_update(LaunchClock); fc_sd_capture_event(FC_LOG_LAUNCH_DETECTED, false); }
   if (promotion == Landed) sd_launch_landed(now_ms());
 #if FC_GROUND_TEST
   if (promotion == Landed) igt_landed();
@@ -560,7 +592,7 @@ void evaluate_rocket_state(fu32 conf, float dt)
     case Armed:     detect_boost(conf);         break;
     case Launch:    detect_ascent(conf);        break;
     case Ascent:    detect_coast(conf);         break;
-    case Coast:     detect_apogee(conf);        break;
+    case Coast:     if (apogee_source_trusted()) detect_apogee(conf); break;
     case Apogee:    detect_descent(conf);       break;
     case Descent:   detect_reefing(conf);       break;
     case Reefing:   detect_landed(conf);        break;
@@ -574,8 +606,10 @@ void evaluate_rocket_state(fu32 conf, float dt)
   watch_velocity(conf, dt);
 
   /* Vigilant mode, and in any case while the filter velocity is untrusted:
-   * then the barometer alone can still find Apogee. */
-  if (curr < Reefing && ((conf & option(Vigilant_Mode)) || !ekf_velocity_trusted()))
+   * then the barometer alone can still find Apogee. With neither trusted
+   * the drogue timer does (backup_deployments). */
+  if (curr < Reefing && ((conf & option(Vigilant_Mode)) || !ekf_velocity_trusted()) &&
+      apogee_source_trusted())
   {
     vigilant_watchdog(conf, curr, dt);
   }
@@ -622,24 +656,91 @@ static inline void enter_flight_mode(fu32 conf)
 
 
 /* The ascent update: the barometer, or IMU dead reckoning while the
- * barometer is implausible. Also run by the IGT host replay. */
-void estimator_ascent_update(void)
+ * barometer is implausible or silent ('fresh' false: no sample for
+ * EST_SILENT_MS). Also run by the IGT host replay. */
+void estimator_ascent_update(bool fresh)
 {
-  bool usable = plaus_baro(&plaus, now_ms(), meas.baro.alt);
+  const uint32_t t = now_ms();
+  bool usable = false;
+  if (fresh)
+  {
+    usable = plaus_baro(&plaus, t, meas.baro.alt);
+    last_baro_ms = t;
+  }
+  else plaus_baro_missing(&plaus);
   if (usable && plaus_baro_suspect(&plaus))
   {
     const float innovation = meas.baro.alt - imedsv.alt;
     usable = innovation <= PLAUS_BARO_GATE_M && innovation >= -PLAUS_BARO_GATE_M;
   }
+  if (usable && plaus_baro_repeat(&plaus) && fabsf(imedsv.vel) >= PLAUS_BARO_REPEAT_MPS) usable = false;
+  const float imu[6] = { meas.accl.x, meas.accl.y, meas.accl.z,
+                         meas.gyro.x, meas.gyro.y, meas.gyro.z };
+  plaus_imu(&plaus, imu);
+  /* The IMU's own velocity change this step, from the prediction. */
+  const float imu_dv = imedsv.vel - svec(1).vel;
   if (usable) ascent_update();
   else ascent_hold();
-  /* A trustworthy altitude: the reference of a later dead reckoning. */
-  if (usable && plaus_baro_clean(&plaus)) backup_dr_trust(&dr, now_ms(), svec(0).alt, svec(0).vel, true);
+  if (imu_track.have)
+  {
+    imu_track.vel += imu_dv;
+    imu_track.alt += imu_track.vel * dt;
+  }
+  /* The barometer just turned implausible: the samples it gave before the
+   * verdict (up to 12 steps of a wild one) may have thrown the filter, so it
+   * re-seats on the last clean step carried forward by the IMU. */
+  const bool baro_ok = barometer_trusted();
+  if (imu_track.baro_was_ok && !baro_ok && imu_track.have)
+  {
+    svec(0).alt = imedsv.alt = imu_track.alt;
+    svec(0).vel = imedsv.vel = imu_track.vel;
+  }
+  imu_track.baro_was_ok = baro_ok;
+  /* A trustworthy altitude: a clean barometer, or the IMU's dead reckoning
+   * while the barometer is out and the IMU is not suspect (capped). */
+  if (usable && plaus_baro_clean(&plaus))
+  {
+    backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, true);
+    if (svec(0).alt >= BACKUP_ARM_ALT) backup_armed = 1U;
+    imu_track.alt = svec(0).alt;
+    imu_track.vel = svec(0).vel;
+    imu_track.have = true;
+  }
+  else if (!usable && !barometer_trusted() && ekf_velocity_trusted())
+    backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, false);
+  note_fallback();
+}
+
+/* The IMU is silent: a step on the barometer alone. The velocity is the
+ * altitude trend over the history; the filter velocity is untrusted, so
+ * Apogee is the Vigilant check's on the barometer. */
+static void estimator_ascent_baro_only(float *dt)
+{
+  const uint32_t t = now_ms();
+  *dt = fsec(timer_exchange(AscentKF));
+  const bool usable = plaus_baro(&plaus, t, meas.baro.alt) &&
+                      !(plaus_baro_repeat(&plaus) && fabsf(svec(1).vel) >= PLAUS_BARO_REPEAT_MPS);
+  last_baro_ms = t;
+  kf_svec next = svec(1);
+  if (usable)
+  {
+    next.alt = meas.baro.alt;
+    const float span = *dt * (float)(STATE_HISTORY - 1);
+    if (span > 0.0f) next.vel = (next.alt - svec(STATE_HISTORY - 1).alt) / span;
+  }
+  else next.alt += next.vel * *dt;
+  svec(0) = next;
+  imedsv = next;
+  if (usable && plaus_baro_clean(&plaus))
+  {
+    backup_dr_trust(&dr, t, next.alt, next.vel, true);
+    if (next.alt >= BACKUP_ARM_ALT) backup_armed = 1U;
+  }
   note_fallback();
 }
 
 /* No trustworthy altitude: the prediction descends from the last
- * trustworthy one, biased to stay below it (deploy_backup.h). */
+ * trustworthy one at the fast-biased rate (deploy_backup.h). */
 static void descent_dead_reckon(uint32_t t)
 {
   descent_hold();
@@ -649,26 +750,33 @@ static void descent_dead_reckon(uint32_t t)
 }
 
 /* One descent step: predict, then the barometer; GPS altitude while the
- * barometer is implausible and a fix is fresh and moving; else the
- * dead-reckoned prediction. Then the state machine. Also run by the IGT
- * host replay. */
-void estimator_descent_step(fu32 conf, float dt)
+ * barometer is implausible or silent and a fix is fresh and moving; else
+ * the dead-reckoned prediction. Then the state machine. Also run by the
+ * IGT host replay. */
+void estimator_descent_step(fu32 conf, float dt, est_input in)
 {
   const uint32_t t = now_ms();
   /* Descent takes every sample of a plausible barometer, ejection pulses
    * included, as it always did: the low-order descent filter absorbs single
-   * steps, and the drogue timing depends on it. */
-  (void)plaus_baro(&plaus, t, meas.baro.alt);
+   * steps, and the drogue timing depends on it. A GPS-only step brings no
+   * barometer sample. */
+  if (in == EST_BARO) { (void)plaus_baro(&plaus, t, meas.baro.alt); last_baro_ms = t; }
+  else if (in == EST_SILENT) plaus_baro_missing(&plaus);
   note_chutes(t);
   /* Watched on every step, so a fix held since long ago is never new. */
   const bool gps_ok = gps_trusted(t);
   descent_predict(dt);
   /* On the ground (Landed on) every deployment is done and a resting
    * barometer may repeat itself: always take it, as before. */
-  if (plaus_baro_ok(&plaus) || current() >= Landed)
+  if (current() >= Landed)
+  {
+    if (in != EST_SILENT) descent_update();
+    else descent_hold();
+  }
+  else if (in != EST_SILENT && plaus_baro_ok(&plaus))
   {
     descent_update();
-    if (current() < Landed && plaus_baro_clean(&plaus)) backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, true);
+    if (plaus_baro_clean(&plaus)) backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, true);
   }
   else if (gps_ok)
   {
@@ -682,6 +790,136 @@ void estimator_descent_step(fu32 conf, float dt)
   }
   note_fallback();
   evaluate_rocket_state(conf, dt);
+}
+
+/* The drogue timer (deploy_backup.h): from Launch to Apogee, if nothing
+ * has fired the drogue BACKUP_DROGUE_MS after Launch, it fires now, held
+ * while a trustworthy barometer still climbs. Runs on every pass, and on
+ * every wake without a sample, so a silent sensor cannot stop it. */
+static void backup_deployments(void)
+{
+  const state s = current();
+  if (s < Launch || s > Apogee || !backup_armed ||
+      (load(&g_conf, Acq) & option(Parachute_Deployed))) return;
+  const uint32_t t = now_ms();
+  const bool climbing = barometer_trusted() && (uint32_t)(t - last_baro_ms) < EST_SILENT_MS &&
+                        svec(1).alt > svec(STATE_HISTORY - 1).alt + SVHIST_ALT_TREND;
+  if (!backup_drogue_due(timer_fetch(LaunchClock), climbing)) return;
+
+  ++g_fc_backup_drogues;
+  message(id "backup: no drogue by the apogee timer; firing it", true);
+  const fu32 conf = fetch_and(&g_conf, ~option(Ascent_KF_Staged), AcqRel);
+  if (conf & option(Using_Ascent_KF)) descent_initialize(conf);
+  backup_dr_measured_only(&dr);
+  if (s < Apogee)
+  {
+    flight_advance(Apogee);
+    extremes.max_alt = maxd(svec(1).alt, extremes.max_alt);
+  }
+  release_parachute(false, false);
+  flight_advance(Descent);
+}
+
+/* The estimator's loop state: shared by its thread and the IGT host
+ * replay, which plays the same events (dt: above). */
+static fu8 accum;
+
+/* The eval_stage events the next pass waits for. */
+ULONG estimator_request(bool ascent)
+{
+  if (!ascent) return Baro_Mask | EVAL_STAGE_GPS;
+  if (accum & EVALUATION_STAGED) return Baro_Mask;
+  /* A silent IMU: the barometer alone drives the steps. */
+  return plaus.imu_silent ? Gyro_Mask | Accl_Mask | Baro_Mask : Gyro_Mask | Accl_Mask;
+}
+
+/* A manual Deploy/Expand switched to the descent filter between passes:
+ * samples offered to the ascent filter are not descent steps. */
+void estimator_left_ascent(void)
+{
+  accum = 0;
+}
+
+/* One pass on the events got; 'done' 0: the wait timed out (EST_STEP_MS).
+ * Ascent: an IMU pair stages a prediction, the next barometer sample the
+ * update and the state machine; a silent barometer (EST_SILENT_MS) an
+ * update without it, a silent IMU a step on the barometer alone. Descent:
+ * each fresh barometer sample, a GPS fix outside Vigilant mode, or a silent
+ * barometer's period runs one step. Then the drogue timer. */
+void estimator_pass(bool ascent, ULONG done)
+{
+  const uint32_t t = now_ms();
+  fu32 conf;
+
+  if (!ascent)
+  {
+    /* A GPS fix while the barometer is silent is a step without it: the
+     * barometer's last sample is not taken again. */
+    const bool baro_silent = (uint32_t)(t - last_baro_ms) >= EST_SILENT_MS;
+    const est_input in = (done & Baro_Mask) ? EST_BARO
+                       : baro_silent && ((done & EVAL_STAGE_GPS) ||
+                                         (uint32_t)(t - last_step_ms) >= EST_STEP_MS) ? EST_SILENT
+                       : (done & EVAL_STAGE_GPS) ? EST_GPS
+                       : EST_NONE;
+    if (in != EST_NONE)
+    {
+      conf = load(&g_conf, Acq);
+      dt = fsec(timer_exchange(DescentKF));
+      estimator_descent_step(conf, dt, in);
+      last_step_ms = t;
+    }
+  }
+  else
+  {
+    accum |= (fu8)(done & (Baro_Mask | Gyro_Mask | Accl_Mask));
+    const bool baro_silent = (uint32_t)(t - last_baro_ms) >= EST_SILENT_MS &&
+                             (uint32_t)(t - last_step_ms) >= EST_STEP_MS;
+
+    if ((accum & EVALUATION_STAGED) && ((accum & Baro_Mask) || baro_silent))
+    {
+      const bool fresh = accum & Baro_Mask;
+      accum &= ~(EVALUATION_STAGED | Baro_Mask);
+
+      estimator_ascent_update(fresh);
+
+      conf = fetch_and(&g_conf,
+                       ~option(Ascent_KF_Staged), AcqRel);
+      distribution_wake(); /* it waits for the stage to clear */
+
+      sweetbench_catch(3);
+      evaluate_rocket_state(conf, dt);
+      sweetbench_start(3, 50, true);
+      last_step_ms = t;
+    }
+    else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
+    {
+      accum |= EVALUATION_STAGED;
+      accum &= ~(Gyro_Mask | Accl_Mask);
+      last_imu_ms = t;
+      plaus_imu_silent(&plaus, false);
+
+      conf = fetch_or(&g_conf,
+                      option(Ascent_KF_Staged), AcqRel);
+
+      dt = fsec(timer_exchange(AscentKF));
+      ascent_predict(dt, conf);
+    }
+    else if (plaus.imu_silent && (accum & Baro_Mask))
+    {
+      accum &= ~Baro_Mask;
+      conf = load(&g_conf, Acq);
+      estimator_ascent_baro_only(&dt);
+      evaluate_rocket_state(conf, dt);
+      last_step_ms = t;
+    }
+    else if (!(accum & EVALUATION_STAGED) && (uint32_t)(t - last_imu_ms) >= EST_SILENT_MS)
+    {
+      plaus_imu_silent(&plaus, true);
+      note_fallback();
+    }
+  }
+
+  backup_deployments();
 }
 
 /* Task */
@@ -706,9 +944,7 @@ static void evaluation_control_barrier(void)
  * runs one predict/update and the state machine. */
 void estimator_thread_entry(ULONG _)
 {
-  fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
-  float dt = 0;
   bool was_ascent;
 
   evaluation_control_barrier();
@@ -716,6 +952,11 @@ void estimator_thread_entry(ULONG _)
   enter_flight_mode(conf);
   fc_watchdog_checkpoint();
   was_ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
+  /* A restarted thread (sensor restart, reset to Startup) starts its loop
+   * afresh, as when these were its locals. */
+  accum = 0;
+  dt = 0.0f;
+  last_imu_ms = last_baro_ms = last_step_ms = now_ms();
   thread_comm_estimator_leave();
 
   while (!(conf & option(Eval_Abort_Flag)))
@@ -726,73 +967,40 @@ void estimator_thread_entry(ULONG _)
     {
       /* A manual Deploy/Expand switched to the descent filter between
        * passes: samples offered to the ascent filter are not descent steps. */
-      accum = 0;
+      estimator_left_ascent();
       (void)tx_event_flags_set(&eval_stage,
                                ~(ULONG)(Baro_Mask | Gyro_Mask | Accl_Mask | EVAL_STAGE_GPS),
                                TX_AND);
     }
     was_ascent = ascent;
 
-    ULONG done, request = !ascent ? Baro_Mask | EVAL_STAGE_GPS
-                        : accum & EVALUATION_STAGED ? Baro_Mask
-                        : Gyro_Mask | Accl_Mask;
+    const ULONG request = estimator_request(ascent);
+    ULONG done = 0;
 
-    if (tx_event_flags_get(&eval_stage, request | EVAL_STAGE_WAKE,
-                           TX_OR_CLEAR, &done,
-                           TX_WAIT_FOREVER) != TX_SUCCESS)
-    { continue; }
+    /* At least once per barometer period, so a silent sensor still gets
+     * its steps and the drogue timer its checks. */
+    const UINT got = tx_event_flags_get(&eval_stage, request | EVAL_STAGE_WAKE,
+                                        TX_OR_CLEAR, &done, EST_STEP_MS);
+    if (got == TX_NO_EVENTS) done = 0;
+    else if (got != TX_SUCCESS) continue;
 
     evaluation_control_barrier();
     /* One pass (a predict, or an update and the state machine) never
      * interleaves a recovery command such as a manual Deploy/Expand. */
     thread_comm_estimator_enter();
-    if ((done & request) == 0U ||
-        ascent != (bool)(load(&g_conf, Acq) & option(Using_Ascent_KF)))
+    if (ascent != (bool)(load(&g_conf, Acq) & option(Using_Ascent_KF)))
     {
-      /* A mode wake, or the filter changed while this thread waited for the
-       * guard: decide again on the current mode. */
+      /* The filter changed while this thread waited for the guard: decide
+       * again on the current mode. */
       thread_comm_estimator_leave();
       continue;
     }
 
-    if (!ascent)
-    {
-      conf = load(&g_conf, Acq);
-      dt = fsec(timer_exchange(DescentKF));
-      estimator_descent_step(conf, dt);
-    }
-    else
-    {
-      accum |= (fu8)(done & (Baro_Mask | Gyro_Mask | Accl_Mask));
+    estimator_pass(ascent, done & request);
 
-      if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
-      {
-        accum &= ~(EVALUATION_STAGED | Baro_Mask);
-
-        estimator_ascent_update();
-
-        conf = fetch_and(&g_conf,
-                         ~option(Ascent_KF_Staged), AcqRel);
-        distribution_wake(); /* it waits for the stage to clear */
-
-        sweetbench_catch(3);
-        evaluate_rocket_state(conf, dt);
-        sweetbench_start(3, 50, true);
-      }
-      else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
-      {
-        accum |= EVALUATION_STAGED;
-        accum &= ~(Gyro_Mask | Accl_Mask);
-
-        conf = fetch_or(&g_conf,
-                        option(Ascent_KF_Staged), AcqRel);
-
-        dt = fsec(timer_exchange(AscentKF));
-        ascent_predict(dt, conf);
-      }
-    }
     /* A switch made by this pass (Apogee) keeps the samples offered since. */
     was_ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
+    conf = load(&g_conf, Acq);
     thread_comm_estimator_leave();
   }
 }

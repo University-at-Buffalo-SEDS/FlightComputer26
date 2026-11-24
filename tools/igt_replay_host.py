@@ -182,7 +182,7 @@ void fc_recovery_request_eval_stop(void) { if (rud_abort_t < 0) rud_abort_t = re
  * vote came (the firmware's own detector is static in estimator_thread.c). */
 #include "rud_detect.h"
 static rud_state shadow; static bool margins;
-extern volatile uint8_t g_fc_sensor_fallback;
+extern volatile uint8_t g_fc_sensor_fallback; extern volatile uint32_t g_fc_backup_drogues;
 static unsigned fallback_seen;
 static unsigned max_motion, max_pressure, max_joint; static float max_wxy, max_axy, max_rate;
 static void rud_shadow(fu32 conf)
@@ -229,17 +229,24 @@ static const char *names[] = {"Startup", "Postinit", "Armed", "Launch", "Ascent"
 /* control_thread.c baro_conf.odr = Baro_ODR_25: one conversion every 40 ms. The FSM
  * counts samples (MIN_SAMP_*, 8-entry history), so the period sets its timing. */
 #define BARO_PERIOD_MS 40U
-/* IGT_SILENT="gps:40.5:1e9": the GPS delivers no fix in the window (replay
- * seconds), as an absent receiver. */
-static float gps_silent[2] = {-1, -1};
-static bool silent_gps(void) { const double t = replay_s(); return t >= gps_silent[0] && t < gps_silent[1]; }
+/* IGT_SILENT="gps:40.5:1e9,baro:...": a sensor that delivers nothing in the
+ * window (replay seconds), as a dead or unplugged one. */
+enum { SIL_IMU, SIL_BARO, SIL_GPS };
+static float silent_win[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
+static bool silent(int s) { const double t = replay_s(); return t >= silent_win[s][0] && t < silent_win[s][1]; }
 static void parse_silent(const char *spec)
 {
-  const char *at = spec ? strstr(spec, "gps:") : NULL;
-  if (!at) return;
-  char *end;
-  gps_silent[0] = strtof(at + 4, &end);
-  gps_silent[1] = strtof(end + 1, &end);
+  static const char *names[3] = {"imu", "baro", "gps"};
+  while (spec && *spec) {
+    for (int i = 0; i < 3; ++i) {
+      const size_t n = strlen(names[i]);
+      if (!strncmp(spec, names[i], n) && spec[n] == ':') {
+        char *end; silent_win[i][0] = strtof(spec + n + 1, &end); silent_win[i][1] = strtof(end + 1, &end); spec = end; break;
+      }
+    }
+    spec = strchr(spec, ',');
+    if (spec) ++spec;
+  }
 }
 int main(int argc, char **argv)
 {
@@ -271,12 +278,19 @@ int main(int argc, char **argv)
   g_conf |= option(Launch_Requested);
 
   state last = current();
-  float dt = 0, max_alt = -1e9f, max_alt_t = 0, max_vel = -1e9f, max_vel_t = 0;
-  bool predicted = false, rail_set = false;
+  float max_alt = -1e9f, max_alt_t = 0, max_vel = -1e9f, max_vel_t = 0;
+  bool rail_set = false;
   kf_gps rail = {0};
   float times[Flight_States];
   for (unsigned i = 0; i < Flight_States; ++i) times[i] = -1;
   uint32_t end_after = 0;
+  /* The estimator's events: an IMU pair just after each barometer sample
+   * (ascent), and each barometer sample. A sample the estimator does not
+   * wait for at that moment (estimator_request) is dropped, as is one
+   * arriving while it sleeps: the replay schedule of an intact flight stays
+   * as it always was. With no event for EST_STEP_MS (40 ms) it wakes
+   * anyway, as tx_event_flags_get with its timeout. */
+  uint32_t last_wake = host_now;
   printf("[%9.3f] Launch accepted; replay t=0\n", 0.0);
   for (;;) {
     ++host_now;
@@ -288,36 +302,44 @@ int main(int argc, char **argv)
     if (!igt_sim_running() && end_after == 0) end_after = host_now + 6000;
     if (end_after && host_now >= end_after) break;
     if (replay_s() > 1500) break;
-    if (host_now < host_wake || rud_abort_t >= 0) continue;
+    if (rud_abort_t >= 0) continue;
+    if (host_now < host_wake) { last_wake = host_now; continue; }
     conf = load(&g_conf, Acq);
-    if (conf & option(Using_Ascent_KF)) {
-      if (!predicted && host_now % BARO_PERIOD_MS == 1U) {
-        igt_override_accl(a, host_now); igt_override_gyro(g, host_now);
-        memcpy(&meas.accl, a, sizeof a); memcpy(&meas.gyro, g, sizeof g);
-        dt = fsec(timer_exchange(AscentKF));
-        ascent_predict(dt, conf);
-        predicted = true;
-      } else if (predicted && baro_due) {
-        memcpy(&meas.baro, b, sizeof b);
-        estimator_ascent_update();
-        predicted = false;
-        rud_shadow(conf);
-        evaluate_rocket_state(conf, dt);
-      } else continue;
-    } else if (baro_due) {
-      memcpy(&meas.baro, b, sizeof b);
+    const bool ascent = conf & option(Using_Ascent_KF);
+    const ULONG request = estimator_request(ascent);
+    ULONG arrived = 0;
+    if (ascent && host_now % BARO_PERIOD_MS == 1U && !silent(SIL_IMU)) {
+      igt_override_accl(a, host_now); igt_override_gyro(g, host_now);
+      if (request & Gyro_Mask) { memcpy(&meas.accl, a, sizeof a); memcpy(&meas.gyro, g, sizeof g); }
+      arrived |= Gyro_Mask | Accl_Mask;
+    }
+    if (baro_due && !silent(SIL_BARO)) {
+      if (request & Baro_Mask) memcpy(&meas.baro, b, sizeof b);
+      arrived |= Baro_Mask;
+    }
+    if (!ascent && baro_due) {
       kf_gps fix;
-      if (igt_gps_fix(&fix.sea, host_now) && !silent_gps()) {
+      if (igt_gps_fix(&fix.sea, host_now) && !silent(SIL_GPS)) {
         if (!rail_set) { rail = fix; rail_set = true; }
         meas.gps.sea = fix.sea;
         meas.gps.lon = fabsf(fix.lon - rail.lon);
         meas.gps.lat = fabsf(fix.lat - rail.lat);
         timer_update(HeartbeatRF);
       }
-      dt = fsec(timer_exchange(DescentKF));
-      estimator_descent_step(conf, dt);
-      fallback_seen |= g_fc_sensor_fallback;
-    } else continue;
+    }
+    const ULONG done = arrived & request;
+    if (!done && host_now - last_wake < 40U) continue;
+    last_wake = host_now;
+    const uint32_t idx = sm.idx;
+    if (ascent && (done & Baro_Mask)) rud_shadow(conf);
+    estimator_pass(ascent, done);
+    fallback_seen |= g_fc_sensor_fallback;
+    if (!done && sm.idx == idx) {
+      /* A timeout without a step: nothing new to trace. */
+      state now = current();
+      while (last < now) { ++last; times[last] = replay_s(); }
+      continue;
+    }
     /* evaluate_rocket_state advanced sm.idx: the newest estimate is svec(1). */
     const kf_svec *s = &svec(1);
     if (s->alt > max_alt) { max_alt = s->alt; max_alt_t = replay_s(); }
@@ -332,7 +354,7 @@ int main(int argc, char **argv)
   if (margins) printf("\"rud_max_motion\": %u, \"rud_max_pressure\": %u, \"rud_max_gyro_xy_dps\": %.1f, "
                       "\"rud_max_accel_xy_mps2\": %.1f, \"rud_max_baro_rate_mps\": %.1f, \"rud_max_joint_pct\": %u, ",
                       max_motion, max_pressure, max_wxy, max_axy, max_rate, max_joint);
-  if (margins) printf("\"fallback_bits\": %u, ", fallback_seen);
+  if (margins) printf("\"backup_drogues\": %u, \"fallback_bits\": %u, ", (unsigned)g_fc_backup_drogues, fallback_seen);
   for (unsigned i = Launch; i < Flight_States; ++i) printf("\"%s_s\": %.3f, ", names[i], times[i]);
   printf("\"drogue_s\": %.3f, \"drogue_est_alt_m\": %.2f, \"main_s\": %.3f, \"main_est_alt_m\": %.2f, "
          "\"est_apogee_m\": %.2f, \"est_apogee_s\": %.3f, \"est_max_vel_mps\": %.2f, \"est_max_vel_s\": %.3f, "

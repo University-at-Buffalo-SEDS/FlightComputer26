@@ -30,6 +30,7 @@ typedef enum relative_timer : fu8 {
   SDFlush,
   MessageRemote,
   MessageLocal,
+  LaunchClock,
 
   Time_Users
 } timer;

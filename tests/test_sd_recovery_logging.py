@@ -32,7 +32,8 @@ class RecoveryLogging(unittest.TestCase):
         publish = function((ROOT / 'Core/Src/sensor_thread.c').read_text(), 'static inline void descent_publish(')
         self.assertNotIn('evaluate_rocket_state', publish)
         self.assertIn('tx_event_flags_set(&eval_stage, stage, TX_OR);', publish)
-        self.assertIn('evaluate_rocket_state(conf, dt);', function(self.eval, 'void estimator_thread_entry('))
+        self.assertIn('estimator_pass(ascent, done & request);', function(self.eval, 'void estimator_thread_entry('))
+        self.assertIn('evaluate_rocket_state(conf, dt);', function(self.eval, 'void estimator_pass('))
         landed = function(self.eval, 'static inline void detect_landed(')
         announce = function(self.eval, 'static inline void announce_recovery(')
         for body in (landed, announce):
