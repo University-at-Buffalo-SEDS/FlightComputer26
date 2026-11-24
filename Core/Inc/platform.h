@@ -72,13 +72,6 @@ typedef arm_matrix_instance_f32 matrix;
 /* Thread/object creation failure (any value other than TX_SUCCESS). */
 #define FC_INIT_FAILED 1337
 
-/* Old spellings, still used by sdpipeline.c and telemetry.c; new code uses
- * for (;;), while (!(...)), 0 and FC_INIT_FAILED. */
-#define WE_ARE_SO_BACK 0
-#define IT_IS_NOW_OVER FC_INIT_FAILED
-
-#define MrAnalog(exit_predicate) while (!(exit_predicate))
-
 #define popcount(mask) (fu8)__builtin_popcount((unsigned)(mask))
 
 extern void *_sbrk(ptrdiff_t);

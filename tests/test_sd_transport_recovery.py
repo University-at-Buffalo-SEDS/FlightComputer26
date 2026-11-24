@@ -32,7 +32,6 @@ typedef void VOID; typedef char CHAR; typedef uint16_t fu16;
 #define UNUSED(x) ((void)(x))
 #define SDMMC1_IRQn 49
 #define id "SD "
-#define WE_ARE_SO_BACK 0
 #define sweetbench_start(x) ((void)0)
 #define sweetbench_catch(x) ((void)0)
 #define log_err(...) ((void)0)
@@ -109,7 +108,7 @@ UINT fx_file_close(void*f){(void)f;++close_calls;return FX_SUCCESS;}UINT fx_medi
 /* Only a remount (the card left its slot) may open a new part here. */
 unsigned allow_part,parts;
 static inline int sd_pipeline_open(const char*s){(void)s;assert(allow_part&&"unexpected rotation/open in retained-write control");
- ++parts;memcpy(disk,"header\n",7);file.fx_file_current_file_size=position=7;sd_file_open=1;return WE_ARE_SO_BACK;}
+ ++parts;memcpy(disk,"header\n",7);file.fx_file_current_file_size=position=7;sd_file_open=1;return 0;}
 '''
 MAIN=r'''
 static const char row[]="1700000000123,9876,raw,1.25\n";

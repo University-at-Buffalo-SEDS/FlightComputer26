@@ -21,7 +21,7 @@ def compile_and_run(test, source, *flags):
 
 def loop_body(source, entry):
     start = source.index(entry)
-    loop = source.index('MrAnalog (WE_ARE_SO_BACK)', start) if 'MrAnalog (WE_ARE_SO_BACK)' in source[start:] else source.index('for (;;)', start)
+    loop = source.index('for (;;)', start)
     end = source.index('\nUINT create_', loop)
     return source[loop:end]
 

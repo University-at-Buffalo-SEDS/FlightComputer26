@@ -56,7 +56,8 @@ class QualificationContractTests(unittest.TestCase):
         telemetry = (root / "Core" / "Src" / "telemetry.c").read_text(
             encoding="utf-8"
         )
-        loop = telemetry.split("MrAnalog (WE_ARE_SO_BACK)", 1)[1]
+        entry = telemetry[telemetry.index("void telemetry_thread_entry"):]
+        loop = entry.split("for (;;)", 1)[1]
         self.assertIn("process_all_queues_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)", loop)
         self.assertNotIn("dispatch_tx_queue_timeout(TELEMETRY_QUEUE_SERVICE_BUDGET_MS)", loop)
 

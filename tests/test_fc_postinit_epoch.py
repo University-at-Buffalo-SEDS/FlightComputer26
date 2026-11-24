@@ -45,7 +45,6 @@ STUB = r'''
 #define option(x) (x)
 #define load(p,o) (*(p))
 #define fetch_and(p,v,o) (*(p)&=(v))
-#define MrAnalog(condition) while (!(condition))
 #define id "FC "
 typedef uint32_t fu32;
 typedef struct {float x,y,z;} f_xyz;

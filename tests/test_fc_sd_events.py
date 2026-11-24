@@ -139,7 +139,6 @@ int main(void){
 #include <stdint.h>
 #include <string.h>
 #include "sd_file_limit.h"
-#define WE_ARE_SO_BACK 0
 #define FX_SUCCESS 0
 
 unsigned flight_sd_prepare_io(void){return 0U;}

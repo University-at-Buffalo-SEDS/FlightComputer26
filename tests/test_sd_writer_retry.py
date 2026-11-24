@@ -10,7 +10,6 @@ class SdWriterRetryTests(unittest.TestCase):
 #include <stdint.h>
 #include <string.h>
 #include "sd_file_limit.h"
-#define WE_ARE_SO_BACK 0
 typedef unsigned UINT;
 typedef unsigned long ULONG;
 typedef uint16_t fu16;
@@ -127,9 +126,7 @@ bool sd_io_failed(unsigned status){return status!=0U;}
 #define SDFlush 0
 #define sd_file_service_turn() ((void)0)
 #define sd_file_service_forever() ((void)0)
-#define WE_ARE_SO_BACK 0
 #define id "SD "
-#define MrAnalog(condition) while(!(condition))
 #define load(p,o) stopped
 #define option(x) 1U
 #define log_err(...) ((void)0)
@@ -195,8 +192,7 @@ bool flight_sd_io_verified(void){return true;}
 bool sd_io_failed(unsigned status){return status!=0U;}
 #define FX_ALREADY_CREATED 2U
 #define FX_OPEN_FOR_WRITE 3U
-#define WE_ARE_SO_BACK 0
-#define IT_IS_NOW_OVER 1
+#define FC_INIT_FAILED 1
 #define id "SD "
 #define fetch_and(...) (stopped=false)
 #define load(...) stopped
@@ -239,7 +235,7 @@ int main(void){
  create_fail=2;header_fail=1;
  assert(sd_pipeline_prepare()==TX_SUCCESS);
  line.off[0]=11;sd_buffer_records[0]=1; /* acquisition before card mount */
- assert(sd_pipeline_init("test")==WE_ARE_SO_BACK);
+ assert(sd_pipeline_init("test")==0);
  assert(line.off[0]==11&&sd_buffer_records[0]==1);
  assert(sd_accepting&&sd_file_open==1&&sema_creates==1&&sema_deletes==0);
  assert(creates==3&&opens==1&&writes==2&&sleeps==3&&g_sd_write_errors==3);
@@ -247,7 +243,7 @@ int main(void){
  tx_semaphore_delete(&line.full);sd_file_open=0;sd_accepting=false;sd_prepared=false;
  create_fail=99;stop_on_sleep=true;
  unsigned oldcreates=creates,oldsleeps=sleeps;
- assert(sd_pipeline_init("stop")==IT_IS_NOW_OVER);
+ assert(sd_pipeline_init("stop")==FC_INIT_FAILED);
  assert(!sd_accepting&&shutdowns==1&&sema_creates==2&&sema_deletes==1&&line.full==1);
  assert(creates==oldcreates+1&&sleeps==oldsleeps+1);
 }

@@ -1666,7 +1666,7 @@ void telemetry_thread_entry(ULONG _)
   av_bay_underglow_reapply();
   led_on(light[Green].port, light[Green].pin);
 
-  MrAnalog (WE_ARE_SO_BACK)
+  for (;;)
     {
     g_telemetry_service_stage = 6U;
     can_bus_process_rx();

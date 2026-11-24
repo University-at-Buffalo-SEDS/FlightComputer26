@@ -391,7 +391,7 @@ resume_segment:
     const fu16 write_len = end - sd_writer_skip;
     fc_unlock(&line.lock);
     if (boundary && write_len == 0U && !sd_retry_pending) {
-        if (sd_file_open == 2U && sd_pipeline_open("landed:") != WE_ARE_SO_BACK)
+        if (sd_file_open == 2U && sd_pipeline_open("landed:") != 0)
         { ++g_sd_write_errors; return false; }
         if (sd_file_open && !sd_flush_close_current()) return false;
         sd_file_open = 0U;
@@ -424,7 +424,7 @@ resume_segment:
             sd_file_open = false;
         }
         if (sd_launch_pending) { sd_launch_active = true; sd_launch_pending = false; }
-        if (sd_file_open != 1U && sd_pipeline_open("part:") != WE_ARE_SO_BACK)
+        if (sd_file_open != 1U && sd_pipeline_open("part:") != 0)
         { ++g_sd_write_errors; return false; }
         sd_retry_offset = file.fx_file_current_file_size;
         sd_retry_pending = true;
@@ -545,7 +545,7 @@ static inline int sd_pipeline_init(const char *surprise)
     UINT st = sd_pipeline_prepare();
     if (st != TX_SUCCESS) {
         log_err(id "sema %s %u", surprise, st);
-        return IT_IS_NOW_OVER;
+        return FC_INIT_FAILED;
     }
     sd_launch_active = beyond(Armed) && !sd_launch_completed;
     if (current() >= Landed && !sd_landed_seen) sd_launch_landed(now_ms());
@@ -555,13 +555,13 @@ static inline int sd_pipeline_init(const char *surprise)
         {
             sd_pipeline_shutdown(surprise);
             /* The static semaphore retains its normal boot-long lifetime. */
-            return IT_IS_NOW_OVER;
+            return FC_INIT_FAILED;
         }
-        if (sd_pipeline_open(surprise) == WE_ARE_SO_BACK)
+        if (sd_pipeline_open(surprise) == 0)
         {
             sd_accepting = true;
             g_fc_sd_state = 0U;
-            return WE_ARE_SO_BACK;
+            return 0;
         }
         /* This loop already retries every second: an operator retry is taken. */
         g_fc_sd_state = FC_SD_NOT_READY;
@@ -572,7 +572,7 @@ static inline int sd_pipeline_init(const char *surprise)
 
 static inline int sd_pipeline_open(const char *surprise)
 {
-    if (flight_sd_prepare_io() != FX_SUCCESS) return IT_IS_NOW_OVER;
+    if (flight_sd_prepare_io() != FX_SUCCESS) return FC_INIT_FAILED;
     UINT st;
     if (!sd_file_open)
     {
@@ -581,36 +581,36 @@ static inline int sd_pipeline_open(const char *surprise)
             file.fx_file_name = unique_sd_filename(suffix);
             st = fx_file_create(&sdio_disk, file.fx_file_name);
             if (st != FX_ALREADY_CREATED) break;
-            if (!flight_sd_io_verified()) { flight_sd_note_io_failure(st); return IT_IS_NOW_OVER; }
+            if (!flight_sd_io_verified()) { flight_sd_note_io_failure(st); return FC_INIT_FAILED; }
         }
         if (st != FX_SUCCESS)
         {
             flight_sd_note_io_failure(st);
             if (!sd_accepting) log_err(id "fcreate %s %u", surprise, st);
-            return IT_IS_NOW_OVER;
+            return FC_INIT_FAILED;
         }
-        if (!flight_sd_io_verified()) return IT_IS_NOW_OVER;
+        if (!flight_sd_io_verified()) return FC_INIT_FAILED;
         st = fx_file_open(&sdio_disk, &file, file.fx_file_name, FX_OPEN_FOR_WRITE);
         if (st != FX_SUCCESS)
         {
             flight_sd_note_io_failure(st);
             if (!sd_accepting) log_err(id "fopen %s %u", surprise, st);
-            return IT_IS_NOW_OVER;
+            return FC_INIT_FAILED;
         }
         sd_file_open = 2U;
-        if (!flight_sd_io_verified()) return IT_IS_NOW_OVER;
+        if (!flight_sd_io_verified()) return FC_INIT_FAILED;
     }
     if (sd_file_open == 2U)
     {
         static const char header[] = SD_FILE_HEADER;
         static_assert(BOARD_UPTIME_FREQUENCY_HZ == 1000U, "SD_FORMAT_BLOCK tick_hz");
         st = fx_file_seek(&file, 0U);
-        if (st == FX_SUCCESS && !flight_sd_io_verified()) return IT_IS_NOW_OVER;
+        if (st == FX_SUCCESS && !flight_sd_io_verified()) return FC_INIT_FAILED;
         if (st == FX_SUCCESS) st = fx_file_write(&file, (void *)header, sizeof(header) - 1U);
-        if (sd_io_failed(st)) return IT_IS_NOW_OVER;
+        if (sd_io_failed(st)) return FC_INIT_FAILED;
         sd_file_open = 1U;
     }
-    return WE_ARE_SO_BACK;
+    return 0;
 }
 
 #ifdef FC_SD_SERVICE
@@ -850,7 +850,7 @@ void sd_pipeline_task()
     UINT st;
     const char *surprise = "failed:";
 
-    if (sd_pipeline_init(surprise) != WE_ARE_SO_BACK)
+    if (sd_pipeline_init(surprise) != 0)
     {
         sd_file_service_forever();
         return;
@@ -859,7 +859,7 @@ void sd_pipeline_task()
     bool pending_write = false;
     sd_refresh_clock();
     uint32_t refreshed_at = now_ms();
-    MrAnalog (load(&g_conf, Acq) & option(SD_Pipeline_Reset))
+    while (!(load(&g_conf, Acq) & option(SD_Pipeline_Reset)))
     {
         const uint32_t clock_now = now_ms();
         if ((uint32_t)(clock_now - refreshed_at) >= 1000U) {

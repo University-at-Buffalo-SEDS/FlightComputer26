@@ -16,7 +16,6 @@ class LandedWindow(unittest.TestCase):
 #include <stdint.h>
 #include <string.h>
 #include "sd_file_limit.h"
-#define WE_ARE_SO_BACK 0
 #define FX_SUCCESS 0
 #define sweetbench_start(x) ((void)0)
 #define sweetbench_catch(x) ((void)0)
