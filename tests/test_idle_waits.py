@@ -28,9 +28,9 @@ def loop_body(source, entry):
 
 class IdleWaits(unittest.TestCase):
     def test_service_loops_block_instead_of_yielding(self):
-        dma = loop_body((ROOT / 'Core/Src/dma.c').read_text(), 'void dma_entry')
+        dma = (ROOT / 'Core/Src/dma.c').read_text()
         self.assertNotIn('tx_thread_relinquish', dma)
-        self.assertEqual(dma.count('dma_wait_ready('), 2)
+        self.assertNotIn('tx_thread_create', dma)
         telemetry = loop_body((ROOT / 'Core/Src/telemetry.c').read_text(),
                               'void telemetry_entry')
         self.assertNotIn('tx_thread_relinquish', telemetry)
@@ -81,32 +81,41 @@ class IdleWaits(unittest.TestCase):
 
     def test_sample_waits_never_lose_a_wakeup(self):
         source = (ROOT / 'Core/Src/dma.c').read_text()
-        waits = source[source.index('void HAL_GPIO_EXTI_Rising_Callback'):
-                       source.index('/* DMA routine */')]
+        exti = source[source.index('void HAL_GPIO_EXTI_Rising_Callback'):
+                      source.index('/* DMA routine */')]
         propagate = source[source.index('static inline void propagate_rx'):
                            source.index('static inline void start_dma_transfer')]
+        acquire = source[source.index('static void acquire_ready_samples(void)'):
+                         source.index('/* Idle wait */')]
+        waits = source[source.index('void dma_wait_for_samples(fu16 wanted)'):
+                       source.index('/* Created before the distribution thread starts')]
         defines = ''.join(re.findall(r'#define (?:SENSOR_IDLE_POLL_TICKS|DIST_WAKE_OTHER) [^\n]*\n', source))
-        harness = r'''
+        harness = r"""
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
-typedef unsigned long ULONG; typedef unsigned UINT; typedef uint16_t fu16;
+typedef unsigned long ULONG; typedef unsigned UINT; typedef uint16_t fu16; typedef uint8_t fu8;
 typedef struct { ULONG bits; } TX_EVENT_FLAGS_GROUP;
-enum { TX_OR=0, TX_OR_CLEAR=1, TX_SUCCESS=0, TX_NO_EVENTS=7, Rel=0, Acq=0,
-       Sensors=3, SENSOR_BUF_SIZE=8 };
+enum { TX_OR=0, TX_OR_CLEAR=1, TX_SUCCESS=0, TX_NO_EVENTS=7, Rel=0, Acq=0, Rlx=0,
+       Sensors=3, SENSOR_BUF_SIZE=8, Sensor_Baro=0, Sensor_Gyro=1, Sensor_Accl=2,
+       BARO_EXTI_GPIO_Port=0, BARO_EXTI_Pin=0, GPIO_PIN_SET=1, Using_Ascent_KF=1 };
 enum { DMA_BARO_MASK=1, DMA_GYRO_MASK=6, DMA_ACCL_MASK=24 };
+#define DMA_SENSOR_MASKS (DMA_BARO_MASK | DMA_GYRO_MASK | DMA_ACCL_MASK)
+#define option(x) (x)
 #define SENSOR_PROBE(x) ((void)0)
-#define fc_lock(x) ((void)(x))
-#define fc_unlock(x) ((void)(x))
 static struct { fu16 drdy, relv; } flags;
 static struct { int next, valid; } select;
 static const struct { fu16 drdy[3]; int offset[3]; } gpio = {{1,6,24},{0,0,0}};
 static uint8_t dmarx[SENSOR_BUF_SIZE], taskrx[3][SENSOR_BUF_SIZE - 2];
-static int dma_locks[3];
-static unsigned slept, last_timeout; static ULONG last_request;
+static unsigned g_conf = Using_Ascent_KF, slept, last_timeout, reads[3], baro_pin;
+static ULONG last_request;
+static bool baro_level_seen;
 static void (*during_wait)(void);
 static fu16 fetch_or(fu16 *p, fu16 m, int o) { (void)o; fu16 v = *p; *p |= m; return v; }
-static fu16 load(fu16 *p, int o) { (void)o; return *p; }
+static fu16 fetch_and(fu16 *p, fu16 m, int o) { (void)o; fu16 v = *p; *p &= m; return v; }
+#define load(p, o) (*(p))
+static int HAL_GPIO_ReadPin(int port, int pin) { (void)port; (void)pin; return (int)baro_pin; }
 static UINT tx_event_flags_set(TX_EVENT_FLAGS_GROUP *g, ULONG bits, UINT op) {
   (void)op; g->bits |= bits; return TX_SUCCESS; }
 static UINT tx_event_flags_get(TX_EVENT_FLAGS_GROUP *g, ULONG want, UINT op,
@@ -117,43 +126,50 @@ static UINT tx_event_flags_get(TX_EVENT_FLAGS_GROUP *g, ULONG want, UINT op,
   if (g->bits & want) { *got = g->bits & want; g->bits &= ~want; return TX_SUCCESS; }
   ++slept; return TX_NO_EVENTS;  /* blocked for the timeout */
 }
-static TX_EVENT_FLAGS_GROUP dma_ready, sample_ready;
-''' + defines + waits + propagate + r'''
+static TX_EVENT_FLAGS_GROUP sensor_events;
+""" + defines + exti + propagate + r"""
+/* One SPI transfer: consumes the ready flag and delivers the bytes. */
+static void start_dma_transfer(void) {
+  flags.drdy &= ~gpio.drdy[select.next]; ++reads[select.next]; propagate_rx(); }
+""" + acquire + waits + r"""
 static void irq_baro(void) { HAL_GPIO_EXTI_Rising_Callback(DMA_BARO_MASK); }
-static void deliver_baro(void) { select.next = 0; propagate_rx(); }
 int main(void) {
-  /* EXTI raises the flag and then the event, so a DMA task that read no
-   * flag still wakes at once. */
+  /* EXTI raises the flag and then the event, so a thread that read no flag
+   * still wakes at once. */
   HAL_GPIO_EXTI_Rising_Callback(DMA_GYRO_MASK);
-  assert(flags.drdy == DMA_GYRO_MASK && dma_ready.bits == DMA_GYRO_MASK);
-  dma_ready.bits = 0; flags.drdy = 0;
-  during_wait = irq_baro; dma_wait_ready(DMA_BARO_MASK);
-  assert(slept == 0 && last_timeout == SENSOR_IDLE_POLL_TICKS);
-  /* Idle: block for at most one tick. */
-  dma_wait_ready(DMA_BARO_MASK); assert(slept == 1);
-
-  /* A sample already pending in relv never sleeps, even with its event
-   * consumed by an earlier wait. */
-  slept = 0; flags.relv = DMA_BARO_MASK; sample_ready.bits = 0; last_request = 0;
-  dma_wait_for_samples(DMA_BARO_MASK); assert(slept == 0 && last_request == 0);
-  /* Pending samples the caller cannot consume do not keep it awake. */
-  dma_wait_for_samples(DMA_GYRO_MASK); assert(slept == 1);
-  assert(last_request == (DMA_GYRO_MASK | DIST_WAKE_OTHER));
-  /* A sample published between the relv check and the wait is kept. */
-  slept = 0; flags.relv = 0; during_wait = deliver_baro;
-  dma_wait_for_samples(DMA_BARO_MASK); assert(slept == 0);
-  assert(flags.relv == DMA_BARO_MASK);
+  assert(flags.drdy == DMA_GYRO_MASK && sensor_events.bits == DMA_GYRO_MASK);
+  /* A ready sensor is read before deciding to wait: no sleep, and the
+   * consumed data-ready event does not wake the next wait. */
+  dma_wait_for_samples(DMA_GYRO_MASK);
+  assert(slept == 0 && reads[Sensor_Gyro] == 1 && flags.relv == DMA_GYRO_MASK);
+  /* A sample already pending in relv never sleeps. */
+  dma_wait_for_samples(DMA_GYRO_MASK); assert(slept == 0 && reads[Sensor_Gyro] == 1);
+  /* Pending samples the caller cannot consume do not keep it awake; idle
+   * blocks for at most one tick on data-ready or a wake. */
+  sensor_events.bits = 0;
+  dma_wait_for_samples(DMA_BARO_MASK); assert(slept == 1 && last_timeout == SENSOR_IDLE_POLL_TICKS);
+  assert(last_request == (DMA_SENSOR_MASKS | DIST_WAKE_OTHER));
+  /* A data-ready interrupt during the wait is read before returning. */
+  slept = 0; during_wait = irq_baro;
+  dma_wait_for_samples(DMA_BARO_MASK);
+  assert(slept == 0 && reads[Sensor_Baro] == 1 && (flags.relv & DMA_BARO_MASK));
   /* distribution_wake() ends any sample wait. */
   flags.relv = 0; distribution_wake();
-  dma_wait_for_samples(DMA_SENSOR_MASKS_TEST); assert(slept == 0);
-  dma_wait_for_samples(DMA_SENSOR_MASKS_TEST); assert(slept == 1);
+  dma_wait_for_samples(DMA_SENSOR_MASKS); assert(slept == 0);
+  dma_wait_for_samples(DMA_SENSOR_MASKS); assert(slept == 1);
+  /* Every ready sensor is read in one pass, gyro first. */
+  flags.drdy = DMA_SENSOR_MASKS; reads[0] = reads[1] = reads[2] = 0;
+  dma_wait_for_samples(DMA_BARO_MASK);
+  assert(reads[0] == 1 && reads[1] == 1 && reads[2] == 1 && flags.drdy == 0);
+  /* Descent (no ascent filter): only the barometer is sampled. */
+  g_conf = 0; flags.relv = 0; flags.drdy = DMA_SENSOR_MASKS; reads[0] = reads[1] = reads[2] = 0;
+  dma_wait_for_samples(DMA_BARO_MASK);
+  assert(reads[Sensor_Baro] == 1 && !reads[Sensor_Gyro] && !reads[Sensor_Accl]);
+  assert(flags.drdy == (DMA_GYRO_MASK | DMA_ACCL_MASK));
   return 0;
 }
-'''
-        harness = harness.replace('DMA_SENSOR_MASKS_TEST',
-                                  '(DMA_BARO_MASK | DMA_GYRO_MASK | DMA_ACCL_MASK)')
+"""
         compile_and_run(self, harness, '-Wno-unused-parameter')
-
 
 if __name__ == '__main__':
     unittest.main()

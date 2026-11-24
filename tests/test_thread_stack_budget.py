@@ -53,7 +53,7 @@ class ThreadStackBudget(unittest.TestCase):
                             "TX_APP_MEM_POOL_SIZE")
         self.stacks = {name: _define(self.tasks, name) for name in (
             "TLMT_STACK_BYTES", "RECV_STACK_BYTES", "EVAL_STACK_BYTES",
-            "DIST_STACK_BYTES", "DMA_STACK_BYTES")}
+            "DIST_STACK_BYTES")}
 
     def test_router_callers_keep_the_measured_stack_budget(self):
         for name in ("TLMT_STACK_BYTES", "RECV_STACK_BYTES",

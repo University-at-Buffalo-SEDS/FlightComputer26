@@ -19,11 +19,15 @@
 bool try_fetch_baro(baro *);
 bool try_fetch_gyro(f_xyz *);
 bool try_fetch_accl(f_xyz *);
-/* Block the distribution task until one of the wanted DMA samples is
- * published, distribution_wake() is called, or one scheduler tick passes. */
+/* Read every ready sensor; unless a wanted sample is pending, block until a
+ * data-ready interrupt, distribution_wake() or one scheduler tick, then read
+ * again. Distribution thread only. */
 #define DMA_SENSOR_MASKS (DMA_BARO_MASK | DMA_GYRO_MASK | DMA_ACCL_MASK)
 void dma_wait_for_samples(fu16 wanted);
 void distribution_wake(void);
+/* The DMA completion semaphore and sensor events; before the distribution
+ * thread starts. */
+UINT dma_acquisition_init(void);
 
 
 /* SD pipeline */

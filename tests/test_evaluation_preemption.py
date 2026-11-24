@@ -81,14 +81,14 @@ class EvaluationPreemption(unittest.TestCase):
     def test_no_thread_between_recovery_and_the_application_group(self):
         tasks = (ROOT / 'Core/Inc/fctasks.h').read_text()
         priorities = {name: macro(tasks, name) for name in
-                      ('RECV_PRIORITY', 'EVAL_PRIORITY', 'DIST_PRIORITY', 'DMA_PRIORITY', 'TLMT_PRIORITY')}
+                      ('RECV_PRIORITY', 'EVAL_PRIORITY', 'DIST_PRIORITY', 'TLMT_PRIORITY')}
         self.assertEqual(priorities['RECV_PRIORITY'], 0)
         self.assertFalse([n for n, p in priorities.items() if 1 <= p <= 4], priorities)
         creates = []
         for path in list((ROOT / 'Core/Src').glob('*.c')) + [ROOT / 'FileX/App/app_filex.c']:
             text = path.read_text()
             creates += [path.name for _ in re.finditer(r'\btx_thread_create\(', text)]
-        self.assertEqual(sorted(creates), ['app_filex.c', 'distribution.c', 'dma.c',
+        self.assertEqual(sorted(creates), ['app_filex.c', 'distribution.c',
                                            'evaluation.c', 'recovery.c', 'telemetry.c'])
         filex = (ROOT / 'FileX/App/app_filex.c').read_text()
         self.assertIn('FX_APP_THREAD_PRIO, FX_APP_PREEMPTION_THRESHOLD', filex)

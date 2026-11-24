@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class SensorDmaCompletion(unittest.TestCase):
     def test_missed_drdy_level_recovers_once_without_duplicate_reads(self):
         source = (ROOT / 'Core/Src/dma.c').read_text()
-        start = source.index('    bool baro_high =')
-        end = source.index('    drdy_snapshot =', start)
+        start = source.index('  bool baro_high =')
+        end = source.index('  static const fu8 order[Sensors]', start)
         production = source[start:end]
         harness = r'''
 #include <assert.h>
@@ -48,7 +48,7 @@ int main(void){
         callbacks = source[source.index("void HAL_SPI_TxRxCpltCallback"):
                            source.index("void HAL_GPIO_EXTI_Rising_Callback")]
         transfer = source[source.index("static inline void start_dma_transfer"):
-                          source.index("/* Task */")]
+                          source.index("/* Read every sensor whose data is ready")]
         harness = r'''
 #include <assert.h>
 #include <stdint.h>

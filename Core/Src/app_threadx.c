@@ -138,7 +138,9 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
     startup_fault(2U);
   }
 
-  ret = create_dma_task(memory_ptr);
+  /* Stage 3 was the DMA thread; the distribution thread now reads the
+   * sensors itself. */
+  ret = dma_acquisition_init();
   if (ret != TX_SUCCESS)
   {
     startup_fault(3U);

@@ -82,18 +82,4 @@ void distribution_entry(ULONG);
 UINT create_distribution_task(TX_BYTE_POOL *);
 
 
-/* DMA Task */
-
-#define DMA_INPUT 0
-#define DMA_TIME_SLICE 15
-#define DMA_PRIORITY 5
-#define DMA_STACK_BYTES 4096
-#define DMA_STACK_ULONG (DMA_STACK_BYTES / sizeof(ULONG))
-
-extern TX_THREAD dma_task;
-
-void dma_entry(ULONG);
-UINT create_dma_task(TX_BYTE_POOL *);
-
-
 #endif /* FC_TASKS */

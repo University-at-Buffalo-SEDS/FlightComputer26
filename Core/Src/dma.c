@@ -14,18 +14,17 @@
 #define id "DM "
 
 
-TX_THREAD dma_task;
+/* Sensor acquisition, run by the distribution thread itself (it used to be
+ * a separate DMA thread). A data-ready interrupt marks the sensor in
+ * flags.drdy and wakes the thread through sensor_events; the thread reads
+ * every ready sensor with one SPI1 DMA transfer each, waiting on
+ * dma_completion, and keeps the bytes in taskrx[] until try_fetch_*()
+ * consumes them. distribution_wake() ends a wait early for inputs that have
+ * no data-ready line (GPS, commands, the evaluator's stage). The one-tick
+ * timeout only bounds the barometer DRDY level recovery below and
+ * configuration changes; it never delays a signalled sample. */
 static TX_SEMAPHORE dma_completion;
-
-/* Idle wakeups. A sensor data-ready IRQ wakes the DMA task through
- * dma_ready; a delivered sample (or distribution_wake()) wakes the
- * distribution task through sample_ready. Both tasks block on these instead
- * of yielding in a loop, so ThreadX can reach its WFI idle. The one-tick
- * timeout only bounds inputs that have no signal of their own (the barometer
- * DRDY level recovery below and configuration changes); it never delays a
- * signalled sample. */
-static TX_EVENT_FLAGS_GROUP dma_ready;
-static TX_EVENT_FLAGS_GROUP sample_ready;
+static TX_EVENT_FLAGS_GROUP sensor_events;
 #define SENSOR_IDLE_POLL_TICKS 1U
 #define DIST_WAKE_OTHER 0x10000UL
 
@@ -55,13 +54,15 @@ static const uint8_t tx[Sensors][SENSOR_BUF_SIZE] = {
 
 volatile uncached uint8_t dmarx[SENSOR_BUF_SIZE];
 
-static volatile uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
-
-static spinlock dma_locks[Sensors] = {0};
+/* Read but not yet consumed, per sensor (only the distribution thread). */
+static uint8_t taskrx[Sensors][SENSOR_BUF_SIZE - 2] = {0};
 
 static dmasel select = {Sensors, 0};
 
+/* drdy: set by the data-ready interrupts. relv: read, not yet consumed. */
 static fdma flags = {0, 0};
+
+static bool baro_level_seen;
 
 
 /* Consumer */
@@ -79,8 +80,6 @@ bool try_fetch_baro(baro *buf)
 
   sweetbench_catch(0);
 
-  fc_lock(&dma_locks[Sensor_Baro]);
-
   pres = U24(taskrx[Sensor_Baro][0],
              taskrx[Sensor_Baro][1],
              taskrx[Sensor_Baro][2]);
@@ -89,7 +88,6 @@ bool try_fetch_baro(baro *buf)
              taskrx[Sensor_Baro][4],
              taskrx[Sensor_Baro][5]);
 
-  fc_unlock(&dma_locks[Sensor_Baro]);
 
   buf->tmp = baro_compensate_temp(temp);
   buf->prs = baro_compensate_pres(pres);
@@ -132,13 +130,10 @@ bool try_fetch_gyro(f_xyz *buf)
 
   sweetbench_catch(1);
 
-  fc_lock(&dma_locks[Sensor_Gyro]);
-
   gx = I16(taskrx[Sensor_Gyro][0], taskrx[Sensor_Gyro][1]);
   gy = I16(taskrx[Sensor_Gyro][2], taskrx[Sensor_Gyro][3]);
   gz = I16(taskrx[Sensor_Gyro][4], taskrx[Sensor_Gyro][5]);
   
-  fc_unlock(&dma_locks[Sensor_Gyro]);
 
   buf->x = gx * inv_sens[init_rng];
   buf->y = gy * inv_sens[init_rng];
@@ -172,13 +167,10 @@ bool try_fetch_accl(f_xyz *buf)
 
   sweetbench_catch(2);
 
-  fc_lock(&dma_locks[Sensor_Accl]);
-
   ax = I16(taskrx[Sensor_Accl][0], taskrx[Sensor_Accl][1]);
   ay = I16(taskrx[Sensor_Accl][2], taskrx[Sensor_Accl][3]);
   az = I16(taskrx[Sensor_Accl][4], taskrx[Sensor_Accl][5]);
   
-  fc_unlock(&dma_locks[Sensor_Accl]);
 
   buf->x = ax * lsb_to_g;
   buf->y = ay * lsb_to_g;
@@ -221,37 +213,8 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   SENSOR_PROBE(g_sim_sensor_ready_irqs);
 	(void) fetch_or(&flags.drdy, GPIO_Pin, Rel);
-  /* After the flag: a task that saw no flag still finds this event. */
-  (void) tx_event_flags_set(&dma_ready, GPIO_Pin, TX_OR);
-}
-
-
-/* Idle waits */
-
-static inline void dma_wait_ready(ULONG wanted)
-{
-  ULONG seen;
-  (void) tx_event_flags_get(&dma_ready, wanted, TX_OR_CLEAR, &seen,
-                            SENSOR_IDLE_POLL_TICKS);
-}
-
-void dma_wait_for_samples(fu16 wanted)
-{
-  ULONG seen;
-  /* A sample already published (event consumed by an earlier wait) is
-   * still pending in relv: never sleep on it. One published after this
-   * check sets its event first, so the wait below returns at once. */
-  if (load(&flags.relv, Acq) & wanted)
-  {
-    return;
-  }
-  (void) tx_event_flags_get(&sample_ready, (ULONG)wanted | DIST_WAKE_OTHER,
-                            TX_OR_CLEAR, &seen, SENSOR_IDLE_POLL_TICKS);
-}
-
-void distribution_wake(void)
-{
-  (void) tx_event_flags_set(&sample_ready, DIST_WAKE_OTHER, TX_OR);
+  /* After the flag: a thread that saw no flag still finds this event. */
+  (void) tx_event_flags_set(&sensor_events, GPIO_Pin, TX_OR);
 }
 
 
@@ -260,18 +223,13 @@ void distribution_wake(void)
 static inline void propagate_rx(void)
 {
   SENSOR_PROBE(g_sim_sensor_dma_delivered);
-  fc_lock(&dma_locks[select.next]);
-
-  volatile uint8_t *src = (volatile uint8_t *)(dmarx + gpio.offset[select.next]);
-  volatile uint8_t *dst = taskrx[select.next];
+  const uint8_t *src = (const uint8_t *)(dmarx + gpio.offset[select.next]);
+  uint8_t *dst = taskrx[select.next];
 
   size_t n = sizeof taskrx / Sensors;
   for (size_t i = 0; i < n; ++i) dst[i] = src[i];
 
-  fc_unlock(&dma_locks[select.next]);
-
   fetch_or(&flags.relv, gpio.drdy[select.next], Rel);
-  (void) tx_event_flags_set(&sample_ready, gpio.drdy[select.next], TX_OR);
 }
 
 static inline void start_dma_transfer(void)
@@ -279,7 +237,7 @@ static inline void start_dma_transfer(void)
   SENSOR_PROBE(g_sim_sensor_dma_started);
   HAL_StatusTypeDef st;
 
-  /* A completion may arrive before the task blocks. A semaphore retains
+  /* A completion may arrive before the thread blocks. A semaphore retains
    * that event; aborting a not-yet-sleeping thread loses the notification. */
   while (tx_semaphore_get(&dma_completion, TX_NO_WAIT) == TX_SUCCESS) {}
   select.valid = 0;
@@ -315,125 +273,69 @@ static inline void start_dma_transfer(void)
   }
 }
 
-
-/* Task */
-
-void dma_entry(ULONG _)
+/* Read every sensor whose data is ready: gyro, accelerometer, barometer.
+ * Before Apogee all three are sampled; the descent filter uses only the
+ * barometer (the IMU is disabled then). Each sensor is read at most once per
+ * call, so a failed transfer (flag restored) waits for the next call. */
+static void acquire_ready_samples(void)
 {
-  fu16 drdy_snapshot;
-  fu16 relv_snapshot;
-  bool baro_level_seen = false;
-
-  MrAnalog (WE_ARE_SO_BACK)
+  /* Recover a high DRDY missed while EXTI was being enabled. Observe each
+   * high period once: BMP390 non-latched DRDY stays high for 2.5ms even
+   * after a data read, so repeatedly polling high would duplicate samples. */
+  bool baro_high = HAL_GPIO_ReadPin(BARO_EXTI_GPIO_Port, BARO_EXTI_Pin) == GPIO_PIN_SET;
+  if (baro_high && !baro_level_seen)
   {
-    /* Recover a high DRDY missed while EXTI was being enabled. Observe each
-     * high period once: BMP390 non-latched DRDY stays high for 2.5ms even
-     * after a data read, so repeatedly polling high would duplicate samples. */
-    bool baro_high = HAL_GPIO_ReadPin(BARO_EXTI_GPIO_Port, BARO_EXTI_Pin) == GPIO_PIN_SET;
-    if (baro_high && !baro_level_seen)
+    fetch_or(&flags.drdy, DMA_BARO_MASK, Rel);
+  }
+  baro_level_seen = baro_high;
+
+  static const fu8 order[Sensors] = {Sensor_Gyro, Sensor_Accl, Sensor_Baro};
+  const fu16 sampled = (load(&g_conf, Acq) & option(Using_Ascent_KF))
+                     ? DMA_SENSOR_MASKS : DMA_BARO_MASK;
+  const fu16 ready = load(&flags.drdy, Acq) & sampled;
+
+  for (fu8 k = 0; k < Sensors; ++k)
+  {
+    if (ready & gpio.drdy[order[k]])
     {
-      fetch_or(&flags.drdy, DMA_BARO_MASK, Rel);
+      select.next = order[k];
+      start_dma_transfer();
     }
-    baro_level_seen = baro_high;
-    drdy_snapshot = load(&flags.drdy, Acq);
-
-    if (load(&g_conf, Acq) & option(Using_Ascent_KF))
-    {
-      if (drdy_snapshot == 0)
-      {
-        dma_wait_ready(DMA_SENSOR_MASKS);
-        continue;
-      }
-
-      bool dr_b = drdy_snapshot & DMA_BARO_MASK;
-      bool dr_g = drdy_snapshot & DMA_GYRO_MASK;
-      bool dr_a = drdy_snapshot & DMA_ACCL_MASK;
-
-      relv_snapshot = load(&flags.relv, Acq);
-
-      bool re_b = relv_snapshot & DMA_BARO_MASK;
-      bool re_g = relv_snapshot & DMA_GYRO_MASK;
-      bool re_a = relv_snapshot & DMA_ACCL_MASK;
-
-      /* The selector is defined as a QMC-minimized
-       * expression of 3 data-ready and 3 relevance flags.
-       */
-      if (dr_g && ((!dr_b && (re_g || !dr_a)) ||
-                   (!re_g && (!dr_a || re_a || re_b))))
-      {
-        select.next = Sensor_Gyro;
-      }
-      else if (dr_a && (((!dr_g || re_g) && (!dr_b || !re_a))
-                                  || (dr_g && re_b && re_g)))
-      {
-        select.next = Sensor_Accl;
-      }
-      else select.next = Sensor_Baro;
-    }
-    else
-    {
-      if (!(drdy_snapshot & DMA_BARO_MASK))
-      {
-        dma_wait_ready(DMA_BARO_MASK);
-        continue;
-      }
-      else select.next = Sensor_Baro;
-    }
-    
-    start_dma_transfer();
   }
 }
 
-UINT create_dma_task(TX_BYTE_POOL *byte_pool)
+/* Idle wait */
+
+void dma_wait_for_samples(fu16 wanted)
 {
-	UINT st;
-  CHAR *pointer;
-
-	const char *critical = "creation failure:";
-
-  st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
-												DMA_STACK_BYTES, TX_NO_WAIT);
-
-  if (st != TX_SUCCESS)
+  ULONG seen;
+  acquire_ready_samples();
+  /* A sample already read is still pending in relv: never sleep on it. A
+   * data-ready interrupt after the read above sets its event first, so the
+   * wait below returns at once. */
+  if (load(&flags.relv, Acq) & wanted)
   {
-    log_err(id "stack %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return;
   }
+  (void) tx_event_flags_get(&sensor_events, (ULONG)DMA_SENSOR_MASKS | DIST_WAKE_OTHER,
+                            TX_OR_CLEAR, &seen, SENSOR_IDLE_POLL_TICKS);
+  acquire_ready_samples();
+}
 
-  st = tx_semaphore_create(&dma_completion, "Sensor DMA completion", 0);
-  if (st != TX_SUCCESS)
-  {
-    tx_byte_release(pointer);
+void distribution_wake(void)
+{
+  (void) tx_event_flags_set(&sensor_events, DIST_WAKE_OTHER, TX_OR);
+}
+
+/* Created before the distribution thread starts (it owns acquisition). */
+UINT dma_acquisition_init(void)
+{
+  if (tx_semaphore_create(&dma_completion, "Sensor DMA completion", 0) != TX_SUCCESS)
     return IT_IS_NOW_OVER;
-  }
-
-  if (tx_event_flags_create(&dma_ready, id "R") != TX_SUCCESS ||
-      tx_event_flags_create(&sample_ready, id "S") != TX_SUCCESS)
-  {
-    tx_semaphore_delete(&dma_completion);
-    tx_byte_release(pointer);
-    return IT_IS_NOW_OVER;
-  }
-
-  st = tx_thread_create(&dma_task,
-                        "DMA Task",
-                        dma_entry,
-                        DMA_INPUT,
-                        pointer,
-                        DMA_STACK_BYTES,
-                        DMA_PRIORITY,
-                        /* No preemption threshold */
-                        DMA_PRIORITY,
-                        TX_NO_TIME_SLICE,
-                        TX_AUTO_START);
-
-	if (st != TX_SUCCESS)
+  if (tx_event_flags_create(&sensor_events, id "R") != TX_SUCCESS)
   {
     tx_semaphore_delete(&dma_completion);
-    tx_byte_release(pointer);
-    log_err(id "task %s %u", critical, st);
     return IT_IS_NOW_OVER;
   }
-
   return TX_SUCCESS;
 }
