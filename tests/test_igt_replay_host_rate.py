@@ -12,7 +12,7 @@ ODR_PERIOD_MS = {'Baro_ODR_200': 5, 'Baro_ODR_100': 10, 'Baro_ODR_50': 20, 'Baro
 
 class HostReplayRate(unittest.TestCase):
     def test_baro_period_matches_the_flight_configuration(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         conf = recovery[recovery.index('static struct baro_config baro_conf'):]
         odr = re.search(r'\.odr = (Baro_ODR_\w+)', conf).group(1)
         tool = (ROOT / 'tools/igt_replay_host.py').read_text()

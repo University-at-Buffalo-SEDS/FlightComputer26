@@ -60,7 +60,7 @@ int main(void)
 
 class HealthSchedule(unittest.TestCase):
     def test_same_grid_as_the_timer(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         code = '\n'.join(re.sub(r'^static ', 'static ', l) for l in
                          [recovery[recovery.index('static bool health_active;'):recovery.index('/* Task */', recovery.index('static bool health_active;'))]])
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,10 +71,10 @@ class HealthSchedule(unittest.TestCase):
             subprocess.run([str(exe)], check=True)
 
     def test_loop_runs_checks_and_never_waits_past_them(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         self.assertNotIn('tx_timer_create', recovery)
         self.assertNotIn('monotonic_checks', recovery)
-        entry = recovery[recovery.index('void recovery_entry(ULONG st)'):]
+        entry = recovery[recovery.index('void control_thread_entry(ULONG st)'):]
         entry = entry[:entry.index('\n}\n')]
         loop = entry[entry.index('for (;;)'):]
         self.assertLess(entry.index('health_start();'), entry.index('for (;;)'))

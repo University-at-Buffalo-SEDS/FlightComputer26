@@ -61,7 +61,7 @@ int main(void){for(int v=0;v<=20;v++)printf("%d %d\n",v,network_flight_state((ui
             self.assertEqual(table[v], expected.get(v, -1), f'value {v}')
 
     def test_receivers_use_the_contract_mapping(self):
-        dist = function((ROOT / 'Core/Src/distribution.c').read_text(), 'implicit_postinit')
+        dist = function((ROOT / 'Core/Src/sensor_thread.c').read_text(), 'implicit_postinit')
         self.assertNotIn('> G_Aborted', dist, 'implicit_postinit must accept InFlight (16)')
         self.assertIn('network_flight_state(', dist)
         cache = (ROOT / 'Core/Src/flight_state_cache.c').read_text()

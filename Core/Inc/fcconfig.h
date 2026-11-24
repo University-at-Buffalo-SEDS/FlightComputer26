@@ -182,7 +182,7 @@
 
 /* The launch site centres the GPS acceptance windows. The compiled site is
  * the boot default; the station can set another one before Launch
- * (LAUNCH_SITE, distribution.c). Order: lat, lon, sea. */
+ * (LAUNCH_SITE, sensor_thread.c). Order: lat, lon, sea. */
 extern float g_launch_site[3];
 #define LAUNCH_SITE_LAT (g_launch_site[0])
 #define LAUNCH_SITE_LON (g_launch_site[1])

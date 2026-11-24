@@ -35,10 +35,10 @@ class FCReliableRefusalAckTests(unittest.TestCase):
         path = Path(cls.tmp.name)
         template = (ROOT / 'tests/native/fc_reliable_refusal_ack.in.c').read_text()
         sources = {'Manual_Abort_handler': 'Core/Src/telemetry.c',
-                   'on_fc_packet_impl': 'Core/Src/distribution.c',
-                   'flight_cmd_repeat': 'Core/Src/distribution.c',
+                   'on_fc_packet_impl': 'Core/Src/sensor_thread.c',
+                   'flight_cmd_repeat': 'Core/Src/sensor_thread.c',
                    'flight_state_cache_order': 'Core/Src/flight_state_cache.c',
-                   'implicit_postinit': 'Core/Src/distribution.c',
+                   'implicit_postinit': 'Core/Src/sensor_thread.c',
                    'clear_managed_cache': 'Core/Src/flight_state_cache.c',
                    'persist_update': 'Core/Src/flight_state_cache.c',
                    'deployment_pulse_start': 'Core/Src/deployment_pulse.c',

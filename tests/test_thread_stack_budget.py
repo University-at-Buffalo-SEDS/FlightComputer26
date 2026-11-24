@@ -48,20 +48,20 @@ def _define(text: str, name: str) -> int:
 
 class ThreadStackBudget(unittest.TestCase):
     def setUp(self):
-        self.tasks = (ROOT / "Core/Inc/fctasks.h").read_text()
+        self.tasks = (ROOT / "Core/Inc/FC-Threads.h").read_text()
         self.pool = _define((ROOT / "AZURE_RTOS/App/app_azure_rtos_config.h").read_text(),
                             "TX_APP_MEM_POOL_SIZE")
         self.stacks = {name: _define(self.tasks, name) for name in (
-            "TLMT_STACK_BYTES", "RECV_STACK_BYTES", "EVAL_STACK_BYTES",
-            "DIST_STACK_BYTES")}
+            "TELEMETRY_STACK_BYTES", "CONTROL_STACK_BYTES", "ESTIMATOR_STACK_BYTES",
+            "SENSOR_STACK_BYTES")}
 
     def test_router_callers_keep_the_measured_stack_budget(self):
-        for name in ("TLMT_STACK_BYTES", "RECV_STACK_BYTES",
-                     "EVAL_STACK_BYTES", "DIST_STACK_BYTES"):
+        for name in ("TELEMETRY_STACK_BYTES", "CONTROL_STACK_BYTES",
+                     "ESTIMATOR_STACK_BYTES", "SENSOR_STACK_BYTES"):
             with self.subTest(task=name):
                 self.assertGreaterEqual(self.stacks[name], ROUTER_CALLER_MIN_BYTES)
                 self.assertEqual(self.stacks[name] % 8, 0)
-        self.assertGreaterEqual(self.stacks["DIST_STACK_BYTES"], DIST_MIN_BYTES)
+        self.assertGreaterEqual(self.stacks["SENSOR_STACK_BYTES"], DIST_MIN_BYTES)
 
     def test_threadx_pool_holds_every_task_stack(self):
         needed = sum(self.stacks.values()) + POOL_FIXED_OVERHEAD + \
@@ -80,9 +80,9 @@ class ThreadStackBudget(unittest.TestCase):
         telemetry = (ROOT / "Core/Src/telemetry.c").read_text()
         layout = json.loads((ROOT / "sim/board.json").read_text())
         probes = {p["symbol"]: p for p in layout["execution"]["memory_probes"]}
-        for thread, symbol in (("telemetry_task", "g_telemetry_stack_free_min"),
-                               ("evaluation_task", "g_evaluation_stack_free_min"),
-                               ("distribution_task", "g_distribution_stack_free_min")):
+        for thread, symbol in (("telemetry_thread", "g_telemetry_stack_free_min"),
+                               ("estimator_thread", "g_evaluation_stack_free_min"),
+                               ("sensor_thread", "g_distribution_stack_free_min")):
             with self.subTest(symbol=symbol):
                 self.assertIn(f"stack_sample_fill(&{thread}, &{symbol})", telemetry)
                 self.assertIn(f"thread == &{thread}", telemetry)

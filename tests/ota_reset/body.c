@@ -31,8 +31,8 @@ int main(int argc,char **argv){assert(argc==2);
  else if(!strcmp(argv[1],"pyro_high_low")){deployment_pulse_start(false,false);assert(gpio.ODR);for(unsigned i=0;i<500;i++)fc_runtime_tick();assert(!gpio.ODR);}
  else if(!strcmp(argv[1],"terminal")){SedsP2pStreamEventView e={SEDS_P2P_STREAM_CLOSED,7,NULL,0};assert(ota_stream_event(&e,NULL)==SEDS_OK);}
  else if(!strcmp(argv[1],"expired_newjob")){startup_phase_aba();assert(!state.reset_eligible);ota_now=300;telemetry_poll_discovery();assert(!ota_nvics);begin_job();finish_job();ota_now=550;telemetry_poll_discovery();assert(ota_nvics==1);return 0;}
- else if(!strcmp(argv[1],"held_router")){telemetry_mu.tx_mutex_owner=&telemetry_task;telemetry_mu.tx_mutex_ownership_count=1;}
- else if(!strcmp(argv[1],"foreign_worker")){current_thread=&recovery_task;}
+ else if(!strcmp(argv[1],"held_router")){telemetry_mu.tx_mutex_owner=&telemetry_thread;telemetry_mu.tx_mutex_ownership_count=1;}
+ else if(!strcmp(argv[1],"foreign_worker")){current_thread=&control_thread;}
  else if(!strcmp(argv[1],"store_leave_failure")){ota_fail_leave=true;}
  else if(!strcmp(argv[1],"time_regression")){state.reset_requested_ms=100;ota_now=99;telemetry_poll_discovery();assert(!state.reset_eligible);}
  else if(!strcmp(argv[1],"finish_leave_failure")||!strcmp(argv[1],"mutation_during_finish")||!strcmp(argv[1],"mutation_before_finish")||!strcmp(argv[1],"unchanged_startup")){}

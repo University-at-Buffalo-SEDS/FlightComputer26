@@ -16,7 +16,7 @@ class MonitorAdmissionTests(unittest.TestCase):
     def test_actual_owner_mailbox_and_pulse_boundaries(self):
         # Compile the candidate's actual RAM-only FSM helper in both controls.
         # The old owner never calls it; both runs see the same enum/flag inputs.
-        recovery=(ROOT/'Core/Src/recovery.c').read_text()
+        recovery=(ROOT/'Core/Src/control_thread.c').read_text()
         helper=recovery[recovery.index('bool fc_recovery_control_monitor_preflight(void)'):recovery.index('void fc_recovery_evaluation_running(void)')]
         states=(ROOT/'Core/Inc/fcstructs.h').read_text()
         enum=re.search(r'typedef enum flight_state : fu8 \{(.*?)\} state;',states,re.S).group(1)

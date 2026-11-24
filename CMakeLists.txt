@@ -69,12 +69,12 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/baro_reference.c
     ${CMAKE_SOURCE_DIR}/Core/Src/gyroscope.c
     ${CMAKE_SOURCE_DIR}/Core/Src/accelerometer.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/dma.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/distribution.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/evaluation.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/sensor_dma.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/sensor_thread.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/estimator_thread.c
     ${CMAKE_SOURCE_DIR}/Core/Src/ground_test.c
     ${CMAKE_SOURCE_DIR}/Core/Src/kalman.c
-    ${CMAKE_SOURCE_DIR}/Core/Src/recovery.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/control_thread.c
     ${CMAKE_SOURCE_DIR}/Core/Src/thread_comm.c
     ${CMAKE_SOURCE_DIR}/Core/Src/rud_detect.c
     ${CMAKE_SOURCE_DIR}/Core/Src/fc_recovery_owner.c

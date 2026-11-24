@@ -216,7 +216,7 @@ class AbortStatusPushTests(unittest.TestCase):
     def test_first_edge_of_each_latch_episode_pushes_once(self):
         telemetry, push = self._push_source()
         _build_and_run(EDGE_HARNESS.replace('@PUSH@', push))
-        loop = _function(telemetry, 'void telemetry_entry(ULONG _)')
+        loop = _function(telemetry, 'void telemetry_thread_entry(ULONG _)')
         self.assertIn('telemetry_republish_flight_state();\n    telemetry_push_abort_status();', loop)
 
     def test_push_is_a_nonce_zero_abort_latched_status(self):

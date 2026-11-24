@@ -109,7 +109,7 @@ class CanRestartRecovery(unittest.TestCase):
         recovery, filters, notifications = recovery_sources(source)
         code = HARNESS + recovery + filters + notifications + MAIN
         with tempfile.TemporaryDirectory() as directory:
-            c = Path(directory) / 'recovery.c'
+            c = Path(directory) / 'control_thread.c'
             exe = Path(directory) / 'recovery'
             c.write_text(code)
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',

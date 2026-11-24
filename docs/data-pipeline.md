@@ -117,12 +117,12 @@ frame (55 B per fragment).
 | MCU clock | 250 MHz (`SYSTEM_CLOCK`) | `Core/Src/tx_initialize_low_level.S` |
 | Sensor bus | SPI1 master, prescaler 4, mode 0, software CS | `Core/Src/main.c` (`MX_SPI1_Init`) |
 | Sensor DMA | GPDMA1 ch0 = SPI1 RX (`DMA_RECEIVER_SPI1`), ch1 = SPI1 TX | `platform.h`, `stm32h5xx_hal_msp.c` |
-| Transfer | `SENSOR_BUF_SIZE` 8 bytes per read, one burst from the data register | `fccommon.h`, `dma.c` |
+| Transfer | `SENSOR_BUF_SIZE` 8 bytes per read, one burst from the data register | `fccommon.h`, `sensor_dma.c` |
 | DRDY lines | gyro `GYRO_EXTI_1` PB0 (EXTI0), accel `ACCL_EXTI_1` PC4 (EXTI4), baro `BARO_EXTI` PC7 (EXTI7); second lines unused for IREC 2026 | `main.h`, `fcapi.h` |
 | SD card | SDMMC1, 4-bit bus, `ClockDiv` 0 from PLL1Q | `main.c`, `stm32h5xx_hal_msp.c` |
 | Network | FDCAN1, FD frames without bit-rate switch, 1 Mbit/s nominal (*derived*: PLL2Q 170 MHz / 10 / 17 tq) | `main.c`, `stm32h5xx_hal_msp.c` |
 | Pyro outputs | drogue `CO2_PIN` PB5, main `REEF_PIN` PB6 | `fcconfig.h` |
-| GPS | none on board; fixes arrive as `GPS_DATA` from the GPS/RF board (`EXTERNAL_GPS`) | `distribution.c` |
+| GPS | none on board; fixes arrive as `GPS_DATA` from the GPS/RF board (`EXTERNAL_GPS`) | `sensor_thread.c` |
 | Magnetometer | none: no driver or stream exists in `Core/` | - |
 
 ## 3. Threads, timers, ISRs and DMA
@@ -132,13 +132,13 @@ Lower number = higher priority.
 
 | Context | Priority | Stack | Period / trigger | Work | Source |
 | --- | --- | --- | --- | --- | --- |
-| Recovery (control) task | 4 (`RECV_PRIORITY`), no slice | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `fctasks.h`, `recovery.c`, `thread_comm.c` |
-| Telemetry task | 5 (`TLMT_PRIORITY`), no slice | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
-| Distribution task | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging; offers samples to the estimator (`eval_stage`) | `distribution.c`, `dma.c` |
-| Evaluation task | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | the estimator: ascent EKF predict/update, descent KF, the whole flight state machine (Launch to Recovery); holds the estimator guard for each pass | `evaluation.c`, `thread_comm.c`, `recovery.c` (`enter_launch`) |
+| Control thread (`control_thread`) | 4 (`CONTROL_PRIORITY`), no slice | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `FC-Threads.h`, `control_thread.c`, `thread_comm.c` |
+| Telemetry thread (`telemetry_thread`) | 5 (`TELEMETRY_PRIORITY`), no slice | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `FC-Threads.h`, `telemetry.c` |
+| Sensor thread (`sensor_thread`) | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging; offers samples to the estimator (`eval_stage`) | `sensor_thread.c`, `sensor_dma.c` |
+| Estimator thread (`estimator_thread`) | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | the estimator: ascent EKF predict/update, descent KF, the whole flight state machine (Launch to Recovery); holds the estimator guard for each pass | `estimator_thread.c`, `thread_comm.c`, `control_thread.c` (`enter_launch`) |
 | SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
-| EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and wake the distribution thread | `main.c`, `dma.c` |
-| GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
+| EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and wake the distribution thread | `main.c`, `sensor_dma.c` |
+| GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `sensor_dma.c` |
 | FDCAN1 IT0/IT1 | NVIC 0 | - | CAN RX/TX | wake telemetry, TX pump | `stm32h5xx_hal_msp.c` |
 | SDMMC1 | NVIC 0 | - | card I/O | FileX driver | `stm32h5xx_hal_msp.c` |
 | SysTick | SHPR byte 0x40 | - | 1 kHz | `fc_runtime_tick`: HAL tick, pyro pulse countdown, then ThreadX tick (no application timers) | `tx_initialize_low_level.S`, `deployment_pulse.c` |
@@ -155,16 +155,16 @@ item 5, and `docs/task-layout.md`.
 
 The distribution task reads every ready sensor whenever it waits for
 samples, but only consumes what its current loop asks for; an unconsumed sample is overwritten by the next
-one. SD raw rows are written at consumption (`try_fetch_*`, `dma.c`), so the
+one. SD raw rows are written at consumption (`try_fetch_*`, `sensor_dma.c`), so the
 SD rate follows this table.
 
 | Phase | Loop | Accel | Gyro | Baro | Source |
 | --- | --- | --- | --- | --- | --- |
-| Startup, Armed, countdown | `data_streaming_mode` | 100 Hz | 100 Hz | 25 Hz | `distribution.c` |
-| Postinit (`POSTINIT_DURATION` 5000 ms) | `post_initialization` | 100 Hz (averaged for attitude) | not consumed | 25 Hz | `distribution.c`, `fcconfig.h` |
-| Launch to Coast | ascent: one IMU pair, then one baro per cycle | ~25 Hz | ~25 Hz | 25 Hz | `distribution.c`, `evaluation.c` |
-| Apogee to Landed | `descent_publish` (distribution) + descent step (evaluation) | off | off | 25 Hz | `kalman.c` (`descent_initialize` sends `Disable_IMU`), `dma.c` |
-| Landed, Recovery | as above; Recovery is announced `RECOVERY_ANNOUNCE_DELAY` 5000 ms after Landed without sleeping | off | off | 25 Hz | `evaluation.c` (`announce_recovery`) |
+| Startup, Armed, countdown | `data_streaming_mode` | 100 Hz | 100 Hz | 25 Hz | `sensor_thread.c` |
+| Postinit (`POSTINIT_DURATION` 5000 ms) | `post_initialization` | 100 Hz (averaged for attitude) | not consumed | 25 Hz | `sensor_thread.c`, `fcconfig.h` |
+| Launch to Coast | ascent: one IMU pair, then one baro per cycle | ~25 Hz | ~25 Hz | 25 Hz | `sensor_thread.c`, `estimator_thread.c` |
+| Apogee to Landed | `descent_publish` (distribution) + descent step (evaluation) | off | off | 25 Hz | `kalman.c` (`descent_initialize` sends `Disable_IMU`), `sensor_dma.c` |
+| Landed, Recovery | as above; Recovery is announced `RECOVERY_ANNOUNCE_DELAY` 5000 ms after Landed without sleeping | off | off | 25 Hz | `estimator_thread.c` (`announce_recovery`) |
 
 ## 4. Stream summary
 
@@ -233,7 +233,7 @@ The RF relay and radio add their own delay, not modelled here.
 
 Rate changes: in the non-TLSF build only, heap pressure sends `Log_Rate_Limit`
 (`LOG_RATE_LIMITED` 15000 ms) or `Log_Restrict` (network reports off)
-(`fchooks.c`, `recovery.c`). The default TLSF build never changes `rates`.
+(`fchooks.c`, `control_thread.c`). The default TLSF build never changes `rates`.
 SD rates never change.
 
 ## 6. Streams
@@ -243,7 +243,7 @@ SD rates never change.
 | Item | Value |
 | --- | --- |
 | Part | Bosch BMI088 accelerometer (`accelerometer.h`) |
-| Config | `Normal_100Hz` (ODR 100 Hz, normal filter mode), `Accl_Range_24g` (`recovery.c` `accl_conf`) |
+| Config | `Normal_100Hz` (ODR 100 Hz, normal filter mode), `Accl_Range_24g` (`control_thread.c` `accl_conf`) |
 | Bus | SPI1 + GPDMA, DRDY PC4; read from `ACCL_X_LSB` |
 | Units | m/s^2, specific force (+9.81 on z at rest). `lsb_to_g` holds `accl_lsb_to_mps2(range)`, which includes 9.80665 (`accelerometer.h:91`) despite the name |
 | Calibration | scale only. Postinit averages accel for the initial attitude. EKF z bias `EKF_BIAS_ACCL_Z` 0, replaceable by `ASCENT_BIASES` before Launch |
@@ -268,7 +268,7 @@ SD rates never change.
 
 ### 6.3 IMU summary
 
-`maybe_log_measm(IMU, &meas.accl)` (`distribution.c`) writes six floats from
+`maybe_log_measm(IMU, &meas.accl)` (`sensor_thread.c`) writes six floats from
 the contiguous `measm` struct: ax ay az (m/s^2), gx gy gz (deg/s).
 
 - SD: `IMU` row when `IMULocal` is at least 50 ms old (`timer_probe`, resets
@@ -282,7 +282,7 @@ the contiguous `measm` struct: ax ay az (m/s^2), gx gy gz (deg/s).
 | Item | Value |
 | --- | --- |
 | Part | Bosch BMP390 (`barometer.h`) |
-| Config | OSR pressure x8, temperature x1, `Baro_ODR_25` (40 ms, `BARO_PERIOD_MS_FROM_ODRSEL`), `Baro_IIR_Coef_3` (`recovery.c` `baro_conf`). GPS-loss fallback: IIR 15 (`barometer_fallback_vigilant`) |
+| Config | OSR pressure x8, temperature x1, `Baro_ODR_25` (40 ms, `BARO_PERIOD_MS_FROM_ODRSEL`), `Baro_IIR_Coef_3` (`control_thread.c` `baro_conf`). GPS-loss fallback: IIR 15 (`barometer_fallback_vigilant`) |
 | Bus | SPI1 + GPDMA, DRDY PC7 (non-latched; the distribution task also polls the level once per high period) |
 | Conversion | datasheet compensation with NVM trims (`baro_compensate_temp/pres`); altitude `baro_agl(p, ref)` against the tracked ground reference (6.9) |
 | Units | pressure Pa, temperature degC (die), altitude m above the ground reference |
@@ -360,7 +360,7 @@ automatic deployment stopped`. Criteria, audit and evidence:
 
 | SD label | `value` | Written when |
 | --- | --- | --- |
-| `launch_accepted` | `Launch` | the FC accepts the Launch command (`enter_launch`, `recovery.c`) |
+| `launch_accepted` | `Launch` | the FC accepts the Launch command (`enter_launch`, `control_thread.c`) |
 | `launch_detected` | `Launch` | the FSM advances to Launch (boost detected, `flight_advance`) |
 | `pyro_gpio_high` | `drogue` / `reef` | an output was driven high |
 | `pyro_gpio_low` | `drogue` / `reef` | the SysTick pulse ended (`CO2_ASSERT_INTERVAL` / `REEF_ASSERT_INTERVAL` 500 ms) |
@@ -854,7 +854,7 @@ The GS does not replay data itself. The FC replays CSVs from its own card
 builds an IGT set from a GS CSV export or from an FC SD log; from an SD log it
 reads the `IMU`, `BARO` and `SIM` rows and the `launch_accepted` row as T0.
 The FC's `tools/igt_replay_host.py` replays a set through the real
-`ground_test.c`, `kalman.c` and `evaluation.c` on a host.
+`ground_test.c`, `kalman.c` and `estimator_thread.c` on a host.
 
 ### 8.6 FC SD versus GS, per stream
 
@@ -890,12 +890,12 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    `test_launch_landed_window.py`.
 2. **IMU logging in flight is ~25 Hz, not 100 Hz, and ends at Apogee.** The
    ascent loop consumes one IMU pair per baro-paced EKF cycle
-   (`distribution.c` `for_ascent_predict/update`, `evaluation.c`), and
+   (`sensor_thread.c` `for_ascent_predict/update`, `estimator_thread.c`), and
    `descent_initialize` disables the IMU (`kalman.c`). Older docs imply every
    acquisition is logged.
 3. **Raw `*_sample` rows do not follow `LOG_RATE_SD`.**
    `docs/sd-record-format.md:34` says they follow the 50 ms cadence; the code
-   writes one per consumed sample (`dma.c`). Only `IMU`, `BARO` and `Message`
+   writes one per consumed sample (`sensor_dma.c`). Only `IMU`, `BARO` and `Message`
    rows use the 50 ms gate.
 4. **FileX fault tolerance is not enabled at runtime.**
    `docs/sd-flight-recordings.md:90` says it remains enabled;
@@ -919,13 +919,13 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
    1 ms per 40 ms baro cycle; a command that arrives during one waits for its
    end, as before. Tests: `test_evaluation_preemption.py`, `test_thread_comm.py`.
 6. **Fixed: the host IGT replay used a 10 ms baro period; the board uses
-   40 ms** (`Baro_ODR_25`, `recovery.c`). `tools/igt_replay_host.py` now
+   40 ms** (`Baro_ODR_25`, `control_thread.c`). `tools/igt_replay_host.py` now
    steps the baro every 40 ms (`BARO_PERIOD_MS`), and GroundStation26
    `test-data/igt/VALIDATION.md` has the re-run results. Test:
    `test_igt_replay_host_rate.py`.
 7. **FC `GPS_DATA` in Recovery is relative.** `report_lowpass_gps` sends
-   |dlat|, |dlon| from the rail reference (`distribution.c:249-250`,
-   `evaluation.c:306`) under the type whose schema says latitude/longitude.
+   |dlat|, |dlon| from the rail reference (`sensor_thread.c:249-250`,
+   `estimator_thread.c:306`) under the type whose schema says latitude/longitude.
    The GS knows (`antenna.rs` comment), but its map replay reads FC
    `GPS_DATA` alongside RF fixes (GroundStation26
    `backend/src/recording_replay.rs:464`).
@@ -944,8 +944,8 @@ The FC's `tools/igt_replay_host.py` replays a set through the real
     `sd-downloads/FC/`.
 11. **`igt_csv.py` uses summary rows from an FC SD log.** It reads `IMU` /
     `BARO` (at most 20 Hz) and ignores the full-rate `*_sample` rows.
-12. **Minor.** `dma.c:46` uses `DMA_BARO_OFFSET` for the accelerometer entry
+12. **Minor.** `sensor_dma.c:46` uses `DMA_BARO_OFFSET` for the accelerometer entry
     (same value as `DMA_ACCL_OFFSET`, no effect). `report_lowpass_gps` sleeps
     `RECOVERY_ANNOUNCE_DELAY / 1000` = 5 ticks (5 ms), not 5 s
-    (`evaluation.c:309`). Ordinary file names use UTC seconds or uptime
+    (`estimator_thread.c:309`). Ordinary file names use UTC seconds or uptime
     milliseconds, so names alone do not show which.

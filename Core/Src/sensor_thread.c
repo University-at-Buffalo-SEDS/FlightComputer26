@@ -1,6 +1,6 @@
 #include "flight_state_contract.h"
 #include "ground_heartbeat_owner.h"
-/* Core/Src/distribution.c */
+/* Core/Src/sensor_thread.c */
 
 #include "platform.h"
 #include "board_watchdog.h"
@@ -10,7 +10,7 @@
 #endif
 #include "fctypes.h"
 #include "fcstructs.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fc_recovery_owner.h"
@@ -27,7 +27,7 @@
 #define id "DI "
 
 
-TX_THREAD distribution_task;
+TX_THREAD sensor_thread;
 
 measm meas = {0};
 
@@ -982,7 +982,7 @@ static inline void fill_sequence_states(void)
   message(id "ignition; flight mode", true);
 }
 
-void distribution_entry(ULONG _)
+void sensor_thread_entry(ULONG _)
 {
   fu8 imu = 0;
   fu32 conf;
@@ -1017,7 +1017,7 @@ void distribution_entry(ULONG _)
   }
 }
 
-UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
+UINT create_sensor_thread(TX_BYTE_POOL *byte_pool)
 {
   UINT st;
   CHAR *pointer;
@@ -1025,7 +1025,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
   const char *critical = "creation failure:";
 
   st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                        DIST_STACK_BYTES, TX_NO_WAIT);
+                        SENSOR_STACK_BYTES, TX_NO_WAIT);
 
   if (st != TX_SUCCESS)
   {
@@ -1033,15 +1033,15 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
     return FC_INIT_FAILED;
   }
 
-  st = tx_thread_create(&distribution_task,
-                        "Distribution",
-                        distribution_entry,
-                        DIST_INPUT,
+  st = tx_thread_create(&sensor_thread,
+                        "Sensor",
+                        sensor_thread_entry,
+                        SENSOR_INPUT,
                         pointer,
-                        DIST_STACK_BYTES,
-                        DIST_PRIORITY,
+                        SENSOR_STACK_BYTES,
+                        SENSOR_PRIORITY,
                         /* No preemption threshold */
-                        DIST_PRIORITY,
+                        SENSOR_PRIORITY,
                         TX_NO_TIME_SLICE,
                         TX_AUTO_START);
 

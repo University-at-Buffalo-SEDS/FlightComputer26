@@ -227,7 +227,7 @@ int main(void){
         run_c(code)
 
     def test_each_kalman_output_is_saved_while_radio_timer_is_not_due(self):
-        src=(ROOT/'Core/Src/evaluation.c').read_text()
+        src=(ROOT/'Core/Src/estimator_thread.c').read_text()
         func=src[src.index('static inline void propel_kalman_state('):src.index('void evaluate_rocket_state(')]
         code=r'''
 #include <assert.h>

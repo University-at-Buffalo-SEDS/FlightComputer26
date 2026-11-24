@@ -7,12 +7,12 @@ Compiles, for a 32-bit host (gcc -m32, like the native SITL):
                              linear interpolation (IGT_HOST_TEST port: the
                              "card" is a directory);
   * Core/Src/kalman.c        the ascent EKF and descent KF;
-  * Core/Src/evaluation.c    the flight state machine and deployment decisions;
+  * Core/Src/estimator_thread.c    the flight state machine and deployment decisions;
   * CMSIS-DSP                the matrix/trig functions they call;
 against the board's real headers, with ThreadX/HAL calls stubbed. A small
 driver plays the distribution and evaluation tasks' schedule: the replay is
 sampled exactly as on the board (baro conversions every 40 ms, the board's
-Baro_ODR_25 in recovery.c, drive the evaluator; ascent predict on the IMU
+Baro_ODR_25 in control_thread.c, drive the evaluator; ascent predict on the IMU
 just after each baro update; descent
 predict/update on every baro sample; replayed GPS at 10 Hz, its first descent
 fix becoming the rail reference), and tx_thread_sleep() pauses the evaluator
@@ -179,7 +179,7 @@ void fc_sd_capture_event(unsigned e, bool r) { (void)e; (void)r; }
 static double rud_abort_t = -1;
 void fc_recovery_request_eval_stop(void) { if (rud_abort_t < 0) rud_abort_t = replay_s(); }
 /* --margins: a shadow detector on the same inputs reports how close each
- * vote came (the firmware's own detector is static in evaluation.c). */
+ * vote came (the firmware's own detector is static in estimator_thread.c). */
 #include "rud_detect.h"
 static rud_state shadow; static bool margins;
 static unsigned max_motion, max_pressure, max_joint; static float max_wxy, max_axy, max_rate;
@@ -224,7 +224,7 @@ void kalman_seed_attitude(const f_xyz *accl);
 static const char *names[] = {"Startup", "Postinit", "Armed", "Launch", "Ascent", "Coast", "Apogee",
                               "Descent", "Reefing", "Landed", "Recovery"};
 
-/* recovery.c baro_conf.odr = Baro_ODR_25: one conversion every 40 ms. The FSM
+/* control_thread.c baro_conf.odr = Baro_ODR_25: one conversion every 40 ms. The FSM
  * counts samples (MIN_SAMP_*, 8-entry history), so the period sets its timing. */
 #define BARO_PERIOD_MS 40U
 int main(int argc, char **argv)
@@ -349,7 +349,7 @@ def build(work: Path) -> Path:
     incs = [f'-I{ROOT / d}' for d in inc]
     objs = []
     fw = base + ['-include', str(work / 'pre.h')] + defs + incs
-    jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/evaluation.c'),
+    jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/estimator_thread.c'),
             (fw, ROOT / 'Core/Src/rud_detect.c'), (fw, work / 'driver.c')]
     jobs += [(fw, ROOT / 'Drivers/CMSIS/DSP/Source' / s) for s in DSP]
     jobs.append((base + ['-DIGT_HOST_TEST', '-DFC_GROUND_TEST=1', f'-I{work}', f'-I{ROOT / "Core/Inc"}'],

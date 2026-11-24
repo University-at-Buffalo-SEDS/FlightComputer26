@@ -150,7 +150,7 @@ typedef unsigned UINT;
 static struct{_Atomic int lock;}meas_locks[2];
 static struct{int rezero;}baro_conf;
 static uint8_t g_recovery_receive_loop_ready=1;
-static struct Thread{int tx_thread_state;void*tx_thread_suspend_control_block;}evaluation_task,recovery_task;
+static struct Thread{int tx_thread_state;void*tx_thread_suspend_control_block;}estimator_thread,control_thread;
 static int seds_syscall,eval_stage,g_last_network_flight_command_msg;
 #define Invalid_Message 255
 static unsigned resumes,suspends,terminations,resets,signals,flushes;
@@ -179,23 +179,23 @@ void fc_recovery_evaluation_quiescent(void)
 {
   evaluation_quiescent = 1U;
   __DMB();
-  (void)tx_thread_suspend(&evaluation_task);
+  (void)tx_thread_suspend(&estimator_thread);
 }
 void fc_recovery_control_wake(void)
 {
   const uint32_t mask = __get_PRIMASK(); __disable_irq();
   /* Do not abort a sensor-init sleep or any unrelated wait. */
   if (g_recovery_receive_loop_ready &&
-      thread_comm_receiver_waiting(&recovery_task))
-    (void)tx_thread_wait_abort(&recovery_task);
+      thread_comm_receiver_waiting(&control_thread))
+    (void)tx_thread_wait_abort(&control_thread);
   __set_PRIMASK(mask);
 }
 bool fc_recovery_control_quiesce(void)
 {
-  const UINT state = evaluation_task.tx_thread_state;
+  const UINT state = estimator_thread.tx_thread_state;
   if (state == TX_SUSPENDED && !evaluation_quiescent) {
     /* A previously reset thread enters its barrier before flight-mode setup. */
-    (void)tx_thread_resume(&evaluation_task);
+    (void)tx_thread_resume(&estimator_thread);
     return false;
   }
   if (state != TX_COMPLETED && state != TX_TERMINATED &&
@@ -205,9 +205,9 @@ bool fc_recovery_control_quiesce(void)
   }
   if (load(&meas_locks[IMU].lock, Acq) || load(&meas_locks[Baro].lock, Acq))
     return false;
-  if (state != TX_TERMINATED && tx_thread_terminate(&evaluation_task) != TX_SUCCESS)
+  if (state != TX_TERMINATED && tx_thread_terminate(&estimator_thread) != TX_SUCCESS)
     return false;
-  if (tx_thread_reset(&evaluation_task) != TX_SUCCESS) return false;
+  if (tx_thread_reset(&estimator_thread) != TX_SUCCESS) return false;
   evaluation_quiescent = 1U;
   if (fc_recovery_holds_sequence()) {
     thread_comm_flush();
@@ -217,7 +217,7 @@ bool fc_recovery_control_quiesce(void)
 void fc_recovery_control_mark_eval_stopped(void) { g_conf |= option(Eval_Abort_Flag); }
 bool fc_recovery_control_finalize_startup(void)
 {
-  if (!evaluation_quiescent || evaluation_task.tx_thread_state != TX_SUSPENDED ||
+  if (!evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED ||
       !fc_watchdog_startup_reset_ready()) return false;
   /* Preserve calibration/biases, samples, clocks, rates, recording shutdown,
    * failure thresholds and historical deployment bits until a NEW flight. */
@@ -288,7 +288,7 @@ static void request(SedsRouter*r,SedsPacketView*p,bool service){
  }
  assert(app_replies>=before+1);
 }
-int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(void)quiet;(void)ready;(void)durable;(void)io_error;(void)stop_in_io;(void)commits;(void)finals;sm.flight=Recovery;evaluation_task.tx_thread_state=0;fc_recovery_evaluation_running();
+int main(int argc,char**argv){assert(argc==2);(void)send;(void)response_epoch;(void)quiet;(void)ready;(void)durable;(void)io_error;(void)stop_in_io;(void)commits;(void)finals;sm.flight=Recovery;estimator_thread.tx_thread_state=0;fc_recovery_evaluation_running();
  bool virgin=!strcmp(argv[1],"virgin");bool healthy=strcmp(argv[1],"virgin")&&strcmp(argv[1],"floor");memset(disk,255,sizeof disk);launchcore_storage_set_driver(&launchcore_board_storage_driver);launchcore_persist_strict_info_t info;uint64_t prior=41;uint8_t original=1;
  if(!virgin){assert(launchcore_persist_init()==0);assert(launchcore_persist_set(0x42524745U,&prior,8)==0);assert(launchcore_persist_set(0x46535445U,&original,1)==0);}
  if(healthy){uint64_t floor[2]={77,100};assert(launchcore_persist_set(0x4252464cU,floor,16)==0);}

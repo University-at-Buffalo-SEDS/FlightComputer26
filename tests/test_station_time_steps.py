@@ -52,7 +52,7 @@ static bool admitted(uint16_t te,uint64_t time){
 /* Reads the floor record directly (fixture mode: outside the storage owner). */
 static uint64_t stored_floor(void){uint8_t w[16];size_t n=16;fixture=true;assert(launchcore_persist_get(0x4252464cU,w,&n)==0&&n==16);fixture=false;return get64(w+8);}
 static uint64_t boot(void){
- sm.flight=Recovery;evaluation_task.tx_thread_state=0;fc_recovery_evaluation_running();
+ sm.flight=Recovery;estimator_thread.tx_thread_state=0;fc_recovery_evaluation_running();
  memset(disk,255,sizeof disk);launchcore_storage_set_driver(&launchcore_board_storage_driver);uint64_t prior=41;uint8_t original=1;uint64_t floor[2]={77,100};
  assert(launchcore_persist_init()==0);assert(launchcore_persist_set(0x42524745U,&prior,8)==0);assert(launchcore_persist_set(0x46535445U,&original,1)==0);assert(launchcore_persist_set(0x4252464cU,floor,16)==0);
  fixture=false;(void)persistent_store_boot_begin();uint64_t generation=board_recovery_boot_generation();(void)board_recovery_floor_prime_boot();board_commissioning_probe_boot();if(board_commissioning_pending())fc_recovery_restore_commissioning_hold();flight_state_cache_restore();

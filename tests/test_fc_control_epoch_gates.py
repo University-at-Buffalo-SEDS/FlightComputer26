@@ -79,7 +79,7 @@ int main(void){
 '''
 class ControlEpochGateTests(unittest.TestCase):
     def test_actual_legacy_decoder_and_sensor_recovery(self):
-        source=(ROOT/'Core/Src/recovery.c').read_text()
+        source=(ROOT/'Core/Src/control_thread.c').read_text()
         types=(ROOT/'Core/Inc/fcstructs.h').read_text()
         enum=types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;')+len('} fc_msg;')]
         enum=enum.replace('flight_message : fu32','flight_message').replace('UINT_FAST32_MAX','UINT32_MAX')

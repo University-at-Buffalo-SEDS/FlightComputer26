@@ -9,7 +9,7 @@ from router_lifecycle_fixture import function as actual_function
 class QualificationContractTests(unittest.TestCase):
     def test_network_command_carries_its_origin_in_the_queue(self):
         root = Path(build.__file__).resolve().parent
-        source = (root / "Core" / "Src" / "distribution.c").read_text(
+        source = (root / "Core" / "Src" / "sensor_thread.c").read_text(
             encoding="utf-8"
         )
         handler = source.split("dispatch_flight_cmd", 1)[1].split(
@@ -21,7 +21,7 @@ class QualificationContractTests(unittest.TestCase):
         # The diagnostic probe is published before the receiver can run.
         self.assertLess(send.index("g_last_network_flight_command_msg = cmd;"),
                         send.index("tx_queue_send(&commands, &msg, TX_NO_WAIT)"))
-        recovery = (root / "Core" / "Src" / "recovery.c").read_text(encoding="utf-8")
+        recovery = (root / "Core" / "Src" / "control_thread.c").read_text(encoding="utf-8")
         self.assertIn("msg.origin == THREAD_COMM_NETWORK", recovery)
 
     def test_sensor_telemetry_does_not_build_a_second_software_queue(self):
@@ -181,11 +181,11 @@ class QualificationContractTests(unittest.TestCase):
 
     def test_recovery_dependencies_exist_before_priority_zero_thread_starts(self):
         root = Path(build.__file__).resolve().parent
-        recovery = (root / "Core" / "Src" / "recovery.c").read_text(
+        recovery = (root / "Core" / "Src" / "control_thread.c").read_text(
             encoding="utf-8"
         )
-        create = recovery[recovery.index("UINT create_recovery_task") :]
-        thread = create.index("tx_thread_create(&recovery_task")
+        create = recovery[recovery.index("UINT create_control_thread") :]
+        thread = create.index("tx_thread_create(&control_thread")
         auto_start = create.index("TX_AUTO_START", thread)
 
         self.assertGreater(auto_start, thread)
@@ -197,15 +197,15 @@ class QualificationContractTests(unittest.TestCase):
         init = init[: init.index("\n}\n")]
         self.assertIn("tx_queue_create(&commands", init)
         app = (root / "Core" / "Src" / "app_threadx.c").read_text(encoding="utf-8")
-        self.assertLess(app.index("thread_comm_init()"), app.index("create_recovery_task("))
+        self.assertLess(app.index("thread_comm_init()"), app.index("create_control_thread("))
 
     def test_priority_zero_recovery_startup_does_not_reenter_router(self):
         root = Path(build.__file__).resolve().parent
-        recovery = (root / "Core" / "Src" / "recovery.c").read_text(
+        recovery = (root / "Core" / "Src" / "control_thread.c").read_text(
             encoding="utf-8"
         )
-        entry = recovery[recovery.index("void recovery_entry") :]
-        entry = entry[: entry.index("UINT create_recovery_task")]
+        entry = recovery[recovery.index("void control_thread_entry") :]
+        entry = entry[: entry.index("UINT create_control_thread")]
 
         # Telemetry can be inside discovery when this higher-priority task
         # wakes after a retained-flash reboot. Startup state is restored by

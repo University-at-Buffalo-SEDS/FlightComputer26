@@ -27,7 +27,7 @@
 
 #include "main.h"
 #include "platform.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "fcapi.h"
 #include "thread_comm.h"
 #ifdef TELEMETRY_USE_TLSF
@@ -125,14 +125,14 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   }
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-  ret = create_telemetry_task(memory_ptr);
+  ret = create_telemetry_thread(memory_ptr);
   if (ret != TX_SUCCESS)
   {
     startup_fault(1U);
   }
 #endif
 
-  ret = create_recovery_task(memory_ptr);
+  ret = create_control_thread(memory_ptr);
   if (ret != TX_SUCCESS)
   {
     startup_fault(2U);
@@ -146,13 +146,13 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
     startup_fault(3U);
   }
 
-  ret = create_evaluation_task(memory_ptr);
+  ret = create_estimator_thread(memory_ptr);
   if (ret != TX_SUCCESS)
   {
     startup_fault(4U);
   }
 
-  ret = create_distribution_task(memory_ptr);
+  ret = create_sensor_thread(memory_ptr);
   if (ret != TX_SUCCESS)
   {
     startup_fault(5U);

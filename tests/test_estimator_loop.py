@@ -1,6 +1,6 @@
 """The estimator (evaluation thread) runs both filters and the state machine.
 
-Runs the production evaluation_entry() loop against a scripted eval_stage:
+Runs the production estimator_thread_entry() loop against a scripted eval_stage:
 ascent IMU pair -> predict, barometer -> update + state machine; the switch
 to the descent filter inside a pass (Apogee) keeps the descent samples
 offered since; a manual switch between passes (Deploy/Expand, with its wake)
@@ -70,7 +70,7 @@ static void fc_watchdog_checkpoint(void){}
 static void at_apogee(void){ apogee_now = true; }
 static void manual_swap(void){ g_conf &= ~Using_Ascent_KF; group |= EVAL_STAGE_WAKE; note("MANUAL"); }
 /*ENTRY*/
-static void run(void){ memset(log_,0,sizeof log_); next = 0; group = 0; if (!setjmp(stopped)) evaluation_entry(0); }
+static void run(void){ memset(log_,0,sizeof log_); next = 0; group = 0; if (!setjmp(stopped)) estimator_thread_entry(0); }
 int main(void){
   /* Ascent pair/baro cycles, then Apogee in a pass; descent samples offered
    * during and after it are stepped. */
@@ -104,7 +104,7 @@ def extract(text, signature):
 
 class EstimatorLoop(unittest.TestCase):
     def test_both_filters_and_mode_switches(self):
-        entry = extract((ROOT / 'Core/Src/evaluation.c').read_text(), 'void evaluation_entry(ULONG _)')
+        entry = extract((ROOT / 'Core/Src/estimator_thread.c').read_text(), 'void estimator_thread_entry(ULONG _)')
         with tempfile.TemporaryDirectory() as tmp:
             src, exe = Path(tmp) / 'e.c', Path(tmp) / 'e'
             src.write_text(HARNESS.replace('/*ENTRY*/', entry))

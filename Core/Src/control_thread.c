@@ -1,4 +1,4 @@
-/* Core/Src/recovery.c */
+/* Core/Src/control_thread.c */
 
 #include "platform.h"
 #include "board_watchdog.h"
@@ -7,7 +7,7 @@
 #include "fc_monitor_bench.h"
 #include "fctypes.h"
 #include "fcstructs.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
@@ -23,14 +23,14 @@
 #define id "RE "
 
 
-TX_THREAD recovery_task;
+TX_THREAD control_thread;
 
 volatile uint32_t g_network_flight_commands_processed
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_recovery_stack_used
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_recovery_stack_remaining
-    __attribute__((used, externally_visible)) = RECV_STACK_BYTES;
+    __attribute__((used, externally_visible)) = CONTROL_STACK_BYTES;
 volatile uint32_t g_recovery_commands_dequeued
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_recovery_receive_loop_ready
@@ -40,11 +40,11 @@ TX_BYTE_POOL *tx_app_shared;
 
 static void recovery_update_stack_profile(void)
 {
-  _tx_thread_stack_analyze(&recovery_task);
-  const uintptr_t start = (uintptr_t)recovery_task.tx_thread_stack_start;
-  const uintptr_t end = (uintptr_t)recovery_task.tx_thread_stack_end;
+  _tx_thread_stack_analyze(&control_thread);
+  const uintptr_t start = (uintptr_t)control_thread.tx_thread_stack_start;
+  const uintptr_t end = (uintptr_t)control_thread.tx_thread_stack_end;
   const uintptr_t highest =
-      (uintptr_t)recovery_task.tx_thread_stack_highest_ptr;
+      (uintptr_t)control_thread.tx_thread_stack_highest_ptr;
   if (highest >= start && highest <= end)
   {
     g_recovery_stack_used = (uint32_t)(end - highest + sizeof(ULONG));
@@ -192,23 +192,23 @@ void fc_recovery_evaluation_quiescent(void)
 {
   evaluation_quiescent = 1U;
   __DMB();
-  (void)tx_thread_suspend(&evaluation_task);
+  (void)tx_thread_suspend(&estimator_thread);
 }
 void fc_recovery_control_wake(void)
 {
   const uint32_t mask = __get_PRIMASK(); __disable_irq();
   /* Do not abort a sensor-init sleep or any unrelated wait. */
   if (g_recovery_receive_loop_ready &&
-      thread_comm_receiver_waiting(&recovery_task))
-    (void)tx_thread_wait_abort(&recovery_task);
+      thread_comm_receiver_waiting(&control_thread))
+    (void)tx_thread_wait_abort(&control_thread);
   __set_PRIMASK(mask);
 }
 bool fc_recovery_control_quiesce(void)
 {
-  const UINT state = evaluation_task.tx_thread_state;
+  const UINT state = estimator_thread.tx_thread_state;
   if (state == TX_SUSPENDED && !evaluation_quiescent) {
     /* A previously reset thread enters its barrier before flight-mode setup. */
-    (void)tx_thread_resume(&evaluation_task);
+    (void)tx_thread_resume(&estimator_thread);
     return false;
   }
   if (state != TX_COMPLETED && state != TX_TERMINATED &&
@@ -218,9 +218,9 @@ bool fc_recovery_control_quiesce(void)
   }
   if (load(&meas_locks[IMU].lock, Acq) || load(&meas_locks[Baro].lock, Acq))
     return false;
-  if (state != TX_TERMINATED && tx_thread_terminate(&evaluation_task) != TX_SUCCESS)
+  if (state != TX_TERMINATED && tx_thread_terminate(&estimator_thread) != TX_SUCCESS)
     return false;
-  if (tx_thread_reset(&evaluation_task) != TX_SUCCESS) return false;
+  if (tx_thread_reset(&estimator_thread) != TX_SUCCESS) return false;
   evaluation_quiescent = 1U;
   if (fc_recovery_holds_sequence()) {
     thread_comm_flush();
@@ -235,7 +235,7 @@ void fc_recovery_control_mark_eval_stopped(void)
 }
 bool fc_recovery_control_finalize_startup(void)
 {
-  if (!evaluation_quiescent || evaluation_task.tx_thread_state != TX_SUSPENDED ||
+  if (!evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED ||
       !fc_watchdog_startup_reset_ready()) return false;
   /* Preserve calibration/biases, samples, clocks, rates, recording shutdown,
    * failure thresholds and historical deployment bits until a NEW flight. */
@@ -434,7 +434,7 @@ static inline void enter_launch(bool noconfirm)
   if (g_conf & option(In_Aborted_State))
   {
     g_conf &= ~option(In_Aborted_State);
-    tx_thread_resume(&distribution_task);
+    tx_thread_resume(&sensor_thread);
   }
   else if (smon.gps_delayed || smon.gps_malform)
   {
@@ -461,7 +461,7 @@ static inline void enter_launch(bool noconfirm)
       kalman_seed_attitude((const f_xyz *)seed);
   }
 #endif
-  tx_thread_resume(&evaluation_task);
+  tx_thread_resume(&estimator_thread);
 }
 
 
@@ -567,7 +567,7 @@ static inline void process_action(fc_msg cmd, bool internal)
 
     case Log_Terminate:
 #ifdef TELEMETRY_ENABLED
-      tx_thread_terminate(&telemetry_task);
+      tx_thread_terminate(&telemetry_thread);
       message(id "telemetry stopped", true);
 #endif
       break;
@@ -879,7 +879,7 @@ static ULONG health_wait(ULONG limit)
 
 /* Task */
 
-void recovery_entry(ULONG st)
+void control_thread_entry(ULONG st)
 {
   /* The recovery task has the highest priority. Give the telemetry worker one
    * scheduler tick to initialize SEDSNet before recovery emits its boot-state
@@ -907,7 +907,7 @@ void recovery_entry(ULONG st)
     timer_update(AscentKF);
     timer_update(DescentKF);
     /* The estimator runs both filters: resume it in either phase. */
-    tx_thread_resume(&evaluation_task);
+    tx_thread_resume(&estimator_thread);
   }
   health_start();
 
@@ -977,7 +977,7 @@ void recovery_entry(ULONG st)
   }
 }
 
-UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
+UINT create_control_thread(TX_BYTE_POOL *byte_pool)
 {
   UINT st;
   CHAR *pointer;
@@ -986,7 +986,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   const char *critical = "creation failure:";
 
   st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                        RECV_STACK_BYTES, TX_NO_WAIT);
+                        CONTROL_STACK_BYTES, TX_NO_WAIT);
 
   if (st != TX_SUCCESS)
   {
@@ -998,15 +998,15 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
    * with TX_AUTO_START this highest-priority thread can preempt its creator
    * immediately, and an uncreated queue would make its receive fail in a
    * tight loop, starving telemetry and every other task. */
-  st = tx_thread_create(&recovery_task,
-                        "Recovery Task",
-                        recovery_entry,
-                        RECV_INPUT,
+  st = tx_thread_create(&control_thread,
+                        "Control",
+                        control_thread_entry,
+                        CONTROL_INPUT,
                         pointer,
-                        RECV_STACK_BYTES,
-                        RECV_PRIORITY,
+                        CONTROL_STACK_BYTES,
+                        CONTROL_PRIORITY,
                         /* No preemption threshold */
-                        RECV_PRIORITY,
+                        CONTROL_PRIORITY,
                         TX_NO_TIME_SLICE,
                         TX_AUTO_START);
 

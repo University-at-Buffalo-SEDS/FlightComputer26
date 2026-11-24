@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ManagedPostinitTests(unittest.TestCase):
     def test_managed_armed_reaches_recovery_once_and_retries_queue_pressure(self):
-        source = (ROOT / "Core/Src/distribution.c").read_text()
+        source = (ROOT / "Core/Src/sensor_thread.c").read_text()
         start = source.index("static inline SedsResult\nimplicit_postinit(")
         end = source.index("static SedsResult on_fc_packet_impl(", start)
         body = source[start:end]

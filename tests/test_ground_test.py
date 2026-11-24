@@ -3,7 +3,7 @@ docs/integrated-ground-test.md).
 
 Compiles the actual ground_test.c against a host port whose "SD card" is a
 temporary directory, and the actual deployment_pulse.c pyro gate and the
-distribution.c GPS wrapper against small stubs. Covers CSV parsing and
+sensor_thread.c GPS wrapper against small stubs. Covers CSV parsing and
 validation, interpolation, end of data, the mode gates (replay only after a
 validated pre-Launch entry and at rest), dry-run versus LIVE PYRO, Stop/reset
 back to Off, the GPS switch to real at landing, and that a flight image
@@ -588,7 +588,7 @@ int main(void)
 
 class GroundTestGpsSwitch(unittest.TestCase):
     def test_replayed_gps_until_landing_then_real(self):
-        text = (ROOT / 'Core/Src/distribution.c').read_text()
+        text = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         real = extract(text, 'static inline bool fetch_real_gps(kf_gps *buf)')
         wrapper = extract(text, 'static inline bool fetch_gps_data(kf_gps *buf)')
         with tempfile.TemporaryDirectory() as tmp:
@@ -669,16 +669,16 @@ class GroundTestUnreachableInFlightImages(unittest.TestCase):
         checkpoint = extract((ROOT / 'Core/Src/fc_watchdog_recovery.c').read_text(),
                              'void fc_watchdog_checkpoint(void)')
         self.assertRegex(checkpoint, r'#if FC_GROUND_TEST\s+if \(igt_engaged\(\)\) return;\s+#endif')
-        startup = extract((ROOT / 'Core/Src/recovery.c').read_text(),
+        startup = extract((ROOT / 'Core/Src/control_thread.c').read_text(),
                           'bool fc_recovery_control_finalize_startup(void)')
         self.assertIn('igt_stop();', startup)
 
     def test_replay_starts_only_from_launch_acceptance(self):
-        text = (ROOT / 'Core/Src/recovery.c').read_text()
+        text = (ROOT / 'Core/Src/control_thread.c').read_text()
         launch = extract(text, 'static inline void enter_launch(bool noconfirm)')
         # After admission and the Launch-accepted event, before the evaluator.
         self.assertLess(launch.index('fc_recovery_admit_new_flight'), launch.index('igt_launch('))
-        self.assertLess(launch.index('igt_launch('), launch.index('tx_thread_resume(&evaluation_task)'))
+        self.assertLess(launch.index('igt_launch('), launch.index('tx_thread_resume(&estimator_thread)'))
         self.assertEqual(text.count('igt_launch('), 1)
         action = extract(text, 'static inline void process_action(fc_msg cmd, bool internal)')
         self.assertIn('if (!internal)', action[action.index('case IGT_Enter:'):])

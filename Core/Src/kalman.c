@@ -5,7 +5,7 @@
 #include "fc_watchdog_recovery.h"
 #include "fctypes.h"
 #include "fcstructs.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fc_recovery_owner.h"
@@ -53,7 +53,7 @@ const fc_resume_region fc_resume_kalman[] = {
 
 
 
-/* One scratch area (evaluation.c) for every predict/update step: the steps
+/* One scratch area (estimator_thread.c) for every predict/update step: the steps
  * never overlap, so they share the largest one's size. */
 static inline float *kfalloc(size_t size)
 {

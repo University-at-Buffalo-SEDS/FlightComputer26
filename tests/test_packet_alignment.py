@@ -6,7 +6,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 class PacketAlignmentTests(unittest.TestCase):
     def test_gps_at_every_byte_alignment(self):
-        source=(ROOT/'Core/Src/distribution.c').read_text()
+        source=(ROOT/'Core/Src/sensor_thread.c').read_text()
         function=source[source.index('static inline SedsResult\nprocess_gps_packet'):source.index('static inline void to_relative_coords')]
         code=r'''
 #include <stdint.h>
@@ -55,7 +55,7 @@ int main(void){
             self.assertEqual(p.returncode,0,p.stderr)
             subprocess.run([str(exe)],check=True)
     def test_bias_payload_is_copied_before_typed_access(self):
-        source=(ROOT/'Core/Src/distribution.c').read_text()
+        source=(ROOT/'Core/Src/sensor_thread.c').read_text()
         self.assertNotIn('*(ekf_bias *)data',source)
         self.assertIn('memcpy(&biases, data, sizeof(biases));',source)
     def test_m33_fault_frame_does_not_skip_core_registers(self):

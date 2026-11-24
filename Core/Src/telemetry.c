@@ -29,7 +29,7 @@ extern int telemetry_router_leave(void);
 #include "board_can_priority.h"
 #include "fctypes.h"
 #include "fcapi.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "can_bus.h"
 #include "simulation.h"
 #include "testing.h"
@@ -154,9 +154,9 @@ volatile uint32_t g_telemetry_tx_stage
 volatile uint32_t g_telemetry_loop_completions
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_telemetry_stack_size
-    __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
+    __attribute__((used, externally_visible)) = TELEMETRY_STACK_BYTES;
 volatile uint32_t g_telemetry_stack_free_min
-    __attribute__((used, externally_visible)) = TLMT_STACK_BYTES;
+    __attribute__((used, externally_visible)) = TELEMETRY_STACK_BYTES;
 extern volatile uint32_t g_fdcan_tx_fail_count;
 extern volatile uint32_t g_fdcan_tx_busy_count;
 extern volatile uint32_t g_fdcan_last_error;
@@ -168,9 +168,9 @@ static uint32_t g_queue_observed_tx_busy_count = 0U;
  * low-water marks next to telemetry's so the simulator and HIL can check the
  * headroom of every router caller. */
 volatile uint32_t g_evaluation_stack_free_min
-    __attribute__((used, externally_visible)) = EVAL_STACK_BYTES;
+    __attribute__((used, externally_visible)) = ESTIMATOR_STACK_BYTES;
 volatile uint32_t g_distribution_stack_free_min
-    __attribute__((used, externally_visible)) = DIST_STACK_BYTES;
+    __attribute__((used, externally_visible)) = SENSOR_STACK_BYTES;
 
 static void stack_note_free(volatile uint32_t *low_water, uint32_t free_bytes) {
   if (free_bytes < *low_water) {
@@ -209,9 +209,9 @@ static void telemetry_sample_stack_margin(void) {
   }
   g_stack_scan_tick = now;
   g_telemetry_stack_scans++;
-  stack_sample_fill(&telemetry_task, &g_telemetry_stack_free_min);
-  stack_sample_fill(&evaluation_task, &g_evaluation_stack_free_min);
-  stack_sample_fill(&distribution_task, &g_distribution_stack_free_min);
+  stack_sample_fill(&telemetry_thread, &g_telemetry_stack_free_min);
+  stack_sample_fill(&estimator_thread, &g_evaluation_stack_free_min);
+  stack_sample_fill(&sensor_thread, &g_distribution_stack_free_min);
 }
 
 /* Stack-fill scanning only sees bytes that a function actually writes.  Large
@@ -223,11 +223,11 @@ static void telemetry_sample_active_stack_margin(void) {
   const TX_THREAD *const thread = tx_thread_identify();
   volatile uint32_t *low_water;
 
-  if (thread == &telemetry_task) {
+  if (thread == &telemetry_thread) {
     low_water = &g_telemetry_stack_free_min;
-  } else if (thread == &evaluation_task) {
+  } else if (thread == &estimator_thread) {
     low_water = &g_evaluation_stack_free_min;
-  } else if (thread == &distribution_task) {
+  } else if (thread == &sensor_thread) {
     low_water = &g_distribution_stack_free_min;
   } else {
     return;
@@ -791,7 +791,7 @@ bool fc_recovery_ota_reset_boundary_ready(void)
 {
   /* The SDK lock hooks use this same recursive ThreadX mutex. A nested
    * application/SDK caller must not reset even after one successful put. */
-  return __get_IPSR() == 0U && tx_thread_identify() == &telemetry_task &&
+  return __get_IPSR() == 0U && tx_thread_identify() == &telemetry_thread &&
          telemetry_mu.tx_mutex_owner == TX_NULL &&
          telemetry_mu.tx_mutex_ownership_count == 0U;
 }
@@ -1472,7 +1472,7 @@ void die(const char *fmt, ...) {
 
 /* Thread */
 
-TX_THREAD telemetry_task;
+TX_THREAD telemetry_thread;
 TX_MUTEX telemetry_mu;
 TX_BYTE_POOL telemetry_pool;
 extern TX_THREAD fx_app_thread;
@@ -1598,7 +1598,7 @@ void can_bus_rx_ready_isr(void)
 void telemetry_wake(void)
 {
   /* Before the group exists ThreadX's checked API refuses the set. */
-  if (tx_thread_identify() != &telemetry_task)
+  if (tx_thread_identify() != &telemetry_thread)
     (void)tx_event_flags_set(&telemetry_wake_flags, TELEMETRY_WAKE_ROUTER, TX_OR);
 }
 
@@ -1624,7 +1624,7 @@ static UNUSED_FUNCTION void telemetry_idle_wait(void)
                            TX_OR_CLEAR, &woken, TELEMETRY_IDLE_TICKS);
 }
 
-void telemetry_entry(ULONG _)
+void telemetry_thread_entry(ULONG _)
 {
   g_telemetry_thread_entered++;
   g_telemetry_service_stage = 1U;
@@ -1696,7 +1696,7 @@ void telemetry_entry(ULONG _)
 #endif /* FAKESTATION */
 }
 
-UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
+UINT create_telemetry_thread(TX_BYTE_POOL *shared_pool)
 {
   UINT st;
   CHAR *ptr;
@@ -1710,7 +1710,7 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
   }
 
   st = tx_byte_allocate(shared_pool, (VOID**) &ptr,
-                        TLMT_STACK_BYTES, TX_NO_WAIT);
+                        TELEMETRY_STACK_BYTES, TX_NO_WAIT);
 
   if (st != TX_SUCCESS)
   {
@@ -1742,15 +1742,15 @@ UINT create_telemetry_task(TX_BYTE_POOL *shared_pool)
   try_allocate_reserve_pool();
 #endif
 
-  st = tx_thread_create(&telemetry_task,
-                        "Telemetry Task",
-                        telemetry_entry,
-                        TLMT_INPUT,
+  st = tx_thread_create(&telemetry_thread,
+                        "Telemetry",
+                        telemetry_thread_entry,
+                        TELEMETRY_INPUT,
                         ptr,
-                        TLMT_STACK_BYTES,
+                        TELEMETRY_STACK_BYTES,
                         /* No preemption threshold */
-                        TLMT_PRIORITY,
-                        TLMT_PRIORITY,
+                        TELEMETRY_PRIORITY,
+                        TELEMETRY_PRIORITY,
                         TX_NO_TIME_SLICE,
                         TX_AUTO_START);
 

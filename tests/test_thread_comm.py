@@ -182,8 +182,8 @@ class ThreadCommTests(unittest.TestCase):
 
     def test_created_before_any_thread(self):
         app = (ROOT / 'Core/Src/app_threadx.c').read_text()
-        self.assertLess(app.index('thread_comm_init()'), app.index('create_telemetry_task('))
-        self.assertLess(app.index('thread_comm_init()'), app.index('create_recovery_task('))
+        self.assertLess(app.index('thread_comm_init()'), app.index('create_telemetry_thread('))
+        self.assertLess(app.index('thread_comm_init()'), app.index('create_control_thread('))
         self.assertIn('Core/Src/thread_comm.c', (ROOT / 'CMakeLists.txt').read_text())
 
 

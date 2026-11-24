@@ -47,7 +47,7 @@ volatile uint8_t g_fc_est_phase;volatile uint32_t g_fc_est_cycles,g_fc_est_start
 static struct {unsigned gps_delayed,gps_malform,to_abort,failures,to_reinit;} smon;
 static unsigned devctr_if[2];
 static struct {atomic_uint lock;} meas_locks[2];
-static struct task {UINT tx_thread_state;void *tx_thread_suspend_control_block;} evaluation_task={.tx_thread_state=TX_SUSPENDED},recovery_task,distribution_task;
+static struct task {UINT tx_thread_state;void *tx_thread_suspend_control_block;} estimator_thread={.tx_thread_state=TX_SUSPENDED},control_thread,sensor_thread;
 static unsigned eval_stage;
 static volatile uint8_t evaluation_quiescent=1U,g_recovery_receive_loop_ready=1U;
 static unsigned irq,seal,wakes,ascent_initializations,messages,waits,suspends,resumes,terminations,resets,commits;

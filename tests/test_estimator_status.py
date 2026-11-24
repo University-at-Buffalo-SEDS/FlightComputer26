@@ -1,7 +1,7 @@
 """Kalman filter status the FC reports to the ground station.
 
-Runs the actual evaluation.c status hooks (Launch entry, each completed filter
-cycle, a recovery pause) and the recovery.c stop/reset hooks over a host
+Runs the actual estimator_thread.c status hooks (Launch entry, each completed filter
+cycle, a recovery pause) and the control_thread.c stop/reset hooks over a host
 fixture, and checks the phase, start stamp and cycle counter that
 board_health.c sends in BOARD_HEALTH words 13 and 15.
 """
@@ -66,7 +66,7 @@ static quat qv;
 static uint32_t tick, sent, pause_requests;
 static bool g_fc_watchdog_resumed;
 static struct { int rezero; } baro_conf;
-static struct { unsigned tx_thread_state; } evaluation_task = {TX_SUSPENDED};
+static struct { unsigned tx_thread_state; } estimator_thread = {TX_SUSPENDED};
 static uint8_t evaluation_quiescent = 1;
 enum { KFRemote, G_Startup };
 static struct { unsigned gnd; } rates;
@@ -147,8 +147,8 @@ int main(void) {
 
 
 def build(out):
-    evaluation = (BASE / 'Core/Src/evaluation.c').read_text()
-    recovery = (BASE / 'Core/Src/recovery.c').read_text()
+    evaluation = (BASE / 'Core/Src/estimator_thread.c').read_text()
+    recovery = (BASE / 'Core/Src/control_thread.c').read_text()
     types = (BASE / 'Core/Inc/fcstructs.h').read_text()
     enum = types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;') + len('} fc_msg;')]
     enum = enum.replace('flight_message : fu32', 'flight_message').replace('UINT_FAST32_MAX', 'UINT32_MAX')

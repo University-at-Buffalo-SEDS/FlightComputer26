@@ -28,14 +28,14 @@ def loop_body(source, entry):
 
 class IdleWaits(unittest.TestCase):
     def test_service_loops_block_instead_of_yielding(self):
-        dma = (ROOT / 'Core/Src/dma.c').read_text()
+        dma = (ROOT / 'Core/Src/sensor_dma.c').read_text()
         self.assertNotIn('tx_thread_relinquish', dma)
         self.assertNotIn('tx_thread_create', dma)
         telemetry = loop_body((ROOT / 'Core/Src/telemetry.c').read_text(),
-                              'void telemetry_entry')
+                              'void telemetry_thread_entry')
         self.assertNotIn('tx_thread_relinquish', telemetry)
         self.assertIn('telemetry_idle_wait();', telemetry)
-        distribution = (ROOT / 'Core/Src/distribution.c').read_text()
+        distribution = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         for function in ('static inline void for_ascent_update',
                          'static inline void descent_publish',
                          'static inline void data_streaming_mode',
@@ -69,18 +69,18 @@ class IdleWaits(unittest.TestCase):
         self.assertLess(unlock.index('fchook_unlock('), unlock.index('telemetry_wake();'))
 
     def test_distribution_wakes_on_commands_gps_and_evaluator_stage(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         self.assertRegex(recovery, r'(?s)decode_flight_message\(\(fc_msg\)msg\.cmd\);\s*thread_comm_estimator_leave\(\);\s*/\*.*?\*/\s*'
                                    r'distribution_wake\(\);\s*telemetry_wake\(\);')
-        distribution = (ROOT / 'Core/Src/distribution.c').read_text()
+        distribution = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         gps = distribution[distribution.index('process_gps_packet(const uint8_t *data'):]
         gps = gps[:gps.index('\n}\n')]
         self.assertLess(gps.index('rfboard.updated = true;'), gps.index('distribution_wake();'))
-        evaluation = (ROOT / 'Core/Src/evaluation.c').read_text()
+        evaluation = (ROOT / 'Core/Src/estimator_thread.c').read_text()
         self.assertRegex(evaluation, r'~option\(Ascent_KF_Staged\), AcqRel\);\s*distribution_wake\(\);')
 
     def test_sample_waits_never_lose_a_wakeup(self):
-        source = (ROOT / 'Core/Src/dma.c').read_text()
+        source = (ROOT / 'Core/Src/sensor_dma.c').read_text()
         exti = source[source.index('void HAL_GPIO_EXTI_Rising_Callback'):
                       source.index('/* DMA routine */')]
         propagate = source[source.index('static inline void propagate_rx'):

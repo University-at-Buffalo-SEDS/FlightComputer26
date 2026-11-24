@@ -1,4 +1,4 @@
-/* Core/Src/evaluation.c */
+/* Core/Src/estimator_thread.c */
 
 #include "platform.h"
 #include "board_watchdog.h"
@@ -6,7 +6,7 @@
 #include "fc_recovery_owner.h"
 #include "fctypes.h"
 #include "fcstructs.h"
-#include "fctasks.h"
+#include "FC-Threads.h"
 #include "fccommon.h"
 #include "fcapi.h"
 #include "fcconfig.h"
@@ -19,7 +19,7 @@
 #define id "EV "
 
 
-TX_THREAD evaluation_task;
+TX_THREAD estimator_thread;
 TX_EVENT_FLAGS_GROUP eval_stage;
 
 void cm_align *kfpool_buf = NULL;
@@ -577,7 +577,7 @@ static void evaluation_control_barrier(void)
  * (the distribution thread offers them in that order through eval_stage).
  * Descent: each fresh barometer sample, or GPS fix outside Vigilant mode,
  * runs one predict/update and the state machine. */
-void evaluation_entry(ULONG _)
+void estimator_thread_entry(ULONG _)
 {
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
@@ -672,7 +672,7 @@ void evaluation_entry(ULONG _)
   }
 }
 
-UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
+UINT create_estimator_thread(TX_BYTE_POOL *byte_pool)
 {
   UINT st;
   CHAR *pointer;
@@ -680,7 +680,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   const char *critical = "creation failure:";
 
   st = tx_byte_allocate(byte_pool, (VOID **)&pointer,
-                        EVAL_STACK_BYTES, TX_NO_WAIT);
+                        ESTIMATOR_STACK_BYTES, TX_NO_WAIT);
 
   if (st != TX_SUCCESS)
   {
@@ -688,16 +688,16 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
     return FC_INIT_FAILED;
   }
 
-  st = tx_thread_create(&evaluation_task,
-                        "Evaluation",
-                        evaluation_entry,
-                        EVAL_INPUT,
+  st = tx_thread_create(&estimator_thread,
+                        "Estimator",
+                        estimator_thread_entry,
+                        ESTIMATOR_INPUT,
                         pointer,
-                        EVAL_STACK_BYTES,
-                        EVAL_PRIORITY,
+                        ESTIMATOR_STACK_BYTES,
+                        ESTIMATOR_PRIORITY,
                         /* No preemption threshold: thread_comm's estimator
                          * guard keeps recovery out of a pass. */
-                        EVAL_PRIORITY,
+                        ESTIMATOR_PRIORITY,
                         TX_NO_TIME_SLICE,
                         TX_DONT_START);
 

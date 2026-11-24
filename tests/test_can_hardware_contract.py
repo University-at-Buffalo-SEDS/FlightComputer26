@@ -31,7 +31,7 @@ class CanHardwareContract(unittest.TestCase):
 
     def test_flight_sensor_downlink_uses_shared_rate(self):
         config = (ROOT / "Core/Inc/fcconfig.h").read_text()
-        distribution = (ROOT / "Core/Src/distribution.c").read_text()
+        distribution = (ROOT / "Core/Src/sensor_thread.c").read_text()
         self.assertRegex(config, r"#define LOG_RATE_GND\s+FC_TELEMETRY_PERIOD_MS")
         self.assertIn("timer_probe_ground(mems[dev].tim_gnd, ground_period)", distribution)
         self.assertIn("central_baro_gate = dev == Baro", distribution)

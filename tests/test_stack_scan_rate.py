@@ -30,7 +30,7 @@ class StackScanRate(unittest.TestCase):
 typedef uint32_t ULONG;  /* ThreadX ULONG on the Cortex-M33 port */
 typedef int TX_THREAD;
 #define TX_TIMER_TICKS_PER_SECOND 1000
-static TX_THREAD telemetry_task, evaluation_task, distribution_task;
+static TX_THREAD telemetry_thread, estimator_thread, sensor_thread;
 static volatile uint32_t g_telemetry_stack_free_min, g_evaluation_stack_free_min,
     g_distribution_stack_free_min;
 static ULONG now;
@@ -38,7 +38,7 @@ static unsigned fills[3];
 static ULONG tx_time_get(void) { return now; }
 static void stack_sample_fill(const TX_THREAD *thread, volatile uint32_t *low) {
   (void)low;
-  fills[thread == &telemetry_task ? 0 : thread == &evaluation_task ? 1 : 2]++;
+  fills[thread == &telemetry_thread ? 0 : thread == &estimator_thread ? 1 : 2]++;
 }
 ''' + production + r'''
 static void run(ULONG first, ULONG ticks) {

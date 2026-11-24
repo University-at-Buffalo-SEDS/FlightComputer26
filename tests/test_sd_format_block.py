@@ -90,7 +90,7 @@ class SdFormatBlockTests(unittest.TestCase):
         return sum(int(u.split('*')[1]) if '*' in u else 1 for u in units.split(';'))
 
     def test_vector_widths_match_the_writers(self):
-        dist = (ROOT / 'Core/Src/distribution.c').read_text()
+        dist = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         self.assertRegex(dist, r'\.size = 6,\s*\.kind_sd = SEDS_DT_IMU_LOCAL')
         self.assertRegex(dist, r'\.size = 3,\s*\.kind_sd = SEDS_DT_BAROMETER_LOCAL')
         self.assertEqual(self.width('IMU'), 6)

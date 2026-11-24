@@ -10,7 +10,7 @@ def build(out):
  base=a.build(out).read_text().replace('int main(int argc,char **argv)','int admitted_original_main(int argc,char **argv)').replace('enum state {','enum state : uint8_t {')
  # The existing admitted fixture starts Armed; this test starts at the ACTUAL
  # production Startup initializer and preserves mocked boot readiness boundaries.
- evaluation=(BASE/'Core/Src/evaluation.c').read_text()
+ evaluation=(BASE/'Core/Src/estimator_thread.c').read_text()
  assert 'sv_meta sm = {Startup, G_Startup, 0, 0, 0};' in evaluation
  base=base.replace('.flight=Armed','.flight=Startup')
  pre='#include <stdint.h>\n#include <stdbool.h>\n#define TELEMETRY_ENABLED 1\nstatic void NVIC_SystemReset(void);\nvoid ota_stream_retire_reset_locked(void);\nbool ota_stream_take_reset_locked(uint32_t epoch);\n'
@@ -20,7 +20,7 @@ def build(out):
  tele=(BASE/'Core/Src/telemetry.c').read_text()
  boundary=a.extract(tele,'bool fc_recovery_ota_reset_boundary_ready(')
  wrapper=a.extract(tele,'SedsResult telemetry_poll_discovery(')
- rec=(BASE/'Core/Src/recovery.c').read_text()
+ rec=(BASE/'Core/Src/control_thread.c').read_text()
  fwd=rec[rec.index('case Advance_State:'):rec.index('case Rewind_State:')].split(':',1)[1].replace('break;','')
  rev=rec[rec.index('case Rewind_State:'):rec.index('case Log_Rate_Limit:')].split(':',1)[1].replace('break;','')
  common=(BASE/'Core/Inc/fccommon.h').read_text();macros=''

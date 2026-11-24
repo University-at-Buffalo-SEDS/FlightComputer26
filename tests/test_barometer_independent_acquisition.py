@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BarometerIndependentAcquisition(unittest.TestCase):
     def test_barometer_keeps_publishing_and_stages_updates_without_imu(self):
-        source = (ROOT / 'Core/Src/distribution.c').read_text()
+        source = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         start = source.index('static inline void for_ascent_predict(')
         end = source.index('/* Distribution for Descent', start)
         production = source[start:end]

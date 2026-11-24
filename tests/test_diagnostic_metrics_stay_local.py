@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DiagnosticMetricsStayLocalTests(unittest.TestCase):
     def test_baro_interval_is_logged_locally_only(self):
-        source = (ROOT / 'Core/Src/distribution.c').read_text()
+        source = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         calls = re.findall(r'(\w+)\(id "Baro interval"', source)
         self.assertEqual(calls, ['log_metric_local'])
 

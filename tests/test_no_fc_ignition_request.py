@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class NoFcIgnitionRequestTests(unittest.TestCase):
     def test_launch_path_sends_no_valve_command(self):
-        for rel in ("Core/Src/distribution.c", "Core/Inc/fcapi.h"):
+        for rel in ("Core/Src/sensor_thread.c", "Core/Inc/fcapi.h"):
             text = (ROOT / rel).read_text()
             self.assertNotIn("request_ignition", text, rel)
             self.assertNotIn("log_valve_board_command(", text, rel)
@@ -22,7 +22,7 @@ class NoFcIgnitionRequestTests(unittest.TestCase):
             self.assertNotIn("IGNITION_COMMAND", (ROOT / rel).read_text(), rel)
 
     def test_launch_still_enters_flight_mode(self):
-        text = (ROOT / "Core/Src/distribution.c").read_text()
+        text = (ROOT / "Core/Src/sensor_thread.c").read_text()
         self.assertIn('"ignition; flight mode"', text)
 
 

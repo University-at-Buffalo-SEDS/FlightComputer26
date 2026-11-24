@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SensorDmaCompletion(unittest.TestCase):
     def test_missed_drdy_level_recovers_once_without_duplicate_reads(self):
-        source = (ROOT / 'Core/Src/dma.c').read_text()
+        source = (ROOT / 'Core/Src/sensor_dma.c').read_text()
         start = source.index('  bool baro_high =')
         end = source.index('  static const fu8 order[Sensors]', start)
         production = source[start:end]
@@ -44,7 +44,7 @@ int main(void){
             subprocess.run([str(path / 'test')], check=True)
 
     def test_completion_is_retained_before_wait_and_errors_are_bounded(self):
-        source = (ROOT / "Core/Src/dma.c").read_text()
+        source = (ROOT / "Core/Src/sensor_dma.c").read_text()
         callbacks = source[source.index("void HAL_SPI_TxRxCpltCallback"):
                            source.index("void HAL_GPIO_EXTI_Rising_Callback")]
         transfer = source[source.index("static inline void start_dma_transfer"):

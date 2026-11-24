@@ -9,23 +9,23 @@ static void sensor_failure_handoff(void){
  if(setjmp(scheduler)==0){evaluation_control_barrier();assert(!"paused evaluator must yield");}
  evaluator_context=false;
  fc_recovery_control_service();
- assert(terminations&&resets&&evaluation_task.tx_thread_state==TX_SUSPENDED);
+ assert(terminations&&resets&&estimator_thread.tx_thread_state==TX_SUSPENDED);
  /*ACTUAL_SENSOR_RESTART_BRANCH*/
 }
 int main(int argc,char **argv){assert(argc==2);
  if(!strcmp(argv[1],"prelaunch")){
-  evaluation_task.tx_thread_state=TX_RUNNING;fc_recovery_evaluation_running();sensor_failure_handoff();
-  assert((g_conf&option(In_Aborted_State))&&evaluation_task.tx_thread_state==TX_SUSPENDED);
+  estimator_thread.tx_thread_state=TX_RUNNING;fc_recovery_evaluation_running();sensor_failure_handoff();
+  assert((g_conf&option(In_Aborted_State))&&estimator_thread.tx_thread_state==TX_SUSPENDED);
  }else if(!strcmp(argv[1],"accepted_preboost")||!strcmp(argv[1],"accepted_before_eval")){
-  enter_launch(false);assert(evaluation_task.tx_thread_state==TX_RUNNING);
+  enter_launch(false);assert(estimator_thread.tx_thread_state==TX_RUNNING);
   assert(!fc_recovery_abort_latched()&&current()==Armed&&!(g_conf&option(Launch_Requested)));
   const bool entered=strcmp(argv[1],"accepted_before_eval")!=0;
   if(entered){evaluator_entry();assert(ascent_initializations==1&&(g_conf&option(Launch_Requested))&&current()==Armed);}
   else assert(!ascent_initializations&&!(g_conf&option(Launch_Requested)));
   sensor_failure_handoff();
-  printf("accepted=1 phase=%u aborted_flag=%u owner_abort=%u eval_state=%u init_count=%u epoch=%u\n",current(),!!(g_conf&option(In_Aborted_State)),fc_recovery_abort_latched(),evaluation_task.tx_thread_state,ascent_initializations,fc_recovery_epoch());fflush(stdout);
+  printf("accepted=1 phase=%u aborted_flag=%u owner_abort=%u eval_state=%u init_count=%u epoch=%u\n",current(),!!(g_conf&option(In_Aborted_State)),fc_recovery_abort_latched(),estimator_thread.tx_thread_state,ascent_initializations,fc_recovery_epoch());fflush(stdout);
   assert(!(g_conf&option(In_Aborted_State))); /* USER CONTRACT: expected old RED */
-  assert(evaluation_task.tx_thread_state==TX_RUNNING);
+  assert(estimator_thread.tx_thread_state==TX_RUNNING);
   evaluator_entry();assert(ascent_initializations==1);
   assert(fc_recovery_flight_is_admitted());
  }else if(!strcmp(argv[1],"accepted_then_manual_stop")){
@@ -43,8 +43,8 @@ int main(int argc,char **argv){assert(argc==2);
   fc_recovery_restore_commissioning_hold();assert(!fc_recovery_restore_admitted_flight()&&!fc_recovery_flight_is_admitted());assert(fc_recovery_abort_latched()&&!gpio.ODR);
  }else if(!strcmp(argv[1],"verified_watchdog_seed")){
   g_fc_watchdog_resumed=true;g_conf|=option(Launch_Requested);assert(fc_recovery_restore_admitted_flight());
-  evaluation_task.tx_thread_state=TX_RUNNING;evaluator_entry();assert(!ascent_initializations);
-  sensor_failure_handoff();assert(!(g_conf&option(In_Aborted_State))&&evaluation_task.tx_thread_state==TX_RUNNING);
+  estimator_thread.tx_thread_state=TX_RUNNING;evaluator_entry();assert(!ascent_initializations);
+  sensor_failure_handoff();assert(!(g_conf&option(In_Aborted_State))&&estimator_thread.tx_thread_state==TX_RUNNING);
   evaluator_entry();assert(!ascent_initializations&&fc_recovery_flight_is_admitted());
  }else if(!strcmp(argv[1],"stale_reset_no_revoke")){
   enter_launch(false);evaluator_entry();assert(fc_recovery_flight_is_admitted());

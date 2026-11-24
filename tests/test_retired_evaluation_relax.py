@@ -20,8 +20,8 @@ def enum_block(text, start, end):
 class RetiredEvaluationRelax(unittest.TestCase):
     def setUp(self):
         self.types = (ROOT / 'Core/Inc/fcstructs.h').read_text()
-        self.dist = (ROOT / 'Core/Src/distribution.c').read_text()
-        self.recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        self.dist = (ROOT / 'Core/Src/sensor_thread.c').read_text()
+        self.recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
 
     def test_ids_stay_reserved(self):
         self.assertIn('Retired_Evaluation_Relax = Actionable_Decrees + 9,', self.types)

@@ -84,7 +84,7 @@ bool fc_recovery_inhibits_manual_pyro(void)
 /* Op 3 RESET_STARTUP_ANY: check that no pulse is HIGH or ticking and, under
  * the same IRQ guard deployment_pulse_start uses, block every new pulse until
  * the reset finishes. The reset therefore never cuts a pulse, and a Deploy
- * pressed meanwhile is refused (recovery.c tells the station), not started. */
+ * pressed meanwhile is refused (control_thread.c tells the station), not started. */
 bool fc_recovery_reserve_reset_any(void)
 {
     uint32_t outputs;

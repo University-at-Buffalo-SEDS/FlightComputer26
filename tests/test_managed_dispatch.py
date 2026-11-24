@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ManagedDispatchTests(unittest.TestCase):
     def test_managed_receipts_and_normal_commands(self):
-        source = (ROOT / 'Core/Src/distribution.c').read_text()
+        source = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         start = source.index('static SedsResult on_fc_packet_impl(')
         end = source.index('\n#endif', start)
         code = r"""
@@ -31,7 +31,7 @@ static uint8_t board_recovery_controller_update_allowed(const SedsPacketView *p)
 static int operator_pyro_command(const SedsPacketView *p){(void)p;return 0;}
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView *p){return p!=NULL;}
 static int pulse_ground(void){heartbeats++;return 0;}
-/* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
+/* sensor_thread.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
 /* flight_state_cache.c ordering (tested in test_fc_reliable_refusal_ack): never older here. */

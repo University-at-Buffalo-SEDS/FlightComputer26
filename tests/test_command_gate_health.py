@@ -1,6 +1,6 @@
 """BOARD_HEALTH tells the station why the FC refuses flight commands.
 
-distribution.c acknowledges and drops a FLIGHT_COMMAND when
+sensor_thread.c acknowledges and drops a FLIGHT_COMMAND when
 board_recovery_controller_update_allowed() fails its store/floor check, so the
 station only saw that nothing happened. board_recovery_controller_gate()
 reports the reason in BOARD_HEALTH word 6 bits 24..27 (bits 0..15 stay the

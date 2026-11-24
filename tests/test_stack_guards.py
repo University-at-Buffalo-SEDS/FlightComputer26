@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class StackGuardContracts(unittest.TestCase):
     def test_command_worker_has_measured_hardware_headroom(self):
-        tasks = (ROOT / "Core" / "Inc" / "fctasks.h").read_text()
-        self.assertIn("RECV_STACK_BYTES (12U * 1024U)", tasks)
+        tasks = (ROOT / "Core" / "Inc" / "FC-Threads.h").read_text()
+        self.assertIn("CONTROL_STACK_BYTES (12U * 1024U)", tasks)
 
     def test_threadx_stack_guard_reports_the_offending_thread(self):
         config = (ROOT / "Core" / "Inc" / "tx_user.h").read_text()
@@ -24,8 +24,8 @@ class StackGuardContracts(unittest.TestCase):
         self.assertIn('"symbol": "g_recovery_stack_remaining", "minimum": 2048', layout)
 
     def test_command_worker_reports_stack_headroom(self):
-        recovery = (ROOT / "Core" / "Src" / "recovery.c").read_text()
-        self.assertIn("_tx_thread_stack_analyze(&recovery_task)", recovery)
+        recovery = (ROOT / "Core" / "Src" / "control_thread.c").read_text()
+        self.assertIn("_tx_thread_stack_analyze(&control_thread)", recovery)
         self.assertIn("g_recovery_stack_remaining", recovery)
         self.assertIn("recovery_update_stack_profile();", recovery)
 

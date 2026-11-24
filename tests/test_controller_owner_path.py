@@ -15,7 +15,7 @@ class ControllerOwnerPathTests(unittest.TestCase):
   text=text.replace('static int seds_syscall,eval_stage,g_last_network_flight_command_msg;\n#define Invalid_Message 255','static int seds_syscall,eval_stage;static fc_msg g_last_network_flight_command_msg;')
   text=text.replace('static uint64_t clock_ms=10000;','static uint64_t clock_ms=10000;static bool controller_clock_ok=true;').replace('*out=clock_ms;return SEDS_OK;','*out=clock_ms;return controller_clock_ok?SEDS_OK:SEDS_ERR;')
   for name,tag in [('fc_recovery_owner.c','ACTUAL_FC_OWNER'),('deployment_pulse.c','ACTUAL_PULSE')]:text=text.replace('@'+tag+'@','\n'.join(line for line in(ROOT/'Core/Src'/name).read_text().splitlines()if not line.startswith('#include')))
-  distribution=(ROOT/'Core/Src/distribution.c').read_text();recovery=(ROOT/'Core/Src/recovery.c').read_text();begin=distribution.index('#if defined (TELEMETRY_ENABLED) || defined(FAKESTATION)');end=distribution.index('#endif /* TELEMETRY_ENABLED + FAKESTATION */',begin)+len('#endif /* TELEMETRY_ENABLED + FAKESTATION */');decoder=distribution[begin:end]
+  distribution=(ROOT/'Core/Src/sensor_thread.c').read_text();recovery=(ROOT/'Core/Src/control_thread.c').read_text();begin=distribution.index('#if defined (TELEMETRY_ENABLED) || defined(FAKESTATION)');end=distribution.index('#endif /* TELEMETRY_ENABLED + FAKESTATION */',begin)+len('#endif /* TELEMETRY_ENABLED + FAKESTATION */');decoder=distribution[begin:end]
   support=r'''
 #define TELEMETRY_CMD_COMPAT
 #define id "FC "
@@ -28,7 +28,7 @@ typedef int32_t fi32;
 static bool queued;static fc_msg queued_message;static unsigned owner_deliveries;
 static unsigned g_network_flight_commands_received,g_network_flight_commands_accepted,g_last_network_flight_command_id;
 static unsigned devctr_if[2];static struct{unsigned gps_delayed,gps_malform,failures;}smon;
-static struct Thread distribution_task;
+static struct Thread sensor_thread;
 static bool beyond(unsigned state){return current()>state;}
 static void log_metric(const char*name,fi32 value,bool important){(void)name;(void)value;(void)important;}
 static UINT thread_comm_send_network(uint32_t message){assert(!queued);queued=true;queued_message=(fc_msg)message;g_last_network_flight_command_msg=(fc_msg)message;return TX_SUCCESS;}

@@ -2,7 +2,7 @@
 
 Runs the actual Core/Src/baro_reference.c over a host fixture fed with the
 FC's sample rates (barometer 25 Hz, IMU 100 Hz) and sensor noise, and checks
-the live-path wiring in dma.c, barometer.c and board_health.c.
+the live-path wiring in sensor_dma.c, barometer.c and board_health.c.
 """
 from pathlib import Path
 import subprocess
@@ -420,7 +420,7 @@ class BaroReferenceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_live_path_wiring(self):
-        dma = (BASE / 'Core/Src/dma.c').read_text()
+        dma = (BASE / 'Core/Src/sensor_dma.c').read_text()
         # Every fresh live sample: the reference sees the real sensors, and
         # Launch (or any later state) freezes it.
         self.assertIn('buf->alt = baro_track_alt(buf->prs, current() < Launch);', dma)

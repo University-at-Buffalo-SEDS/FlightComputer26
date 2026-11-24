@@ -21,12 +21,12 @@ static uint8_t board_recovery_manual_stop_source_allowed(SedsRouter*r,const Seds
 static uint8_t board_recovery_managed_update_allowed(const SedsPacketView*p){assert(p);return managed_ok;}
 static __attribute__((unused)) uint8_t board_recovery_managed_report_ignorable(const SedsPacketView*p){assert(p);return 0U;}
 static uint8_t board_recovery_controller_update_allowed(const SedsPacketView*p){assert(p);return controller_ok;}
-/* distribution.c operator Deploy/Expand selector (compat bytes 12/13, extmap); this matrix sends ordinary commands. */
+/* sensor_thread.c operator Deploy/Expand selector (compat bytes 12/13, extmap); this matrix sends ordinary commands. */
 static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==12||p->payload[0]==13);}
 static bool pyro_ok;
 static uint8_t board_recovery_operator_pyro_allowed(const SedsPacketView*p){(void)p;assert(pyro_ok&&"operator Deploy/Expand only in the copy-dedupe mode");return 1U;}
 static SedsResult pulse_ground(void){return SEDS_OK;}
-/* distribution.c implicit_postinit runs for real; its owners are stand-ins. A
+/* sensor_thread.c implicit_postinit runs for real; its owners are stand-ins. A
  * Postinit request is counted at the syscall queue. The recovery owner holds
  * the sequence once the manual Stop latches (fc_recovery_owner.c). */
 enum {Postinit=3,G_Armed=6,Postinit_Signal=7,Postinit_Requested=1u<<8,TX_NO_WAIT=0,TX_SUCCESS=0};
@@ -38,7 +38,7 @@ static int current(void){return Postinit-1;}
 static uint32_t fc_recovery_epoch(void){return 1U;}
 static bool fc_recovery_holds_sequence(void){return stopped;}
 static unsigned thread_comm_send(uint32_t m,unsigned w){(void)m;(void)w;++postinits;return TX_SUCCESS;}
-/* distribution.c puts the return type on its own line. */
+/* sensor_thread.c puts the return type on its own line. */
 static inline SedsResult
 /* SOURCE_FUNCTION:implicit_postinit */
 static SedsResult process_gps_packet(const uint8_t*d,size_t n){(void)d;(void)n;return SEDS_OK;}

@@ -75,7 +75,7 @@ int main(void) {
         self.assertNotIn('SEDS_HANDLER_ERROR', refusal)
 
     def test_fc_endpoint_handler_does_not_fail_its_own_report(self):
-        body = function((ROOT / 'Core/Src/distribution.c').read_text(), 'on_fc_packet_impl')
+        body = function((ROOT / 'Core/Src/sensor_thread.c').read_text(), 'on_fc_packet_impl')
         gate = body.index('if ((pkt->ty == SEDS_DT_FLIGHT_STATE && !board_recovery_managed_update_allowed(pkt))')
         refusal = body[gate:body.index('}', gate)]
         self.assertIn('++g_reliable_refusal_count;\n    return SEDS_OK;', refusal)
@@ -103,7 +103,7 @@ int main(void) {
         self.assertIn('FC_STATE_REPUBLISH_MS', body)
         self.assertIn('log_telemetry_queued_u8(SEDS_DT_FLIGHT_STATE, &value, 1U)', body)
         self.assertIn('global_state_of(local)', body)
-        loop = telemetry[telemetry.index('void telemetry_entry(ULONG _)'):]
+        loop = telemetry[telemetry.index('void telemetry_thread_entry(ULONG _)'):]
         self.assertIn('telemetry_republish_flight_state();', loop)
         fcapi = (ROOT / 'Core/Inc/fcapi.h').read_text()
         mapping = function(fcapi, 'global_state_of')

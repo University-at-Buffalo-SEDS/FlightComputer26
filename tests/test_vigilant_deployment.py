@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
 
 
 def build(out):
-    evaluation = (BASE / 'Core/Src/evaluation.c').read_text()
+    evaluation = (BASE / 'Core/Src/estimator_thread.c').read_text()
     fcapi = (BASE / 'Core/Inc/fcapi.h').read_text()
     types = (BASE / 'Core/Inc/fcstructs.h').read_text()
     enum = types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;') + len('} fc_msg;')]

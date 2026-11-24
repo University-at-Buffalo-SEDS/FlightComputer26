@@ -31,7 +31,7 @@ Parachute_Deployed=256U,Parachute_Expanded=512U,CO2_Asserted=1024U,REEF_Asserted
 Manual_Biases=4096U,SD_Pipeline_Reset=8192U,Lost_GroundStation=16384U,G_Startup=0};
 typedef unsigned UINT;
 typedef struct {unsigned tx_thread_state;void *tx_thread_suspend_control_block;} TX_THREAD;
-static TX_THREAD evaluation_task,recovery_task;
+static TX_THREAD estimator_thread,control_thread;
 static int seds_syscall,eval_stage,other_queue;
 static uint32_t g_recovery_receive_loop_ready,g_last_network_flight_command_msg;
 static struct {atomic_uint lock;}meas_locks[2];
@@ -53,22 +53,22 @@ static void fc_recovery_ota_reset_retire_locked(void){++ota_reset_retire_calls;}
 static void __DMB(void){}
 static bool fc_recovery_holds_sequence(void){return held;}
 static bool fc_watchdog_startup_reset_ready(void){return reset_ready;}
-static UINT tx_thread_suspend(TX_THREAD*t){assert(t==&evaluation_task);t->tx_thread_state=TX_SUSPENDED;return 0;}
-static UINT tx_thread_resume(TX_THREAD*t){assert(t==&evaluation_task);++resumes;t->tx_thread_state=TX_READY;return 0;}
-static UINT tx_thread_terminate(TX_THREAD*t){assert(t==&evaluation_task);++terminates;t->tx_thread_state=TX_TERMINATED;return 0;}
-static UINT tx_thread_reset(TX_THREAD*t){assert(t==&evaluation_task);++resets;t->tx_thread_state=TX_SUSPENDED;return 0;}
+static UINT tx_thread_suspend(TX_THREAD*t){assert(t==&estimator_thread);t->tx_thread_state=TX_SUSPENDED;return 0;}
+static UINT tx_thread_resume(TX_THREAD*t){assert(t==&estimator_thread);++resumes;t->tx_thread_state=TX_READY;return 0;}
+static UINT tx_thread_terminate(TX_THREAD*t){assert(t==&estimator_thread);++terminates;t->tx_thread_state=TX_TERMINATED;return 0;}
+static UINT tx_thread_reset(TX_THREAD*t){assert(t==&estimator_thread);++resets;t->tx_thread_state=TX_SUSPENDED;return 0;}
 static UINT tx_event_flags_set(int*g,unsigned flags,unsigned mode){assert(g==&eval_stage&&flags==7&&mode==TX_OR);++events;return 0;}
 /* thread_comm.c: the command queue is modelled by seds_syscall. */
 static void thread_comm_flush(void){++flushes;g_last_network_flight_command_msg=Invalid_Message;}
 static bool thread_comm_receiver_waiting(const TX_THREAD*t){return t->tx_thread_state==TX_QUEUE_SUSP&&t->tx_thread_suspend_control_block==&seds_syscall;}
-static UINT tx_thread_wait_abort(TX_THREAD*t){assert(irq&&t==&recovery_task);++aborts;return 0;}
+static UINT tx_thread_wait_abort(TX_THREAD*t){assert(irq&&t==&control_thread);++aborts;return 0;}
 '''
 MAIN=r'''
 int main(void){
- g_recovery_receive_loop_ready=1;evaluation_task.tx_thread_state=TX_READY;
+ g_recovery_receive_loop_ready=1;estimator_thread.tx_thread_state=TX_READY;
  fc_recovery_evaluation_running();meas_locks[IMU].lock=1;
  assert(!fc_recovery_control_quiesce()&&events==1&&terminates==0);
- evaluation_task.tx_thread_state=TX_SUSPENDED;
+ estimator_thread.tx_thread_state=TX_SUSPENDED;
  assert(!fc_recovery_control_quiesce()&&resumes==1&&terminates==0);
  fc_recovery_evaluation_quiescent();
  assert(!fc_recovery_control_quiesce()&&terminates==0); /* safe-point not enough while shared lock held */
@@ -90,16 +90,16 @@ int main(void){
  sm.flight=Armed;g_conf|=Postinit_Requested;assert(!fc_recovery_control_new_flight_ready());
  g_conf&=~Postinit_Requested;assert(fc_recovery_control_new_flight_ready());
  fc_recovery_control_new_flight();assert(!(g_conf&(Parachute_Deployed|Parachute_Expanded)));
- recovery_task.tx_thread_state=TX_SLEEP;fc_recovery_control_wake();assert(aborts==0);
- recovery_task.tx_thread_state=TX_QUEUE_SUSP;recovery_task.tx_thread_suspend_control_block=&other_queue;
+ control_thread.tx_thread_state=TX_SLEEP;fc_recovery_control_wake();assert(aborts==0);
+ control_thread.tx_thread_state=TX_QUEUE_SUSP;control_thread.tx_thread_suspend_control_block=&other_queue;
  fc_recovery_control_wake();assert(aborts==0);
- recovery_task.tx_thread_suspend_control_block=&seds_syscall;fc_recovery_control_wake();assert(aborts==1&&!irq);
+ control_thread.tx_thread_suspend_control_block=&seds_syscall;fc_recovery_control_wake();assert(aborts==1&&!irq);
  irq=1;fc_recovery_control_wake();assert(aborts==2&&irq==1);
  return 0;}
 '''
 class FCRecoveryControlTests(unittest.TestCase):
  def test_actual_control_owner_safe_point_and_preserved_context(self):
-  source=(ROOT/'Core/Src/recovery.c').read_text();a=source.index('static volatile uint8_t evaluation_quiescent');b=source.index('/* Critical conditions */',a);actual=source[a:b]
+  source=(ROOT/'Core/Src/control_thread.c').read_text();a=source.index('static volatile uint8_t evaluation_quiescent');b=source.index('/* Critical conditions */',a);actual=source[a:b]
   with tempfile.TemporaryDirectory()as tmp:
    p=Path(tmp);f=p/'test.c';f.write_text(STUB+actual+MAIN);exe=p/'test'
    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(f),'-o',str(exe)],check=True);subprocess.run([str(exe)],check=True)

@@ -12,7 +12,7 @@ def extract(s,signature):
   depth+=(s[end]=='{')-(s[end]=='}');end+=1
  return s[start:end]
 def build(OUT):
- recovery=(BASE/'Core/Src/recovery.c').read_text();evaluation=(BASE/'Core/Src/evaluation.c').read_text();types=(BASE/'Core/Inc/fcstructs.h').read_text();enum=types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;')+len('} fc_msg;')].replace('flight_message : fu32','flight_message').replace('UINT_FAST32_MAX','UINT32_MAX')
+ recovery=(BASE/'Core/Src/control_thread.c').read_text();evaluation=(BASE/'Core/Src/estimator_thread.c').read_text();types=(BASE/'Core/Inc/fcstructs.h').read_text();enum=types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;')+len('} fc_msg;')].replace('flight_message : fu32','flight_message').replace('UINT_FAST32_MAX','UINT32_MAX')
  hooks=['bool fc_recovery_control_ready(','bool fc_recovery_control_is_startup(','bool fc_recovery_control_monitor_preflight(','void fc_recovery_evaluation_running(','void fc_recovery_evaluation_quiescent(','void fc_recovery_control_wake(','bool fc_recovery_control_quiesce(','void fc_recovery_control_mark_eval_stopped(','bool fc_recovery_control_finalize_startup(','bool fc_recovery_control_new_flight_ready(','void fc_recovery_control_new_flight(','static inline void enter_launch(','static inline bool flight_mission_active(','static inline void abortion_due_failures(','static inline void process_sensor_report(']
  actual_hooks='\n'.join(extract(recovery,sig)for sig in hooks)
  owner_pulse='\n'.join(line for line in ((BASE/'Core/Src/fc_recovery_owner.c').read_text()+'\n'+(BASE/'Core/Src/deployment_pulse.c').read_text()).splitlines()if not line.startswith('#include'))

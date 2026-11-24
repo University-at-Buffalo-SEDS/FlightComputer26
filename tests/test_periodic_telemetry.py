@@ -75,8 +75,8 @@ class PeriodicTelemetry(unittest.TestCase):
         self.assertIn('reports==10',result.stderr)
 
     def test_only_periodic_ground_reports_use_new_helper(self):
-        distribution=(ROOT/'Core/Src/distribution.c').read_text()
-        evaluation=(ROOT/'Core/Src/evaluation.c').read_text()
+        distribution=(ROOT/'Core/Src/sensor_thread.c').read_text()
+        evaluation=(ROOT/'Core/Src/estimator_thread.c').read_text()
         storage=(ROOT/'Core/Src/sdpipeline.c').read_text()
         self.assertIn('timer_probe_ground(mems[dev].tim_gnd, ground_period)',distribution)
         self.assertIn('timer_probe(mems[dev].tim_sd, rates.sd)',distribution)

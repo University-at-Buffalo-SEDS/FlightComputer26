@@ -1,6 +1,6 @@
 """The station-set launch site (LAUNCH_SITE) and the operator SD retry.
 
-Runs the actual distribution.c handler for LAUNCH_SITE: applied only on the
+Runs the actual sensor_thread.c handler for LAUNCH_SITE: applied only on the
 pad and in range, refused after Launch or during a ground-test replay, and the
 site in use is echoed either way. Checks that FcSdRetry (compat 33) exists in
 every image, that a failed mount waits for it instead of spinning forever, and
@@ -73,7 +73,7 @@ int main(void)
 
 class LaunchSite(unittest.TestCase):
     def test_applied_on_the_pad_only_and_always_echoed(self):
-        text = (ROOT / 'Core/Src/distribution.c').read_text()
+        text = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         handler = extract(text, 'static inline SedsResult update_launch_site(')
         with tempfile.TemporaryDirectory() as tmp:
             c = Path(tmp) / 'site.c'
@@ -84,7 +84,7 @@ class LaunchSite(unittest.TestCase):
             subprocess.run([str(exe)], check=True)
 
     def test_station_controller_only_and_dispatched(self):
-        text = (ROOT / 'Core/Src/distribution.c').read_text()
+        text = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         gate = text[text.index('static SedsResult on_fc_packet_impl'):]
         self.assertRegex(gate, r'pkt->ty == SEDS_DT_LAUNCH_SITE\) &&\s+!\(operator_pyro_command')
         self.assertIn('case SEDS_DT_LAUNCH_SITE:\n      return update_launch_site(', gate)
@@ -102,7 +102,7 @@ class SdRetry(unittest.TestCase):
         names = re.findall(r'^\s+(\w+),', compat, re.M)
         self.assertEqual(names.index('Compat_SD_Retry'), 33)
         self.assertIn('SD_Retry         = Actionable_Decrees + 21', types)
-        action = extract((ROOT / 'Core/Src/recovery.c').read_text(),
+        action = extract((ROOT / 'Core/Src/control_thread.c').read_text(),
                          'static inline void process_action(fc_msg cmd, bool internal)')
         case = action[action.index('case SD_Retry:'):]
         before = action[:action.index('case SD_Retry:')]

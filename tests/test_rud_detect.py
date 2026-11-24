@@ -71,7 +71,7 @@ class RudDetect(unittest.TestCase):
             subprocess.run([str(exe)], check=True)
 
     def test_wired_into_the_estimator(self):
-        evaluation = (ROOT / 'Core/Src/evaluation.c').read_text()
+        evaluation = (ROOT / 'Core/Src/estimator_thread.c').read_text()
         watch = evaluation[evaluation.index('static inline void watch_for_breakup('):]
         watch = watch[:watch.index('\n}\n')]
         self.assertIn('.armed = curr >= Launch && curr <= Coast && (conf & option(Using_Ascent_KF))', watch)

@@ -33,7 +33,7 @@ class StartupLedTests(unittest.TestCase):
         # Runtime retry/failure behavior is exercised by test_router_lifecycle's
         # actual startup-loop fixture, not inferred from these source contracts.
         self.assertIn("av_bay_underglow_reapply();", source)
-        startup = source.split("void telemetry_entry", 1)[1]
+        startup = source.split("void telemetry_thread_entry", 1)[1]
         self.assertNotIn("led_off(LED2_PORT, LED2_PIN);", startup)
 
     def test_persisted_underglow_is_reapplied_after_startup_indicator(self):
@@ -46,7 +46,7 @@ class StartupLedTests(unittest.TestCase):
         self.assertIn("av_bay_underglow_reapply();", telemetry)
 
     def test_parachute_indication_restores_managed_underglow_state(self):
-        recovery = (ROOT / "Core" / "Src" / "recovery.c").read_text(
+        recovery = (ROOT / "Core" / "Src" / "control_thread.c").read_text(
             encoding="utf-8"
         )
         deploy = recovery.split("static inline void manual_deployment", 1)[1]

@@ -255,10 +255,10 @@ int main(void) {
             subprocess.run([exe],check=True,timeout=10)
 
     def test_boot_and_resume_do_not_replay_startup_or_ignition(self):
-        source=(ROOT/'Core/Src/distribution.c').read_text()
-        entry=source[source.index('void distribution_entry'):]
+        source=(ROOT/'Core/Src/sensor_thread.c').read_text()
+        entry=source[source.index('void sensor_thread_entry'):]
         self.assertIn('if (!g_fc_watchdog_resumed && fc_watchdog_can_actuate())',entry)
-        recovery=(ROOT/'Core/Src/recovery.c').read_text()
+        recovery=(ROOT/'Core/Src/control_thread.c').read_text()
         self.assertIn('baro_conf.rezero = 0; /* retain the launch pressure',recovery)
         pulse=(ROOT/'Core/Src/deployment_pulse.c').read_text()
         self.assertLess(pulse.index('fc_watchdog_record_deployment'),pulse.index('reef_high()'))
@@ -271,7 +271,7 @@ int main(void) {
             self.assertGreater(text.index('.fc_watchdog_retained'),text.index('_ebss ='))
         self.assertNotIn('board_watchdog_progress',pulse)
     def test_fsm_waits_for_an_entire_fresh_history_after_reset(self):
-        source=(ROOT/'Core/Src/evaluation.c').read_text()
+        source=(ROOT/'Core/Src/estimator_thread.c').read_text()
         function=source[source.index('void evaluate_rocket_state'):source.index('static inline void enter_flight_mode')]
         stub=r'''
 #include <stdint.h>

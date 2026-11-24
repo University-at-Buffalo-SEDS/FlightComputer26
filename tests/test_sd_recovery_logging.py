@@ -17,7 +17,7 @@ def function(source, signature):
 class RecoveryLogging(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.eval = (ROOT / 'Core/Src/evaluation.c').read_text()
+        cls.eval = (ROOT / 'Core/Src/estimator_thread.c').read_text()
         cls.sd = (ROOT / 'Core/Src/sdpipeline.c').read_text()
 
     def test_fsm_never_stops_the_sd_writer(self):
@@ -29,10 +29,10 @@ class RecoveryLogging(unittest.TestCase):
         # Descent evaluation runs in the estimator (evaluation thread); the
         # distribution thread only publishes the samples that feed it, the SD
         # log and telemetry.
-        publish = function((ROOT / 'Core/Src/distribution.c').read_text(), 'static inline void descent_publish(')
+        publish = function((ROOT / 'Core/Src/sensor_thread.c').read_text(), 'static inline void descent_publish(')
         self.assertNotIn('evaluate_rocket_state', publish)
         self.assertIn('tx_event_flags_set(&eval_stage, stage, TX_OR);', publish)
-        self.assertIn('evaluate_rocket_state(conf, dt);', function(self.eval, 'void evaluation_entry('))
+        self.assertIn('evaluate_rocket_state(conf, dt);', function(self.eval, 'void estimator_thread_entry('))
         landed = function(self.eval, 'static inline void detect_landed(')
         announce = function(self.eval, 'static inline void announce_recovery(')
         for body in (landed, announce):

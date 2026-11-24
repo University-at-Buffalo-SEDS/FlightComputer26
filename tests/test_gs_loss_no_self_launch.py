@@ -77,7 +77,7 @@ int main(void) {
 
 class GroundStationLossTests(unittest.TestCase):
     def test_gs_loss_while_aborted_sends_no_launch_or_ignition(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         types = (ROOT / 'Core/Inc/fcstructs.h').read_text()
         enum = types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;') + len('} fc_msg;')]
         enum = enum.replace('flight_message : fu32', 'flight_message').replace('UINT_FAST32_MAX', 'UINT32_MAX')

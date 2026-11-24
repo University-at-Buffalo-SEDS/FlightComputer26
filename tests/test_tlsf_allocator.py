@@ -208,4 +208,4 @@ int main(int argc,char**argv){
             sd_kib=int(re.search(r'#define SD_BUFFER_SIZE \((\d+)U \* 1024U\)',config).group(1))
             heap_kib=int(re.search(r'#define TELEMETRY_EXTRA_HEAP \((\d+)U \* 1024U\)',config).group(1))
             self.assertEqual(2*sd_kib+heap_kib,64)
-            self.assertGreater(init.index('telemetry_tlsf_register_pool((TX_BYTE_POOL *)memory_ptr)'),init.index('create_distribution_task(memory_ptr)'))
+            self.assertGreater(init.index('telemetry_tlsf_register_pool((TX_BYTE_POOL *)memory_ptr)'),init.index('create_sensor_thread(memory_ptr)'))

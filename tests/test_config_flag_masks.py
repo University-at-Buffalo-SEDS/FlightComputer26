@@ -54,11 +54,11 @@ class ConfigFlagMasks(unittest.TestCase):
         self.assertEqual(offenders, [], 'test g_conf flags as conf & option(Flag)')
 
     def test_no_raw_focused_test_left(self):
-        dist = (ROOT / 'Core/Src/distribution.c').read_text()
+        dist = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         self.assertNotIn('Eval_Focused', dist)
 
     def test_operator_options_never_store_the_tag(self):
-        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
         body = recovery[recovery.index('static inline void update_global_config('):]
         body = body[:body.index('\n}\n')]
         self.assertIn('fu32 raw = incoming & ~Revoke_Option;', body)

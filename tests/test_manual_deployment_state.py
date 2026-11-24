@@ -4,7 +4,7 @@ A refused release_parachute (state not beyond Armed, already deployed, watchdog
 or inhibit) must leave the flight state untouched, as a refused Expand already
 does; otherwise a premature or repeated Deploy would move the FSM to Descent
 and disturb the apogee and drogue logic. The actual manual_deployment from
-recovery.c is compiled against stubs of its callees.
+control_thread.c is compiled against stubs of its callees.
 """
 from pathlib import Path
 import subprocess
@@ -94,7 +94,7 @@ int main(void) {
 
 class ManualDeploymentStateTests(unittest.TestCase):
     def test_refused_manual_deploy_leaves_flight_state(self):
-        recovery = (BASE / 'Core/Src/recovery.c').read_text()
+        recovery = (BASE / 'Core/Src/control_thread.c').read_text()
         src = STUB.replace('/*MANUAL_DEPLOYMENT*/', extract(recovery, 'static inline void manual_deployment('))
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
@@ -108,7 +108,7 @@ class ManualDeploymentStateTests(unittest.TestCase):
         # Emergency chutes: the operator's Deploy/Expand (not internal) is
         # forced past the flight-state checks and every FC hold but a wired
         # bench session; automatic deployments keep the state checks.
-        recovery = (BASE / 'Core/Src/recovery.c').read_text()
+        recovery = (BASE / 'Core/Src/control_thread.c').read_text()
         action = extract(recovery, 'static inline void process_action(')
         plain = action[action.index('#else'):action.index('#endif /* LUNATIC_STATE */')]
         self.assertIn('manual_deployment(true, !internal, !internal)', plain)
@@ -117,7 +117,7 @@ class ManualDeploymentStateTests(unittest.TestCase):
         self.assertLess(admissible.index('Deploy_Parachute'), admissible.index('fc_recovery_holds_sequence()'))
         owner = (BASE / 'Core/Src/fc_recovery_owner.c').read_text()
         self.assertIn('return owner.monitor_mode || reset_any;', extract(owner, 'bool fc_recovery_inhibits_manual_pyro('))  # op 3 window only
-        distribution = (BASE / 'Core/Src/distribution.c').read_text()
+        distribution = (BASE / 'Core/Src/sensor_thread.c').read_text()
         self.assertIn('board_recovery_operator_pyro_allowed(pkt)', distribution)
 
 

@@ -9,9 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class InhibitedTelemetry(unittest.TestCase):
     def test_inhibited_boot_streams_without_entering_flight_sequence(self):
-        source = (ROOT / "Core/Src/distribution.c").read_text()
-        entry = source[source.index("void distribution_entry(ULONG _)"):
-                       source.index("UINT create_distribution_task")]
+        source = (ROOT / "Core/Src/sensor_thread.c").read_text()
+        entry = source[source.index("void sensor_thread_entry(ULONG _)"):
+                       source.index("UINT create_sensor_thread")]
         # Only the start-up part: the flight loop never returns.
         assert entry.count("for (;;)") == 1
         entry = entry.replace("for (;;)", "while (0)")
@@ -42,11 +42,11 @@ static void for_ascent_predict(unsigned conf, unsigned char *imu)
 static void descent_publish(unsigned conf) { (void)conf; estimator++; }
 ''' + entry + r'''
 int main(void) {
-  allowed=0; distribution_entry(0);
+  allowed=0; sensor_thread_entry(0);
   assert(streams==1 && fills==0 && estimator==0);
-  allowed=1; streams=0; distribution_entry(0);
+  allowed=1; streams=0; sensor_thread_entry(0);
   assert(fills==1 && streams==0 && estimator==0);
-  g_fc_watchdog_resumed=1; distribution_entry(0);
+  g_fc_watchdog_resumed=1; sensor_thread_entry(0);
   assert(fills==1 && streams==0 && estimator==0);
   return 0;
 }
@@ -60,12 +60,12 @@ int main(void) {
             subprocess.run([str(path / "test")], check=True)
 
     def test_recovery_initializes_sensors_before_command_loop_on_cold_boot(self):
-        source = (ROOT / "Core/Src/recovery.c").read_text()
-        startup = source[source.index("void recovery_entry"):
+        source = (ROOT / "Core/Src/control_thread.c").read_text()
+        startup = source[source.index("void control_thread_entry"):
                          source.index("health_start();")]
         block = startup[startup.index("if (g_fc_watchdog_resumed)\n"):]
         self.assertIn("sensor_init_supervised(Wild_Mask);\n  if (g_fc_watchdog_resumed && !fc_recovery_inhibits_pyro())", block)
-        distribution = (ROOT / "Core/Src/distribution.c").read_text()
+        distribution = (ROOT / "Core/Src/sensor_thread.c").read_text()
         streaming = distribution[distribution.index("static inline void data_streaming_mode"):
                                  distribution.index("/* Stage 1")]
         self.assertNotIn("request_ignition", streaming)

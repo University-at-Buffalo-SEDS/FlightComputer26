@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BarometerPublicationGateTests(unittest.TestCase):
     def test_central_rate_gate_controls_fresh_baro_without_a_second_phase(self):
-        source = (ROOT / "Core/Src/distribution.c").read_text()
+        source = (ROOT / "Core/Src/sensor_thread.c").read_text()
         body = source.split("static inline bool maybe_log_measm", 1)[1].split(
             "/* Distribution for Ascent */", 1)[0]
         preamble = r'''

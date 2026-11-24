@@ -10,7 +10,7 @@ def function(text,name):
  return text[start:end]
 class ControllerStationAuthorityTests(unittest.TestCase):
  def test_actual_inactive_active_type_identity_freshness_matrix(self):
-  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();distribution=(ROOT/'Core/Src/distribution.c').read_text()
+  transport=(ROOT/'Core/Src/board_recovery_transport.c').read_text();distribution=(ROOT/'Core/Src/sensor_thread.c').read_text()
   code=r'''
 #include "sedsnet.h"
 #include "sedsnet_config.h"
@@ -31,7 +31,7 @@ uint8_t board_recovery_command_time_allowed(uint64_t source){return source>100;}
 bool seds_router_sender_matches_hostname(const SedsRouter*r,const char*s,size_t n,const char*name,size_t len){assert(r);return s&&n==len&&!memcmp(s,name,len);}
 static unsigned ground_pulses;static SedsResult pulse_ground(void){++ground_pulses;return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){assert(p&&n==1);states++;return SEDS_OK;}
-/* distribution.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
+/* sensor_thread.c operator Deploy/Expand selector (compat bytes 13/14); this matrix sends ordinary commands. */
 static bool operator_pyro_command(const SedsPacketView*p){return p->ty==SEDS_DT_FLIGHT_COMMAND&&p->payload&&p->payload_len==1&&(p->payload[0]==13||p->payload[0]==14);}
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult dispatch_flight_cmd(const uint8_t*p,size_t n){assert(p&&n==1);commands++;return SEDS_OK;}
@@ -43,7 +43,7 @@ volatile uint32_t g_reliable_refusal_count;
   code+=model('clock_now','clock_ok')
   for name in ['board_recovery_stamp_fresh','authorized_owner','authorized_primary','board_recovery_manual_stop_source_allowed','board_recovery_command_is_stale','board_recovery_managed_update_allowed','board_recovery_managed_report_ignorable','board_recovery_controller_update_allowed','board_recovery_operator_pyro_allowed']:
    if name+'(' in transport:code+='\n'+function(transport,name)
-  code+='\n'+r'''/* distribution.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
+  code+='\n'+r'''/* sensor_thread.c flight_cmd_repeat (repeat dedupe, tested in test_fc_reliable_refusal_ack): never a repeat here. */
 static volatile uint32_t g_flight_cmd_repeats_dropped;
 static bool flight_cmd_repeat(const SedsPacketView *p, bool remember){(void)p;(void)remember;return false;}
 /* flight_state_cache.c ordering (tested in test_fc_reliable_refusal_ack): never older here. */

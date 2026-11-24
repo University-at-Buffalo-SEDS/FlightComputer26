@@ -110,7 +110,7 @@ class PostinitEpochTests(unittest.TestCase):
     def test_actual_calibration_cannot_commit_after_reset(self):
         source_root=Path(os.environ.get('FC_POSTINIT_SOURCE_DIR', str(ROOT)))
         kalman=(source_root/'Core/Src/kalman.c').read_text()
-        distribution=(source_root/'Core/Src/distribution.c').read_text()
+        distribution=(source_root/'Core/Src/sensor_thread.c').read_text()
         signature='bool accel_to_quaternion(' if 'bool accel_to_quaternion(' in kalman else 'void accel_to_quaternion('
         actual='\n'.join([function(kalman,'static inline void euler_to_quat('),
                            function(kalman,signature),

@@ -10,7 +10,11 @@ done, which are waiting, and which files other work is changing.
 `docs/data-pipeline.md` section 3 is the reference for rates and buffers;
 this page is about who runs what.
 
-## 1. Current layout
+## 1. Current layout (as found)
+
+File names after step 10: `recovery.c` is `control_thread.c`, `evaluation.c`
+`estimator_thread.c`, `distribution.c` `sensor_thread.c`, `dma.c`
+`sensor_dma.c`, `fctasks.h` `FC-Threads.h`; this section keeps the old names.
 
 ThreadX ticks at 1 kHz. Lower number = higher priority.
 `TX_DISABLE_PREEMPTION_THRESHOLD` and `TX_TIMER_PROCESS_IN_ISR` are defined
@@ -244,8 +248,8 @@ the swap already happens between passes.
 | 6 | `thread_comm` command queue with an explicit origin (replaces `seds_syscall` and the `g_last_network_flight_command_msg` correlation) | `thread_comm.[ch]`, `recovery.c`, `distribution.c`, `kalman.c`, `fchooks.c`, `fcapi.h`, harnesses | done (7f8dd41) |
 | 7 | Health checks from the SysTick timer into the control loop, same 900/450 ms grid | `recovery.c`, `fcconfig.h`, `simulation.h` | done (a9c5218) |
 | 8 | The distribution thread reads the sensors itself; the DMA thread, its selector and the `dma_locks` spinlocks go; ThreadX pool -4 KiB | `dma.c`, `fctasks.h`, `app_threadx.c`, `app_azure_rtos_config.h`, `.ioc`, tests | done (6b2fad4) |
-| 9 | Estimator thread: evaluation + descent (the descent filter and state machine leave the distribution thread) | `evaluation.c`, `distribution.c`, `kalman.c`, `recovery.c`, `igt_replay_host.py` driver | waiting: an `Evaluation_Abort` in descent stops only the ascent evaluator today, so the descent state machine (in distribution) still fires the main; moving descent into the estimator would stop it. Needs a decision on what Evaluation_Abort should stop |
-| 10 | Control at priority 4 and no time slices | `fctasks.h`, `recovery.c`, `distribution.c`, `telemetry.c`, tests, `data-pipeline.md` | done (4ed35e2). Not done: SD writer at 6 (telemetry yields only to equal priorities while it has backlog, so a lower SD thread would starve under load); `FC-Threads.h` and `<name>_thread.c` renames wait for step 9 |
+| 9 | Estimator thread: evaluation + descent; an evaluation abort now stops automatic deployment in every phase | `evaluation.c`, `distribution.c`, `recovery.c`, `igt_replay_host.py`, tests | done (de3a264); break-up abort criteria: `docs/rud-abort.md` (51d7375) |
+| 10 | Control at priority 4, no time slices; `FC-Threads.h` and the `<name>_thread.c` files (`control_thread.c`, `estimator_thread.c`, `sensor_thread.c` + `sensor_dma.c`) | `fctasks.h`, `recovery.c`, `evaluation.c`, `distribution.c`, `dma.c`, `telemetry.c`, tests, docs | done (4ed35e2, this rename). SD writer stays at 5 (decision); the telemetry and SD thread parts of `telemetry.c`/`sdpipeline.c` keep their files while other work changes them |
 | 11 | Macro clean-up: `MrAnalog`, `WE_ARE_SO_BACK`, `IT_IS_NOW_OVER` spelled out in the thread files | `recovery.c`, `evaluation.c`, `distribution.c`, `dma.c`, `fchooks.c`, `platform.h` | done (f6086f6, .text identical). Left: `sdpipeline.c`/`telemetry.c` spellings, `Require`/`svec`, `g_conf` handshake bits (after step 9) |
 
 Files other work is changing now (rebase before touching):
