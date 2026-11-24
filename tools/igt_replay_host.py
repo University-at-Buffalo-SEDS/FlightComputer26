@@ -182,6 +182,8 @@ void fc_recovery_request_eval_stop(void) { if (rud_abort_t < 0) rud_abort_t = re
  * vote came (the firmware's own detector is static in estimator_thread.c). */
 #include "rud_detect.h"
 static rud_state shadow; static bool margins;
+extern volatile uint8_t g_fc_sensor_fallback;
+static unsigned fallback_seen;
 static unsigned max_motion, max_pressure, max_joint; static float max_wxy, max_axy, max_rate;
 static void rud_shadow(fu32 conf)
 {
@@ -227,8 +229,21 @@ static const char *names[] = {"Startup", "Postinit", "Armed", "Launch", "Ascent"
 /* control_thread.c baro_conf.odr = Baro_ODR_25: one conversion every 40 ms. The FSM
  * counts samples (MIN_SAMP_*, 8-entry history), so the period sets its timing. */
 #define BARO_PERIOD_MS 40U
+/* IGT_SILENT="gps:40.5:1e9": the GPS delivers no fix in the window (replay
+ * seconds), as an absent receiver. */
+static float gps_silent[2] = {-1, -1};
+static bool silent_gps(void) { const double t = replay_s(); return t >= gps_silent[0] && t < gps_silent[1]; }
+static void parse_silent(const char *spec)
+{
+  const char *at = spec ? strstr(spec, "gps:") : NULL;
+  if (!at) return;
+  char *end;
+  gps_silent[0] = strtof(at + 4, &end);
+  gps_silent[1] = strtof(end + 1, &end);
+}
 int main(int argc, char **argv)
 {
+  parse_silent(getenv("IGT_SILENT"));
   snprintf(igt_root, sizeof igt_root, "%s", argv[1]);
   margins = getenv("IGT_RUD_MARGINS") != NULL;
   if (argc > 4) {
@@ -292,7 +307,7 @@ int main(int argc, char **argv)
     } else if (baro_due) {
       memcpy(&meas.baro, b, sizeof b);
       kf_gps fix;
-      if (igt_gps_fix(&fix.sea, host_now)) {
+      if (igt_gps_fix(&fix.sea, host_now) && !silent_gps()) {
         if (!rail_set) { rail = fix; rail_set = true; }
         meas.gps.sea = fix.sea;
         meas.gps.lon = fabsf(fix.lon - rail.lon);
@@ -301,6 +316,7 @@ int main(int argc, char **argv)
       }
       dt = fsec(timer_exchange(DescentKF));
       estimator_descent_step(conf, dt);
+      fallback_seen |= g_fc_sensor_fallback;
     } else continue;
     /* evaluate_rocket_state advanced sm.idx: the newest estimate is svec(1). */
     const kf_svec *s = &svec(1);
@@ -316,6 +332,7 @@ int main(int argc, char **argv)
   if (margins) printf("\"rud_max_motion\": %u, \"rud_max_pressure\": %u, \"rud_max_gyro_xy_dps\": %.1f, "
                       "\"rud_max_accel_xy_mps2\": %.1f, \"rud_max_baro_rate_mps\": %.1f, \"rud_max_joint_pct\": %u, ",
                       max_motion, max_pressure, max_wxy, max_axy, max_rate, max_joint);
+  if (margins) printf("\"fallback_bits\": %u, ", fallback_seen);
   for (unsigned i = Launch; i < Flight_States; ++i) printf("\"%s_s\": %.3f, ", names[i], times[i]);
   printf("\"drogue_s\": %.3f, \"drogue_est_alt_m\": %.2f, \"main_s\": %.3f, \"main_est_alt_m\": %.2f, "
          "\"est_apogee_m\": %.2f, \"est_apogee_s\": %.3f, \"est_max_vel_mps\": %.2f, \"est_max_vel_s\": %.3f, "
@@ -350,6 +367,7 @@ def build(work: Path) -> Path:
     fw = base + ['-include', str(work / 'pre.h')] + defs + incs
     jobs = [(fw, ROOT / 'Core/Src/kalman.c'), (fw, ROOT / 'Core/Src/estimator_thread.c'),
             (fw, ROOT / 'Core/Src/rud_detect.c'), (fw, ROOT / 'Core/Src/sensor_plausibility.c'),
+            (fw, ROOT / 'Core/Src/deploy_backup.c'),
             (fw, work / 'driver.c')]
     jobs += [(fw, ROOT / 'Drivers/CMSIS/DSP/Source' / s) for s in DSP]
     jobs.append((base + ['-DIGT_HOST_TEST', '-DFC_GROUND_TEST=1', f'-I{work}', f'-I{ROOT / "Core/Inc"}'],

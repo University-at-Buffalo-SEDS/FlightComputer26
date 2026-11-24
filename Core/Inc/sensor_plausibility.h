@@ -61,6 +61,9 @@ bool plaus_baro(plaus_state *p, uint32_t t_ms, float alt);
 bool plaus_baro_ok(const plaus_state *p);
 /* Any implausible step in the window. */
 bool plaus_baro_suspect(const plaus_state *p);
+/* The last sample moved at a plausible rate, with no implausible step in
+ * the window and no repeat: the filter output is a trustworthy altitude. */
+bool plaus_baro_clean(const plaus_state *p);
 /* The ascent filter's velocity against its altitude trend, per step. */
 void plaus_velocity(plaus_state *p, float ekf_vel, float trend_vel);
 bool plaus_velocity_ok(const plaus_state *p);

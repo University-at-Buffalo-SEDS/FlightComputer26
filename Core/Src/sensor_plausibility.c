@@ -54,6 +54,12 @@ bool plaus_baro_suspect(const plaus_state *p)
   return (p->baro_votes & WINDOW_MASK) != 0U;
 }
 
+bool plaus_baro_clean(const plaus_state *p)
+{
+  return p->have_baro && (p->baro_votes & WINDOW_MASK) == 0U && p->stuck_run == 0U &&
+         !p->baro_bad && !p->baro_stuck;
+}
+
 void plaus_velocity(plaus_state *p, float ekf_vel, float trend_vel)
 {
   const float d = ekf_vel - trend_vel;

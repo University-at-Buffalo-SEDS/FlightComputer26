@@ -16,6 +16,7 @@
 #include "thread_comm.h"
 #include "rud_detect.h"
 #include "sensor_plausibility.h"
+#include "deploy_backup.h"
 
 #define id "EV "
 
@@ -53,20 +54,49 @@ uncached volatile float kalt, kvel;
 static rud_state rud;
 volatile uint32_t g_fc_rud_aborts __attribute__((used, externally_visible));
 
-/* One faulty sensor must not cost the chutes (sensor_plausibility.h). */
+/* One faulty sensor must not cost the chutes (sensor_plausibility.h), and
+ * a barometer failing in descent without GPS must not cost the main
+ * (deploy_backup.h, docs/rud-abort.md section 6). */
 static plaus_state plaus;
+static backup_dr dr;
 volatile uint8_t g_fc_sensor_fallback __attribute__((used, externally_visible));
 #define GPS_FRESH_MS 2000U
+/* A GPS altitude that has not moved for this long is a held, stale fix. */
+#define GPS_STUCK_MS 2000U
+
+static struct { float sea; uint32_t moved_ms; bool seen; } gps_watch;
 
 static inline void note_fallback(void)
 {
   g_fc_sensor_fallback = (uint8_t)((plaus_baro_ok(&plaus) ? 0U : 1U) |
-                                   (plaus_velocity_ok(&plaus) ? 0U : 2U));
+                                   (plaus_velocity_ok(&plaus) ? 0U : 2U) |
+                                   (dr.active ? 8U : 0U));
 }
 
 static inline bool ekf_velocity_trusted(void) { return plaus_velocity_ok(&plaus); }
 static inline bool barometer_trusted(void) { return plaus_baro_ok(&plaus); }
-static inline void sensor_verdicts_reset(void) { plaus_reset(&plaus); }
+static inline void sensor_verdicts_reset(void)
+{
+  plaus_reset(&plaus);
+  backup_dr_reset(&dr);
+  gps_watch.seen = false;
+}
+
+/* A fresh GPS fix whose altitude still moves: GPS_FRESH_MS since the last
+ * packet, and it changed within GPS_STUCK_MS (a receiver without a solution
+ * that repeats its last fix is stale too). */
+static inline bool gps_trusted(uint32_t t)
+{
+  if (!gps_watch.seen) { gps_watch.seen = true; gps_watch.sea = meas.gps.sea; gps_watch.moved_ms = t - GPS_STUCK_MS; }
+  else if (meas.gps.sea != gps_watch.sea) { gps_watch.sea = meas.gps.sea; gps_watch.moved_ms = t; }
+  return timer_fetch(HeartbeatRF) < GPS_FRESH_MS && (uint32_t)(t - gps_watch.moved_ms) < GPS_STUCK_MS;
+}
+
+static inline void note_chutes(uint32_t t)
+{
+  const fu32 c = load(&g_conf, Acq);
+  backup_dr_chutes(&dr, t, c & option(Parachute_Deployed), c & option(Parachute_Expanded));
+}
 
 /* The ascent filter's velocity against the trend of its own altitude. */
 static inline void watch_velocity(fu32 conf, float dt)
@@ -603,33 +633,52 @@ void estimator_ascent_update(void)
   }
   if (usable) ascent_update();
   else ascent_hold();
+  /* A trustworthy altitude: the reference of a later dead reckoning. */
+  if (usable && plaus_baro_clean(&plaus)) backup_dr_trust(&dr, now_ms(), svec(0).alt, svec(0).vel, true);
   note_fallback();
 }
 
+/* No trustworthy altitude: the prediction descends from the last
+ * trustworthy one, biased to stay below it (deploy_backup.h). */
+static void descent_dead_reckon(uint32_t t)
+{
+  descent_hold();
+  float vel;
+  svec(0).alt = backup_dr_step(&dr, t, svec(0).alt, &vel);
+  svec(0).vel = vel;
+}
+
 /* One descent step: predict, then the barometer; GPS altitude while the
- * barometer is implausible and a fix is fresh; else the prediction alone.
- * Then the state machine. Also run by the IGT host replay. */
+ * barometer is implausible and a fix is fresh and moving; else the
+ * dead-reckoned prediction. Then the state machine. Also run by the IGT
+ * host replay. */
 void estimator_descent_step(fu32 conf, float dt)
 {
+  const uint32_t t = now_ms();
   /* Descent takes every sample of a plausible barometer, ejection pulses
    * included, as it always did: the low-order descent filter absorbs single
    * steps, and the drogue timing depends on it. */
-  (void)plaus_baro(&plaus, now_ms(), meas.baro.alt);
+  (void)plaus_baro(&plaus, t, meas.baro.alt);
+  note_chutes(t);
+  /* Watched on every step, so a fix held since long ago is never new. */
+  const bool gps_ok = gps_trusted(t);
   descent_predict(dt);
   /* On the ground (Landed on) every deployment is done and a resting
    * barometer may repeat itself: always take it, as before. */
   if (plaus_baro_ok(&plaus) || current() >= Landed)
   {
     descent_update();
+    if (current() < Landed && plaus_baro_clean(&plaus)) backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, true);
   }
-  else if (timer_fetch(HeartbeatRF) < GPS_FRESH_MS)
+  else if (gps_ok)
   {
     const float z[3] = { meas.gps.lon, meas.gps.lat, meas.gps.sea - LAUNCH_SITE_SEA };
     descent_update_z(z);
+    backup_dr_trust(&dr, t, svec(0).alt, svec(0).vel, true);
   }
   else
   {
-    descent_hold();
+    descent_dead_reckon(t);
   }
   note_fallback();
   evaluate_rocket_state(conf, dt);

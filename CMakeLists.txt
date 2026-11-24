@@ -78,6 +78,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/Src/thread_comm.c
     ${CMAKE_SOURCE_DIR}/Core/Src/rud_detect.c
     ${CMAKE_SOURCE_DIR}/Core/Src/sensor_plausibility.c
+    ${CMAKE_SOURCE_DIR}/Core/Src/deploy_backup.c
     ${CMAKE_SOURCE_DIR}/Core/Src/fc_recovery_owner.c
     ${CMAKE_SOURCE_DIR}/Core/Src/deployment_pulse.c
     ${CMAKE_SOURCE_DIR}/Core/Src/can_bus.c

@@ -30,6 +30,8 @@ bad readings:
 | Sensor failure count (`process_sensor_report`) | out-of-band samples (`validate_*`: accel outside ±24 g, gyro outside ±2000 deg/s, pressure outside 57.2–110 kPa, altitude outside −30..4572 m). A saturated BMI088 reads at most its full scale, so saturation never counts | a running count, one up per bad sample and one down per good one (`Reset_Failures`, on by default). Only before Apogee (or for a bad barometer without trustworthy GPS); IMU and baro are validated only in ascent and on the pad | ≥ 40: sensor re-initialisation; ≥ 120: on the pad `In_Aborted_State` (await a command); in flight a sensor restart that restarts the estimator, then a ×10 threshold. Never stops deployment |
 | GPS delayed/malformed | `GPS_DELAY_MS` 200 ms gaps or bad packets, 40 of either | count | barometer-only Vigilant mode; deployment continues |
 | Filter fluctuation | `kf_deviations` > 80 | count | Vigilant mode trusts the raw barometer; deployment continues |
+| Sensor plausibility (section 5) | an implausible or frozen barometer; an untrusted ascent velocity | 0.5-2 s | the filters fall back on the other sensors; deployment continues |
+| Dead-reckoned descent (section 6) | no trustworthy altitude in descent | per step | times the main from the last trustworthy altitude |
 | Watchdog resume rejected | checkpoint invalid at boot | – | holds the sequence at boot (no flight in progress) |
 
 ## 2. Break-up detector (`Core/Src/rud_detect.c`)
@@ -132,10 +134,11 @@ measured_motor, high_wind and off_nominal:**
 **Must fire:** the 3 break-ups on each of those 4 flights, 12 cases.
 
 "Sane" is checked against each dataset's truth (the replay is open loop):
-the drogue within 4 s after the true apogee, and the main within 4 s (about
-100 m under the drogue) of the true 457.2 m crossing.
+the drogue within 1 s before to 4 s after the true apogee, and the main at a
+true altitude of 457.2 ± 100 m (4 s under the drogue; section 6.3 explains
+why altitude and not time).
 
-Result: 91/91 cases as expected:
+Result (this section's 91 cases; with section 6's, 161/161):
 
 - In all 79 no-abort cases the drogue comes 0.8–2.3 s after the true apogee
   and the main within ±0.25 s of the 457.2 m crossing.
@@ -180,7 +183,7 @@ The fix: two verdicts, kept by the estimator on every step:
 
 | Verdict | Condition | Hold / clear | Action |
 | --- | --- | --- | --- |
-| barometer implausible | its altitude moves faster than 450 m/s on 12 of the last 25 steps, or repeats the bit-identical value for 50 steps (2 s) | clears at ≤ 2 such steps in the window, or when it moves again | ascent: IMU dead reckoning (`ascent_hold`). Descent: GPS altitude above the pad while a fix is fresh (< 2 s), else the prediction (`descent_hold`). From Landed on the barometer is always taken, as before |
+| barometer implausible | its altitude moves faster than 450 m/s on 12 of the last 25 steps, or repeats the bit-identical value for 50 steps (2 s) | clears at ≤ 2 such steps in the window, or when it moves again | ascent: IMU dead reckoning (`ascent_hold`). Descent: GPS altitude above the pad while a fix is fresh (< 2 s) and moving, else the dead-reckoned descent of section 6 (it was the prediction, `descent_hold`). From Landed on the barometer is always taken, as before |
 | barometer sample unusable (ascent) | that sample moved faster than 450 m/s; or, while any such step is in the window, it is more than 150 m from the prediction | per sample | that step dead-reckons |
 | ascent velocity untrusted | the EKF velocity differs from the trend of its own altitude by more than 40 m/s on 25 consecutive steps (1 s) | 25 agreeing steps | Vigilant's Apogee check runs on the barometer and the altitude trend, and runs even with Vigilant mode off |
 
@@ -202,7 +205,105 @@ Margins on the intact datasets:
 
 Limits:
 
-- A barometer that fails in descent with no GPS is dead-reckoned from the
-  last good descent velocity. The main then comes at the predicted 457 m,
-  which the sweep does not cover.
+- ~~A barometer that fails in descent with no GPS is dead-reckoned from the
+  last good descent velocity.~~ The sweep (section 6) showed it did not
+  work: a frozen barometer had pulled the descent velocity to zero before
+  its verdict, so the prediction never descended (main at the ground, or no
+  drogue).
 - Two failed sensors are beyond this, as is a break-up, which is section 2.
+
+## 6. A barometer failing in descent without GPS
+
+### 6.1 What existed
+
+In descent the barometer is the only altitude input. When it was
+implausible or frozen and no GPS fix was fresh, the filter kept its
+prediction at its last velocity (`descent_hold`).
+
+The sweep (6.4) found, on origin/dev, with GPS absent or stale (a held
+fix):
+
+| Barometer in descent | origin/dev |
+| --- | --- |
+| frozen at apogee, or wild (200 m noise) from apogee | **no drogue, no main** (all datasets) |
+| frozen or wild 10 s after apogee | main 83-125 s late (at the ground) |
+
+The cause: until the barometer's verdict (2 s frozen, 0.5 s wild) the
+filter takes its samples, which pull the velocity to zero or throw it. The
+prediction then never descends. A stale GPS was also taken: a fix counted
+as fresh while its packets kept arriving, held value or not.
+
+### 6.2 Behaviour
+
+**Dead-reckoned descent** (`deploy_backup.h`). With no trustworthy
+altitude (barometer implausible or frozen, and no fresh, moving GPS fix),
+the descent predicts from the last trustworthy altitude. That is the last
+step whose barometer sample moved at a plausible rate, with no implausible
+step in the window and no repeat, or a GPS step. The prediction is built
+to stay under the true altitude, so the main, fired when it crosses 457 m,
+is early and never late:
+
+| Phase | Prediction |
+| --- | --- |
+| may still climb | holds, until the earliest apogee from the reference velocity at 2 g (coast: gravity and at most 0.54 g of drag, IGT) |
+| before the drogue | free fall without drag (at most 150 m/s) |
+| under the drogue | 28.75 m/s: the model's 25.0 m/s (23.9-25.0 apogee to 457 m in the IGT flights) plus 15 % (rate ~ 1/sqrt(Cd rho): Cd 15 %, density 5 %); or a faster measured rate under a settled drogue; slowing from a free fall at no more than 3 g |
+| under the main | 7.7 m/s (6.3-6.7 plus 15 %), stopping at the pad, so Landed comes |
+
+From a reference at the drogue the main therefore comes
+(h_ref - 457 m) / 28.75 m/s after it. That is early by up to 25 % of the
+descent: 15 % from the bias, on a rate that may itself be 15 % slow.
+
+**GPS.** A fix counts only while fresh (2 s) and while its altitude moves
+(changed within 2 s). A receiver repeating its last fix is stale.
+
+### 6.3 Tolerances
+
+The checks are on the true altitude when the main fires, read from the
+dataset's own barometer. They are not on its time: the replay is open loop,
+and the truth vehicle opens its main at 457 m, so time below that is not
+descent time.
+
+- **Drogue:** within -1..+4 s of the true apogee.
+- **Main, measured** (barometer or GPS): 457 ± 100 m, 4 s under the drogue.
+- **Main, dead-reckoned:** from 357 m up to 457 m plus 25 % of the descent
+  from the reference, plus 100 m.
+- **Main, barometer offset:** 457 m − offset ± 100 m. The offset is
+  unobservable without GPS: a plausible barometer is trusted, so the FC is
+  no worse than its barometer.
+
+`tests/test_deploy_backup.py` checks the "never late" property where the
+open-loop replay cannot: 180 simulated flights with drag. They cover
+references in coast, at apogee and under the drogue; drogues on time and up
+to 10 s late; drogue rates 15 % either side of the model; and falling
+bodies with little or much drag. The main never comes below 456 m: one
+40 ms step of rounding when the true rate is the bound itself.
+
+### 6.4 Sweep
+
+`tools/rud_sweep.py` adds 70 cases, on all five datasets: the barometer
+frozen at apogee, 10 s after it and at 830 m; wild (200 m noise) from
+apogee and 10 s after it; offset ±100 m 20 s after it. Each with GPS absent
+and with GPS stale (a held fix).
+
+Result: **161/161 as expected**, and the 79 must-not-fire cases of sections
+4-5 keep their deployments.
+
+| Failure, GPS absent or stale | Drogue after the true apogee | Main, true altitude |
+| --- | --- | --- |
+| frozen at apogee | +2.1 s | 626-768 m |
+| frozen 10 s after apogee | +1.3 s | 586-736 m |
+| frozen at 830 m | +1.3 s | 511-515 m |
+| wild from apogee | +0.7-0.9 s | 642-784 m |
+| wild 10 s after apogee | +1.3 s | 588-737 m |
+| offset +100 m (reads high) | +1.3 s | 355-357 m (the barometer's) |
+| offset −100 m | +1.3 s | 555 m (the barometer's) |
+
+The sweep now also warns when the Apogee state (the switch to the descent
+filter) comes more than 2 s before the true apogee. On origin/dev the
+existing `baro_freeze_3s` case has it 5.4-13.4 s early on every dataset,
+and early_apogee_noise has it with IMU saturation. The drogue still waits
+for the descent filter, and GPS saved it there; without GPS it would not
+have. Section 7 covers both.
+
+Reproduce: `python3 tools/rud_sweep.py <GroundStation26>/test-data/igt`.

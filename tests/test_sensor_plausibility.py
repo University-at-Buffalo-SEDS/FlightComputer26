@@ -81,7 +81,7 @@ class SensorPlausibility(unittest.TestCase):
         des = est[est.index('void estimator_descent_step('):]
         des = des[:des.index('\n}\n')]
         self.assertLess(des.index('descent_update();'), des.index('descent_update_z(z);'))
-        self.assertLess(des.index('descent_update_z(z);'), des.index('descent_hold();'))
+        self.assertLess(des.index('descent_update_z(z);'), des.index('descent_dead_reckon(t);'))
         self.assertIn('meas.gps.sea - LAUNCH_SITE_SEA', des)
         self.assertIn("((conf & option(Vigilant_Mode)) || !ekf_velocity_trusted())", est)
         self.assertIn('Core/Src/sensor_plausibility.c', (ROOT / 'CMakeLists.txt').read_text())
