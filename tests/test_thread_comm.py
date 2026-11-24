@@ -154,6 +154,10 @@ int main(void)
   assert(thread_comm_receiver_waiting(&control) && !thread_comm_receiver_waiting(&other));
   control.tx_thread_state = TX_READY; assert(!thread_comm_receiver_waiting(&control));
   puts("thread_comm ok");
+  /* The ascent stage: clear at boot, set by a prediction, cleared again. */
+  assert(!thread_comm_ascent_staged());
+  thread_comm_ascent_stage(true); assert(thread_comm_ascent_staged());
+  thread_comm_ascent_stage(false); assert(!thread_comm_ascent_staged());
   return 0;
 }
 '''

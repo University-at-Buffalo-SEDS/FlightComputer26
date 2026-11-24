@@ -168,6 +168,7 @@ void board_watchdog_progress(uint32_t m) { (void)m; }
 void thread_comm_estimator_enter(void) {}
 void thread_comm_estimator_leave(void) {}
 void thread_comm_estimator_sleep(ULONG ticks) { _tx_thread_sleep(ticks); }
+void thread_comm_ascent_stage(bool staged) { (void)staged; }
 void distribution_wake(void) {}
 bool fc_recovery_eval_pause_requested(void) { return false; }
 void fc_recovery_evaluation_quiescent(void) {}

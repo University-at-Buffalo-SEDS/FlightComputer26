@@ -1,8 +1,10 @@
 /* Core/Src/thread_comm.c */
 
 #include "thread_comm.h"
+#include <stdatomic.h>
 
 static TX_MUTEX estimator_guard;
+static atomic_bool ascent_staged;
 static TX_QUEUE commands;
 static ULONG command_storage[THREAD_COMM_QUEUE_DEPTH * (sizeof(thread_comm_msg_t) / sizeof(ULONG))];
 static bool initialized;
@@ -89,4 +91,14 @@ void thread_comm_estimator_sleep(ULONG ticks)
   while (thread_comm_estimator_held()) { thread_comm_estimator_leave(); ++depth; }
   (void)tx_thread_sleep(ticks);
   while (depth--) thread_comm_estimator_enter();
+}
+
+void thread_comm_ascent_stage(bool staged)
+{
+  atomic_store_explicit(&ascent_staged, staged, memory_order_release);
+}
+
+bool thread_comm_ascent_staged(void)
+{
+  return atomic_load_explicit(&ascent_staged, memory_order_acquire);
 }

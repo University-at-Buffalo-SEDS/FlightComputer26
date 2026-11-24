@@ -23,7 +23,7 @@ static unsigned g_conf, g_fc_watchdog_resumed;
 static int allowed, fills, streams, estimator;
 enum { BOARD_WATCHDOG_ACQUISITION=1, BOARD_WATCHDOG_SAFETY=2,
        TX_TIMER_TICKS_PER_SECOND=100, Eval_Abort_Flag=1, Using_Ascent_KF=2,
-       Ascent_KF_Staged=4, Acq=0 };
+       Acq=0 };
 #define option(x) (x)
 #define load(p, order) (*(p))
 static int fc_watchdog_can_actuate(void) { return allowed; }
@@ -36,6 +36,7 @@ static void fill_sequence_states(void) { assert(allowed); fills++; }
 static void data_streaming_mode(void) { assert(!allowed); streams++; allowed=1; }
 static void board_watchdog_progress(unsigned mask) { (void)mask; }
 static void tx_thread_sleep(unsigned ticks) { (void)ticks; }
+static int thread_comm_ascent_staged(void) { return 0; }
 static void for_ascent_update(unsigned conf) { (void)conf; estimator++; }
 static void for_ascent_predict(unsigned conf, unsigned char *imu)
 { (void)conf; (void)imu; estimator++; }

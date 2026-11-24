@@ -1009,7 +1009,7 @@ void sensor_thread_entry(ULONG _)
 
     if (conf & option(Using_Ascent_KF))
     {
-      conf & option(Ascent_KF_Staged)
+      thread_comm_ascent_staged()
            ? for_ascent_update(conf)
            : for_ascent_predict(conf, &imu);
     }

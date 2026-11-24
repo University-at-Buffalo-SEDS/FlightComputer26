@@ -818,7 +818,8 @@ static void backup_deployments(void)
 
   ++g_fc_backup_drogues;
   message(id "backup: no drogue by the apogee timer; firing it", true);
-  const fu32 conf = fetch_and(&g_conf, ~option(Ascent_KF_Staged), AcqRel);
+  thread_comm_ascent_stage(false);
+  const fu32 conf = load(&g_conf, Acq);
   if (conf & option(Using_Ascent_KF)) descent_initialize(conf);
   backup_dr_measured_only(&dr);
   if (s < Apogee)
@@ -892,8 +893,8 @@ void estimator_pass(bool ascent, ULONG done)
 
       estimator_ascent_update(fresh);
 
-      conf = fetch_and(&g_conf,
-                       ~option(Ascent_KF_Staged), AcqRel);
+      thread_comm_ascent_stage(false);
+      conf = load(&g_conf, Acq);
       distribution_wake(); /* it waits for the stage to clear */
 
       sweetbench_catch(3);
@@ -908,8 +909,8 @@ void estimator_pass(bool ascent, ULONG done)
       last_imu_ms = t;
       plaus_imu_silent(&plaus, false);
 
-      conf = fetch_or(&g_conf,
-                      option(Ascent_KF_Staged), AcqRel);
+      thread_comm_ascent_stage(true);
+      conf = load(&g_conf, Acq);
 
       dt = fsec(timer_exchange(AscentKF));
       ascent_predict(dt, conf);
@@ -963,9 +964,11 @@ void estimator_thread_entry(ULONG _)
   fc_watchdog_checkpoint();
   was_ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
   /* A restarted thread (sensor restart, reset to Startup) starts its loop
-   * afresh, as when these were its locals. */
+   * afresh, as when these were its locals, and so does the stage: the
+   * sensor thread offers an IMU pair first. */
   accum = 0;
   dt = 0.0f;
+  thread_comm_ascent_stage(false);
   last_imu_ms = last_baro_ms = last_step_ms = now_ms();
   thread_comm_estimator_leave();
 

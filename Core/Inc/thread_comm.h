@@ -46,4 +46,13 @@ void thread_comm_estimator_leave(void);
 bool thread_comm_estimator_held(void);
 void thread_comm_estimator_sleep(ULONG ticks);
 
+/* Ascent stage hand-shake (task-layout step 2): the estimator stages an IMU
+ * prediction (true) and the sensor thread then offers it a barometer
+ * sample; the estimator clears the stage after the update (false), and the
+ * sensor thread offers the next IMU pair. Transient: false at boot, and
+ * cleared when the estimator thread (re)starts. It was the g_conf bit
+ * Ascent_KF_Staged. */
+void thread_comm_ascent_stage(bool staged);
+bool thread_comm_ascent_staged(void);
+
 #endif /* FC_THREAD_COMM_H */

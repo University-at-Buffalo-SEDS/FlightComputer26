@@ -222,8 +222,7 @@ bool fc_recovery_control_finalize_startup(void)
   /* Preserve calibration/biases, samples, clocks, rates, recording shutdown,
    * failure thresholds and historical deployment bits until a NEW flight. */
   g_conf &= ~option(Postinit_Requested | Launch_Requested | In_Aborted_State |
-                    Graceful_Reset | Ascent_KF_Staged | Defer_Baro_Fallback |
-                    Eval_Abort_Flag);
+                    Graceful_Reset | Defer_Baro_Fallback | Eval_Abort_Flag);
   g_conf |= option(Using_Ascent_KF);
   sm.flight = Startup;
   sm.global_state = G_Startup;

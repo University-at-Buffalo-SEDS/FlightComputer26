@@ -77,7 +77,7 @@ class IdleWaits(unittest.TestCase):
         gps = gps[:gps.index('\n}\n')]
         self.assertLess(gps.index('rfboard.updated = true;'), gps.index('distribution_wake();'))
         evaluation = (ROOT / 'Core/Src/estimator_thread.c').read_text()
-        self.assertRegex(evaluation, r'~option\(Ascent_KF_Staged\), AcqRel\);\s*distribution_wake\(\);')
+        self.assertRegex(evaluation, r'thread_comm_ascent_stage\(false\);\s*conf = load\(&g_conf, Acq\);\s*distribution_wake\(\);')
 
     def test_sample_waits_never_lose_a_wakeup(self):
         source = (ROOT / 'Core/Src/sensor_dma.c').read_text()

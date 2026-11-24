@@ -266,7 +266,8 @@ void fc_watchdog_recovery_boot(uint32_t flags)
     if (!live_state_valid()) { payload_transfer(defaults, true); goto reject; }
     actions = retained.action[journal].actions;
     action_sequence = retained.action[journal].sequence; action_slot = journal ^ 1U;
-    g_conf &= ~option(CO2_Asserted | REEF_Asserted | Ascent_KF_Staged | GPS_Available);
+    /* The ascent stage (thread_comm) is not retained: false at boot. */
+    g_conf &= ~option(CO2_Asserted | REEF_Asserted | GPS_Available);
     sm.confidence = 0; /* pre-reset samples cannot establish a new transition */
     if (actions & 1U) g_conf |= option(Parachute_Deployed);
     if (actions & 2U) g_conf |= option(Parachute_Expanded);

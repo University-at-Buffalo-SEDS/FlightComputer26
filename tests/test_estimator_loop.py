@@ -40,11 +40,13 @@ enum { Baro_Mask=1, Gyro_Mask=2, Accl_Mask=4 };
 #define EVALUATION_STAGED (fu8)(1u << 7)
 #define EVAL_STAGE_GPS  (1UL << 8)
 #define EVAL_STAGE_WAKE (1UL << 9)
-enum { Using_Ascent_KF=1u<<0, Ascent_KF_Staged=1u<<1, Eval_Abort_Flag=1u<<2 };
+enum { Using_Ascent_KF=1u<<0, Eval_Abort_Flag=1u<<2 };
 #define option(x) (x)
 #define load(p,o) (*(p))
-static fu32 fetch_and(fu32 *p, fu32 v, int o){ (void)o; fu32 r=*p; *p&=v; return r; }
-static fu32 fetch_or(fu32 *p, fu32 v, int o){ (void)o; fu32 r=*p; *p|=v; return r; }
+/* The ascent stage (thread_comm): staged by a prediction, cleared by an
+ * update, and at every thread entry. */
+static bool staged;
+static void thread_comm_ascent_stage(bool s){ staged = s; }
 #define fsec(x) ((float)(x))
 #define sweetbench_catch(x) ((void)0)
 #define sweetbench_start(...) ((void)0)
@@ -68,7 +70,7 @@ static UINT tx_event_flags_get(int *g, ULONG req, UINT op, ULONG *got, ULONG w){
   }
 }
 static unsigned timer_exchange(int t){ (void)t; return 40; }
-static void ascent_predict(float dt, fu32 c){ (void)dt; (void)c; assert(guard); note("P"); }
+static void ascent_predict(float dt, fu32 c){ (void)dt; (void)c; assert(guard && staged); note("P"); }
 static void ascent_update(void){ assert(guard); note("U"); }
 static void descent_predict(float dt){ (void)dt; assert(guard); note("dp"); }
 static bool apogee_now;
@@ -91,7 +93,7 @@ static void manual_swap(void){ g_conf &= ~Using_Ascent_KF; group |= EVAL_STAGE_W
 /*ENTRY*/
 /* Each run starts like a restarted thread: a stale stage from the last one
  * must not survive its entry. */
-static void run(void){ memset(log_,0,sizeof log_); next = 0; group = 0; accum = EVALUATION_STAGED; dt = 9.0f; plaus.imu_silent = false;
+static void run(void){ memset(log_,0,sizeof log_); next = 0; group = 0; accum = EVALUATION_STAGED; dt = 9.0f; staged = true; plaus.imu_silent = false;
   if (!setjmp(stopped)) estimator_thread_entry(0); }
 int main(void){
   /* Ascent pair/baro cycles, then Apogee in a pass; descent samples offered
