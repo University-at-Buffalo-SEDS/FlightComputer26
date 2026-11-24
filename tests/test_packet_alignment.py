@@ -29,10 +29,10 @@ typedef uint32_t fu32;
 typedef int SedsResult;
 typedef struct {float x,y,z;} f_xyz;
 enum {SEDS_OK,SEDS_ERR,GPS_Malformed,GPS_Data_Code};
-static unsigned g_conf,seds_syscall,reports;
+static unsigned g_conf,reports;
 static struct {int rflock; f_xyz coords_buf; bool updated;} rfboard;
 static unsigned fetch_or(unsigned *p,unsigned v,int m){(void)m;unsigned old=*p;*p|=v;return old;}
-static void tx_queue_send(unsigned *q,unsigned *v,int n){(void)q;(void)n;assert(*v==GPS_Malformed);reports++;}
+static unsigned thread_comm_send(unsigned v,int n){(void)n;assert(v==GPS_Malformed);reports++;return 0;}
 static unsigned validate_coords(const f_xyz *p,size_t n,unsigned cfg){(void)cfg;assert(n==12);assert(p->x==42.5f && p->y==-78.25f && p->z==123.0f);return GPS_Data_Code;}
 ''' + function + r'''
 int main(void){

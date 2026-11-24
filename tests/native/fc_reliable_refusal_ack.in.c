@@ -33,11 +33,11 @@ enum {Postinit=3,G_Armed=6,Postinit_Signal=7,Postinit_Requested=1u<<8,TX_NO_WAIT
 typedef uint32_t fc_msg;
 #define fc_mask(m) (m)
 #define option(o) (o)
-static uint32_t g_conf;static int seds_syscall;
+static uint32_t g_conf;
 static int current(void){return Postinit-1;}
 static uint32_t fc_recovery_epoch(void){return 1U;}
 static bool fc_recovery_holds_sequence(void){return stopped;}
-static unsigned tx_queue_send(void*q,void*m,unsigned w){(void)q;(void)m;(void)w;++postinits;return TX_SUCCESS;}
+static unsigned thread_comm_send(uint32_t m,unsigned w){(void)m;(void)w;++postinits;return TX_SUCCESS;}
 /* distribution.c puts the return type on its own line. */
 static inline SedsResult
 /* SOURCE_FUNCTION:implicit_postinit */

@@ -40,10 +40,9 @@ typedef uint32_t fu32; typedef uint16_t fu16; typedef unsigned long ULONG;
 /*ENUM*/
 enum { HeartbeatGND, HeartbeatRF };
 static fu32 g_conf, heartbeat_age, sent;
-static int seds_syscall;
 static struct { fu16 to_abort, to_reinit; } smon = { TO_ABORT, 0 };
 static fu32 timer_fetch(int t) { return t == HeartbeatGND ? heartbeat_age : 0; }
-static unsigned tx_queue_send(int *q, fc_msg *m, unsigned w) { (void)q; (void)m; (void)w; ++sent; return 0; }
+static unsigned thread_comm_send(fc_msg m, unsigned w) { (void)m; (void)w; ++sent; return 0; }
 static void sweetbench_catch(int n) { (void)n; }
 static void sweetbench_start(int a, int b) { (void)a; (void)b; }
 static bool past_armed, admitted;

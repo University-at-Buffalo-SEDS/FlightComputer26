@@ -58,7 +58,9 @@ static UINT tx_thread_resume(TX_THREAD*t){assert(t==&evaluation_task);++resumes;
 static UINT tx_thread_terminate(TX_THREAD*t){assert(t==&evaluation_task);++terminates;t->tx_thread_state=TX_TERMINATED;return 0;}
 static UINT tx_thread_reset(TX_THREAD*t){assert(t==&evaluation_task);++resets;t->tx_thread_state=TX_SUSPENDED;return 0;}
 static UINT tx_event_flags_set(int*g,unsigned flags,unsigned mode){assert(g==&eval_stage&&flags==7&&mode==TX_OR);++events;return 0;}
-static UINT tx_queue_flush(int*q){assert(q==&seds_syscall);++flushes;return 0;}
+/* thread_comm.c: the command queue is modelled by seds_syscall. */
+static void thread_comm_flush(void){++flushes;g_last_network_flight_command_msg=Invalid_Message;}
+static bool thread_comm_receiver_waiting(const TX_THREAD*t){return t->tx_thread_state==TX_QUEUE_SUSP&&t->tx_thread_suspend_control_block==&seds_syscall;}
 static UINT tx_thread_wait_abort(TX_THREAD*t){assert(irq&&t==&recovery_task);++aborts;return 0;}
 '''
 MAIN=r'''

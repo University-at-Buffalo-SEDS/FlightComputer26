@@ -24,12 +24,8 @@
 
 
 TX_THREAD recovery_task;
-TX_QUEUE seds_syscall;
 TX_TIMER monotonic_checks;
 
-#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-extern volatile fc_msg g_last_network_flight_command_msg;
-#endif
 volatile uint32_t g_network_flight_commands_processed
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_recovery_stack_used
@@ -65,8 +61,6 @@ const led_gpio light[Leds] = {
   [Green] = {LED1_PORT, LED1_PIN},
   [Blue]  = {LED2_PORT, LED2_PIN},
 };
-
-static tx_align fc_msg recvq[FC_MSG_Q_SIZE] = {0};
 
 atomic_uint_fast32_t g_conf = FC_DEFAULTS | USER_OPTIONS;
 
@@ -206,8 +200,7 @@ void fc_recovery_control_wake(void)
   const uint32_t mask = __get_PRIMASK(); __disable_irq();
   /* Do not abort a sensor-init sleep or any unrelated wait. */
   if (g_recovery_receive_loop_ready &&
-      recovery_task.tx_thread_state == TX_QUEUE_SUSP &&
-      recovery_task.tx_thread_suspend_control_block == &seds_syscall)
+      thread_comm_receiver_waiting(&recovery_task))
     (void)tx_thread_wait_abort(&recovery_task);
   __set_PRIMASK(mask);
 }
@@ -231,10 +224,7 @@ bool fc_recovery_control_quiesce(void)
   if (tx_thread_reset(&evaluation_task) != TX_SUCCESS) return false;
   evaluation_quiescent = 1U;
   if (fc_recovery_holds_sequence()) {
-    (void)tx_queue_flush(&seds_syscall);
-#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-    g_last_network_flight_command_msg = Invalid_Message;
-#endif
+    thread_comm_flush();
   }
   return true;
 }
@@ -795,7 +785,7 @@ static inline conditional void autostart_on_timeout(void)
   {
     ++test_stage;
     fc_msg cmd = fc_mask(Postinit_Signal);
-    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    thread_comm_send(cmd, TX_NO_WAIT);
   }
   else if (test_stage < 4)
   {
@@ -805,7 +795,7 @@ static inline conditional void autostart_on_timeout(void)
   {
     ++test_stage;
     fc_msg cmd = fc_mask(Launch_Signal);
-    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    thread_comm_send(cmd, TX_NO_WAIT);
   }
 #endif
 }
@@ -841,7 +831,7 @@ static void fc_timer_routine(ULONG _)
     if (gps_interval > GPS_DELAY_MS)
     {
       fc_msg cmd = fc_mask(GPS_Delayed);
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+      thread_comm_send(cmd, TX_NO_WAIT);
     }
   }
   else if (gps_interval < TX_TIMER_TICKS)
@@ -896,7 +886,7 @@ void recovery_entry(ULONG st)
 
   MrAnalog (WE_ARE_SO_BACK)
   {
-    fc_msg msg;
+    thread_comm_msg_t msg;
     fc_monitor_bench_poll();
     /* Every command and control step runs under the estimator guard, so it
      * never lands in the middle of an evaluation pass (thread_comm.h). The
@@ -923,7 +913,7 @@ void recovery_entry(ULONG st)
     recovery_update_stack_profile();
     /* Thread suspension */
     board_watchdog_progress(BOARD_WATCHDOG_CONTROL);
-    st = tx_queue_receive(&seds_syscall, &msg, TX_TIMER_TICKS_PER_SECOND / 4U);
+    st = thread_comm_receive(&msg, TX_TIMER_TICKS_PER_SECOND / 4U);
 
     if (st != TX_SUCCESS)
     {
@@ -935,19 +925,9 @@ void recovery_entry(ULONG st)
     thread_comm_estimator_leave();
     if (command_epoch != fc_recovery_epoch()) continue;
     g_recovery_commands_dequeued++;
-#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-    const bool network_command = msg == g_last_network_flight_command_msg;
-    if (network_command)
-    {
-      /* Claim the accepted network command before executing it so a later
-       * command cannot overwrite the correlation while this handler runs. */
-      g_last_network_flight_command_msg = Invalid_Message;
-    }
-#else
-    const bool network_command = false;
-#endif
+    const bool network_command = msg.origin == THREAD_COMM_NETWORK;
     thread_comm_estimator_enter();
-    decode_flight_message(msg);
+    decode_flight_message((fc_msg)msg.cmd);
     thread_comm_estimator_leave();
     /* Commands change the configuration distribution's loops poll and the
      * latches (Abort status) the telemetry loop publishes. */
@@ -978,19 +958,10 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
     return IT_IS_NOW_OVER;
   }
   
-  /* Initialize everything used by recovery_entry before making the
-   * highest-priority recovery thread runnable. With TX_AUTO_START it can
-   * preempt this creator immediately. An uncreated queue makes its receive
-   * fail in a tight priority-0 loop, starving telemetry and every other task. */
-  st = tx_queue_create(&seds_syscall, id "Q", 1, &recvq,
-                       sizeof recvq);
-
-  if (st != TX_SUCCESS)
-  {
-    log_err(id "queue %s %u", critical, st);
-    return IT_IS_NOW_OVER;
-  }
-
+  /* The command queue (thread_comm_init) exists before any thread starts:
+   * with TX_AUTO_START this highest-priority thread can preempt its creator
+   * immediately, and an uncreated queue would make its receive fail in a
+   * tight loop, starving telemetry and every other task. */
   st = tx_timer_create(&monotonic_checks, id "T",
                        fc_timer_routine, 0, TX_TIMER_INITIAL,
                        TX_TIMER_TICKS, TX_NO_ACTIVATE);

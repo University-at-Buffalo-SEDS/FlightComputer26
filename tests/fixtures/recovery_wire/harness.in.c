@@ -162,7 +162,9 @@ static int tx_thread_terminate(struct Thread*t){++terminations;if(terminate_erro
 static int tx_thread_reset(struct Thread*t){++resets;if(reset_error)return 1;t->tx_thread_state=TX_SUSPENDED;return 0;}
 static int tx_thread_wait_abort(struct Thread*t){(void)t;++wakes;return 0;}
 static int tx_event_flags_set(int*p,int f,int op){(void)p;assert(f==7&&op==TX_OR);++signals;return 0;}
-static int tx_queue_flush(int*p){assert(p==&seds_syscall);++flushes;return 0;}
+/* thread_comm.c: the command queue is modelled by seds_syscall. */
+static void thread_comm_flush(void){++flushes;g_last_network_flight_command_msg=Invalid_Message;}
+static bool thread_comm_receiver_waiting(const struct Thread*t){return t->tx_thread_state==TX_QUEUE_SUSP&&t->tx_thread_suspend_control_block==&seds_syscall;}
 static bool fc_watchdog_startup_reset_ready(void){return seal&&flight_state_cache_has_value()&&flight_state_cache_value()==0;}
 @ACTUAL_FC_OWNER@
 
@@ -184,8 +186,7 @@ void fc_recovery_control_wake(void)
   const uint32_t mask = __get_PRIMASK(); __disable_irq();
   /* Do not abort a sensor-init sleep or any unrelated wait. */
   if (g_recovery_receive_loop_ready &&
-      recovery_task.tx_thread_state == TX_QUEUE_SUSP &&
-      recovery_task.tx_thread_suspend_control_block == &seds_syscall)
+      thread_comm_receiver_waiting(&recovery_task))
     (void)tx_thread_wait_abort(&recovery_task);
   __set_PRIMASK(mask);
 }
@@ -209,10 +210,7 @@ bool fc_recovery_control_quiesce(void)
   if (tx_thread_reset(&evaluation_task) != TX_SUCCESS) return false;
   evaluation_quiescent = 1U;
   if (fc_recovery_holds_sequence()) {
-    (void)tx_queue_flush(&seds_syscall);
-#if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
-    g_last_network_flight_command_msg = Invalid_Message;
-#endif
+    thread_comm_flush();
   }
   return true;
 }

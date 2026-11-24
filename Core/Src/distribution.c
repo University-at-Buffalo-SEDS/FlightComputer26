@@ -21,6 +21,7 @@
 #include "sweetbench.h"
 #include "fc_monitor_bench.h"
 #include "ground_test.h"
+#include "thread_comm.h"
 #include <string.h>
 
 #define id "DI "
@@ -218,7 +219,7 @@ process_gps_packet(const uint8_t *data, size_t len)
   if (data == NULL || len != sizeof(coords))
   {
     fu32 rep = fc_mask(GPS_Malformed);
-    tx_queue_send(&seds_syscall, &rep, TX_NO_WAIT);
+    thread_comm_send(rep, TX_NO_WAIT);
     return SEDS_ERR;
   }
   memcpy(&coords, data, sizeof(coords));
@@ -226,7 +227,7 @@ process_gps_packet(const uint8_t *data, size_t len)
 
   if (rep != fc_mask(GPS_Data_Code))
   {
-    tx_queue_send(&seds_syscall, &rep, TX_NO_WAIT);
+    thread_comm_send(rep, TX_NO_WAIT);
     return SEDS_ERR;
   }
 
@@ -293,8 +294,6 @@ volatile uint32_t g_network_flight_commands_accepted
     __attribute__((used, externally_visible)) = 0U;
 volatile uint32_t g_last_network_flight_command_id
     __attribute__((used, externally_visible)) = 0U;
-volatile fc_msg g_last_network_flight_command_msg
-    __attribute__((used, externally_visible)) = Invalid_Message;
 
 static inline SedsResult
 dispatch_flight_cmd(const uint8_t *data, size_t len)
@@ -313,16 +312,8 @@ dispatch_flight_cmd(const uint8_t *data, size_t len)
   }
   else
   {
-    /* recovery_entry runs at a higher priority and can preempt this function
-     * inside tx_queue_send as soon as the queue wakes it. Publish the
-     * correlation before sending, otherwise the command may execute before it
-     * can be identified as a network command. */
-    g_last_network_flight_command_msg = msg;
-    st = tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT);
-    if (st != TX_SUCCESS && g_last_network_flight_command_msg == msg)
-    {
-      g_last_network_flight_command_msg = Invalid_Message;
-    }
+    /* The queue message carries its network origin. */
+    st = thread_comm_send_network(msg);
   }
 
   if (st == TX_SUCCESS)
@@ -461,7 +452,7 @@ implicit_postinit(const uint8_t *data, size_t len)
       !(g_conf & option(Postinit_Requested)))
   {
     fc_msg post = fc_mask(Postinit_Signal);
-    if (tx_queue_send(&seds_syscall, &post, TX_NO_WAIT) != TX_SUCCESS)
+    if (thread_comm_send(post, TX_NO_WAIT) != TX_SUCCESS)
       return SEDS_IO;
     armed_postinit_pending = true;
   }
@@ -585,7 +576,7 @@ maybe_report_measm(fu32 conf, fc_msg code, devid kind)
 
     if (conf & option(Measm_Reports))
     {
-      tx_queue_send(&seds_syscall, &code, TX_NO_WAIT);
+      thread_comm_send(code, TX_NO_WAIT);
     }
   }
 }
@@ -979,7 +970,7 @@ static inline void fill_sequence_states(void)
 
     if (conf & option(Postinit_Requested))
     {
-      tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+      thread_comm_send(cmd, TX_NO_WAIT);
       post_initialization();
     }
   }

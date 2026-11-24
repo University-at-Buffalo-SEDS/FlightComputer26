@@ -87,7 +87,6 @@
 /* Recovery */
 
 #define MAX_THRESHOLD 0x3FFu
-#define FC_MSG_Q_SIZE 8
 
 #define CONFIRM_LAUNCH 0x01
 #define CONFIRM_POSTINIT 0x02

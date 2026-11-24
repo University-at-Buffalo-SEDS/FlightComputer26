@@ -31,7 +31,7 @@ static unsigned devctr_if[2];static struct{unsigned gps_delayed,gps_malform,fail
 static struct Thread distribution_task;
 static bool beyond(unsigned state){return current()>state;}
 static void log_metric(const char*name,fi32 value,bool important){(void)name;(void)value;(void)important;}
-static UINT tx_queue_send(int*q,const fc_msg*message,ULONG wait){assert(q==&seds_syscall&&wait==TX_NO_WAIT&&!queued);queued=true;queued_message=*message;return TX_SUCCESS;}
+static UINT thread_comm_send_network(uint32_t message){assert(!queued);queued=true;queued_message=(fc_msg)message;g_last_network_flight_command_msg=(fc_msg)message;return TX_SUCCESS;}
 static SedsResult pulse_ground(void){return SEDS_OK;}
 static SedsResult implicit_postinit(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}
 static SedsResult process_gps_packet(const uint8_t*p,size_t n){(void)p;(void)n;return SEDS_HANDLER_ERROR;}

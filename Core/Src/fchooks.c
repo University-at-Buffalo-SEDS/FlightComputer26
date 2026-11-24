@@ -8,6 +8,7 @@
 #include "fcapi.h"
 #include "fcconfig.h"
 #include "panic_match.h"
+#include "thread_comm.h"
 #ifdef TELEMETRY_USE_TLSF
 #include "telemetry_tlsf.h"
 extern volatile uint32_t g_telemetry_tlsf_region_bytes, g_telemetry_tlsf_live_bytes;
@@ -157,7 +158,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
   {
     log_state = Log_Rate_Bound;
     fc_msg cmd = fc_mask(Log_Rate_Limit);
-    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    thread_comm_send(cmd, TX_NO_WAIT);
   }
 
   void *ptr;
@@ -172,7 +173,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
   {
     log_state = Log_Local_Bound;
     fc_msg cmd = fc_mask(Log_Restrict);
-    tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+    thread_comm_send(cmd, TX_NO_WAIT);
   }
 
   st = tx_byte_allocate(tx_app_shared, &ptr, size, timeout);
@@ -183,7 +184,7 @@ static inline void *reserve_alloc(size_t size, size_t timeout)
 
     do {
       fc_msg cmd = fc_mask(Log_Terminate);
-      st = tx_queue_send(&seds_syscall, &cmd, TX_NO_WAIT);
+      st = thread_comm_send(cmd, TX_NO_WAIT);
     }
     while (st != TX_SUCCESS);
 

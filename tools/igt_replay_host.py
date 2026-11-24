@@ -147,7 +147,7 @@ spinlock meas_locks[MEMS_Devices];
 volatile log_rates rates = { LOG_RATE_SD, LOG_RATE_GND };
 volatile fu32 local_time[Time_Users];
 atomic_uint_fast32_t g_conf = FC_DEFAULTS | USER_OPTIONS;
-TX_QUEUE seds_syscall;
+UINT thread_comm_send(uint32_t c, ULONG w) { (void)c; (void)w; return TX_SUCCESS; }
 static float drogue_t = -1, main_t = -1, drogue_alt, main_alt;
 
 uint32_t HAL_GetTick(void) { return host_now; }

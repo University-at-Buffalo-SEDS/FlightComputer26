@@ -48,7 +48,7 @@ static struct {unsigned gps_delayed,gps_malform,to_abort,failures,to_reinit;} sm
 static unsigned devctr_if[2];
 static struct {atomic_uint lock;} meas_locks[2];
 static struct task {UINT tx_thread_state;void *tx_thread_suspend_control_block;} evaluation_task={.tx_thread_state=TX_SUSPENDED},recovery_task,distribution_task;
-static unsigned eval_stage,seds_syscall;
+static unsigned eval_stage;
 static volatile uint8_t evaluation_quiescent=1U,g_recovery_receive_loop_ready=1U;
 static unsigned irq,seal,wakes,ascent_initializations,messages,waits,suspends,resumes,terminations,resets,commits;
 static bool evaluator_context,store_ready=true,durable,g_fc_watchdog_resumed;
@@ -82,7 +82,8 @@ static UINT tx_thread_resume(struct task *t){++resumes;t->tx_thread_state=TX_RUN
 static UINT tx_thread_terminate(struct task *t){++terminations;t->tx_thread_state=TX_TERMINATED;return TX_SUCCESS;}
 static UINT tx_thread_reset(struct task *t){++resets;t->tx_thread_state=TX_SUSPENDED;return TX_SUCCESS;}
 static UINT tx_thread_wait_abort(struct task *t){(void)t;++wakes;return TX_SUCCESS;}
-static UINT tx_queue_flush(void *q){(void)q;return TX_SUCCESS;}
+static void thread_comm_flush(void){}
+static bool thread_comm_receiver_waiting(const void *t){(void)t;return false;}
 static UINT tx_event_flags_set(unsigned *group,unsigned mask,unsigned mode){(void)group;(void)mask;(void)mode;return TX_SUCCESS;}
 static void tx_thread_sleep(unsigned ticks){(void)ticks;++waits;}
 /* thread_comm.c estimator guard: depth only; every enter has its leave. */

@@ -30,7 +30,7 @@ enum { SEDS_OK=0, SEDS_ERR=-1, SEDS_HANDLER_ERROR=-9, SEDS_IO=-5,
  SEDS_DT_FLIGHT_STATE=23, TX_SUCCESS=0, TX_NO_WAIT=0,
  G_Idle=1, G_Armed=6, G_Aborted=15, Postinit=1, Postinit_Signal=100 };
 typedef struct { unsigned ty; const uint8_t *payload; size_t payload_len; } SedsPacketView;
-static int seds_syscall, queue_result, queued, current_state;
+static int queue_result, queued, current_state;
 static uint32_t g_conf, epoch=1;
 static bool held;
 static uint32_t fc_recovery_epoch(void){return epoch;}
@@ -39,8 +39,8 @@ static bool fc_recovery_holds_sequence(void){return held;}
 #define option(x) (x)
 #define current() (current_state)
 #define fc_mask(x) ((fc_msg)(x))
-static int tx_queue_send(int *queue, fc_msg *message, int wait) {
- assert(queue == &seds_syscall && *message == Postinit_Signal && wait == TX_NO_WAIT);
+static int thread_comm_send(fc_msg message, int wait) {
+ assert(message == Postinit_Signal && wait == TX_NO_WAIT);
  if (queue_result == TX_SUCCESS) queued++;
  return queue_result;
 }

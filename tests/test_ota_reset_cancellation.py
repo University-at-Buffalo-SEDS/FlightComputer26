@@ -13,7 +13,7 @@ def build(out):
  evaluation=(BASE/'Core/Src/evaluation.c').read_text()
  assert 'sv_meta sm = {Startup, G_Startup, 0, 0, 0};' in evaluation
  base=base.replace('.flight=Armed','.flight=Startup')
- pre='#include <stdint.h>\n#include <stdbool.h>\n#define TELEMETRY_ENABLED 1\nstatic uint32_t g_last_network_flight_command_msg;\nstatic void NVIC_SystemReset(void);\nvoid ota_stream_retire_reset_locked(void);\nbool ota_stream_take_reset_locked(uint32_t epoch);\n'
+ pre='#include <stdint.h>\n#include <stdbool.h>\n#define TELEMETRY_ENABLED 1\nstatic void NVIC_SystemReset(void);\nvoid ota_stream_retire_reset_locked(void);\nbool ota_stream_take_reset_locked(uint32_t epoch);\n'
  base=pre+base
  base=base.replace('static uint32_t __get_PRIMASK(void)','static unsigned ipsr;\nstatic unsigned __get_IPSR(void){return ipsr;}\nstatic uint32_t __get_PRIMASK(void)')
  ota='\n'.join(l for l in (BASE/'Core/Src/ota_stream.c').read_text().splitlines() if not l.startswith('#include'))

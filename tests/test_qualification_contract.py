@@ -7,7 +7,7 @@ from router_lifecycle_fixture import function as actual_function
 
 
 class QualificationContractTests(unittest.TestCase):
-    def test_network_command_is_correlated_before_queue_can_preempt(self):
+    def test_network_command_carries_its_origin_in_the_queue(self):
         root = Path(build.__file__).resolve().parent
         source = (root / "Core" / "Src" / "distribution.c").read_text(
             encoding="utf-8"
@@ -15,10 +15,14 @@ class QualificationContractTests(unittest.TestCase):
         handler = source.split("dispatch_flight_cmd", 1)[1].split(
             "static inline SedsResult pulse_ground", 1
         )[0]
-        self.assertLess(
-            handler.index("g_last_network_flight_command_msg = msg;"),
-            handler.index("tx_queue_send(&seds_syscall, &msg, TX_NO_WAIT)"),
-        )
+        self.assertIn("st = thread_comm_send_network(msg);", handler)
+        comm = (root / "Core" / "Src" / "thread_comm.c").read_text(encoding="utf-8")
+        send = comm.split("UINT thread_comm_send_network(", 1)[1].split("\n}\n", 1)[0]
+        # The diagnostic probe is published before the receiver can run.
+        self.assertLess(send.index("g_last_network_flight_command_msg = cmd;"),
+                        send.index("tx_queue_send(&commands, &msg, TX_NO_WAIT)"))
+        recovery = (root / "Core" / "Src" / "recovery.c").read_text(encoding="utf-8")
+        self.assertIn("msg.origin == THREAD_COMM_NETWORK", recovery)
 
     def test_sensor_telemetry_does_not_build_a_second_software_queue(self):
         root = Path(build.__file__).resolve().parent
@@ -181,14 +185,19 @@ class QualificationContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         create = recovery[recovery.index("UINT create_recovery_task") :]
-        queue = create.index("tx_queue_create(&seds_syscall")
         timer = create.index("tx_timer_create(&monotonic_checks")
         thread = create.index("tx_thread_create(&recovery_task")
         auto_start = create.index("TX_AUTO_START", thread)
 
-        self.assertLess(queue, thread)
         self.assertLess(timer, thread)
         self.assertGreater(auto_start, thread)
+        # The command queue is created by thread_comm_init before any thread.
+        comm = (root / "Core" / "Src" / "thread_comm.c").read_text(encoding="utf-8")
+        init = comm[comm.index("UINT thread_comm_init(void)") :]
+        init = init[: init.index("\n}\n")]
+        self.assertIn("tx_queue_create(&commands", init)
+        app = (root / "Core" / "Src" / "app_threadx.c").read_text(encoding="utf-8")
+        self.assertLess(app.index("thread_comm_init()"), app.index("create_recovery_task("))
 
     def test_priority_zero_recovery_startup_does_not_reenter_router(self):
         root = Path(build.__file__).resolve().parent
