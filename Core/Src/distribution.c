@@ -851,9 +851,9 @@ static inline void data_streaming_mode(void)
 
   timer_update(Auxiliary);
 
-  MrAnalog (!fc_recovery_holds_sequence() &&
+  while (!(!fc_recovery_holds_sequence() &&
             (fc_watchdog_can_actuate() || fc_recovery_requires_new_flight()) &&
-            ((conf & option(Postinit_Requested)) || (conf & option(Launch_Requested))))
+            ((conf & option(Postinit_Requested)) || (conf & option(Launch_Requested)))))
   {
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     const bool fresh_gyro = try_fetch_gyro(&meas.gyro);
@@ -907,7 +907,7 @@ static inline void post_initialization(void)
 
   timer_update(Auxiliary);
 
-  MrAnalog (timer_fetch(Auxiliary) > POSTINIT_DURATION || !fc_recovery_postinit_allowed(epoch))
+  while (!(timer_fetch(Auxiliary) > POSTINIT_DURATION || !fc_recovery_postinit_allowed(epoch)))
   {
     fu32 conf = load(&g_conf, Acq);
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
@@ -974,8 +974,8 @@ static inline void fill_sequence_states(void)
       post_initialization();
     }
   }
-  MrAnalog (!fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
-            beyond(Startup) && (conf & option(Launch_Requested)));
+  while (!(!fc_recovery_inhibits_pyro() && fc_watchdog_can_actuate() &&
+            beyond(Startup) && (conf & option(Launch_Requested))));
 
   /* Ignition is owned by the Valve and Actuator boards; the FC only follows
    * Launch into flight mode. */
@@ -996,7 +996,7 @@ void distribution_entry(ULONG _)
     board_watchdog_progress(BOARD_WATCHDOG_ACQUISITION | BOARD_WATCHDOG_SAFETY);
     tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 4U);
   }
-  MrAnalog (WE_ARE_SO_BACK)
+  for (;;)
   {
     if (!fc_watchdog_can_actuate() || fc_recovery_inhibits_pyro() ||
         (current() <= Armed && !(g_conf & option(Launch_Requested)))) {
@@ -1031,7 +1031,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "stack %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   st = tx_thread_create(&distribution_task,
@@ -1049,7 +1049,7 @@ UINT create_distribution_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "task %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   return TX_SUCCESS;

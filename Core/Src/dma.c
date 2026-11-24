@@ -331,11 +331,11 @@ void distribution_wake(void)
 UINT dma_acquisition_init(void)
 {
   if (tx_semaphore_create(&dma_completion, "Sensor DMA completion", 0) != TX_SUCCESS)
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   if (tx_event_flags_create(&sensor_events, id "R") != TX_SUCCESS)
   {
     tx_semaphore_delete(&dma_completion);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
   return TX_SUCCESS;
 }

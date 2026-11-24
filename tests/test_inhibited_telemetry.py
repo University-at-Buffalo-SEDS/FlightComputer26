@@ -12,6 +12,9 @@ class InhibitedTelemetry(unittest.TestCase):
         source = (ROOT / "Core/Src/distribution.c").read_text()
         entry = source[source.index("void distribution_entry(ULONG _)"):
                        source.index("UINT create_distribution_task")]
+        # Only the start-up part: the flight loop never returns.
+        assert entry.count("for (;;)") == 1
+        entry = entry.replace("for (;;)", "while (0)")
         harness = r'''#include <assert.h>
 typedef unsigned ULONG;
 typedef unsigned char fu8;
@@ -23,8 +26,6 @@ enum { BOARD_WATCHDOG_ACQUISITION=1, BOARD_WATCHDOG_SAFETY=2,
        Ascent_KF_Staged=4, Acq=0 };
 #define option(x) (x)
 #define load(p, order) (*(p))
-#define MrAnalog(x) while (x)
-#define WE_ARE_SO_BACK 0
 static int fc_watchdog_can_actuate(void) { return allowed; }
 static int fc_recovery_requires_new_flight(void){return 0;}
 static int fc_recovery_inhibits_pyro(void){return 0;}

@@ -915,7 +915,7 @@ void recovery_entry(ULONG st)
    * the telemetry task; later real state transitions still publish normally. */
   g_recovery_receive_loop_ready = 1U;
 
-  MrAnalog (WE_ARE_SO_BACK)
+  for (;;)
   {
     thread_comm_msg_t msg;
     health_service();
@@ -987,7 +987,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "stack %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
   
   /* The command queue (thread_comm_init) exists before any thread starts:
@@ -1009,7 +1009,7 @@ UINT create_recovery_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "task %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   return TX_SUCCESS;

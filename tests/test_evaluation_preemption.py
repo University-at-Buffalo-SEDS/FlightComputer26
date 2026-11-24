@@ -43,7 +43,7 @@ class EvaluationPreemption(unittest.TestCase):
     def test_evaluator_holds_the_guard_for_each_pass_and_sleeps_without_it(self):
         evaluation = (ROOT / 'Core/Src/evaluation.c').read_text()
         loop = body(evaluation, 'void evaluation_entry(ULONG _)')
-        start = loop.index('MrAnalog (conf & option(Eval_Abort_Flag))')
+        start = loop.index('while (!(conf & option(Eval_Abort_Flag)))')
         head, passes = loop[:start], loop[start:]
         # Flight-mode setup (ascent_initialize) and each pass are guarded.
         self.assertLess(head.index('thread_comm_estimator_enter();'), head.index('enter_flight_mode(conf);'))
@@ -64,7 +64,7 @@ class EvaluationPreemption(unittest.TestCase):
     def test_recovery_runs_commands_and_control_under_the_guard(self):
         recovery = (ROOT / 'Core/Src/recovery.c').read_text()
         loop = body(recovery, 'void recovery_entry(ULONG st)')
-        loop = loop[loop.index('MrAnalog (WE_ARE_SO_BACK)'):]
+        loop = loop[loop.index('for (;;)'):]
         lines = [l.strip() for l in loop.splitlines()]
         held = False
         for line in lines:

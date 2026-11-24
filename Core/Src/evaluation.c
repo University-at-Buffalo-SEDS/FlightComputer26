@@ -555,7 +555,7 @@ void evaluation_entry(ULONG _)
   fc_watchdog_checkpoint();
   thread_comm_estimator_leave();
 
-  MrAnalog (conf & option(Eval_Abort_Flag))
+  while (!(conf & option(Eval_Abort_Flag)))
   {
     evaluation_control_barrier();
     ULONG done, request = accum & EVALUATION_STAGED
@@ -615,7 +615,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "stack %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   st = tx_thread_create(&evaluation_task,
@@ -634,7 +634,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "task %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   st = tx_event_flags_create(&eval_stage, id "E");
@@ -642,7 +642,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   if (st != TX_SUCCESS)
   {
     log_err(id "evflags %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   kfpool_buf = _sbrk(16 + KF_POOL_SIZE);
@@ -650,7 +650,7 @@ UINT create_evaluation_task(TX_BYTE_POOL *byte_pool)
   if (kfpool_buf == (void *)-1)
   {
     log_err(id "poolbuf %s %u", critical, st);
-    return IT_IS_NOW_OVER;
+    return FC_INIT_FAILED;
   }
 
   return TX_SUCCESS;

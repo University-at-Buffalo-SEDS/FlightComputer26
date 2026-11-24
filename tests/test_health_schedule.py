@@ -76,8 +76,8 @@ class HealthSchedule(unittest.TestCase):
         self.assertNotIn('monotonic_checks', recovery)
         entry = recovery[recovery.index('void recovery_entry(ULONG st)'):]
         entry = entry[:entry.index('\n}\n')]
-        loop = entry[entry.index('MrAnalog (WE_ARE_SO_BACK)'):]
-        self.assertLess(entry.index('health_start();'), entry.index('MrAnalog (WE_ARE_SO_BACK)'))
+        loop = entry[entry.index('for (;;)'):]
+        self.assertLess(entry.index('health_start();'), entry.index('for (;;)'))
         self.assertLess(loop.index('health_service();'), loop.index('fc_recovery_control_service();'))
         self.assertIn('thread_comm_receive(&msg, health_wait(TX_TIMER_TICKS_PER_SECOND / 4U))', loop)
         config = (ROOT / 'Core/Inc/fcconfig.h').read_text()
