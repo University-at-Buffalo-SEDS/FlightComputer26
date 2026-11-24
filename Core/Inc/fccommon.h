@@ -40,6 +40,11 @@
 
 #define EVALUATION_STAGED (fu8)(1u << 7)
 
+/* eval_stage bits besides Baro/Gyro/Accl_Mask: a fresh descent GPS fix, and
+ * a wake that only makes the estimator re-read its mode. */
+#define EVAL_STAGE_GPS  (1UL << 8)
+#define EVAL_STAGE_WAKE (1UL << 9)
+
 #define AZ_RAIL_THRES (GRAVITY_SI + EKF_ACCL_RAIL_DIV)
 
 

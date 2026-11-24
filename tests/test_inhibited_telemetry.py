@@ -39,7 +39,7 @@ static void tx_thread_sleep(unsigned ticks) { (void)ticks; }
 static void for_ascent_update(unsigned conf) { (void)conf; estimator++; }
 static void for_ascent_predict(unsigned conf, unsigned char *imu)
 { (void)conf; (void)imu; estimator++; }
-static void descent_full_cycle(unsigned conf) { (void)conf; estimator++; }
+static void descent_publish(unsigned conf) { (void)conf; estimator++; }
 ''' + entry + r'''
 int main(void) {
   allowed=0; distribution_entry(0);

@@ -26,10 +26,13 @@ class RecoveryLogging(unittest.TestCase):
                           if p.name != 'sdpipeline.c' and 'sd_conclude(' in p.read_text()], [])
 
     def test_landed_and_recovery_do_not_sleep_the_sensor_thread(self):
-        # Descent evaluation runs in the distribution thread, which consumes
-        # the DMA samples that feed the SD log and telemetry.
-        self.assertIn('evaluate_rocket_state(conf, dt);', function(
-            (ROOT / 'Core/Src/distribution.c').read_text(), 'static inline void descent_full_cycle('))
+        # Descent evaluation runs in the estimator (evaluation thread); the
+        # distribution thread only publishes the samples that feed it, the SD
+        # log and telemetry.
+        publish = function((ROOT / 'Core/Src/distribution.c').read_text(), 'static inline void descent_publish(')
+        self.assertNotIn('evaluate_rocket_state', publish)
+        self.assertIn('tx_event_flags_set(&eval_stage, stage, TX_OR);', publish)
+        self.assertIn('evaluate_rocket_state(conf, dt);', function(self.eval, 'void evaluation_entry('))
         landed = function(self.eval, 'static inline void detect_landed(')
         announce = function(self.eval, 'static inline void announce_recovery(')
         for body in (landed, announce):

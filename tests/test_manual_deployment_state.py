@@ -59,6 +59,10 @@ static void message(const char *m, bool c) { (void)m; (void)c; reports++; }
 static unsigned to_global_state(unsigned s) { return s; }
 static void log_flight_state(unsigned s) { (void)s; reports++; }
 static void descent_initialize(uint32_t c) { (void)c; }
+#define TX_OR 0U
+#define EVAL_STAGE_WAKE (1UL << 9)
+static int eval_stage; static unsigned estimator_wakes;
+static unsigned tx_event_flags_set(int *g, unsigned long f, unsigned o) { (void)g; (void)o; if (f == EVAL_STAGE_WAKE) ++estimator_wakes; return 0; }
 /*MANUAL_DEPLOYMENT*/
 static void reset(unsigned state, bool rel, bool exp) {
   sm.flight = state; release_ok = rel; expand_ok = exp; inhibited = false;

@@ -370,6 +370,9 @@ static inline void manual_deployment(bool apogee, bool force, bool manual)
   {
     g_conf &= ~option(Using_Ascent_KF);
     descent_initialize(g_conf);
+    /* The estimator may be waiting for an IMU pair the descent filter no
+     * longer gets: let it pick up the new mode. */
+    (void)tx_event_flags_set(&eval_stage, EVAL_STAGE_WAKE, TX_OR);
   }
 }
 
@@ -903,7 +906,8 @@ void recovery_entry(ULONG st)
       descent_initialize(g_conf);
     timer_update(AscentKF);
     timer_update(DescentKF);
-    if (g_conf & option(Using_Ascent_KF)) tx_thread_resume(&evaluation_task);
+    /* The estimator runs both filters: resume it in either phase. */
+    tx_thread_resume(&evaluation_task);
   }
   health_start();
 

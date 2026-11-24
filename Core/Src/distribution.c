@@ -800,17 +800,19 @@ static inline void for_ascent_predict(fu32 conf, fu8 *imu)
 }
 
 
-/* Distribution for Descent and itself */
+/* Distribution for Descent: publish each fresh barometer sample (and GPS
+ * fix) and let the estimator (evaluation thread) run the descent filter and
+ * the state machine on it, as it does in ascent. */
 
-static inline void descent_full_cycle(fu32 conf)
+static inline void descent_publish(fu32 conf)
 {
-  fu32 stage = 0;
+  ULONG stage = 0;
 
   sweetbench_start(9);
 
   if (try_fetch_baro(&meas.baro))
   {
-    stage = EVALUATION_STAGED;
+    stage |= Baro_Mask;
     maybe_log_measm(Baro, &meas.baro);
   }
 
@@ -825,16 +827,13 @@ static inline void descent_full_cycle(fu32 conf)
 
     if (!(conf & option(Vigilant_Mode)))
     {
-      stage = EVALUATION_STAGED;
+      stage |= EVAL_STAGE_GPS;
     }
   }
 
-  if (stage == EVALUATION_STAGED)
+  if (stage != 0U)
   {
-    float dt = fsec(timer_exchange(DescentKF));
-    descent_predict(dt);
-    descent_update();
-    evaluate_rocket_state(conf, dt);
+    tx_event_flags_set(&eval_stage, stage, TX_OR);
     sweetbench_catch(9);
   }
   else dma_wait_for_samples(DMA_BARO_MASK); /* GPS wakes via distribution_wake */
@@ -1014,7 +1013,7 @@ void distribution_entry(ULONG _)
            ? for_ascent_update(conf)
            : for_ascent_predict(conf, &imu);
     }
-    else descent_full_cycle(conf);
+    else descent_publish(conf);
   }
 }
 

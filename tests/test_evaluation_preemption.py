@@ -52,7 +52,19 @@ class EvaluationPreemption(unittest.TestCase):
         # holds it) and given back before the next wait.
         self.assertLess(passes.rindex('evaluation_control_barrier();'), passes.index('thread_comm_estimator_enter();'))
         self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('ascent_update();'))
-        self.assertLess(passes.index('ascent_predict(dt, conf);'), passes.index('thread_comm_estimator_leave();'))
+        self.assertLess(passes.index('ascent_predict(dt, conf);'), passes.rindex('thread_comm_estimator_leave();'))
+        # The descent filter and state machine run in the same guarded pass.
+        self.assertLess(passes.index('thread_comm_estimator_enter();'), passes.index('descent_predict(dt);'))
+        self.assertLess(passes.index('evaluate_rocket_state(conf, dt);'), passes.rindex('thread_comm_estimator_leave();'))
+        # Every early exit gives the guard back.
+        self.assertEqual(passes.count('thread_comm_estimator_enter();'), 1)
+        self.assertEqual(passes.count('thread_comm_estimator_leave();'), 2)
+        # A manual switch to the descent filter wakes an estimator waiting
+        # for an IMU pair.
+        recovery = (ROOT / 'Core/Src/recovery.c').read_text()
+        manual = body(recovery, 'static inline void manual_deployment(')
+        self.assertLess(manual.index('descent_initialize(g_conf);'),
+                        manual.index('tx_event_flags_set(&eval_stage, EVAL_STAGE_WAKE, TX_OR);'))
         self.assertLess(passes.index('tx_event_flags_get(&eval_stage'), passes.index('thread_comm_estimator_enter();'))
         # Every sleep in the state machine releases the guard; the only plain
         # sleep is the pause barrier's, which runs without it.

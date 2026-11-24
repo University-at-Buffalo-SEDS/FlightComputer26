@@ -68,8 +68,8 @@ UINT create_evaluation_task(TX_BYTE_POOL *);
 
 #define DIST_INPUT 0
 #define DIST_PRIORITY 5
-/* Sensor publication, the Launch ignition request and the descent evaluator
- * all run the SEDSNet router's immediate send path here. 8 KiB overflowed at
+/* Sensor publication runs the SEDSNet router's immediate send path here
+ * (the descent filter and state machine moved to the evaluation thread). 8 KiB overflowed at
  * Launch (simulation peak: 8.8 KiB at Launch, 9.3 KiB by Recovery), and a
  * router re-initialisation from this task reaches ~13 KiB statically. */
 #define DIST_STACK_BYTES (16U * 1024U)

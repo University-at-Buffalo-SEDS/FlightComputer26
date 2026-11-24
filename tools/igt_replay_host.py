@@ -159,6 +159,7 @@ VOID _txe_thread_relinquish(VOID) {}
 UINT _txe_queue_send(TX_QUEUE *q, VOID *s, ULONG w) { (void)q; (void)s; (void)w; return TX_SUCCESS; }
 UINT _txe_byte_allocate(TX_BYTE_POOL *p, VOID **m, ULONG s, ULONG w) { (void)p; (void)w; *m = malloc(s); return TX_SUCCESS; }
 UINT _txe_event_flags_create(TX_EVENT_FLAGS_GROUP *g, CHAR *n, UINT s) { (void)g; (void)n; (void)s; return TX_SUCCESS; }
+UINT _txe_event_flags_set(TX_EVENT_FLAGS_GROUP *g, ULONG f, UINT o) { (void)g; (void)f; (void)o; return TX_SUCCESS; }
 UINT _txe_event_flags_get(TX_EVENT_FLAGS_GROUP *g, ULONG r, UINT o, ULONG *a, ULONG w) { (void)g; (void)r; (void)o; (void)a; (void)w; return TX_SUCCESS; }
 UINT _txe_thread_create(TX_THREAD *t, CHAR *n, VOID (*e)(ULONG), ULONG i, VOID *s, ULONG z, UINT p, UINT pt, ULONG ts, UINT a, UINT c)
 { (void)t; (void)n; (void)e; (void)i; (void)s; (void)z; (void)p; (void)pt; (void)ts; (void)a; (void)c; return TX_SUCCESS; }

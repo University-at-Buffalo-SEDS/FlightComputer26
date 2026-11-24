@@ -26,11 +26,11 @@ flowchart LR
     DMA["GPDMA1 ch0/ch1<br/>SPI1 8-byte TxRx"]
   end
   ACC & GYR & BAR -- DRDY --> EXTI
-  EXTI -- "drdy + event" --> DIST["Distribution task<br/>read every ready sensor,<br/>convert, validate,<br/>baro reference, descent KF"]
+  EXTI -- "drdy + event" --> DIST["Distribution task<br/>read every ready sensor,<br/>convert, validate,<br/>baro reference"]
   DIST --> DMA --> DIST
   GPSB -- "FDCAN1 1 Mbit/s" --> TLM["Telemetry task<br/>SEDSnet router"]
   TLM -- "on_fc_packet" --> DIST
-  DIST -- "eval_stage flags" --> EVAL["Evaluation task<br/>ascent EKF + FSM"]
+  DIST -- "eval_stage flags" --> EVAL["Evaluation task (estimator)<br/>ascent EKF, descent KF, FSM"]
   DIST -- "sd_append_*" --> SDB["2 x 16 KiB SD buffers<br/>(32 KiB with ThreadX alloc)"]
   EVAL -- "sd_append_f32" --> SDB
   PYRO["SysTick pyro pulse<br/>+ launch events"] -- "32-entry event FIFO" --> SDT
@@ -134,8 +134,8 @@ Lower number = higher priority.
 | --- | --- | --- | --- | --- | --- |
 | Recovery (control) task | 4 (`RECV_PRIORITY`), no slice | 12 KiB | blocks on the `thread_comm` command queue (8 x (command, origin)), 250 ms timeout, never past the next health check | commands, sensor (re)init, deployments, rate changes; GS heartbeat loss (`GND_TIMEOUT` 3000 ms) and GPS gap (`GPS_DELAY_MS` 200 ms) checks, first 900 ms after start (`HEALTH_CHECK_FIRST_TICKS`), then every 450 ms (`HEALTH_CHECK_TICKS`) | `fctasks.h`, `recovery.c`, `thread_comm.c` |
 | Telemetry task | 5 (`TLMT_PRIORITY`), no slice | 48 KiB | CAN RX ISR or router wake flag, else 1 tick | CAN RX, discovery and `BOARD_HEALTH`, queue service (1 ms budget), `FLIGHT_STATE` republish every 2000 ms, time sync | `fctasks.h`, `telemetry.c` |
-| Distribution task | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging, descent KF and descent FSM | `distribution.c`, `dma.c` |
-| Evaluation task | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | ascent EKF predict/update, FSM until Apogee; holds the estimator guard for each pass | `evaluation.c`, `thread_comm.c`, `recovery.c` (`enter_launch`) |
+| Distribution task | 5, no slice | 16 KiB | sensor data-ready events (1-tick poll) | reads every ready sensor (one SPI1 DMA transfer each, completion wait `DMA_TIMEOUT_MS` 20), conversion, validation, baro reference, SD/network logging; offers samples to the estimator (`eval_stage`) | `distribution.c`, `dma.c` |
+| Evaluation task | 5, no slice, no threshold | 12 KiB | `eval_stage` flags; created suspended, resumed at Launch acceptance | the estimator: ascent EKF predict/update, descent KF, the whole flight state machine (Launch to Recovery); holds the estimator guard for each pass | `evaluation.c`, `thread_comm.c`, `recovery.c` (`enter_launch`) |
 | SD task (`fx_app_thread`) | 5 (`FX_APP_THREAD_PRIO`), no slice | 8184 B | 50 ms waits (`(1000+19)/20` ticks), woken early by an SD read request | event FIFO, buffer hand-off, FileX writes, 1 s media flush, IGT CSV reading; SD read service (8.2), which outlives the writer's stop | `app_filex.c`, `sdpipeline.c` |
 | EXTI0/4/7 | NVIC 0 | - | sensor DRDY | set `flags.drdy` and wake the distribution thread | `main.c`, `dma.c` |
 | GPDMA1 ch0/ch1, SPI1 | NVIC 0 | - | transfer done | raise CS, post `dma_completion` | `dma.c` |
@@ -163,8 +163,8 @@ SD rate follows this table.
 | Startup, Armed, countdown | `data_streaming_mode` | 100 Hz | 100 Hz | 25 Hz | `distribution.c` |
 | Postinit (`POSTINIT_DURATION` 5000 ms) | `post_initialization` | 100 Hz (averaged for attitude) | not consumed | 25 Hz | `distribution.c`, `fcconfig.h` |
 | Launch to Coast | ascent: one IMU pair, then one baro per cycle | ~25 Hz | ~25 Hz | 25 Hz | `distribution.c`, `evaluation.c` |
-| Apogee to Landed | `descent_full_cycle` | off | off | 25 Hz | `kalman.c` (`descent_initialize` sends `Disable_IMU`), `dma.c` |
-| Landed, Recovery | `descent_full_cycle`; Recovery is announced `RECOVERY_ANNOUNCE_DELAY` 5000 ms after Landed without sleeping | off | off | 25 Hz | `evaluation.c` (`announce_recovery`) |
+| Apogee to Landed | `descent_publish` (distribution) + descent step (evaluation) | off | off | 25 Hz | `kalman.c` (`descent_initialize` sends `Disable_IMU`), `dma.c` |
+| Landed, Recovery | as above; Recovery is announced `RECOVERY_ANNOUNCE_DELAY` 5000 ms after Landed without sleeping | off | off | 25 Hz | `evaluation.c` (`announce_recovery`) |
 
 ## 4. Stream summary
 

@@ -284,9 +284,9 @@ static inline void detect_landed(fu32 mode)
   }
 }
 
-/* Descent runs in the distribution thread, which also consumes the sensors
- * and feeds the SD log: wait out the announce delay without sleeping it. The
- * SD writer keeps logging through Landed and Recovery (sdpipeline.c). */
+/* Wait out the announce delay without sleeping the estimator, so the descent
+ * filter keeps stepping on every barometer sample. The SD writer keeps
+ * logging through Landed and Recovery (sdpipeline.c). */
 static inline void announce_recovery(fu32 mode)
 {
   if ((uint32_t)(now_ms() - landed_ms) < RECOVERY_ANNOUNCE_DELAY) return;
@@ -543,26 +543,46 @@ static void evaluation_control_barrier(void)
   fc_recovery_evaluation_running();
 }
 
+/* The estimator: the ascent EKF and the descent filter and, on every
+ * filter step, the flight state machine. Ascent: an IMU pair stages a
+ * prediction, the next barometer sample the update and the state machine
+ * (the distribution thread offers them in that order through eval_stage).
+ * Descent: each fresh barometer sample, or GPS fix outside Vigilant mode,
+ * runs one predict/update and the state machine. */
 void evaluation_entry(ULONG _)
 {
   fu8 accum = 0;
   fu32 conf = load(&g_conf, Acq);
   float dt = 0;
+  bool was_ascent;
 
   evaluation_control_barrier();
   thread_comm_estimator_enter();
   enter_flight_mode(conf);
   fc_watchdog_checkpoint();
+  was_ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
   thread_comm_estimator_leave();
 
   while (!(conf & option(Eval_Abort_Flag)))
   {
     evaluation_control_barrier();
-    ULONG done, request = accum & EVALUATION_STAGED
-                                ? Baro_Mask
-                                : Gyro_Mask | Accl_Mask;
+    const bool ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
+    if (was_ascent && !ascent)
+    {
+      /* A manual Deploy/Expand switched to the descent filter between
+       * passes: samples offered to the ascent filter are not descent steps. */
+      accum = 0;
+      (void)tx_event_flags_set(&eval_stage,
+                               ~(ULONG)(Baro_Mask | Gyro_Mask | Accl_Mask | EVAL_STAGE_GPS),
+                               TX_AND);
+    }
+    was_ascent = ascent;
 
-    if (tx_event_flags_get(&eval_stage, request,
+    ULONG done, request = !ascent ? Baro_Mask | EVAL_STAGE_GPS
+                        : accum & EVALUATION_STAGED ? Baro_Mask
+                        : Gyro_Mask | Accl_Mask;
+
+    if (tx_event_flags_get(&eval_stage, request | EVAL_STAGE_WAKE,
                            TX_OR_CLEAR, &done,
                            TX_WAIT_FOREVER) != TX_SUCCESS)
     { continue; }
@@ -571,33 +591,55 @@ void evaluation_entry(ULONG _)
     /* One pass (a predict, or an update and the state machine) never
      * interleaves a recovery command such as a manual Deploy/Expand. */
     thread_comm_estimator_enter();
-    accum |= done;
-
-    if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
+    if ((done & request) == 0U ||
+        ascent != (bool)(load(&g_conf, Acq) & option(Using_Ascent_KF)))
     {
-      accum &= ~(EVALUATION_STAGED | Baro_Mask);
+      /* A mode wake, or the filter changed while this thread waited for the
+       * guard: decide again on the current mode. */
+      thread_comm_estimator_leave();
+      continue;
+    }
 
-      ascent_update();
-
-      conf = fetch_and(&g_conf,
-                       ~option(Ascent_KF_Staged), AcqRel);
-      distribution_wake(); /* it waits for the stage to clear */
-
-      sweetbench_catch(3);
+    if (!ascent)
+    {
+      conf = load(&g_conf, Acq);
+      dt = fsec(timer_exchange(DescentKF));
+      descent_predict(dt);
+      descent_update();
       evaluate_rocket_state(conf, dt);
-      sweetbench_start(3, 50, true);
     }
-    else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
+    else
     {
-      accum |= EVALUATION_STAGED;
-      accum &= ~(Gyro_Mask | Accl_Mask);
+      accum |= (fu8)(done & (Baro_Mask | Gyro_Mask | Accl_Mask));
 
-      conf = fetch_or(&g_conf,
-                      option(Ascent_KF_Staged), AcqRel);
+      if ((accum & EVALUATION_STAGED) && (accum & Baro_Mask))
+      {
+        accum &= ~(EVALUATION_STAGED | Baro_Mask);
 
-      dt = fsec(timer_exchange(AscentKF));
-      ascent_predict(dt, conf);
+        ascent_update();
+
+        conf = fetch_and(&g_conf,
+                         ~option(Ascent_KF_Staged), AcqRel);
+        distribution_wake(); /* it waits for the stage to clear */
+
+        sweetbench_catch(3);
+        evaluate_rocket_state(conf, dt);
+        sweetbench_start(3, 50, true);
+      }
+      else if ((accum & (Gyro_Mask | Accl_Mask)) == (Gyro_Mask | Accl_Mask))
+      {
+        accum |= EVALUATION_STAGED;
+        accum &= ~(Gyro_Mask | Accl_Mask);
+
+        conf = fetch_or(&g_conf,
+                        option(Ascent_KF_Staged), AcqRel);
+
+        dt = fsec(timer_exchange(AscentKF));
+        ascent_predict(dt, conf);
+      }
     }
+    /* A switch made by this pass (Apogee) keeps the samples offered since. */
+    was_ascent = load(&g_conf, Acq) & option(Using_Ascent_KF);
     thread_comm_estimator_leave();
   }
 }

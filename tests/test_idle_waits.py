@@ -37,7 +37,7 @@ class IdleWaits(unittest.TestCase):
         self.assertIn('telemetry_idle_wait();', telemetry)
         distribution = (ROOT / 'Core/Src/distribution.c').read_text()
         for function in ('static inline void for_ascent_update',
-                         'static inline void descent_full_cycle',
+                         'static inline void descent_publish',
                          'static inline void data_streaming_mode',
                          'static inline void post_initialization'):
             with self.subTest(function=function):
