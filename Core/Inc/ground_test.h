@@ -88,8 +88,14 @@ void igt_note_dry(bool reef);
 /* BOARD_HEALTH word 14 bits 4..15 (0 when Off and never entered). */
 uint32_t igt_health_bits(void);
 
-/* SD task: validation and ring refills; owns every IGT FileX call. */
+/* SD task: validation and ring refills; owns every IGT FileX call. It
+ * shares the thread with the SD read service (sdpipeline.c) and holds no
+ * FileX handle between calls. */
 void igt_sd_service(void);
+/* SD task, from sd_pipeline_media_remounted (a fresh mount replaced the old
+ * one): Validating/Ready validate the new card again; mid-replay the
+ * streams end (the last rows are held, as on a read error). */
+void igt_media_remounted(void);
 
 #else
 
@@ -102,6 +108,7 @@ static inline void igt_stop(void) {}
 static inline void igt_landed(void) {}
 static inline uint32_t igt_health_bits(void) { return 0U; }
 static inline void igt_sd_service(void) {}
+static inline void igt_media_remounted(void) {}
 
 #endif /* FC_GROUND_TEST */
 #endif /* FC_GROUND_TEST_H */

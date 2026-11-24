@@ -95,6 +95,9 @@ void board_health_poll(SedsRouter *router)
   /* Why flight commands are refused (board_recovery_transport.c). */
   words[6] |= board_recovery_controller_gate() << 24U;
   words[6] |= (uint32_t)g_fc_sd_state << 30U; /* SD not ready, retry pending */
+#ifdef FC_SD_SERVICE
+  words[6] |= 1U << 29U; /* this image serves the SD read service (P2P 4511) */
+#endif
   words[11] = (uint32_t)seds_memory_admission_rejected();
   words[23] = failures;
   words[1] |= board_temperature_health_flags();

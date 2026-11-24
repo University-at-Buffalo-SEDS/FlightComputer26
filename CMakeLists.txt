@@ -323,15 +323,15 @@ if (INTEGRATED_GROUND_TEST)
 endif()
 
 # SD transfer service v2 on SEDSnet P2P port 4511 (GS/RRLS fetch the card
-# after landing; GroundStation26 docs/backend/sd-transfer.md). Flight image
-# only. Needs telemetry, the SD logger and the TLSF heap (it borrows its
-# block, read handle and transfer workspace there while a station session
-# exists). SHA-256 for the HASH answer is LaunchCore's (cmake/launchcore_stm32.cmake).
-option(FC_SD_SERVICE "Serve SD log files over SEDSnet P2P port 4511 (flight image only)" ON)
+# after landing; GroundStation26 docs/backend/sd-transfer.md). Flight and
+# ground-test images. Needs telemetry, the SD logger and the TLSF heap (it
+# borrows its block, read handle and transfer workspace there while a station
+# session exists). SHA-256 for the HASH answer is LaunchCore's
+# (cmake/launchcore_stm32.cmake). In the ground-test image it shares the SD
+# thread with the IGT CSV replay and also lists /IGT read-only (directory 1).
+option(FC_SD_SERVICE "Serve SD log files over SEDSnet P2P port 4511" ON)
 set(FC_SD_SERVICE_ACTIVE OFF)
-if (FC_SD_SERVICE AND INTEGRATED_GROUND_TEST)
-    message(STATUS "SD read service:        OFF (not in the ground-test image)")
-elseif (FC_SD_SERVICE AND ENABLE_TELEMETRY AND ONBOARD_SD AND TELEMETRY_USE_TLSF)
+if (FC_SD_SERVICE AND ENABLE_TELEMETRY AND ONBOARD_SD AND TELEMETRY_USE_TLSF)
     message(STATUS "SD read service:        ON (P2P port 4511, transfer v2)")
     set(FC_SD_SERVICE_ACTIVE ON)
     # 64 SDX token contexts and 512-byte DATA messages keep the borrowed

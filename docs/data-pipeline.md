@@ -434,6 +434,8 @@ on the stand the FC replays `/IGT/IMU0.CSV`, `/IGT/BARO0.CSV` and optional
   SD: `SIM` row at most every `IGT_SD_PERIOD_MS` (= `LOG_RATE_SD`, 50 ms) per
   kind. Network: `SIM_SAMPLE` at most every `IGT_PUB_PERIOD_MS` (200 ms) per
   kind.
+- The SD read service (8.2) runs in this image too, in the same SD thread; it
+  also lists the dataset read-only as directory 1.
 
 ### 6.12 Other streams
 
@@ -667,8 +669,8 @@ and ground-test captures out of it (GroundStation26
 
 ### 8.2 Network SD read service and manual import
 
-The flight image serves its card over SEDSnet after landing ("SD file
-transfer protocol v2", `sd_file_wire.h`, `sd_file_stream.c`, the shared
+Both the flight and the ground-test image serve the card over SEDSnet after
+landing ("SD file transfer protocol v2", `sd_file_wire.h`, `sd_file_stream.c`, the shared
 sender engine `sd_xfer.c` and encoder `sd_xfer_codec.c`, service block in
 `sdpipeline.c`). The GS, or the RRLS relay station, fetches the files with no
 card removal; the manual import below stays available. The full wire
@@ -709,12 +711,19 @@ block also `[raw_len u32][crc u32]`, then the body.
 - **HASH** reads the whole file and answers its size and SHA-256 (LaunchCore
   `sha256.c`), 8 sectors per SD-thread turn, so the station can prove its copy
   byte-identical to the card. It answers BUSY while a transfer runs.
-- Directory: only `dir` 0 = card root. LIST enumerates regular files named
+- Directories: `dir` 0 = card root. LIST enumerates regular files named
   `irec*.csv` (case-insensitive; no directories, volume, hidden or system
   entries) in FileX directory order, one entry per request, and answers END
   (6) after the last. OPEN and HASH accept only such names (at most 63
-  characters). Any other `dir`, name or length, and the v1 READ (`0x22`), is
-  BAD_MESSAGE (1).
+  characters). The ground-test image adds `dir` 1 = `/IGT`, the replay
+  dataset (6.11), read-only like everything here: LIST probes the replay's
+  fixed names by full path in the order `IMU0..9`, `BARO0..9`, `GPS0..9`
+  `.CSV` (`fx_directory_information_get`, at most 10 probes per step, so the
+  default path and the root iterator never move) and lists the files that
+  exist, never flagged open; OPEN and HASH accept `(IMU|BARO|GPS)<digit>.CSV`
+  (case-insensitive) and read `/IGT/<name>`. The station uses it to record
+  which dataset was on the card. Any other `dir` (1 in the flight image),
+  name or length, and the v1 READ (`0x22`), is BAD_MESSAGE (1).
 - Entry flag 0x01 (LIST; 0x20 in DATA, 0x04 in the OPEN and HASH answers):
   the file is the one the logger still has open for writing; its size can
   grow (and the LIST size can lag until the next media flush). A transfer
@@ -765,13 +774,35 @@ block also `[raw_len u32][crc u32]`, then the body.
   mount, the transfer, a running hash and the listing iterator end, and the
   stream is reset. The station reconnects and re-OPENs from its committed
   offset on the new mount (`sd_pipeline_media_remounted`,
-  `sd_file_stream_media_remounted`).
+  `sd_file_stream_media_remounted`). In the ground-test image the same hook
+  resets the replay (`igt_media_remounted`, below).
+- **With the IGT replay (ground-test image).** The replay (`igt_sd_service`,
+  6.11) and the service share the SD thread: each loop pass runs the event
+  queue, the replay step, the writer and then one service step, so FileX is
+  never entered from two threads and the two never interleave inside a
+  FileX call. The replay opens, reads one 256-byte chunk and closes its own
+  handle (`igt_file`) inside one call, so no replay handle is open while the
+  service runs, and the service's handle is a different `FX_FILE`; a service
+  read never moves a replay offset. The replay reads `/IGT` only during the
+  simulated flight (Launch..Landed, where the service is refused) and while
+  validating or priming on the pad (Startup, where the service may run
+  between its steps); after Landed it reads nothing. A remount (7.1) resets
+  both: the service as above; the replay validates the new card again if it
+  was Validating or Ready ("IGT card remounted: validating again"), and
+  mid-replay its streams end, holding the last rows as on a read error,
+  until the data-ended hold hands back to the real sensors ("IGT card
+  remounted mid-replay: replay data ends"). A remount inside the replay's
+  own open discards that step, so no row is read at the old card's offsets.
+  `tests/test_igt_sd_service.py` runs this exact code against a FileX model
+  that checks each of these rules.
 - Build: CMake `FC_SD_SERVICE` (default ON) needs telemetry, `ONBOARD_SD` and
-  the TLSF allocator. The `--ground-test` image leaves it out. Counters:
-  `g_sd_file_requests`, `g_sd_file_refused`, `g_sd_file_aborts`,
-  `g_sd_file_data`, `g_sd_file_acks`, `g_sd_dl_errors`.
+  the TLSF allocator; flight and `--ground-test` images both have it. The
+  image reports it in BOARD_HEALTH word 6 bit 29 so the station can tell an
+  image without the service. Counters: `g_sd_file_requests`,
+  `g_sd_file_refused`, `g_sd_file_aborts`, `g_sd_file_data`,
+  `g_sd_file_acks`, `g_sd_dl_errors`.
 
-Manual import (always possible, and the only way for a ground-test image):
+Manual import (always possible):
 
 1. Take the card out and copy the `irec*.csv` files.
 2. In the GS, Data Export > SD recovery, import the files against any

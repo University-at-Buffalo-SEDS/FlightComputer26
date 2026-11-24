@@ -5,9 +5,12 @@
  * ground_test.h and GroundStation26 docs/integrated-ground-test.md.
  *
  * Threads: the SD task alone opens, reads and parses the CSVs and fills one
- * single-producer ring of parsed rows per sensor. The distribution task only
- * pops rows and interpolates; no text is parsed on the sensor path. The
- * recovery task changes the mode. No allocation; ~2.5 KB of RAM. */
+ * single-producer ring of parsed rows per sensor. Each step opens, reads one
+ * chunk and closes, so no handle outlives a call: the SD read service (same
+ * thread, its own handle) and a remount never find one of ours open. The
+ * distribution task only pops rows and interpolates; no text is parsed on
+ * the sensor path. The recovery task changes the mode. No allocation;
+ * ~2.5 KB of RAM. */
 
 #include "ground_test.h"
 
@@ -32,7 +35,11 @@
 
 #define IGT_PUB_PERIOD_MS FC_TELEMETRY_PERIOD_MS
 #define IGT_SD_PERIOD_MS  LOG_RATE_SD
+#endif /* IGT_HOST_TEST */
 
+/* The FileX port. A host test that models FileX (IGT_HOST_FILEX) runs this
+ * exact code next to the SD read service. */
+#if !defined(IGT_HOST_TEST) || defined(IGT_HOST_FILEX)
 #ifdef SD_AVAILABLE
 static FX_FILE igt_file;
 
@@ -58,7 +65,9 @@ static int igt_port_open(const char *path) { (void)path; return -2; }
 static long igt_port_read(uint32_t o, char *b, uint32_t c) { (void)o; (void)b; (void)c; return -1; }
 static void igt_port_close(void) {}
 #endif
+#endif
 
+#ifndef IGT_HOST_TEST
 static void igt_port_message(const char *text) { message(text, true); }
 
 static bool igt_port_sd_ready(void) { return !(g_fc_sd_state & FC_SD_NOT_READY); }
@@ -117,6 +126,7 @@ static igt_stream streams[S_COUNT] = {
 
 static _Atomic uint8_t mode;
 static volatile uint8_t reason, live, dry_bits, gps_present, gps_sim, sd_retry;
+static uint8_t remounted; /* SD task only: a fresh mount since the last step */
 static uint32_t t0, gps_due;
 static float real_imu[6], real_baro[3];
 static uint32_t pub_last[6], sd_last[6];
@@ -244,6 +254,11 @@ static int stream_step(igt_stream *s, bool validating, bool optional)
   char path[20];
   snprintf(path, sizeof path, "/IGT/%s%u.CSV", s->name, (unsigned)s->seg);
   const int opened = igt_port_open(path);
+  if (remounted) {
+    /* The open remounted the card: the offsets belong to the old one. */
+    if (opened == 0) igt_port_close();
+    return R_FULL;
+  }
   if (opened == -1) {
     if (s->seg == 0U && !optional) return stream_fail(s, IGT_E_MISSING, validating);
     s->eof = true;
@@ -299,7 +314,7 @@ static int stream_step(igt_stream *s, bool validating, bool optional)
 
 static bool still_validating(void)
 {
-  return atomic_load_explicit(&mode, memory_order_acquire) == IGT_VALIDATING;
+  return !remounted && atomic_load_explicit(&mode, memory_order_acquire) == IGT_VALIDATING;
 }
 
 static void validate_and_prime(void)
@@ -337,14 +352,29 @@ static void validate_and_prime(void)
       if (!still_validating() || stream_step(s, false, false) != R_MORE) break;
     }
   }
+  if (!still_validating()) return;
   uint8_t expected = IGT_VALIDATING;
   if (atomic_compare_exchange_strong(&mode, &expected, (uint8_t)IGT_READY))
     say("IGT ready: dry-run");
 }
 
+void igt_media_remounted(void) { remounted = 1U; }
+
 void igt_sd_service(void)
 {
   uint8_t m = atomic_load_explicit(&mode, memory_order_acquire);
+  if (remounted) {
+    remounted = 0U;
+    if (m == IGT_READY &&
+        atomic_compare_exchange_strong(&mode, &m, (uint8_t)IGT_VALIDATING)) {
+      m = IGT_VALIDATING;
+      say("IGT card remounted: validating again");
+    } else if (m == IGT_SIM) {
+      for (unsigned i = 0U; i < S_COUNT; ++i) streams[i].eof = true;
+      say("IGT card remounted mid-replay: replay data ends");
+    }
+    /* Validating starts over below; other modes read nothing. */
+  }
   /* The card is mounted now: an SD retry re-runs the validation it failed. */
   if (sd_retry) {
     sd_retry = 0U;

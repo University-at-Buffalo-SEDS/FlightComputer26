@@ -533,6 +533,11 @@ void sd_pipeline_media_remounted(void)
     sd_file_stream_handle_open(dl_open = dl_list_valid = dl_hash.active = false);
     sd_file_stream_media_remounted();
 #endif
+#if FC_GROUND_TEST
+    /* The replay holds no handle across calls; its dataset is re-validated
+     * (or, mid-replay, ends) on the next SD-thread turn (ground_test.c). */
+    igt_media_remounted();
+#endif
 }
 
 static inline int sd_pipeline_init(const char *surprise)
@@ -613,12 +618,17 @@ static inline int sd_pipeline_open(const char *surprise)
  * thread between writer passes and, after sd_conclude, in a read-only loop.
  * Each turn does at most one bounded step: a directory step, one DATA message
  * (at most one block re-encoded), or a hash step. The read handle is a
- * separate FX_OPEN_FOR_READ owner in the borrowed area; it never writes. */
+ * separate FX_OPEN_FOR_READ owner in the borrowed area; it never writes.
+ * In the ground-test image the IGT CSV replay (igt_sd_service) runs in the
+ * same thread: it opens, reads and closes its own handle within one call,
+ * so the two never interleave inside FileX and neither touches the other's
+ * handle. Directory 1 serves the replay dataset (/IGT) read-only. */
 #define SD_DL_IDLE_CLOSE_MS 3000U
 #define SD_DL_LIST_SCAN_PER_TURN 32U
 #define SD_DL_HASH_SECTORS_PER_TURN 8U
 #define dl_file (*(FX_FILE *)sd_file_stream_handle())
 static uint16_t dl_list_next;
+static uint8_t dl_list_dir, dl_dir;     /* the iterator's and the handle's directory */
 static ULONG dl_list_entry;
 static uint32_t dl_last_ms;
 volatile uint32_t g_sd_dl_errors;
@@ -633,18 +643,50 @@ static void dl_close(void)
     if (dl_open) { (void)fx_file_close(&dl_file); dl_open = false; sd_file_stream_handle_open(false); }
 }
 
-static bool dl_growing(const char *name)
+static bool dl_growing(uint8_t dir, const char *name)
 {
-    return sd_file_open && file.fx_file_name && strcmp(file.fx_file_name, name) == 0;
+    return dir == SD_FILE_DIR_ROOT && sd_file_open && file.fx_file_name && strcmp(file.fx_file_name, name) == 0;
 }
+
+#if FC_GROUND_TEST
+/* Directory 1: the replay's fixed names (ground_test.c: IMU, BARO, GPS,
+ * segments 0..9) probed in that order by full path, so the default path
+ * and the root iterator never move. dl_list_entry is the candidate. */
+#define SD_DL_IGT_CANDIDATES 30U
+#define SD_DL_IGT_PROBES_PER_TURN 10U
+static uint8_t dl_list_igt(const sd_file_request_t *rq, CHAR *name, uint32_t *size)
+{
+    static const char *const stems[3] = {"IMU", "BARO", "GPS"};
+    for (unsigned probed = 0U; probed < SD_DL_IGT_PROBES_PER_TURN; ++probed) {
+        if (dl_list_entry >= SD_DL_IGT_CANDIDATES) return SD_FILE_STATUS_END;
+        const ULONG k = dl_list_entry++;
+        CHAR path[16];
+        const int len = snprintf(path, sizeof path, "/IGT/%s%c.CSV", stems[k / 10U], (char)('0' + k % 10U));
+        UINT attributes = 0U, year, month, day, hour, minute, second;
+        ULONG bytes = 0U;
+        const UINT st = fx_directory_information_get(&sdio_disk, path, &attributes, &bytes,
+                                                     &year, &month, &day, &hour, &minute, &second);
+        if (st == FX_NOT_FOUND || st == FX_INVALID_PATH) continue;
+        if (st != FX_SUCCESS || !flight_sd_io_verified()) { dl_list_valid = false; return SD_FILE_STATUS_IO_ERROR; }
+        if ((attributes & (FX_DIRECTORY | FX_VOLUME)) != 0U || dl_list_next++ != rq->index) continue;
+        memcpy(name, path + 5, (size_t)len - 4U);   /* the leaf and its NUL */
+        *size = (uint32_t)bytes;
+        return SD_FILE_STATUS_OK;
+    }
+    return SD_FILE_STATUS_BUSY;
+}
+#endif
 
 /* LIST places the name at the start of the block. Only the iterator persists;
  * a long skip answers BUSY and continues on the station's retry. */
 static uint8_t dl_list(const sd_file_request_t *rq, CHAR *name, uint32_t *size, uint8_t *flags)
 {
-    if (!dl_list_valid || rq->index < dl_list_next) {
-        dl_list_valid = true; dl_list_next = 0U; dl_list_entry = 0U;
+    if (!dl_list_valid || rq->index < dl_list_next || rq->dir != dl_list_dir) {
+        dl_list_valid = true; dl_list_next = 0U; dl_list_entry = 0U; dl_list_dir = rq->dir;
     }
+#if FC_GROUND_TEST
+    if (rq->dir == SD_FILE_DIR_IGT) { *flags = 0U; return dl_list_igt(rq, name, size); }
+#endif
     for (unsigned scanned = 0U; scanned < SD_DL_LIST_SCAN_PER_TURN; ++scanned) {
         UINT attributes = 0U, year, month, day, hour, minute, second;
         ULONG bytes = 0U;
@@ -658,20 +700,26 @@ static uint8_t dl_list(const sd_file_request_t *rq, CHAR *name, uint32_t *size, 
         if ((attributes & (FX_DIRECTORY | FX_VOLUME | FX_HIDDEN | FX_SYSTEM)) != 0U ||
             !sd_file_fc_log_name(name, strlen(name)) || dl_list_next++ != rq->index) continue;
         *size = (uint32_t)bytes;
-        *flags = dl_growing(name) ? SD_FILE_ENTRY_OPEN : 0U;
+        *flags = dl_growing(SD_FILE_DIR_ROOT, name) ? SD_FILE_ENTRY_OPEN : 0U;
         return SD_FILE_STATUS_OK;
     }
     return SD_FILE_STATUS_BUSY;
 }
 
-/* Opens (or keeps) the read handle on name; *size is the size it sees. */
-static uint8_t dl_open_file(const char *name, uint32_t *size)
+/* Opens (or keeps) the read handle on dir/name; *size is the size it sees. */
+static uint8_t dl_open_file(uint8_t dir, const char *name, uint32_t *size)
 {
-    if (dl_open && (strcmp(name, dl_file.fx_file_name_buffer) != 0 || dl_growing(name))) dl_close();
+    if (dl_open && (dir != dl_dir || strcmp(name, dl_file.fx_file_name_buffer) != 0 || dl_growing(dir, name))) dl_close();
     if (!dl_open) {
-        const UINT st = fx_file_open(&sdio_disk, &dl_file, (CHAR *)name, FX_OPEN_FOR_READ);
-        if (st != FX_SUCCESS) return st == FX_NOT_FOUND ? SD_FILE_STATUS_NOT_FOUND : SD_FILE_STATUS_IO_ERROR;
-        dl_open = true; sd_file_stream_handle_open(true);
+        CHAR *path = (CHAR *)name;
+#if FC_GROUND_TEST
+        CHAR igt_path[8U + SD_FILE_NAME_MAX];
+        if (dir == SD_FILE_DIR_IGT) { snprintf(igt_path, sizeof igt_path, "/IGT/%s", name); path = igt_path; }
+#endif
+        const UINT st = fx_file_open(&sdio_disk, &dl_file, path, FX_OPEN_FOR_READ);
+        if (st != FX_SUCCESS)
+            return st == FX_NOT_FOUND || st == FX_INVALID_PATH ? SD_FILE_STATUS_NOT_FOUND : SD_FILE_STATUS_IO_ERROR;
+        dl_open = true; dl_dir = dir; sd_file_stream_handle_open(true);
     }
     const ULONG64 size64 = dl_file.fx_file_current_file_size;
     *size = size64 > UINT32_MAX ? UINT32_MAX : (uint32_t)size64;
@@ -736,21 +784,21 @@ static void dl_request(const sd_file_request_t *rq, uint32_t ticket)
         uint8_t flags = 0U;
         status = dl_list(rq, (CHAR *)block, &size, &flags);
         const size_t name_len = status == SD_FILE_STATUS_OK ? strlen((const char *)block) : 0U;
-        sd_file_stream_answer(ticket, frame, sd_file_encode_list(frame, status, rq->index, size, flags,
+        sd_file_stream_answer(ticket, frame, sd_file_encode_list(frame, status, rq->dir, rq->index, size, flags,
                                                                  (const char *)block, name_len));
         if (status == SD_FILE_STATUS_IO_ERROR) ++g_sd_dl_errors;
         return;
     } else if (rq->op == SD_FILE_OP_HASH && sd_file_stream_transfer_active()) {
         status = SD_FILE_STATUS_BUSY;
     } else {
-        status = dl_open_file(rq->name, &size);
+        status = dl_open_file(rq->dir, rq->name, &size);
         if (status == SD_FILE_STATUS_OK && rq->op == SD_FILE_OP_OPEN) {
-            sd_file_stream_open(ticket, &rq->open, size, dl_growing(rq->name));
+            sd_file_stream_open(ticket, &rq->open, size, dl_growing(rq->dir, rq->name));
             return;
         }
         if (status == SD_FILE_STATUS_OK) {
             dl_hash.active = true; dl_hash.ticket = ticket; dl_hash.pos = 0U; dl_hash.size = size;
-            dl_hash.growing = dl_growing(rq->name);
+            dl_hash.growing = dl_growing(rq->dir, rq->name);
             launchcore_sha256_init(sd_file_stream_scratch());
             dl_hash_step();
             return;

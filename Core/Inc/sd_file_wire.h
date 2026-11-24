@@ -8,8 +8,10 @@
  *   ACK    [0x26][xfer][una][bitmap][rate][window]
  *   HASH   [0x27][dir u8][len u8][name]       -> size and SHA-256 of the file
  * Answers carry opcode|0x80 and a status byte. Little-endian. FC specifics:
- * one directory (0 = card root); LIST shows and OPEN/HASH accept only
- * irec*.csv names. v1 READ (0x22) is gone: it answers BAD_MESSAGE. */
+ * directory 0 = card root, where LIST shows and OPEN/HASH accept only
+ * irec*.csv names; the ground-test image (FC_GROUND_TEST) adds directory
+ * 1 = /IGT, the replay dataset (IMU/BARO/GPS<n>.CSV), read-only like
+ * everything here. v1 READ (0x22) is gone: it answers BAD_MESSAGE. */
 #include "sd_xfer.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -33,7 +35,13 @@
 #define SD_FILE_STATUS_END 6U
 #define SD_FILE_STATUS_BAD_OFFSET 7U
 
-#define SD_FILE_DIR_ROOT 0U        /* the only FC directory: card root */
+#define SD_FILE_DIR_ROOT 0U        /* card root: irec*.csv logs */
+#define SD_FILE_DIR_IGT 1U         /* /IGT replay dataset (ground-test image only) */
+#if defined(FC_GROUND_TEST) && FC_GROUND_TEST
+#define SD_FILE_DIR_LAST SD_FILE_DIR_IGT
+#else
+#define SD_FILE_DIR_LAST SD_FILE_DIR_ROOT
+#endif
 
 #define SD_FILE_NAME_MAX 63U
 #define SD_FILE_REQUEST_MAX (19U + SD_FILE_NAME_MAX)  /* OPEN is the largest request */
@@ -90,6 +98,29 @@ static inline bool sd_file_fc_log_name(const char *name, size_t len)
     return true;
 }
 
+/* IGT replay files: (IMU|BARO|GPS)<digit>.CSV, case-insensitive. */
+static inline bool sd_file_igt_name(const char *name, size_t len)
+{
+    static const char *const stems[] = {"imu", "baro", "gps"};
+    if (!sd_file_name_valid(name, len)) return false;
+    for (size_t s = 0; s < 3U; ++s) {
+        const size_t n = strlen(stems[s]);
+        if (len != n + 5U || name[n] < '0' || name[n] > '9') continue;
+        bool ok = true;
+        for (size_t i = 0; i < n && ok; ++i) ok = (name[i] | 0x20) == stems[s][i];
+        for (size_t i = 0; i < 4U && ok; ++i) ok = (name[n + 1U + i] | 0x20) == ".csv"[i];
+        if (ok) return true;
+    }
+    return false;
+}
+
+/* The names a directory serves (only directories up to SD_FILE_DIR_LAST). */
+static inline bool sd_file_dir_name(uint8_t dir, const char *name, size_t len)
+{
+    if (dir > SD_FILE_DIR_LAST) return false;
+    return dir == SD_FILE_DIR_IGT ? sd_file_igt_name(name, len) : sd_file_fc_log_name(name, len);
+}
+
 /* Returns a status; on OK the request is fully validated. ACK is parsed by
  * the stream layer (sd_xfer_parse_ack) and is not a request. */
 static inline uint8_t sd_file_parse_request(const uint8_t *p, size_t len, sd_file_request_t *out)
@@ -102,7 +133,8 @@ static inline uint8_t sd_file_parse_request(const uint8_t *p, size_t len, sd_fil
     if (r.op == SD_FILE_OP_CANCEL) {
         if (len != 1U) return SD_FILE_STATUS_BAD_MESSAGE;
     } else if (r.op == SD_FILE_OP_LIST) {
-        if (len != 4U || p[1] != SD_FILE_DIR_ROOT) return SD_FILE_STATUS_BAD_MESSAGE;
+        if (len != 4U || p[1] > SD_FILE_DIR_LAST) return SD_FILE_STATUS_BAD_MESSAGE;
+        r.dir = p[1];
         r.index = (uint16_t)(p[2] | (p[3] << 8));
     } else if (r.op == SD_FILE_OP_OPEN) {
         if (!sd_xfer_parse_open(p, len, &r.dir, &r.open, &name_at, &name_len)) return SD_FILE_STATUS_BAD_MESSAGE;
@@ -113,7 +145,7 @@ static inline uint8_t sd_file_parse_request(const uint8_t *p, size_t len, sd_fil
         return SD_FILE_STATUS_BAD_MESSAGE;
     }
     if (name_at) {
-        if (r.dir != SD_FILE_DIR_ROOT || !sd_file_fc_log_name((const char *)(p + name_at), name_len))
+        if (!sd_file_dir_name(r.dir, (const char *)(p + name_at), name_len))
             return SD_FILE_STATUS_BAD_MESSAGE;
         memcpy(r.name, p + name_at, name_len);
         r.name_len = (uint8_t)name_len;
@@ -123,12 +155,12 @@ static inline uint8_t sd_file_parse_request(const uint8_t *p, size_t len, sd_fil
 }
 
 /* LIST answer: [0xA1][status][dir][index u16][size u32][flags][name_len][0][name]. */
-static inline size_t sd_file_encode_list(uint8_t *dst, uint8_t status, uint16_t index, uint32_t file_size,
+static inline size_t sd_file_encode_list(uint8_t *dst, uint8_t status, uint8_t dir, uint16_t index, uint32_t file_size,
                                          uint8_t flags, const char *name, size_t name_len)
 {
     if (status != SD_FILE_STATUS_OK) name_len = file_size = flags = 0U;
     if (name_len > SD_FILE_NAME_MAX) return 0U;
-    dst[0] = SD_FILE_OP_LIST | SD_FILE_RESPONSE_FLAG; dst[1] = status; dst[2] = SD_FILE_DIR_ROOT;
+    dst[0] = SD_FILE_OP_LIST | SD_FILE_RESPONSE_FLAG; dst[1] = status; dst[2] = dir;
     dst[3] = (uint8_t)index; dst[4] = (uint8_t)(index >> 8); sd_file_put_u32(dst + 5, file_size);
     dst[9] = flags; dst[10] = (uint8_t)name_len; dst[11] = 0U;
     if (name_len) memcpy(dst + SD_FILE_LIST_HEADER, name, name_len);

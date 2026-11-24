@@ -131,8 +131,8 @@ int main(void)
 int main(void)
 {
     uint8_t f[SD_FILE_ANSWER_MAX];
-    hex("L", f, sd_file_encode_list(f, 0, 0x0102, 0x11223344u, SD_FILE_ENTRY_OPEN, "irec-1-000.csv", 14));
-    hex("L", f, sd_file_encode_list(f, 6, 3, 99, 1, "ignored", 7));
+    hex("L", f, sd_file_encode_list(f, 0, 0, 0x0102, 0x11223344u, SD_FILE_ENTRY_OPEN, "irec-1-000.csv", 14));
+    hex("L", f, sd_file_encode_list(f, 6, 0, 3, 99, 1, "ignored", 7));
     hex("S", f, sd_file_encode_status(f, SD_FILE_OP_OPEN, 2));
     hex("S", f, sd_file_encode_status(f, SD_FILE_OP_HASH, 3));
     hex("S", f, sd_file_encode_status(f, SD_FILE_OP_CANCEL, 0));
@@ -385,6 +385,7 @@ FILEX_STUBS = r'''
 typedef unsigned UINT; typedef unsigned long ULONG; typedef unsigned long long ULONG64; typedef char CHAR;
 #define FX_SUCCESS 0U
 #define FX_NOT_FOUND 4U
+#define FX_INVALID_PATH 0x0DU
 #define FX_NO_MORE_ENTRIES 0x0FU
 #define FX_IO_ERROR 0x90U
 #define FX_OPEN_FOR_READ 0U
@@ -633,7 +634,8 @@ class FilexSideTests(unittest.TestCase):
         self.assertIn('sd_file_stream_poll();', tel)
         cmake = (ROOT / 'CMakeLists.txt').read_text()
         self.assertIn('option(FC_SD_SERVICE', cmake)
-        self.assertIn('FC_SD_SERVICE AND INTEGRATED_GROUND_TEST', cmake)
+        # Both images: the ground-test image is no longer excluded.
+        self.assertNotIn('FC_SD_SERVICE AND INTEGRATED_GROUND_TEST', cmake)
 
 
 if __name__ == '__main__':

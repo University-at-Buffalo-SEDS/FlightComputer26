@@ -25,10 +25,8 @@ Sizes, Release, measured against SEDSnet 6.0.3 (main ebdb444):
 | `--ground-test` | 473,152 B (−128 B vs the previous ground-test build) | 1,472 B | 198,912 B |
 
 Since then the SEDS-SD format block (+648 B flight, +652 B ground test) and
-the flight-only SD read service (+3,400 B) were added: flight 471,192 B
-(3,432 B free), `--ground-test` 473,892 B (732 B free). The ground-test image
-has no network SD read service (CMake `FC_SD_SERVICE` is forced off there);
-copy its card by hand.
+the then flight-only SD read service (+3,400 B) were added: flight 471,192 B
+(3,432 B free), `--ground-test` 473,892 B (732 B free).
 
 Both images now link `Core/Src/zstd_compress_stub.c` in place of zstd's
 compressor, which the FC never runs (`payload_compress_threshold = SIZE_MAX`
@@ -38,6 +36,19 @@ Release, against SEDSnet main ebdb444, on top of the card-swap remount
 change (flight 472,008 B with 2,616 B free, `--ground-test` 474,256 B with
 368 B free): flight 450,292 B (24,332 B free, RAM 261,352 B),
 `--ground-test` 446,904 B (27,720 B free, RAM 264,460 B).
+
+With that room the ground-test image now has the SD read service too (CMake
+`FC_SD_SERVICE` is no longer forced off): the station collects the launch
+file after the simulated landing as it does after a flight, and records the
+`/IGT` dataset (directory 1, read-only) for the capture's provenance. See
+`docs/data-pipeline.md` 8.2 for how the service and the replay share the SD
+thread. Release, on dev 2e182ed (CAN link v2, SEDSnet 7 wire), against
+SEDSnet main 882daa3:
+
+| Image | FLASH | Free | RAM |
+| --- | --- | --- | --- |
+| flight (default) | 445,880 B | 28,744 B | 253,560 B |
+| `--ground-test` (with the service, `/IGT` listing, remount reset) | 452,028 B | 22,596 B | 256,960 B |
 
 The flight image's +404 B covers:
 
@@ -54,14 +65,14 @@ problems as a reason code instead of text.
 | File | Role |
 | --- | --- |
 | `Core/Src/ground_test.c`, `Core/Inc/ground_test.h` | Mode, CSV validation and parsing, rings, interpolation, gate state |
-| `Core/Src/sdpipeline.c` | Calls `igt_sd_service()`: the SD task owns every IGT FileX call |
+| `Core/Src/sdpipeline.c` | Calls `igt_sd_service()`: the SD task owns every IGT FileX call. The SD read service runs in the same thread and serves `/IGT` read-only as directory 1; `sd_pipeline_media_remounted()` resets both (`igt_media_remounted()`) |
 | `Core/Src/dma.c` | Replaces fresh IMU/baro samples while the replay runs; the real raw rows still go to SD |
 | `Core/Src/distribution.c` | Replayed GPS and the rail swap; `SIM_SAMPLE` for replayed IMU/baro; real values on the normal types |
 | `Core/Src/evaluation.c` | `SIM_SAMPLE` for estimator outputs during the replay; Landed ends it |
 | `Core/Src/recovery.c` | `IGT_Enter`, `IGT_Live_Pyro`, `IGT_Dry_Run`, `IGT_Exit` (compat 29–32); replay start at Launch acceptance |
 | `Core/Src/deployment_pulse.c` | Dry-run gate; every Stop/reset path calls `igt_stop()` |
 | `Core/Src/fc_watchdog_recovery.c` | No checkpoint while the mode is on, so a reset cannot resume a replayed flight |
-| `Core/Src/board_health.c` | BOARD_HEALTH word 14 bits 4..15 (bit 7: this is the ground-test image, sent from boot); word 6 bits 30..31: SD not ready / retry pending (both images) |
+| `Core/Src/board_health.c` | BOARD_HEALTH word 14 bits 4..15 (bit 7: this is the ground-test image, sent from boot); word 6 bit 29: SD read service present; bits 30..31: SD not ready / retry pending (both images) |
 | `Core/Src/distribution.c` (`update_launch_site`) | `LAUNCH_SITE`: the station sets the GPS acceptance centre on the pad and the FC echoes it (both images) |
 | `FileX/App/app_filex.c`, `Core/Src/sdpipeline.c` | A failed mount waits for `FcSdRetry` (compat 33) instead of spinning; SD state bits |
 

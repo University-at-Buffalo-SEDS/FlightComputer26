@@ -601,7 +601,7 @@ class GroundTestGpsSwitch(unittest.TestCase):
 
 GUARDED_CALLS = re.compile(
     r'\bigt_(override_\w+|launch|gps_fix|gps_simulated|publish|command|real_\w+|'
-    r'sd_service|landed|stop|engaged|pyro_dry|note_dry|health_bits)\s*\(|\bkalman_seed_attitude\s*\(')
+    r'sd_service|media_remounted|landed|stop|engaged|pyro_dry|note_dry|health_bits)\s*\(|\bkalman_seed_attitude\s*\(')
 
 
 def unguarded_calls(text):

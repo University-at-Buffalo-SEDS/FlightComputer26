@@ -905,7 +905,7 @@ FLAG_HELP = {
     "exspinlock": ("export-spinlock", "Use the experimental library spinlock instead of a mutex."),
     "alloctest": ("alloc-test", "Enable allocation diagnostics."),
     "fakestation": ("fake-station", "Enable the simulated GroundStation task."),
-    "groundtest": ("ground-test", "Integrated ground test image: SD-card CSV replay after Launch and the dry-run pyro gate; no network SD read service (does not fit). Never for flight."),
+    "groundtest": ("ground-test", "Integrated ground test image: SD-card CSV replay after Launch and the dry-run pyro gate, with the network SD read service (also lists /IGT). Never for flight."),
     "stlink": ("stlink", "Open the ST-Link debugger after a Debug build."),
     "configure": ("configure-only", "Configure CMake and exit without building."),
 }
