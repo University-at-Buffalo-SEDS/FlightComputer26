@@ -184,6 +184,16 @@ static bool action_history_ready(unsigned *latest)
                                         retained.action[0].sequence)) ? 1U : 0U;
     return true;
 }
+/* Invalidate both flight checkpoints without the operator Stop seal: a
+ * stopped evaluation must never resume after a watchdog reset, and the next
+ * flight's automatic actuation stays allowed. Memory only (IRQs may be
+ * masked); the writer is the evaluator, which the caller has quiesced. */
+void fc_watchdog_discard_flight(void)
+{
+    retained.flight[0].seal = 0U;
+    retained.flight[1].seal = 0U;
+    __DMB();
+}
 bool fc_watchdog_startup_reset_ready(void)
 {
     unsigned latest;

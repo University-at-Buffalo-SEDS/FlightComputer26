@@ -80,6 +80,9 @@ static const fc_msg extmap[Compat_Messages] = {
     IGT_Dry_Run,
     IGT_Exit,
     SD_Retry,
+    Kalman_Stop,
+    Kalman_Reset,
+    Kalman_Start,
 };
 _Static_assert(sizeof extmap / sizeof extmap[0] == Compat_Messages,
                "one entry per compatibility byte");

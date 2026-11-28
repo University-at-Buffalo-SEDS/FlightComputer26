@@ -33,6 +33,7 @@
 #define msmcode(code) ((fu32)((code)&~Sensor_Measm_Code))
 #define id "RE "
 typedef uint32_t fu32;
+typedef uint8_t fu8;
 typedef int32_t fi32;
 typedef unsigned UINT;
 typedef uint32_t ULONG;
@@ -96,7 +97,10 @@ static void sensor_verdicts_reset(void){}
 static unsigned evaluation_cancels;static void fc_cancel_evaluation(void){assert(irq);++evaluation_cancels;}
 static void telemetry_wake(void){}
 static void ascent_initialize(uint32_t conf){(void)conf;++ascent_initializations;assert(current()==Armed);}
-static void message(const char *text,bool important){(void)text;(void)important;++messages;}
+static const char *last_message="";
+static void message(const char *text,bool important){(void)important;last_message=text;++messages;}
+/* Kalman stop/reset discard the watchdog flight checkpoints (memory only). */
+static unsigned discards;static void fc_watchdog_discard_flight(void){assert(irq);++discards;}
 
 static void log_metric(const char *text,fi32 value,bool important){(void)text;(void)value;(void)important;}
 

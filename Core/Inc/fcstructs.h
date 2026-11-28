@@ -268,7 +268,15 @@ typedef enum flight_message : fu32 {
 
   /* Re-attempt the SD mount and log file (both images). */
   SD_Retry         = Actionable_Decrees + 21,
-  /* The next decree is Actionable_Decrees + 22. */
+
+  /* Operator control of the estimator (Kalman filter), for a false launch
+   * detection and HITL (control_thread.c, docs/kalman-commands.md). None
+   * changes the station's global state or reverts the FC to Startup. Stop
+   * and Reset are refused while a station Launch is admitted. */
+  Kalman_Stop      = Actionable_Decrees + 22,
+  Kalman_Reset     = Actionable_Decrees + 23,
+  Kalman_Start     = Actionable_Decrees + 24,
+  /* The next decree is Actionable_Decrees + 25. */
 
   GPS_Data_Code = (1u << 18),
 
@@ -391,6 +399,9 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_IGT_Dry_Run,
   Compat_IGT_Exit,
   Compat_SD_Retry,
+  Compat_Kalman_Stop,  /* 34 */
+  Compat_Kalman_Reset, /* 35 */
+  Compat_Kalman_Start, /* 36 */
 
   Compat_Messages
 } compat;

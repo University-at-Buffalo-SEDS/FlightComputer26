@@ -215,6 +215,7 @@ bool fc_recovery_control_quiesce(void)
   return true;
 }
 void fc_recovery_control_mark_eval_stopped(void) { g_conf |= option(Eval_Abort_Flag); }
+void fc_recovery_control_kf_stopped(void) {}
 bool fc_recovery_control_finalize_startup(void)
 {
   if (!evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED ||

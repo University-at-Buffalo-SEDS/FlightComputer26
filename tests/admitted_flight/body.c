@@ -53,6 +53,61 @@ int main(int argc,char **argv){assert(argc==2);
   enter_launch(false);evaluator_entry();fc_recovery_request_eval_stop();assert(!fc_recovery_flight_is_admitted());
  }else if(!strcmp(argv[1],"internal_not_authority")){
   enter_launch(true);assert(!fc_recovery_flight_is_admitted());
+ }else if(!strcmp(argv[1],"kf_false_detection_stop")){
+  /* No station Launch: the FC started its evaluation itself (an internal
+   * Launch) and a false detection moved its own flight state on. */
+  const uint32_t epoch=fc_recovery_epoch();
+  enter_launch(true);evaluator_entry();assert(!fc_recovery_flight_is_admitted()&&(g_conf&option(Launch_Requested)));
+  sm.flight=Ascent;g_conf|=option(Parachute_Deployed);
+  kalman_stop();assert(strstr(last_message,"Kalman stop: stopping")&&fc_recovery_control_pending());
+  /* Commands wait: the evaluator pauses at its barrier, then quiesces. */
+  fc_recovery_control_service();
+  evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
+  fc_recovery_control_service();
+  assert(estimator_thread.tx_thread_state==TX_SUSPENDED&&terminations&&resets&&!fc_recovery_control_pending());
+  /* The evaluation side is undone; nothing else moved. */
+  assert(!(g_conf&option(Launch_Requested))&&(g_conf&option(Eval_Abort_Flag))&&(g_conf&option(Using_Ascent_KF)));
+  assert(current()==Armed&&evaluation_cancels==1&&discards==1&&g_fc_est_phase==FC_EST_STOPPED);
+  assert(fc_recovery_epoch()==epoch&&!fc_recovery_requires_new_flight()&&!fc_recovery_holds_sequence());
+  assert(!seal&&!gpio.ODR&&(g_conf&option(Parachute_Deployed))&&!commits);
+  assert(!evaluation_active());
+  /* Reset now clears the estimator memory and leaves the flight state alone. */
+  kalman_reset();assert(strstr(last_message,"Kalman reset: estimator memory cleared"));
+  assert(evaluation_cancels==2&&discards==2&&!(g_conf&option(Eval_Abort_Flag))&&g_fc_est_phase==FC_EST_IDLE&&current()==Armed);
+  /* And the next start begins from scratch. */
+  enter_launch(true);evaluator_entry();assert(ascent_initializations==2&&(g_conf&option(Launch_Requested)));
+ }else if(!strcmp(argv[1],"kf_stop_from_postinit")){
+  sm.flight=Postinit;enter_launch(true);evaluation_quiescent=0U;estimator_thread.tx_thread_state=TX_RUNNING;
+  g_conf|=option(Launch_Requested);sm.flight=Launch;
+  kalman_stop();
+  evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
+  fc_recovery_control_service();
+  assert(current()==Postinit&&!(g_conf&option(Launch_Requested)));
+ }else if(!strcmp(argv[1],"kf_stop_refused_for_station_launch")){
+  enter_launch(false);evaluator_entry();assert(fc_recovery_flight_is_admitted());sm.flight=Ascent;
+  kalman_stop();assert(strstr(last_message,"refused: a station Launch"));
+  assert(!fc_recovery_kf_stop_pending()&&!fc_recovery_control_pending()&&!fc_recovery_eval_pause_requested());
+  assert(estimator_thread.tx_thread_state==TX_RUNNING&&(g_conf&option(Launch_Requested))&&current()==Ascent);
+  kalman_reset();assert(strstr(last_message,"Kalman reset refused: a station Launch")&&!evaluation_cancels);
+  /* The owner refuses too, independently of the caller. */
+  assert(!fc_recovery_request_kf_stop());
+ }else if(!strcmp(argv[1],"kf_idle_and_refusals")){
+  kalman_stop();assert(strstr(last_message,"not running")&&!fc_recovery_control_pending());
+  kalman_reset();assert(evaluation_cancels==1&&g_fc_est_phase==FC_EST_IDLE);
+  enter_launch(true);evaluator_entry();
+  kalman_reset();assert(strstr(last_message,"stop it first")&&evaluation_cancels==1);
+  kalman_start();assert(strstr(last_message,"already running")&&ascent_initializations==1);
+ }else if(!strcmp(argv[1],"kf_start")){
+  /* From Armed with nothing running: started like an internal Launch, never
+   * admitting a station flight. */
+  kalman_start();assert(strstr(last_message,"Kalman start: estimator started")&&estimator_thread.tx_thread_state==TX_RUNNING);
+  assert(!fc_recovery_flight_is_admitted());evaluator_entry();assert(ascent_initializations==1&&(g_conf&option(Launch_Requested)));
+ }else if(!strcmp(argv[1],"kf_start_refused")){
+  sm.flight=Startup;kalman_start();assert(strstr(last_message,"needs Postinit")&&estimator_thread.tx_thread_state==TX_SUSPENDED);
+  sm.flight=Armed;fc_recovery_manual_stop();fc_recovery_control_service();
+  kalman_start();assert(strstr(last_message,"after a reset or Stop")&&estimator_thread.tx_thread_state==TX_SUSPENDED&&!resumes);
+  /* A Stop latched: the owner refuses a Kalman stop as well. */
+  assert(!fc_recovery_request_kf_stop());
  }else if(!strcmp(argv[1],"reset_then_fresh_launch")){
   enter_launch(false);evaluator_entry();uint32_t epoch=fc_recovery_epoch();assert(fc_recovery_request_startup(epoch)==-14);
   evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;

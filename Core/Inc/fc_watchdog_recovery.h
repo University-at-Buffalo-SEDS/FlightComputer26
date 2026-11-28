@@ -16,6 +16,8 @@ void fc_watchdog_recovery_boot(uint32_t reset_flags);
 void fc_watchdog_checkpoint(void);
 bool fc_watchdog_hold_for_operator_reset(void);
 bool fc_watchdog_begin_new_flight(void);
+/* Kalman stop/reset: a stopped evaluation is never resumed after a reset. */
+void fc_watchdog_discard_flight(void);
 bool fc_watchdog_startup_reset_ready(void);
 bool fc_watchdog_record_deployment(bool reef, bool manual);
 bool fc_watchdog_can_actuate(void);
@@ -28,6 +30,7 @@ static inline void fc_watchdog_recovery_boot(uint32_t f) { (void)f; }
 static inline void fc_watchdog_checkpoint(void) {}
 static inline bool fc_watchdog_hold_for_operator_reset(void) { return true; }
 static inline bool fc_watchdog_begin_new_flight(void) { return true; }
+static inline void fc_watchdog_discard_flight(void) {}
 static inline bool fc_watchdog_startup_reset_ready(void) { return true; }
 static inline bool fc_watchdog_record_deployment(bool r, bool m) { (void)r; (void)m; return true; }
 static inline bool fc_watchdog_can_actuate(void) { return true; }

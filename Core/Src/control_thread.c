@@ -168,6 +168,16 @@ static inline void sensor_init_supervised(sens_init sn)
 /* Cooperative evaluator/reset owner. Never terminate a task at an arbitrary
  * lock/Kalman point. No SDK/NVM/logging occurs in these owner hooks. */
 static volatile uint8_t evaluation_quiescent = 1U;
+/* The pad state (Postinit or Armed) the last Launch started from: where a
+ * Kalman stop returns the FC's own flight state. */
+static fu8 kf_launch_from = Armed;
+/* The evaluator is running, starting, paused or holds a flight request:
+ * anything but suspended at its entry after a reset (or never started). */
+static inline bool evaluation_active(void)
+{
+  return !evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED ||
+         (load(&g_conf, Acq) & option(Launch_Requested));
+}
 bool fc_recovery_control_ready(void) { return g_recovery_receive_loop_ready != 0U; }
 bool fc_recovery_control_is_startup(void) { return current() == Startup; }
 /* Same short IRQ owner as Launch/Stop/monitor admission; no IO or providers.
@@ -262,6 +272,29 @@ bool fc_recovery_control_finalize_startup(void)
   igt_stop();
 #endif
   return true;
+}
+/* Kalman stop, after the evaluator has quiesced (fc_recovery_owner.c, IRQs
+ * masked, memory only). Undo the evaluation side of a flight no station
+ * Launch admitted: the Launch request, the FC's own flight state (back to
+ * the pad state the Launch started from), the estimator's flight memory with
+ * the drogue timer and break-up detector (fc_cancel_evaluation) and the
+ * watchdog flight checkpoints. Kept: the station's global state (nothing is
+ * published), fill, valves, deployment history bits, IMU biases and the
+ * barometer reference. The estimator stays stopped (Eval_Abort_Flag) until
+ * the next Launch or Kalman start. */
+void fc_recovery_control_kf_stopped(void)
+{
+  g_conf &= ~option(Launch_Requested | Graceful_Reset | Defer_Baro_Fallback);
+  g_conf |= option(Using_Ascent_KF);
+  fc_cancel_evaluation();
+  if (beyond(Armed))
+  {
+    fc_recovery_ota_reset_retire_locked();
+    sm.flight = kf_launch_from == Postinit ? Postinit : Armed;
+  }
+  sm.confidence = 0;
+  sm.kf_deviations = 0;
+  fc_watchdog_discard_flight();
 }
 bool fc_recovery_control_new_flight_ready(void)
 {
@@ -468,7 +501,89 @@ static inline void enter_launch(bool noconfirm)
       kalman_seed_attitude((const f_xyz *)seed);
   }
 #endif
+  if (!beyond(Armed)) kf_launch_from = (fu8)current();
   tx_thread_resume(&estimator_thread);
+}
+
+
+/* Operator control of the estimator (docs/kalman-commands.md). */
+
+/* Kalman: stop. Recovers from a false launch detection: the evaluator a
+ * Launch started is stopped and its evaluation undone
+ * (fc_recovery_control_kf_stopped) without touching the station's global
+ * state. Refused for a flight a station Launch admitted. */
+static void kalman_stop(void)
+{
+  if (fc_recovery_flight_is_admitted())
+  {
+    message(id "Kalman stop refused: a station Launch was accepted (real flight)", true);
+    return;
+  }
+  if (!evaluation_active())
+  {
+    message(id "Kalman stop: the estimator is not running", true);
+    return;
+  }
+  if (!fc_recovery_request_kf_stop())
+  {
+    message(id "Kalman stop refused: a reset or Stop owns the estimator", true);
+    return;
+  }
+  message(id "Kalman stop: stopping the estimator; flight evaluation cancelled", true);
+}
+
+/* Kalman: reset. Clears the estimator's flight memory so the next start
+ * begins from scratch. Refused while the estimator runs (stop it first) and
+ * for a flight a station Launch admitted. */
+static void kalman_reset(void)
+{
+  if (fc_recovery_flight_is_admitted())
+  {
+    message(id "Kalman reset refused: a station Launch was accepted (real flight)", true);
+    return;
+  }
+  if (evaluation_active() || fc_recovery_control_pending())
+  {
+    message(id "Kalman reset refused: the estimator is running; stop it first", true);
+    return;
+  }
+  const uint32_t mask = __get_PRIMASK(); __disable_irq();
+  fc_cancel_evaluation();
+  g_conf &= ~option(Eval_Abort_Flag);
+  g_conf |= option(Using_Ascent_KF);
+  sm.confidence = 0;
+  sm.kf_deviations = 0;
+  g_fc_est_phase = FC_EST_IDLE;
+  g_fc_est_cycles = g_fc_est_start = 0;
+  fc_watchdog_discard_flight();
+  __set_PRIMASK(mask);
+  message(id "Kalman reset: estimator memory cleared", true);
+}
+
+/* Kalman: start (the station sends it in HITL only). Starts the estimator
+ * the way an internal Launch does: from Postinit/Armed, without admitting a
+ * station flight, so Kalman stop can end it. After a reset to Startup only
+ * the station Launch starts the next flight. */
+static void kalman_start(void)
+{
+  if (evaluation_active())
+  {
+    message(id "Kalman start refused: the estimator is already running", true);
+    return;
+  }
+  if (fc_recovery_requires_new_flight() || fc_recovery_holds_sequence() ||
+      !fc_watchdog_can_actuate())
+  {
+    message(id "Kalman start refused: after a reset or Stop the station Launch starts the next flight", true);
+    return;
+  }
+  if (!beyond(Startup) || beyond(Armed))
+  {
+    message(id "Kalman start refused: needs Postinit/Armed", true);
+    return;
+  }
+  enter_launch(true);
+  if (evaluation_active()) message(id "Kalman start: estimator started by the operator", true);
 }
 
 
@@ -542,6 +657,18 @@ static inline void process_action(fc_msg cmd, bool internal)
     case Log_Restrict:
       rates.gnd = UINT_FAST32_MAX;
       message(id "WARN: shared stack pool", true);
+      break;
+
+    case Kalman_Stop:
+      if (!internal) kalman_stop();
+      break;
+
+    case Kalman_Reset:
+      if (!internal) kalman_reset();
+      break;
+
+    case Kalman_Start:
+      if (!internal) kalman_start();
       break;
 
     case SD_Retry:

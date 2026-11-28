@@ -69,6 +69,10 @@ static UINT tx_thread_wait_abort(TX_THREAD*t){assert(irq&&t==&control_thread);++
 static struct {unsigned to_abort,to_reinit,gps_delayed,gps_malform,failures,triggers;} smon={TO_ABORT,TO_REINIT,0,0,0,0};
 static unsigned devctr_if[2],estimator_cancels;
 static void estimator_cancel_evaluation(void){++estimator_cancels;}
+/* Kalman stop's hook (actual, below). */
+typedef uint8_t fu8;
+static bool beyond(uint32_t s){return sm.flight>s;}
+static unsigned discards;static void fc_watchdog_discard_flight(void){++discards;}
 '''
 MAIN=r'''
 int main(void){
@@ -108,6 +112,14 @@ int main(void){
  fc_recovery_control_wake();assert(aborts==0);
  control_thread.tx_thread_suspend_control_block=&seds_syscall;fc_recovery_control_wake();assert(aborts==1&&!irq);
  irq=1;fc_recovery_control_wake();assert(aborts==2&&irq==1);
+ /* Kalman stop's hook: the evaluation side only, back to the pad state. */
+ const unsigned cancels=estimator_cancels;
+ sm.flight=Launch;sm.global_state=7;g_conf=Launch_Requested|Graceful_Reset|Parachute_Deployed|Manual_Biases;smon.to_abort=TO_ABORT*10;
+ fc_recovery_control_kf_stopped();
+ assert(sm.flight==Armed&&sm.global_state==7&&discards==1&&estimator_cancels==cancels+1&&smon.to_abort==TO_ABORT);
+ assert(g_conf==(Parachute_Deployed|Manual_Biases|Using_Ascent_KF));
+ kf_launch_from=Postinit;sm.flight=Launch;fc_recovery_control_kf_stopped();assert(sm.flight==Postinit);
+ sm.flight=Armed;fc_recovery_control_kf_stopped();assert(sm.flight==Armed);
  return 0;}
 '''
 class FCRecoveryControlTests(unittest.TestCase):

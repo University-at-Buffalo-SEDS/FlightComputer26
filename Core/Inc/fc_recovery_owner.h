@@ -36,10 +36,17 @@ bool fc_recovery_flight_is_admitted(void);
 /* Only successful, semantically validated active-flight checkpoint restore. */
 bool fc_recovery_restore_admitted_flight(void);
 void fc_recovery_request_eval_stop(void);
+/* Operator Kalman stop: quiesce the evaluator of a flight no station Launch
+ * admitted, with no reset and no epoch change; false when refused (an
+ * admitted flight, or a reset/Stop already owns the evaluator). */
+bool fc_recovery_request_kf_stop(void);
+bool fc_recovery_kf_stop_pending(void);
 /* Fixed implementation hooks in the existing control owner, not callbacks. */
 bool fc_recovery_control_ready(void);
 bool fc_recovery_control_quiesce(void);
 void fc_recovery_control_mark_eval_stopped(void);
+/* After a Kalman stop's quiescence, IRQs masked: cancels the evaluation. */
+void fc_recovery_control_kf_stopped(void);
 bool fc_recovery_control_finalize_startup(void);
 bool fc_recovery_control_is_startup(void);
 /* RAM-only actual FSM/config proof; caller holds the IRQ owner. */

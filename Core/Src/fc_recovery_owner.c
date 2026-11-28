@@ -22,6 +22,8 @@ static volatile struct {
 _Static_assert(sizeof owner <= 32U, "Bounded single FC recovery mailbox");
 /* Op 3 accepted and running: no pulse may start (read under the IRQ guard). */
 static volatile bool reset_any;
+/* Operator Kalman stop pending (outside the bounded mailbox above). */
+static volatile bool kf_stop;
 /* Original UTC of the manual Stop that set the current latch. The station
  * can deliver one operator Abort more than once (retries, relays); every
  * copy carries the same original UTC and must not invalidate tickets again. */
@@ -100,11 +102,12 @@ bool fc_recovery_control_pending(void)
 {
     return (owner.monitor_mode && !owner.monitor_ready) ||
            reset_active() || owner.sensor_restart == 1U || owner.legacy_stop ||
-           (owner.manual_stop && !owner.stop_handled);
+           kf_stop || (owner.manual_stop && !owner.stop_handled);
 }
 bool fc_recovery_eval_pause_requested(void)
 {
-    return fc_recovery_inhibits_pyro() || owner.legacy_stop || owner.sensor_restart == 1U;
+    return fc_recovery_inhibits_pyro() || owner.legacy_stop || kf_stop ||
+           owner.sensor_restart == 1U;
 }
 bool fc_recovery_postinit_allowed(uint32_t epoch)
 {
@@ -210,6 +213,29 @@ void fc_recovery_request_eval_stop(void)
     fc_recovery_control_wake();
 }
 
+/* Operator Kalman stop. Refused (no effect) for a flight a station Launch
+ * admitted: a real flight is never stoppable this way. Unlike the eval stop
+ * above it never fails a reset or advances the epoch: it is refused while
+ * a reset, a held sequence (Stop, monitor session, commissioning) or another
+ * stop owns the evaluator. A pending sensor
+ * restart is cancelled so it cannot start the evaluator again. */
+bool fc_recovery_request_kf_stop(void)
+{
+    const uint32_t mask = __get_PRIMASK();
+    __disable_irq();
+    if (owner.admitted_flight || reset_active() || owner.phase == RESET_FAILED ||
+        owner.legacy_stop || fc_recovery_holds_sequence()) {
+        __set_PRIMASK(mask);
+        return false;
+    }
+    owner.sensor_restart = 0U;
+    kf_stop = true;
+    __set_PRIMASK(mask);
+    fc_recovery_control_wake();
+    return true;
+}
+bool fc_recovery_kf_stop_pending(void) { return kf_stop; }
+
 /* Transport has already validated identity, boot, epoch and canonical time.
  * Seal readback precedes even the replay-floor write. A failed barrier cannot
  * start asynchronous persistence; runtime LOW/inhibit remains conservative. */
@@ -293,7 +319,7 @@ void fc_recovery_control_service(void)
         owner.phase = RESET_WAIT_EVAL;
     }
     const bool need_stop = (owner.monitor_mode && !owner.monitor_ready) ||
-        owner.sensor_restart == 1U || owner.legacy_stop ||
+        owner.sensor_restart == 1U || owner.legacy_stop || kf_stop ||
         (owner.manual_stop && !owner.stop_handled) || owner.phase == RESET_WAIT_EVAL;
     __set_PRIMASK(mask);
     if (need_stop && fc_recovery_control_quiesce()) {
@@ -301,6 +327,12 @@ void fc_recovery_control_service(void)
         mask = __get_PRIMASK(); __disable_irq();
         if (owner.monitor_mode) owner.monitor_ready = true;
         owner.legacy_stop = false;
+        if (kf_stop) {
+            /* No Launch can be admitted meanwhile: the control owner takes
+             * no command while this is pending (fc_recovery_control_pending). */
+            kf_stop = false;
+            fc_recovery_control_kf_stopped();
+        }
         if (owner.sensor_restart == 1U) {
             owner.sensor_restart = owner.restart_epoch == owner.epoch &&
                                    !fc_recovery_inhibits_pyro() ? 2U : 0U;

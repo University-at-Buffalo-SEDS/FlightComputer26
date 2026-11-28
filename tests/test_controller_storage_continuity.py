@@ -18,6 +18,7 @@ class ControllerStorageContinuityTests(unittest.TestCase):
   distribution=(ROOT/'Core/Src/sensor_thread.c').read_text();recovery=(ROOT/'Core/Src/control_thread.c').read_text();begin=distribution.index('#if defined (TELEMETRY_ENABLED) || defined(FAKESTATION)');end=distribution.index('#endif /* TELEMETRY_ENABLED + FAKESTATION */',begin)+len('#endif /* TELEMETRY_ENABLED + FAKESTATION */');decoder=distribution[begin:end]
   support=r'''
 #define TELEMETRY_CMD_COMPAT
+typedef uint8_t fu8;static uint8_t kf_launch_from;
 #define id "FC "
 #define revoke(x) ((x)|Revoke_Option)
 #define fc_mask(x) ((x)|FlightComputer_Mask)

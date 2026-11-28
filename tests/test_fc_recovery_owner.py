@@ -57,6 +57,7 @@ bool fc_recovery_control_monitor_preflight(void){assert(irq);return actual==0||a
 void fc_recovery_control_wake(void){++wakes;}
 bool fc_recovery_control_quiesce(void){assert(!irq);return quiet;}
 void fc_recovery_control_mark_eval_stopped(void){}
+void fc_recovery_control_kf_stopped(void){}
 bool fc_recovery_control_finalize_startup(void){assert(irq&&quiet&&durable);actual=0;++finals;return true;}
 bool fc_recovery_control_new_flight_ready(void){assert(irq);return arm_ready;}
 void fc_recovery_control_new_flight(void){assert(irq);g_conf&=~(Parachute_Deployed|Parachute_Expanded);}

@@ -53,7 +53,7 @@ class RetiredEvaluationRelax(unittest.TestCase):
         for index, name in retired.items():
             self.assertEqual(names[index], name)
         self.assertEqual(names.index('Compat_SD_Retry'), 33)
-        self.assertEqual(len(names), 34)
+        self.assertEqual(len(names), 37)  # 34..36: the Kalman commands
 
     def test_one_byte_map_refuses_every_retired_byte(self):
         table = self.dist[self.dist.index('static const fc_msg extmap[Compat_Messages] = {'):]
@@ -68,8 +68,8 @@ class RetiredEvaluationRelax(unittest.TestCase):
         self.assertEqual(entries[12], 'Deploy_Parachute')
         self.assertEqual(entries[17:23], ['Reinit_Sensors', 'Reinit_Barometer', 'Reinit_IMU',
                                           'Disable_IMU', 'Advance_State', 'Rewind_State'])
-        self.assertEqual(entries[29:], ['IGT_Enter', 'IGT_Live_Pyro', 'IGT_Dry_Run', 'IGT_Exit',
-                                        'SD_Retry'])
+        self.assertEqual(entries[29:34], ['IGT_Enter', 'IGT_Live_Pyro', 'IGT_Dry_Run', 'IGT_Exit',
+                                          'SD_Retry'])
         self.assertNotIn('revoke(', self.dist)
         self.assertNotIn('Thresholds', table)
         # An invalid command is refused for good and acknowledged.
