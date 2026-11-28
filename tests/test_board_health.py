@@ -52,6 +52,7 @@ SedsResult seds_router_log_bytes_ex(SedsRouter *router,int dtype,const uint8_t *
 ''' +checked_hooks(ROOT)+'\n'+(ROOT/'Core/Inc/fc_estimator_status.h').read_text()+r'''
 volatile uint8_t g_fc_est_phase;volatile uint32_t g_fc_est_cycles,g_fc_est_start;
 uint32_t baro_bits;uint32_t baro_ref_bits(void){return baro_bits;}
+uint8_t status_bits;uint8_t fc_estimator_status_bits(void){return status_bits;}
 '''+source+r'''
 int main(void){
  SedsRouter router=1;
@@ -104,7 +105,7 @@ int main(void){
   {uint32_t since=(captured[2]-((captured[15]&0x3FFFFU)<<4))&0x3FFFFFU;assert(since>=250U&&since<250U+16U);}
   /* Repeated 1 s after the change, then every 5 s. */
   uptime=t+1249U;board_health_poll(&router);assert(calls==before+2);
-  g_fc_est_cycles=0x100005U; /* the cycle field wraps at 20 bits */
+  g_fc_est_cycles=0x1005U; /* the cycle field wraps at 12 bits */
   uptime=t+1250U;board_health_poll(&router);assert(calls==before+3&&captured[13]==((0x4BU<<24)|(2U<<20)|5U));
   uptime=t+6249U;board_health_poll(&router);assert(calls==before+3);
   uptime=t+6250U;board_health_poll(&router);assert(calls==before+4);
@@ -117,6 +118,18 @@ int main(void){
   uptime=t+7800U;board_health_poll(&router);assert(calls==before+7&&(captured[13]>>20&0xFU)==5U);
   assert(!(captured[1]&(4U|64U))); /* words 13/15 are not the generic counters */
   g_fc_est_phase=0;g_fc_est_cycles=0;g_fc_est_start=0;}
+ /* Word 13 bits 12..19: the estimator status, sent at once when it changes
+  * (a false detection stopped: running -> stopped; the flight state on). */
+ {unsigned before=calls;uint64_t t=uptime+5000U;
+  status_bits=FC_EST_STATUS(FC_EST_MODE_ARMED,FC_EST_ORIGIN_NONE,2);uptime=t;board_health_poll(&router);
+  assert(calls==before+1&&((captured[13]>>12)&0xFFU)==status_bits&&(captured[13]>>24)==0x4BU);
+  status_bits=FC_EST_STATUS(FC_EST_MODE_RUNNING,FC_EST_ORIGIN_FC,4);uptime=t+300U;board_health_poll(&router);
+  assert(calls==before+2&&((captured[13]>>12)&3U)==FC_EST_MODE_RUNNING&&((captured[13]>>14)&3U)==FC_EST_ORIGIN_FC&&((captured[13]>>16)&0xFU)==4U);
+  status_bits=FC_EST_STATUS(FC_EST_MODE_STOPPED,FC_EST_ORIGIN_NONE,2);uptime=t+600U;board_health_poll(&router);
+  assert(calls==before+3&&((captured[13]>>12)&0xFFU)==status_bits);
+  /* Unchanged: only the cadence (1 s repeat, then 5 s). */
+  uptime=t+900U;board_health_poll(&router);assert(calls==before+3);
+  status_bits=0;}
  /* Word 15 bits 18..31: the barometer ground reference (mode, shift in Pa). */
  {unsigned before=calls;baro_bits=((0xFF6U)<<2)|1U; /* tracking, -10 Pa */
   uptime+=5000;board_health_poll(&router);

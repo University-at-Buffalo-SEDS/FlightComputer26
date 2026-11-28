@@ -333,7 +333,7 @@ and sends `EULER_ANGLES` and `ASCENT_STATE` once.
 | --- | --- | --- |
 | Ascent | `EKF` row every completed cycle: q0 q1 q2 q3 alt vel | `ASCENT_STATE` every 200 ms |
 | Descent | `DKF` row every completed cycle: lon lat alt vel | `DESCENT_STATE` every 200 ms |
-| Status | - | `BOARD_HEALTH` word 13 (phase, cycle count), word 15 (start tick) (`fc_estimator_status.h`) |
+| Status | - | `BOARD_HEALTH` word 13 (phase, estimator status: disabled/armed/running/stopped, who started it and the FC's flight state; 12-bit cycle count), word 15 (start tick) (`fc_estimator_status.h`) |
 
 During an IGT replay the estimator outputs go out only as `SIM` /
 `SIM_SAMPLE` (6.11); no `EKF`/`DKF` rows are written then.

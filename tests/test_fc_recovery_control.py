@@ -73,6 +73,12 @@ static void estimator_cancel_evaluation(void){++estimator_cancels;}
 typedef uint8_t fu8;
 static bool beyond(uint32_t s){return sm.flight>s;}
 static unsigned discards;static void fc_watchdog_discard_flight(void){++discards;}
+/* The estimator status byte (fc_estimator_status.h). */
+typedef uint32_t fu32;
+enum { FC_EST_MODE_DISABLED, FC_EST_MODE_ARMED, FC_EST_MODE_RUNNING, FC_EST_MODE_STOPPED };
+enum { FC_EST_ORIGIN_NONE, FC_EST_ORIGIN_STATION, FC_EST_ORIGIN_OPERATOR, FC_EST_ORIGIN_FC };
+#define FC_EST_STATUS(mode, origin, flight) ((uint8_t)(((uint32_t)(mode) & 3U) | (((uint32_t)(origin) & 3U) << 2) | (((uint32_t)(flight) & 0xFU) << 4)))
+static bool admitted;static bool fc_recovery_flight_is_admitted(void){return admitted;}
 '''
 MAIN=r'''
 int main(void){

@@ -79,6 +79,7 @@ static void distribution_wake(void) {}
 static void thread_comm_ascent_stage(bool staged) { (void)staged; }
 static void sensor_verdicts_reset(void) {}
 static unsigned evaluation_cancels;
+static volatile uint8_t kf_operator_started;
 static void fc_cancel_evaluation(void) { ++evaluation_cancels; }
 static bool fc_recovery_eval_pause_requested(void) { return pause_requests && pause_requests--; }
 static void fc_recovery_evaluation_quiescent(void) {}
@@ -182,7 +183,7 @@ class EstimatorStatusTests(unittest.TestCase):
 
     def test_board_health_carries_the_status_in_words_13_and_15(self):
         source = (BASE / 'Core/Src/board_health.c').read_text()
-        self.assertIn('words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);', source)
+        self.assertIn('words[13] = FC_EST_WORD13(phase, status, g_fc_est_cycles);', source)
         self.assertIn('FC_EST_WORD15(g_fc_est_start, baro_ref_bits())', source)
         self.assertIn('words[15] = word15;', source)
         header = (BASE / 'Core/Inc/fc_estimator_status.h').read_text()

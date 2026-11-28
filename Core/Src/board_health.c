@@ -31,7 +31,7 @@ void board_health_poll(SedsRouter *router)
 #ifdef TELEMETRY_ENABLED
   static uint32_t last_report_ms, last_sent_ms;
   static uint32_t failures;
-  static uint8_t sent_phase, sent_frozen;
+  static uint8_t sent_phase, sent_frozen, sent_status;
 #if FC_GROUND_TEST
   static uint32_t sent_igt;
   const uint32_t igt = igt_health_bits();
@@ -44,17 +44,21 @@ void board_health_poll(SedsRouter *router)
   /* An estimator phase change (Launch starting the Kalman filter) is
    * reported at once, at most every 250 ms, and repeated 1 s later. */
   const uint8_t phase = g_fc_est_phase;
+  /* So is the estimator status: disabled/armed/running/stopped, who started
+   * it and the FC's own flight state (Launch, Ascent ... Landed). */
+  const uint8_t status = fc_estimator_status_bits();
   /* So is the barometer ground reference freezing at Launch. */
   const uint32_t word15 = FC_EST_WORD15(g_fc_est_start, baro_ref_bits());
   const uint8_t frozen = FC_EST_BARO_FROZEN(word15);
   const bool changed = (phase != sent_phase || frozen != sent_frozen ||
-                        igt != sent_igt) &&
+                        status != sent_status || igt != sent_igt) &&
                        (uint32_t)(now - last_sent_ms) >= 250U;
   if (!changed && (uint32_t)(now - last_report_ms) < 5000U) return;
   last_report_ms = changed ? now - 4000U : now;
   last_sent_ms = now;
   sent_phase = phase;
   sent_frozen = frozen;
+  sent_status = status;
 #if FC_GROUND_TEST
   sent_igt = igt;
 #endif
@@ -82,7 +86,7 @@ void board_health_poll(SedsRouter *router)
               (g_av_bay_underglow_network_seen != 0U ? 4U : 0U) |
               (g_flight_buzzer_network_seen != 0U ? 8U : 0U) |
               igt; /* bits 4..15: integrated ground test (ground_test.h) */
-  words[13] = FC_EST_WORD13(phase, g_fc_est_cycles);
+  words[13] = FC_EST_WORD13(phase, status, g_fc_est_cycles);
   words[15] = word15;
 #ifdef SD_AVAILABLE
   words[1] |= 16U;

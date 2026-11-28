@@ -171,6 +171,8 @@ static volatile uint8_t evaluation_quiescent = 1U;
 /* The pad state (Postinit or Armed) the last Launch started from: where a
  * Kalman stop returns the FC's own flight state. */
 static fu8 kf_launch_from = Armed;
+/* The running evaluation was started by the operator's Kalman start. */
+static volatile fu8 kf_operator_started;
 /* The evaluator is running, starting, paused or holds a flight request:
  * anything but suspended at its entry after a reset (or never started). */
 static inline bool evaluation_active(void)
@@ -268,6 +270,7 @@ bool fc_recovery_control_finalize_startup(void)
   baro_conf.rezero = 0;
   g_fc_est_phase = FC_EST_IDLE;
   g_fc_est_cycles = g_fc_est_start = 0;
+  kf_operator_started = 0U;
 #if FC_GROUND_TEST
   igt_stop();
 #endif
@@ -294,7 +297,30 @@ void fc_recovery_control_kf_stopped(void)
   }
   sm.confidence = 0;
   sm.kf_deviations = 0;
+  kf_operator_started = 0U;
   fc_watchdog_discard_flight();
+}
+/* The estimator status byte of the FC's BOARD_HEALTH (fc_estimator_status.h),
+ * from the real state: the evaluator thread, the stop flag, the flight
+ * request, the station's admission of the flight and the flight state. Read
+ * by the telemetry task; every input is a single word read. */
+uint8_t fc_estimator_status_bits(void)
+{
+  const fu32 conf = load(&g_conf, Acq);
+  const unsigned flight = current();
+  const bool live = !evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED;
+  uint8_t mode, origin = FC_EST_ORIGIN_NONE;
+  if (live || (!(conf & option(Eval_Abort_Flag)) && (conf & option(Launch_Requested))))
+  {
+    mode = FC_EST_MODE_RUNNING;
+    origin = fc_recovery_flight_is_admitted() ? FC_EST_ORIGIN_STATION
+           : kf_operator_started ? FC_EST_ORIGIN_OPERATOR : FC_EST_ORIGIN_FC;
+  }
+  else if (conf & option(Eval_Abort_Flag)) mode = FC_EST_MODE_STOPPED;
+  else if ((flight == Postinit || flight == Armed) && !fc_recovery_holds_sequence())
+    mode = FC_EST_MODE_ARMED;
+  else mode = FC_EST_MODE_DISABLED;
+  return FC_EST_STATUS(mode, origin, flight);
 }
 bool fc_recovery_control_new_flight_ready(void)
 {
@@ -555,6 +581,7 @@ static void kalman_reset(void)
   sm.kf_deviations = 0;
   g_fc_est_phase = FC_EST_IDLE;
   g_fc_est_cycles = g_fc_est_start = 0;
+  kf_operator_started = 0U;
   fc_watchdog_discard_flight();
   __set_PRIMASK(mask);
   message(id "Kalman reset: estimator memory cleared", true);
@@ -583,7 +610,11 @@ static void kalman_start(void)
     return;
   }
   enter_launch(true);
-  if (evaluation_active()) message(id "Kalman start: estimator started by the operator", true);
+  if (evaluation_active())
+  {
+    kf_operator_started = 1U;
+    message(id "Kalman start: estimator started by the operator", true);
+  }
 }
 
 

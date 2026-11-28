@@ -74,5 +74,23 @@ the sequence is held, and outside Postinit/Armed. The FC has no notion of
 the station mode: the GroundStation sends it only in HITL and refuses it in
 every other mode.
 
+## Status report
+
+The FC reports its estimator in BOARD_HEALTH word 13 bits 12..19
+(`fc_estimator_status.h`, `fc_estimator_status_bits`), from its real state:
+
+- mode: disabled (not ready: no Postinit yet, or the sequence is held),
+  armed (Postinit/Armed with nothing running: a Launch starts it), running
+  (the evaluator runs, starts, or is paused with a flight request), stopped
+  (`Eval_Abort_Flag`: a Kalman stop, break-up abort or operator Stop);
+- for a running evaluation, who started it: a station Launch (the flight is
+  admitted), the operator's Kalman start, or the FC itself with no station
+  Launch (the false launch detection case);
+- the FC's own flight state (Startup .. Recovery).
+
+A change is sent at once (at most every 250 ms) and again 1 s later, then
+every 5 s with the rest of the report; the cycle count in bits 0..11 wraps
+at 4096. Radio shares are unchanged.
+
 Tests: `tests/test_admitted_flight.py` (`kf_*` cases against the actual
 recovery owner and control hooks) and `tests/test_kalman_commands.py`.

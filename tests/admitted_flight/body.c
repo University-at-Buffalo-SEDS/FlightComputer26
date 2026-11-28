@@ -108,6 +108,35 @@ int main(int argc,char **argv){assert(argc==2);
   kalman_start();assert(strstr(last_message,"after a reset or Stop")&&estimator_thread.tx_thread_state==TX_SUSPENDED&&!resumes);
   /* A Stop latched: the owner refuses a Kalman stop as well. */
   assert(!fc_recovery_request_kf_stop());
+ }else if(!strcmp(argv[1],"kf_status_station_launch")){
+  #define MODE(s) ((s)&3U)
+  #define ORIGIN(s) (((s)>>2)&3U)
+  #define FLIGHT(s) ((s)>>4)
+  uint8_t s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_ARMED&&ORIGIN(s)==FC_EST_ORIGIN_NONE&&FLIGHT(s)==Armed);
+  sm.flight=Startup;s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_DISABLED&&FLIGHT(s)==Startup);
+  sm.flight=Armed;enter_launch(false);s=fc_estimator_status_bits();
+  assert(MODE(s)==FC_EST_MODE_RUNNING&&ORIGIN(s)==FC_EST_ORIGIN_STATION);
+  evaluator_entry();sm.flight=Coast;s=fc_estimator_status_bits();
+  assert(MODE(s)==FC_EST_MODE_RUNNING&&ORIGIN(s)==FC_EST_ORIGIN_STATION&&FLIGHT(s)==Coast);
+  /* The operator's Stop latches: the evaluator is stopped, not running. */
+  fc_recovery_manual_stop();fc_recovery_control_service();
+  evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
+  fc_recovery_control_service();s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_STOPPED&&ORIGIN(s)==FC_EST_ORIGIN_NONE);
+ }else if(!strcmp(argv[1],"kf_status_false_detection_stop_reset_start")){
+  enter_launch(true);uint8_t s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_RUNNING&&ORIGIN(s)==FC_EST_ORIGIN_FC);
+  evaluator_entry();sm.flight=Ascent;s=fc_estimator_status_bits();assert(ORIGIN(s)==FC_EST_ORIGIN_FC&&FLIGHT(s)==Ascent);
+  kalman_stop();fc_recovery_control_service();
+  evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
+  fc_recovery_control_service();
+  s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_STOPPED&&ORIGIN(s)==FC_EST_ORIGIN_NONE&&FLIGHT(s)==Armed);
+  kalman_reset();s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_ARMED&&FLIGHT(s)==Armed);
+  kalman_start();s=fc_estimator_status_bits();assert(MODE(s)==FC_EST_MODE_RUNNING&&ORIGIN(s)==FC_EST_ORIGIN_OPERATOR);
+  evaluator_entry();s=fc_estimator_status_bits();assert(ORIGIN(s)==FC_EST_ORIGIN_OPERATOR);
+  /* A stop of the operator's run clears its origin for the next start. */
+  kalman_stop();
+  evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
+  fc_recovery_control_service();kalman_reset();
+  enter_launch(true);s=fc_estimator_status_bits();assert(ORIGIN(s)==FC_EST_ORIGIN_FC);
  }else if(!strcmp(argv[1],"reset_then_fresh_launch")){
   enter_launch(false);evaluator_entry();uint32_t epoch=fc_recovery_epoch();assert(fc_recovery_request_startup(epoch)==-14);
   evaluator_context=true;if(setjmp(scheduler)==0){evaluation_control_barrier();assert(0);}evaluator_context=false;
