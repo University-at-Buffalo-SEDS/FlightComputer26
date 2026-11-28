@@ -906,7 +906,7 @@ def run_network_simulation(
             {"name": "Flight Computer received a routed command", "node": "flight", "probe": "network_flight_commands_received", "minimum": 1},
             {"name": "Flight Computer accepted the routed command", "node": "flight", "probe": "network_flight_commands_accepted", "minimum": 1},
             {"name": "Flight Computer recovery task executed the routed command", "node": "flight", "probe": "network_flight_commands_processed", "minimum": 1},
-            {"name": "Flight Computer received the expected command id", "node": "flight", "probe": "last_network_flight_command_id", "minimum": 14, "maximum": 14},
+            {"name": "Flight Computer received the expected command id (GS FcSdRetry, byte 33)", "node": "flight", "probe": "last_network_flight_command_id", "minimum": 33, "maximum": 33},
             *(
                 [
                     {

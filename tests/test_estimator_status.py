@@ -78,6 +78,8 @@ static void ascent_initialize(fu32 c) { (void)c; }
 static void distribution_wake(void) {}
 static void thread_comm_ascent_stage(bool staged) { (void)staged; }
 static void sensor_verdicts_reset(void) {}
+static unsigned evaluation_cancels;
+static void fc_cancel_evaluation(void) { ++evaluation_cancels; }
 static bool fc_recovery_eval_pause_requested(void) { return pause_requests && pause_requests--; }
 static void fc_recovery_evaluation_quiescent(void) {}
 static void fc_recovery_evaluation_running(void) {}
@@ -128,7 +130,7 @@ int main(void) {
   sm.kf_deviations = 0;
   const uint32_t cycles = g_fc_est_cycles;
 
-  /* Evaluation Abort / sensor restart stops it ... */
+  /* A break-up abort / sensor restart stops it ... */
   fc_recovery_control_mark_eval_stopped();
   assert(g_fc_est_phase == FC_EST_STOPPED && (g_conf & option(Eval_Abort_Flag)));
   /* ... and the restart's Launch re-enters: a new start, the counter goes on. */
@@ -142,6 +144,8 @@ int main(void) {
   /* A completed Stop/reset back to Startup clears it for the next flight. */
   assert(fc_recovery_control_finalize_startup());
   assert(g_fc_est_phase == FC_EST_IDLE && !g_fc_est_cycles && !g_fc_est_start);
+  /* ... and cancels the evaluation (the retired Evaluation Abort). */
+  assert(evaluation_cancels == 1);
   puts("ok");
   return 0;
 }

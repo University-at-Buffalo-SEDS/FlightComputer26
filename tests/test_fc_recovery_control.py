@@ -62,6 +62,13 @@ static UINT tx_event_flags_set(int*g,unsigned flags,unsigned mode){assert(g==&ev
 static void thread_comm_flush(void){++flushes;g_last_network_flight_command_msg=Invalid_Message;}
 static bool thread_comm_receiver_waiting(const TX_THREAD*t){return t->tx_thread_state==TX_QUEUE_SUSP&&t->tx_thread_suspend_control_block==&seds_syscall;}
 static UINT tx_thread_wait_abort(TX_THREAD*t){assert(irq&&t==&control_thread);++aborts;return 0;}
+/* The reset's evaluation cancel: the estimator's memory (estimator_thread.c)
+ * and the sensor-failure monitor (actual, below). */
+#define TO_ABORT 120U
+#define TO_REINIT 40U
+static struct {unsigned to_abort,to_reinit,gps_delayed,gps_malform,failures,triggers;} smon={TO_ABORT,TO_REINIT,0,0,0,0};
+static unsigned devctr_if[2],estimator_cancels;
+static void estimator_cancel_evaluation(void){++estimator_cancels;}
 '''
 MAIN=r'''
 int main(void){
@@ -79,8 +86,14 @@ int main(void){
  g_fc_est_phase=FC_EST_RUNNING;g_fc_est_cycles=9;g_fc_est_start=77;fc_recovery_control_mark_eval_stopped();assert(g_fc_est_phase==FC_EST_STOPPED);
  g_conf|=Manual_Biases|SD_Pipeline_Reset|Parachute_Deployed|Parachute_Expanded|Launch_Requested;
  sm.flight=Launch;sm.global_state=3;baro_conf.rezero=1;
+ smon.to_abort=TO_ABORT*10;smon.to_reinit=3;smon.failures=9;smon.triggers=2;smon.gps_delayed=4;smon.gps_malform=5;
+ devctr_if[IMU]=6;devctr_if[Baro]=7;
  reset_ready=false;assert(!fc_recovery_control_finalize_startup()&&sm.flight==Launch);
+ assert(estimator_cancels==0&&smon.to_abort==TO_ABORT*10&&devctr_if[IMU]==6);
  reset_ready=true;assert(fc_recovery_control_finalize_startup()&&sm.flight==Startup);
+ /* The reset cancelled the evaluation: nothing of it survives. */
+ assert(estimator_cancels==1&&smon.to_abort==TO_ABORT&&smon.to_reinit==TO_REINIT);
+ assert(!smon.failures&&!smon.triggers&&!smon.gps_delayed&&!smon.gps_malform&&!devctr_if[IMU]&&!devctr_if[Baro]);
  assert((g_conf&(Manual_Biases|SD_Pipeline_Reset|Parachute_Deployed|Parachute_Expanded))==(Manual_Biases|SD_Pipeline_Reset|Parachute_Deployed|Parachute_Expanded));
  assert(!(g_conf&(Eval_Abort_Flag|Launch_Requested))&&baro_conf.rezero==0);
  assert(g_fc_est_phase==FC_EST_IDLE&&!g_fc_est_cycles&&!g_fc_est_start);

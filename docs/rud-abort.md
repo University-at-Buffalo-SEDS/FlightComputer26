@@ -2,7 +2,9 @@
 
 An *evaluation abort* stops the flight computer's estimator. After it, the
 FC makes no automatic deployment: no drogue at apogee, no main at 457 m. The
-operator's manual Deploy and Expand still work.
+operator's manual Deploy and Expand still work. The operator command for it
+(`EvaluationAbort`, byte 16) is retired: the operator's Reset to Startup
+cancels the evaluation instead (section 1).
 
 Chutes are critical, so the abort has to work in every flight phase but
 must only fire automatically when the readings are clearly haywire, as in a
@@ -16,18 +18,18 @@ Audit of every path, origin/dev 592785b plus this branch.
 
 | Path | Origin | Trigger and threshold | Persistence / voting | Effect | Phases |
 | --- | --- | --- | --- | --- | --- |
-| `EvaluationAbort` (FC decree `Evaluation_Abort`, byte 16) | operator only: an explicit GS command. The GS sends it on no automatic path. It is also allowed while the station Abort is latched (`gse.rs` `abort_safe_control`) | the press | none (a deliberate command) | `fc_recovery_request_eval_stop`: the estimator stops (`Eval_Abort_Flag`) | before this branch, ascent only: the descent state machine ran in the distribution thread and still fired the main. Now every phase (section 3) |
+| Retired: `EvaluationAbort` (FC decree `Retired_Evaluation_Abort`, byte 16) | was operator only. Now refused (acknowledged, never executed); the byte is never reused | - | - | none | - |
 | Station Abort / manual Stop (`ABORT`) | operator | the press | none | `manual_stop`: `fc_recovery_holds_sequence`, so `fc_recovery_inhibits_pyro` refuses every automatic pyro; estimator quiesced | every phase (unchanged) |
-| Reset to Startup (`BOARD_RECOVERY_REQUEST` op 3) | operator, via recovery transport | the request | none | estimator stopped, state back to Startup | pad / after flight (unchanged) |
+| Reset to Startup (`BOARD_RECOVERY_REQUEST` op 3) | operator, via recovery transport ("Reset all boards") | the request | none | estimator stopped and the evaluation cancelled (`estimator_cancel_evaluation`: filter history, extremes, plausibility verdicts, break-up detector, drogue timer, sensor-failure counts and thresholds back to their boot values), state back to Startup | any state |
 | Bench monitor lease | wired probe | lease | pad only | outputs held | pad (unchanged) |
-| Break-up detector (new, section 2) | automatic | IMU and barometer both implausible | about 1 s window, two independent sensors | as `EvaluationAbort` | armed Launch to Apogee |
+| Break-up detector (new, section 2) | automatic | IMU and barometer both implausible | about 1 s window, two independent sensors | `fc_recovery_request_eval_stop`: the estimator stops (`Eval_Abort_Flag`) | armed Launch to Apogee |
 
 Automatic paths that do not stop deployment, listed because they react to
 bad readings:
 
 | Path | Trigger | Persistence | Effect |
 | --- | --- | --- | --- |
-| Sensor failure count (`process_sensor_report`) | out-of-band samples (`validate_*`: accel outside ±24 g, gyro outside ±2000 deg/s, pressure outside 57.2–110 kPa, altitude outside −30..4572 m). A saturated BMI088 reads at most its full scale, so saturation never counts | a running count, one up per bad sample and one down per good one (`Reset_Failures`, on by default). Only before Apogee (or for a bad barometer without trustworthy GPS); IMU and baro are validated only in ascent and on the pad | ≥ 40: sensor re-initialisation; ≥ 120: on the pad `In_Aborted_State` (await a command); in flight a sensor restart that restarts the estimator, then a ×10 threshold. Never stops deployment |
+| Sensor failure count (`process_sensor_report`) | out-of-band samples (`validate_*`: accel outside ±24 g, gyro outside ±2000 deg/s, pressure outside 57.2–110 kPa, altitude outside −30..4572 m). A saturated BMI088 reads at most its full scale, so saturation never counts | a running count, one up per bad sample and one down per good one (`Reset_Failures`, always on: the operator options are retired). Only before Apogee (or for a bad barometer without trustworthy GPS); IMU and baro are validated only in ascent and on the pad | ≥ 40: sensor re-initialisation; ≥ 120: on the pad `In_Aborted_State` (await a command); in flight a sensor restart that restarts the estimator, then a ×10 threshold (back to 120 at the Reset to Startup). The thresholds are fixed: the operator AbortAfter/ReinitAfter commands are retired. Never stops deployment |
 | GPS delayed/malformed | `GPS_DELAY_MS` 200 ms gaps or bad packets, 40 of either | count | barometer-only Vigilant mode; deployment continues |
 | Filter fluctuation | `kf_deviations` > 80 | count | Vigilant mode trusts the raw barometer; deployment continues |
 | Sensor plausibility (sections 5, 7) | an implausible, frozen or silent barometer; an untrusted ascent velocity, a frozen or silent IMU | 0.2-2 s | the filters fall back on the other sensors; deployment continues |
@@ -89,10 +91,10 @@ combination (closest: 36 %).
 ## 3. Effect on the estimator
 
 The estimator (evaluation thread) now runs the descent filter and the whole
-state machine (docs/task-layout.md step 9). An abort, operator or automatic,
-stops it in every phase:
+state machine (docs/task-layout.md step 9). An abort stops it in every
+phase:
 
-- *Before:* `EvaluationAbort` in descent stopped only the idle ascent
+- *Before:* the (now retired) `EvaluationAbort` in descent stopped only the idle ascent
   evaluator, and the descent state machine in the distribution thread still
   fired the main.
 - *Now:* it stops the descent state machine too. The automatic detector

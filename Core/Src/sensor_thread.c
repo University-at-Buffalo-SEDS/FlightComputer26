@@ -54,22 +54,16 @@ static const fc_msg extmap[Compat_Messages] = {
     Postinit_Signal,
     Launch_Signal,
 
-    Vigilant_Mode,
-    revoke(Vigilant_Mode),
-    Eval_Successive,
-    revoke(Eval_Successive),
-    Reset_Failures,
-    revoke(Reset_Failures),
-    Measm_Reports,
-    revoke(Measm_Reports),
-    Velocity_Checks,
-    revoke(Velocity_Checks),
+    /* 2..11 retired: the runtime options and their revokes. */
+    Invalid_Message, Invalid_Message, Invalid_Message, Invalid_Message,
+    Invalid_Message, Invalid_Message, Invalid_Message, Invalid_Message,
+    Invalid_Message, Invalid_Message,
 
     Deploy_Parachute,
     Expand_Parachute,
     Invalid_Message, /* retired: EvaluationRelax */
     Invalid_Message, /* retired: EvaluationFocus */
-    Evaluation_Abort,
+    Invalid_Message, /* retired: EvaluationAbort (the reset to Startup does it) */
     Reinit_Sensors,
     Reinit_Barometer,
     Reinit_IMU,
@@ -77,12 +71,9 @@ static const fc_msg extmap[Compat_Messages] = {
     Advance_State,
     Rewind_State,
 
-    Abortion_Thresholds + 40,
-    Abortion_Thresholds + 100,
-    Abortion_Thresholds + 250,
-    Reinit_Thresholds + 15,
-    Reinit_Thresholds + 30,
-    Reinit_Thresholds + 50,
+    /* 23..28 retired: AbortAfter40/100/250, ReinitAfter15/30/50. */
+    Invalid_Message, Invalid_Message, Invalid_Message,
+    Invalid_Message, Invalid_Message, Invalid_Message,
 
     IGT_Enter,
     IGT_Live_Pyro,
@@ -90,6 +81,8 @@ static const fc_msg extmap[Compat_Messages] = {
     IGT_Exit,
     SD_Retry,
 };
+_Static_assert(sizeof extmap / sizeof extmap[0] == Compat_Messages,
+               "one entry per compatibility byte");
 
 #define MIN_CMD_SIZE 1
 

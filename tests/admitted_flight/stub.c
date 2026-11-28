@@ -92,6 +92,8 @@ static void thread_comm_estimator_enter(void){++estimator_guard_depth;}
 static void thread_comm_estimator_leave(void){assert(estimator_guard_depth);--estimator_guard_depth;}
 static void distribution_wake(void){}
 static void sensor_verdicts_reset(void){}
+/* The reset to Startup's evaluation cancel (control_thread.c). */
+static unsigned evaluation_cancels;static void fc_cancel_evaluation(void){assert(irq);++evaluation_cancels;}
 static void telemetry_wake(void){}
 static void ascent_initialize(uint32_t conf){(void)conf;++ascent_initializations;assert(current()==Armed);}
 static void message(const char *text,bool important){(void)text;(void)important;++messages;}

@@ -49,16 +49,17 @@ int main(void){
   decode_flight_message(forbidden[i]);decode_flight_message(fc_mask(forbidden[i]));
  }
  assert(!reports&&!gps&&!actions&&!configs&&!unknown);
- decode_flight_message(Evaluation_Abort);assert(actions==1&&last_command==Evaluation_Abort&&!last_internal);
+ /* The retired operator Evaluation Abort no longer passes the hold. */
+ decode_flight_message(Retired_Evaluation_Abort);assert(!actions&&!unknown);
  /* Held only by a rejected watchdog resume: operator deploy commands pass,
   * internal deploys and every other flight command stay fenced. */
  new_flight=false;manual_inhibited=false;
  decode_flight_message(fc_mask(Deploy_Parachute));decode_flight_message(fc_mask(Expand_Parachute));
  decode_flight_message(Launch_Signal);decode_flight_message(Postinit_Signal);decode_flight_message(Advance_State);
- assert(actions==1);
- decode_flight_message(Deploy_Parachute);assert(actions==2&&last_command==Deploy_Parachute&&!last_internal);
- decode_flight_message(Expand_Parachute);assert(actions==3&&last_command==Expand_Parachute);
- manual_inhibited=true;decode_flight_message(Deploy_Parachute);assert(actions==3);
+ assert(actions==0);
+ decode_flight_message(Deploy_Parachute);assert(actions==1&&last_command==Deploy_Parachute&&!last_internal);
+ decode_flight_message(Expand_Parachute);assert(actions==2&&last_command==Expand_Parachute);
+ manual_inhibited=true;decode_flight_message(Deploy_Parachute);assert(actions==2);
  new_flight=true;actions=1;
  restart_allowed=false;smon.gps_delayed=7;smon.gps_malform=8;g_conf=123;
  abortion_due_failures();assert(restarts==1&&smon.gps_delayed==7&&smon.gps_malform==8&&g_conf==123&&!messages);
@@ -73,7 +74,15 @@ int main(void){
  decode_flight_message(fc_mask(Bad_Altitude));assert(reports==1&&last_command==Bad_Altitude);
  decode_flight_message(fc_mask(GPS_Delayed));assert(gps==1);
  decode_flight_message(fc_mask(Launch_Signal));assert(actions==4&&last_internal);
- decode_flight_message(Vigilant_Mode);assert(configs==1&&!unknown);
+ /* Retired: no runtime option, revoke or threshold from the network, and
+  * no retired decree, is executed (refused before any processing). */
+ const uint32_t retired[]={Vigilant_Mode,Vigilant_Mode|Retired_Revoke_Option,Retired_Eval_Successive,
+  Reset_Failures,Measm_Reports,Velocity_Checks,Retired_Abortion_Thresholds+40,Retired_Reinit_Thresholds+15,
+  Retired_Evaluation_Relax,Retired_Evaluation_Focus,Retired_Evaluation_Abort};
+ const unsigned before=actions;
+ for(unsigned i=0;i<sizeof retired/sizeof retired[0];i++)decode_flight_message(retired[i]);
+ assert(!configs&&!unknown&&actions==before);
+ decode_flight_message(SD_Retry);assert(actions==before+1&&last_command==SD_Retry);
  return 0;
 }
 '''
@@ -84,6 +93,7 @@ class ControlEpochGateTests(unittest.TestCase):
         enum=types[types.index('typedef enum flight_message : fu32 {'):types.index('} fc_msg;')+len('} fc_msg;')]
         enum=enum.replace('flight_message : fu32','flight_message').replace('UINT_FAST32_MAX','UINT32_MAX')
         actual='\n'.join(extract(source,signature)for signature in [
+            'static inline bool retired_decree(',
             'bool fc_recovery_command_admissible(',
             'static inline void decode_flight_message(',
             'static inline bool flight_mission_active(',

@@ -91,14 +91,11 @@
 
 /* Recovery */
 
-#define MAX_THRESHOLD 0x3FFu
-
 #define CONFIRM_LAUNCH 0x01
 #define CONFIRM_POSTINIT 0x02
 
 #define ALIGN_MASK (EXCESS_ALIGN - 1)
 
-#define MAX_CONFIG_REPORT_SIZE 128
 #define INVALID_MESSAGE_STATUS 0xFFu
 
 #define FC_DEFAULTS ( (fc_msg) (0                   	  \
@@ -132,11 +129,7 @@
 #define msmcode(code) (fu32)((code) & ~Sensor_Measm_Code)
 
 #define option(opt) ((opt) & ~Runtime_Configuration)
-#define revoke(opt) ((opt) | Revoke_Option)
 
-#define threshold(raw) mind((raw), MAX_THRESHOLD)
-
-#define namecount(arr) (sizeof(arr) / sizeof(conf_dict))
 
 #define fsec(ms) ((float)(ms) * 0.001f)
 #define fbyte(f) ((f) * sizeof(float))

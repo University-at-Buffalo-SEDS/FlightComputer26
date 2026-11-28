@@ -84,6 +84,7 @@ void estimator_descent_step(fu32, float, est_input);
 ULONG estimator_request(bool ascent);
 void estimator_pass(bool ascent, ULONG done);
 void estimator_left_ascent(void);
+void estimator_cancel_evaluation(void);
 
 #if defined(TELEMETRY_ENABLED) || defined(FAKESTATION)
 SedsResult on_fc_packet(const SedsPacketView *, void *);

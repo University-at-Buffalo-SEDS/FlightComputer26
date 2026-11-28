@@ -54,7 +54,7 @@ uncached volatile float kalt, kvel;
 
 /* Break-up (RUD) detector, rud_detect.h: armed from Launch until Apogee,
  * while the ascent filter (and so the IMU) runs. On a detection the
- * estimator stops itself exactly as an operator Evaluation_Abort would: no
+ * estimator stops itself (fc_recovery_request_eval_stop): no
  * automatic drogue or main after it; the operator's manual Deploy/Expand
  * stay available. */
 static rud_state rud;
@@ -200,11 +200,8 @@ static inline void handle_spurious(fu32 mode, const char *cond)
     message(buf, false);
   }
 
-  if (mode & option(Eval_Successive))
-  {
-    sm.confidence = 0;
-  }
-  else if (sm.confidence > 0)
+  /* (The retired Eval_Successive option, off by default, zeroed it.) */
+  if (sm.confidence > 0)
   {
     sm.confidence -= mind(sm.confidence, SPURIOUS_PENALTY);
   }
@@ -931,6 +928,33 @@ void estimator_pass(bool ascent, ULONG done)
   }
 
   backup_deployments();
+}
+
+/* The reset to Startup cancels the evaluation (it replaced the operator's
+ * Evaluation Abort): nothing the previous flight's estimator learned survives
+ * into the next one, exactly as after a boot. Called by the recovery owner's
+ * fc_recovery_control_finalize_startup with the evaluator quiesced (its
+ * thread suspended and reset) and IRQs masked, so it only clears memory.
+ * Kept: the barometer reference and the IMU biases (calibration), and the
+ * cumulative diagnostic counters. Launch reinitializes the filter itself
+ * (ascent_initialize) and Postinit re-seeds the attitude. */
+void estimator_cancel_evaluation(void)
+{
+  sensor_verdicts_reset();
+  /* A fired break-up detector stays fired for the rest of its flight only. */
+  rud_reset(&rud);
+  memset(&extremes, 0, sizeof extremes);
+  for (unsigned k = 0; k < STATE_HISTORY; ++k)
+  {
+    memset(&sv[k].gps, 0, sizeof sv[k].gps);
+    sv[k].alt = sv[k].vel = 0.0f;
+  }
+  sm.idx = 0;
+  accum = 0;
+  dt = 0.0f;
+  est_run = 0;
+  g_fc_sensor_fallback = 0U;
+  thread_comm_ascent_stage(false);
 }
 
 /* Task */

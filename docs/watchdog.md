@@ -9,8 +9,8 @@ The independent IWDG has a nominal 16.384 second deadline (LSI / 256, reload
 2047). A feed requires fresh progress from network service (when enabled), the
 command worker, acquisition, and evaluation, plus at least 250 ms of scheduler
 progress. Preflight acquisition checks in for the dormant evaluation task;
-during descent evaluation runs in acquisition. An explicit evaluation abort
-also exempts the dormant evaluator. SysTick never feeds the watchdog.
+during descent evaluation runs in acquisition. An evaluation abort (break-up
+detector) also exempts the dormant evaluator. SysTick never feeds the watchdog.
 
 ## Flight restart
 

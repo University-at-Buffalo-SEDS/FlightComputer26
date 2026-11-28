@@ -59,6 +59,8 @@ int main(int argc,char **argv){assert(argc==2);
   fc_recovery_control_service();fc_recovery_network_service();fc_recovery_control_service();
   assert(current()==Startup&&!fc_recovery_flight_is_admitted()&&fc_recovery_requires_new_flight());
   assert(!(g_conf&option(Launch_Requested))&&seal&&fc_recovery_epoch()==epoch+1);
+  /* The reset cancelled the evaluation exactly once. */
+  assert(evaluation_cancels==1);
   sm.flight=Armed;enter_launch(false);assert(fc_recovery_flight_is_admitted()&&fc_recovery_epoch()==epoch+2&&!seal);
   assert(!(g_conf&option(Launch_Requested)));evaluator_entry();assert(ascent_initializations==2);
  }else assert(!"unknown case");

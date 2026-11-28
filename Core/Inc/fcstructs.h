@@ -250,7 +250,9 @@ typedef enum flight_message : fu32 {
   /* Retired (EvaluationRelax/Focus): never reuse these values. */
   Retired_Evaluation_Relax = Actionable_Decrees + 9,
   Retired_Evaluation_Focus = Actionable_Decrees + 10,
-  Evaluation_Abort = Actionable_Decrees + 11,
+  /* Retired operator Evaluation Abort: the reset to Startup (fc_recovery
+   * RESET_STARTUP_ANY) now cancels the evaluation. Refused; never reuse. */
+  Retired_Evaluation_Abort = Actionable_Decrees + 11,
   Advance_State    = Actionable_Decrees + 12,
   Rewind_State     = Actionable_Decrees + 13,
 
@@ -266,6 +268,7 @@ typedef enum flight_message : fu32 {
 
   /* Re-attempt the SD mount and log file (both images). */
   SD_Retry         = Actionable_Decrees + 21,
+  /* The next decree is Actionable_Decrees + 22. */
 
   GPS_Data_Code = (1u << 18),
 
@@ -275,22 +278,27 @@ typedef enum flight_message : fu32 {
   GPS_Delayed    = GPS_Data_Code | (1u << 3),
   GPS_Malformed  = GPS_Data_Code | (1u << 4),
 
-  /* This is the only type of FC message that is stored
-   * in global config. Other types are consumed immediately. */
+  /* The FC's global config flags (g_conf stores option(Flag)). The station
+   * can no longer set or revoke any of them: the runtime-configuration
+   * commands are retired, and a Runtime_Configuration message from the
+   * network is refused (fc_recovery_command_admissible). */
   Runtime_Configuration = (1u << 29),
 
-  Revoke_Option = Runtime_Configuration | (1u << 28),
+  /* Retired operator revoke tag; never reuse. */
+  Retired_Revoke_Option = Runtime_Configuration | (1u << 28),
 
-  /* User */
+  /* Formerly operator options. Defaults (USER_OPTIONS, fcconfig.h): on,
+   * and the firmware sets Vigilant_Mode, Measm_Reports (barometer fallback)
+   * and Reset_Failures (ground station loss) itself. */
   Vigilant_Mode       = Runtime_Configuration | 1u,
-  Eval_Successive     = Runtime_Configuration | (1u << 1),
+  Retired_Eval_Successive = Runtime_Configuration | (1u << 1), /* default off; never reuse */
   Retired_Eval_Focused = Runtime_Configuration | (1u << 2), /* never reuse */
   Eval_Abort_Flag     = Runtime_Configuration | (1u << 3),
   Reset_Failures      = Runtime_Configuration | (1u << 4),
   Measm_Reports       = Runtime_Configuration | (1u << 5),
   Velocity_Checks     = Runtime_Configuration | (1u << 6),
 
-  User_Option_Bound   = Runtime_Configuration | (1u << 7), 
+  Retired_User_Option_Bound = Runtime_Configuration | (1u << 7), /* never reuse */
 
   /* Internal */
   Postinit_Requested  = Runtime_Configuration | (1u << 8),
@@ -310,17 +318,14 @@ typedef enum flight_message : fu32 {
   Defer_Baro_Fallback = Runtime_Configuration | (1u << 22),
   SD_Pipeline_Reset   = Runtime_Configuration | (1u << 23),
 
-  Abortion_Thresholds = Runtime_Configuration | (1u << 26),
-  Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
+  /* Retired operator failure thresholds (AbortAfter*, ReinitAfter*): the
+   * FC keeps TO_ABORT / TO_REINIT. Never reuse. */
+  Retired_Abortion_Thresholds = Runtime_Configuration | (1u << 26),
+  Retired_Reinit_Thresholds   = Runtime_Configuration | (1u << 27),
 
   FlightComputer_Mask = (1u << 31),
   Invalid_Message = UINT_FAST32_MAX
 } fc_msg;
-
-typedef struct config_description_map {
-  const fc_msg val;
-  const char *name;
-} conf_dict;
 
 typedef struct cm_align system_monitor {
   fu16 to_abort, to_reinit;
@@ -347,22 +352,25 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Postinit_Signal,
   Compat_Launch_Signal,
 
-  Compat_Vigilant_Mode,
-  Revoke_Vigilant_Mode,
-  Compat_Eval_Successive,
-  Revoke_Eval_Successive,
-  Compat_Reset_Failures,
-  Revoke_Reset_Failures,
-  Compat_Measm_Reports,
-  Revoke_Measm_Reports,
-  Compat_Velocity_Checks,
-  Revoke_Velocity_Checks,
+  /* 2..11: the retired runtime-configuration commands (MonitorAltitude,
+   * ConsecutiveSamples, ResetFailures, ValidateMeasms, velocity checks and
+   * their revokes). Refused; never reuse. */
+  Compat_Retired_Vigilant_Mode,
+  Compat_Retired_Revoke_Vigilant_Mode,
+  Compat_Retired_Eval_Successive,
+  Compat_Retired_Revoke_Eval_Successive,
+  Compat_Retired_Reset_Failures,
+  Compat_Retired_Revoke_Reset_Failures,
+  Compat_Retired_Measm_Reports,
+  Compat_Retired_Revoke_Measm_Reports,
+  Compat_Retired_Velocity_Checks,
+  Compat_Retired_Revoke_Velocity_Checks,
 
   Compat_Deploy_Parachute,
   Compat_Expand_Parachute,
   Compat_Retired_Evaluation_Relax, /* 14: refused, never reuse */
   Compat_Retired_Evaluation_Focus, /* 15: refused, never reuse */
-  Compat_Evaluation_Abort,
+  Compat_Retired_Evaluation_Abort, /* 16: refused, never reuse */
   Compat_Reinit_Sensors,
   Compat_Reinit_Barometer,
   Compat_Reinit_IMU,
@@ -370,12 +378,13 @@ typedef enum remote_cmd_compat : uint8_t
   Compat_Advance_State,
   Compat_Rewind_State,
 
-  Compat_Abort_After_40,
-  Compat_Abort_After_100,
-  Compat_Abort_After_250,
-  Compat_Reinit_After_15,
-  Compat_Reinit_After_30,
-  Compat_Reinit_After_50,
+  /* 23..28: retired failure thresholds. Refused; never reuse. */
+  Compat_Retired_Abort_After_40,
+  Compat_Retired_Abort_After_100,
+  Compat_Retired_Abort_After_250,
+  Compat_Retired_Reinit_After_15,
+  Compat_Retired_Reinit_After_30,
+  Compat_Retired_Reinit_After_50,
 
   Compat_IGT_Enter,
   Compat_IGT_Live_Pyro,

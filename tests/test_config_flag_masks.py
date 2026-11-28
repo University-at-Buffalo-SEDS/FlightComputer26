@@ -3,7 +3,8 @@
 g_conf stores option(Flag): the flag without its Runtime_Configuration tag
 (bit 29). `conf & Flag` also tests bit 29; it only gives the right answer
 while that bit is never stored, so every test goes through option(), and the
-only path that stores operator options (update_global_config) strips the tag.
+station can no longer store any option (the runtime-configuration commands
+are retired), so every store goes through option() too.
 """
 from pathlib import Path
 import re
@@ -18,7 +19,8 @@ def config_flags():
     flags = {m.group(1): int(m.group(2) or 0)
              for m in re.finditer(r'\n\s*(\w+)\s*=\s*Runtime_Configuration\s*\|\s*(?:1u|\(1u << (\d+)\))', body)}
     # Message codes and bounds, not flags stored in g_conf.
-    for name in ('Revoke_Option', 'User_Option_Bound', 'Abortion_Thresholds', 'Reinit_Thresholds'):
+    for name in ('Retired_Revoke_Option', 'Retired_User_Option_Bound',
+                 'Retired_Abortion_Thresholds', 'Retired_Reinit_Thresholds'):
         flags.pop(name, None)
     return flags
 
@@ -57,18 +59,14 @@ class ConfigFlagMasks(unittest.TestCase):
         dist = (ROOT / 'Core/Src/sensor_thread.c').read_text()
         self.assertNotIn('Eval_Focused', dist)
 
-    def test_operator_options_never_store_the_tag(self):
+    def test_every_store_of_a_flag_uses_option(self):
         recovery = (ROOT / 'Core/Src/control_thread.c').read_text()
-        body = recovery[recovery.index('static inline void update_global_config('):]
-        body = body[:body.index('\n}\n')]
-        self.assertIn('fu32 raw = incoming & ~Revoke_Option;', body)
-        self.assertIn('g_conf |= raw;', body)
+        self.assertNotIn('update_global_config', recovery)
         types = (ROOT / 'Core/Inc/fcstructs.h').read_text()
-        self.assertRegex(types, r'Revoke_Option = Runtime_Configuration \| \(1u << 28\)')
-        # Every other store of a flag into g_conf goes through option().
-        store = re.compile(r'g_conf\s*(?:\|=|&=\s*~)\s*(?!option\(|raw\b)[^;]*;')
+        self.assertRegex(types, r'Retired_Revoke_Option = Runtime_Configuration \| \(1u << 28\)')
+        store = re.compile(r'g_conf\s*(?:\|=|&=\s*~)\s*(?!option\()[^;]*;')
         offenders = [f'{p.relative_to(ROOT)}: {m.group(0)}' for p, t in sources()
-                     for m in store.finditer(strip_comments(t)) if 'option(' not in m.group(0) and m.group(0) != 'g_conf |= raw;']
+                     for m in store.finditer(strip_comments(t)) if 'option(' not in m.group(0)]
         self.assertEqual(offenders, [])
 
 

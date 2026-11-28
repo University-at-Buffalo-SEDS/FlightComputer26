@@ -94,15 +94,6 @@ static struct accl_config accl_conf = {
     .rng = Accl_Range_24g,
 };
 
-static const conf_dict confmap[] = {
-  { Vigilant_Mode,    "vigilant" },
-  { Eval_Successive,  "successive" },
-  { Reset_Failures,   "fail-reset" },
-  { Measm_Reports,    "measm-reports" },
-  { Velocity_Checks,  "velocity-checks"}
-};
-
-
 /* Sensor init */
 
 static inline void sensor_init_supervised(sens_init sn)
@@ -233,14 +224,31 @@ void fc_recovery_control_mark_eval_stopped(void)
   /* A preflight monitor lease also stops an evaluator that never ran. */
   if (g_fc_est_phase != FC_EST_IDLE) g_fc_est_phase = FC_EST_STOPPED;
 }
+/* The reset to Startup's evaluation cancel (replaces the operator's
+ * Evaluation Abort): the estimator's flight memory and the sensor-failure
+ * monitor return to their boot values. Memory only; IRQs are masked. */
+static void fc_cancel_evaluation(void)
+{
+  estimator_cancel_evaluation();
+  smon.to_abort = TO_ABORT;
+  smon.to_reinit = TO_REINIT;
+  smon.failures = smon.triggers = 0;
+  smon.gps_delayed = smon.gps_malform = 0;
+  devctr_if[IMU] = devctr_if[Baro] = 0;
+}
 bool fc_recovery_control_finalize_startup(void)
 {
   if (!evaluation_quiescent || estimator_thread.tx_thread_state != TX_SUSPENDED ||
       !fc_watchdog_startup_reset_ready()) return false;
-  /* Preserve calibration/biases, samples, clocks, rates, recording shutdown,
-   * failure thresholds and historical deployment bits until a NEW flight. */
+  /* Preserve calibration/biases, samples, clocks, rates, recording shutdown
+   * and historical deployment bits until a NEW flight. The evaluation itself
+   * is cancelled (what the retired operator Evaluation Abort did): the
+   * estimator's flight memory and the sensor-failure counters and thresholds
+   * return to their boot values, so nothing from a previous evaluation
+   * survives the reset. */
   g_conf &= ~option(Postinit_Requested | Launch_Requested | In_Aborted_State |
                     Graceful_Reset | Defer_Baro_Fallback | Eval_Abort_Flag);
+  fc_cancel_evaluation();
   g_conf |= option(Using_Ascent_KF);
   fc_recovery_ota_reset_retire_locked();
   sm.flight = Startup;
@@ -508,10 +516,6 @@ static inline void process_action(fc_msg cmd, bool internal)
     case Disable_IMU:
       return sensor_init_supervised(Shut_Gyro | Shut_Accl);
 
-    case Evaluation_Abort:
-      fc_recovery_request_eval_stop();
-      break;
-
     case Advance_State:
       {
       const uint32_t reset_mask = __get_PRIMASK(); __disable_irq();
@@ -576,81 +580,7 @@ static inline void process_action(fc_msg cmd, bool internal)
 }
 
 
-/* Global config */
-
-static inline constexpr fc_msg user_options()
-{
-  fc_msg options = 0;
-  fu32 k = 1;
-
-  for (; k < option(User_Option_Bound); k *= 2)
-  {
-    options |= k;
-  }
-
-  /* Retired option bit: never settable again. */
-  return options & ~option(Retired_Eval_Focused);
-}
-
-static inline void update_global_config(fc_msg incoming)
-{
-  const fc_msg valid = user_options();
-  fu32 raw = incoming & ~Revoke_Option;
-
-  if ((raw & valid) == 0 || (raw & ~valid) != 0 ||
-      (raw & (raw - 1)) != 0)
-  {
-    log_metric(id "invalid option", (fu32) incoming, true);
-    return;
-  }
-
-  if (incoming & Revoke_Option)
-  {
-    g_conf &= ~raw;
-  }
-  else g_conf |= raw;
-
-  int cursor = sizeof(id) + 8;
-  char buf[MAX_CONFIG_REPORT_SIZE] = id "options: ";
-
-  for (fu16 k = 0; k < namecount(confmap); ++k)
-  {
-    if ((g_conf & confmap[k].val) == option(confmap[k].val))
-    {
-      fu16 rem = sizeof buf - cursor;
-
-      if (rem == 0) break;
-
-      fu16 n = snprintf(buf + cursor, rem, "%s ", confmap[k].name);
-
-      if (n >= rem)
-      {
-        cursor = sizeof buf - 1;
-        break;
-      }
-
-      cursor += n;
-    }
-  }
-
-  message(buf, false);
-}
-
-
 /* Message processing */
-
-static inline void process_config_update(fc_msg code)
-{
-  if (code & option(Abortion_Thresholds))
-  {
-    smon.to_abort = threshold(code & ~option(Abortion_Thresholds));
-  }
-  else if (code & option(Reinit_Thresholds))
-  {
-    smon.to_reinit = threshold(code & ~option(Reinit_Thresholds));
-  }
-  else update_global_config(option(code));
-}
 
 static inline void process_sensor_report(fc_msg code)
 {
@@ -713,21 +643,32 @@ static inline void process_gps_code(fc_msg code)
   }
 }
 
+/* Retired decrees: EvaluationRelax/Focus switched the evaluator's
+ * preemption, which the estimator guard replaced; the operator's Evaluation
+ * Abort is now part of the reset to Startup (fc_recovery_control_finalize_
+ * startup). An old station's copy is refused (and acknowledged, so it is not
+ * retransmitted). */
+static inline bool retired_decree(fc_msg cmd)
+{
+  return cmd == Retired_Evaluation_Relax || cmd == Retired_Evaluation_Focus ||
+         cmd == Retired_Evaluation_Abort;
+}
+
 bool fc_recovery_command_admissible(uint32_t command, bool internal)
 {
   const fc_msg cmd = (fc_msg)command;
-  /* Retired: EvaluationRelax/Focus switched the evaluator's preemption, which
-   * the estimator guard replaced. An old station's copy is refused (and
-   * acknowledged, so it is not retransmitted). */
-  if (cmd == Retired_Evaluation_Relax || cmd == Retired_Evaluation_Focus) return false;
+  if (retired_decree(cmd)) return false;
+  /* The station can no longer set, revoke or tune any runtime option or
+   * failure threshold: those commands are retired and the FC keeps its
+   * compiled defaults (USER_OPTIONS, TO_ABORT, TO_REINIT). */
+  if (!internal && (cmd & Runtime_Configuration)) return false;
   /* The operator's emergency Deploy/Expand passes every sequence hold. */
   if (!internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute))
     return !fc_recovery_inhibits_manual_pyro();
   if (fc_recovery_holds_sequence()) {
     /* Only the operator's deploy commands may pass a rejected watchdog resume. */
-    return cmd == Evaluation_Abort ||
-           (!internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute) &&
-            !fc_recovery_inhibits_manual_pyro());
+    return !internal && (cmd == Deploy_Parachute || cmd == Expand_Parachute) &&
+           !fc_recovery_inhibits_manual_pyro();
   }
   if (!fc_recovery_requires_new_flight()) return true;
   switch (cmd) {
@@ -760,10 +701,6 @@ static inline void decode_flight_message(fc_msg msg)
   if (msg & Actionable_Decrees)
   {
     return process_action(msg, internal);
-  }
-  else if (msg & Runtime_Configuration)
-  {
-    return process_config_update(msg);
   }
 
   log_metric(id "unknown option", (fi32) fc_unmask(msg), true);

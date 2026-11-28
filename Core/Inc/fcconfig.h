@@ -166,6 +166,8 @@
 #define CO2_ASSERT_INTERVAL  500
 #define REEF_ASSERT_INTERVAL 500
 
+/* Compiled defaults of the former operator options (fcstructs.h); the
+ * station can no longer change them. */
 #define USER_OPTIONS ( (fc_msg) (0                   	\
                       | option(Reset_Failures)          \
                       | option(Measm_Reports)    		\
